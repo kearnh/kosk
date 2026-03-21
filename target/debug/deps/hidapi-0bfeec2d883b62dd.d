@@ -1,0 +1,10 @@
+C:\Users\kearnh\work\kosk\target\debug\deps\hidapi-0bfeec2d883b62dd.d: C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\lib.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\error.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\ffi.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi\windows.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\windows.rs
+
+C:\Users\kearnh\work\kosk\target\debug\deps\libhidapi-0bfeec2d883b62dd.rmeta: C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\lib.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\error.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\ffi.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi\windows.rs C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\windows.rs
+
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\lib.rs:
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\error.rs:
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\ffi.rs:
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi.rs:
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\hidapi\windows.rs:
+C:\Users\kearnh\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\hidapi-2.6.5\src\windows.rs:
