@@ -196,17 +196,6 @@ fn main() {
 
     match HidApi::new() {
         Ok(api) => {
-            println!("\nAll available HID devices:");
-            for device in api.device_list() {
-                println!(
-                    "  {:04x}:{:04x} - {:?}",
-                    device.vendor_id(),
-                    device.product_id(),
-                    device.product_string()
-                );
-            }
-            println!();
-
             match find_ps4_controller(&api) {
                 Some(device) => {
                     println!("Connected to PS4 controller. Polling inputs...\n");
