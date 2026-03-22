@@ -1,7 +1,8 @@
 [package]
-name = "gamepad-listener"
+name = "kosk"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.102"
 hidapi = "2.6.5"
