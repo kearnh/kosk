@@ -1,228 +1,21 @@
+// #![windows_subsystem = "windows"]
+
+mod ps4;
+mod qwerty_keyboard;
+
+use std::sync::mpsc::Receiver;
+
 use anyhow::{bail, Result};
+use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
+use enigo::{Enigo, Keyboard as _};
 use hidapi::{HidApi, HidDevice};
-use std::sync::RwLock;
+use image::ImageReader;
+use qwerty_keyboard::qwerty_keyboard;
+
+use crate::qwerty_keyboard::Keyboard;
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
-const STICK_OFFSET: i32 = 128;
-const STICK_THRESHOLD: i32 = 10;
-
-#[derive(Clone, Copy)]
-enum Dpad {
-    Up,
-    Down,
-    Left,
-    Right,
-    UpRight,
-    UpLeft,
-    DownRight,
-    DownLeft,
-}
-
-impl ToString for Dpad {
-    fn to_string(&self) -> String {
-        match self {
-            Dpad::Up => "↑",
-            Dpad::UpRight => "↗",
-            Dpad::Right => "→",
-            Dpad::DownRight => "↘",
-            Dpad::Down => "↓",
-            Dpad::DownLeft => "↙",
-            Dpad::Left => "←",
-            Dpad::UpLeft => "↖",
-        }
-        .to_string()
-    }
-}
-
-#[derive(Default, Clone)]
-struct Ps4InputData {
-    left: (i32, i32),
-    right: (i32, i32),
-    dpad: Option<Dpad>,
-    cross: bool,
-    circle: bool,
-    triangle: bool,
-    square: bool,
-    l1: bool,
-    r1: bool,
-    l3: bool,
-    r3: bool,
-    l2: Option<u8>,
-    r2: Option<u8>,
-    options: bool,
-    share: bool,
-    ps: bool,
-}
-
-struct Ps4Input {
-    data: RwLock<Ps4InputData>,
-}
-
-impl Default for Ps4Input {
-    fn default() -> Self {
-        Self {
-            data: RwLock::new(Ps4InputData::default()),
-        }
-    }
-}
-
-impl Ps4Input {
-    fn update_from_report(&self, report: &[u8]) -> bool {
-        if report.len() < 10 {
-            return false;
-        }
-
-        let left_x = report[1] as i32;
-        let left_y = report[2] as i32;
-        let right_x = report[3] as i32;
-        let right_y = report[4] as i32;
-
-        // Byte 5: D-pad (bits 0-3), Share(4), L3(5), R3(6), Options(7)
-        // Byte 6: Square(0), Cross(1), Circle(2), Triangle(3), R1(4), L1(5)
-        // Byte 7: R2(0-7), L2(0-7) - actually triggers are analog in bytes 8-9
-        // Actually triggers are analog at bytes 8-9
-
-        // D-pad: bits 0-3 of byte5
-
-        let dpad = {
-            use Dpad::*;
-            match report[5] {
-                0 => Some(Up),
-                1 => Some(UpRight),
-                2 => Some(Right),
-                3 => Some(DownRight),
-                4 => Some(Down),
-                5 => Some(DownLeft),
-                6 => Some(Left),
-                7 => Some(UpLeft),
-                _ => None,
-            }
-        };
-
-        // Face buttons
-        let square = (report[5] & 0x10) != 0;
-        let cross = (report[5] & 0x20) != 0;
-        let circle = (report[5] & 0x40) != 0;
-        let triangle = (report[5] & 0x80) != 0;
-
-        // Shoulder buttons
-        let l1 = (report[6] & 0x01) != 0;
-        let r1 = (report[6] & 0x02) != 0;
-
-        // Stick buttons / triggers
-        let l2 = ((report[6] & 0x04) != 0).then_some(report[8]);
-        let r2 = ((report[6] & 0x08) != 0).then_some(report[9]);
-
-        let l3 = (report[6] & 0x40) != 0;
-        let r3 = (report[6] & 0x80) != 0;
-
-        // System buttons
-        let share = (report[6] & 0x10) != 0;
-        let options = (report[6] & 0x20) != 0;
-
-        // Check for PS button - typically in extended report, but might be in byte7
-        let ps = (report[7] & 0x01) != 0;
-
-        let lx_dev = (left_x - STICK_OFFSET).abs();
-        let ly_dev = (left_y - STICK_OFFSET).abs();
-        let rx_dev = (right_x - STICK_OFFSET).abs();
-        let ry_dev = (right_y - STICK_OFFSET).abs();
-
-        let sticks_active = lx_dev > STICK_THRESHOLD
-            || ly_dev > STICK_THRESHOLD
-            || rx_dev > STICK_THRESHOLD
-            || ry_dev > STICK_THRESHOLD;
-
-        let is_active = dpad.is_some()
-            || sticks_active
-            || cross
-            || circle
-            || triangle
-            || square
-            || l1
-            || r1
-            || l2.is_some()
-            || r2.is_some()
-            || l3
-            || r3
-            || options
-            || share
-            || ps;
-
-        if is_active {
-            let mut data = self.data.write().unwrap();
-            *data = Ps4InputData {
-                left: (left_x, left_y),
-                right: (right_x, right_y),
-                dpad,
-                cross,
-                circle,
-                triangle,
-                square,
-                l1,
-                r1,
-                l2,
-                r2,
-                l3,
-                r3,
-                options,
-                share,
-                ps,
-            };
-        }
-
-        is_active
-    }
-
-    fn read(&self) -> Ps4InputData {
-        self.data.read().unwrap().clone()
-    }
-}
-
-struct Ps4Device {
-    input: Ps4Input,
-    device: HidDevice,
-}
-
-impl Ps4Device {
-    fn new(device: HidDevice) -> Self {
-        Self {
-            input: Default::default(),
-            device,
-        }
-    }
-
-    fn poll(&self) -> Result<bool> {
-        let mut report = [0u8; 64];
-        let mut active = false;
-        if self.device.read(&mut report)? >= 10 {
-            active = self.input.update_from_report(&report);
-        }
-        Ok(active)
-    }
-}
-
-impl<'a> Iterator for &'a Ps4Device {
-    type Item = Ps4InputData;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.poll() {
-                Ok(true) => {
-                    // Read and return a clone of the input data
-                    return Some(self.input.read());
-                }
-                Ok(false) => continue, // Keep polling until active
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    continue;
-                }
-            }
-        }
-    }
-}
-
 fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
     for device in hid.device_list() {
         if device.vendor_id() == vid && device.product_id() == pid {
@@ -234,69 +27,177 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
     None
 }
 
+type Message = (&'static str, &'static str);
+
+struct App {
+    kb: Keyboard,
+    enigo: Enigo,
+    window_setup_done: bool,
+    rx: Receiver<Message>,
+}
+
+impl App {
+    fn new(cc: &CreationContext<'_>, rx: Receiver<Message>) -> Self {
+        // Try to load custom layout, fall back to default
+        let kb = Keyboard::with_layout_file("keyboard_layout.toml").unwrap_or_else(|_| {
+            println!("No custom layout found, using default QWERTY");
+            Keyboard::new()
+        });
+
+        // Calculate window size based on keyboard layout
+        let (kb_width, kb_height) = kb.layout.calculate_size();
+        // let margin = 10.0 * 2.0; // inner margin on both sides
+        // let window_width = kb_width + margin;
+        // let window_height = kb_height + margin;
+
+        // Resize viewport to fit keyboard
+        cc.egui_ctx
+            .send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
+                kb_width + 10.0,
+                kb_height + 10.0,
+            )));
+
+        Self {
+            kb,
+            enigo: Enigo::new(&Default::default()).unwrap(),
+            window_setup_done: false,
+            rx,
+        }
+    }
+}
+
+impl eframe::App for App {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // Semi-transparent dark background so users know there's a window
+        // RGBA: slightly dark with ~30% opacity
+        [0.08, 0.08, 0.08, 0.3]
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        while let Ok(x) = self.rx.try_recv() {
+            self.kb.highlight = x;
+        }
+
+        ctx.set_visuals(egui::Visuals {
+            window_fill: egui::Color32::TRANSPARENT,
+            panel_fill: egui::Color32::from_rgba_premultiplied(20, 20, 20, 100), // Semi-transparent dark background
+            ..Default::default()
+        });
+
+        // Setup window styles (non-transparent parts)
+        if let Ok(h) = frame.window_handle() {
+            use eframe::wgpu::rwh::RawWindowHandle::*;
+            match h.as_raw() {
+                Win32(h) => {
+                    use windows::Win32::Foundation::{COLORREF, HWND};
+                    use windows::Win32::Graphics::Dwm::{
+                        DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
+                    };
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
+                        GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+                    };
+                    let hwnd = HWND(h.hwnd.get() as _);
+                    unsafe {
+                        // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
+                        let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                        let new_ex_style = current_ex_style
+                            | (WS_EX_NOACTIVATE.0 as isize)
+                            | (WS_EX_LAYERED.0 as isize);
+
+                        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
+
+                        // Set layered window attributes for alpha transparency
+                        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+
+                        // Enable DWM blur behind for transparency (only once)
+                        if !self.window_setup_done {
+                            let bb = DWM_BLURBEHIND {
+                                dwFlags: DWM_BB_ENABLE,
+                                fEnable: true.into(),
+                                hRgnBlur: Default::default(),
+                                fTransitionOnMaximized: false.into(),
+                            };
+                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                            self.window_setup_done = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
+            .show(ctx, |ui| {
+                if let Some(key) = qwerty_keyboard(ui, &self.kb) {
+                    if key == "SHIFT" {
+                        self.kb.toggle_shift();
+                    } else {
+                        _ = self.enigo.text(&key);
+                        // Auto-disable shift after typing a character (like mobile keyboards)
+                        if self.kb.shift_state {
+                            self.kb.shift_state = false;
+                        }
+                    }
+                }
+            });
+    }
+}
+
 fn main() -> Result<()> {
     println!(
         "Looking for PS4 controller (VID:{:04x}, PID:{:04x})...",
         PS4_VID, PS4_PID
     );
 
-    let hid = HidApi::new()?;
+    // let keymap = ImageReader::open("map.png")?.decode()?;
 
-    let device = match find_device(&hid, (PS4_VID, PS4_PID)) {
-        Some(device) => device,
-        None => bail!("PS4 controller not found."),
+    // for input in &ps4 {
+    //     let (left_x, left_y, right_x, right_y) = input.get_sticks();
+    //     println!("({}, {}) : ({}, {})", left_x, left_y, right_x, right_y);
+    // }
+
+    // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_transparent(true)
+            .with_active(false)
+            .with_always_on_top()
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_inner_size([520.0, 250.0]), // Initial size, will be resized by App::new()
+        renderer: eframe::Renderer::Glow,
+        centered: true,
+        ..Default::default()
     };
 
-    let ps4 = Ps4Device::new(device);
+    eframe::run_native(
+        "KOSK",
+        native_options,
+        Box::new(|cc| {
+            let ctx = cc.egui_ctx.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || -> Result<()> {
+                let hid = HidApi::new()?;
 
-    for input in &ps4 {
-        // Clear previous lines and print new output
-        print!("\r\r\r\r\r");
+                let device = match find_device(&hid, (PS4_VID, PS4_PID)) {
+                    Some(device) => device,
+                    None => bail!("PS4 controller not found."),
+                };
 
-        // Sticks
-        let (left_x, left_y) = input.left;
-        let (right_x, right_y) = input.right;
-        print!(
-            "L: ({:3}, {:3}) | R: ({:3}, {:3}) | ",
-            left_x, left_y, right_x, right_y
-        );
+                let ps4 = ps4::Ps4Device::new(device);
 
-        // D-pad
-        let dpad = match input.dpad {
-            Some(dpad) => dpad.to_string(),
-            _ => "·".to_string(),
-        };
+                for input in &ps4 {
+                    ctx.request_repaint();
+                }
 
-        // Face buttons
-        let face = format!(
-            "[{}][{}][{}][{}]",
-            if input.square { "□" } else { "·" },
-            if input.cross { "✕" } else { "·" },
-            if input.circle { "○" } else { "·" },
-            if input.triangle { "△" } else { "·" }
-        );
-
-        let shoulders = format!(
-            "L1:{} R1:{} | L2:{:3} R2:{:3} | L3:{} R3:{}",
-            if input.l1 { "█" } else { "·" },
-            if input.r1 { "█" } else { "·" },
-            input.l2.unwrap_or(0),
-            input.r2.unwrap_or(0),
-            if input.l3 { "█" } else { "·" },
-            if input.r3 { "█" } else { "·" }
-        );
-
-        let sys = format!(
-            "Share:{} Options:{} PS:{}",
-            if input.share { "█" } else { "·" },
-            if input.options { "█" } else { "·" },
-            if input.ps { "█" } else { "·" }
-        );
-
-        print!("{} {} | {} | {}", dpad, face, shoulders, sys);
-        print!("\r");
-        std::io::Write::flush(&mut std::io::stdout()).ok();
-    }
+                Ok(())
+            });
+            Ok(Box::new(App::new(cc, rx)))
+        }),
+    )
+    .unwrap();
 
     Ok(())
 }
