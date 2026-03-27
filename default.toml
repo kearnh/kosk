@@ -1,0 +1,241 @@
+# Default QWERTY keyboard layout
+row_indents = [15.0, 26.25, 37.5, 0.0, 115.0]
+
+[[keys]]
+key = "1"
+shift_key = "!"
+row = 0
+col = 0
+width = 1.0
+
+[[keys]]
+key = "2"
+shift_key = "@"
+row = 0
+col = 1
+width = 1.0
+
+[[keys]]
+key = "3"
+shift_key = "#"
+row = 0
+col = 2
+width = 1.0
+
+[[keys]]
+key = "4"
+shift_key = "$"
+row = 0
+col = 3
+width = 1.0
+
+[[keys]]
+key = "5"
+shift_key = "%"
+row = 0
+col = 4
+width = 1.0
+
+[[keys]]
+key = "6"
+shift_key = "^"
+row = 0
+col = 5
+width = 1.0
+
+[[keys]]
+key = "7"
+shift_key = "&"
+row = 0
+col = 6
+width = 1.0
+
+[[keys]]
+key = "8"
+shift_key = "*"
+row = 0
+col = 7
+width = 1.0
+
+[[keys]]
+key = "9"
+shift_key = "("
+row = 0
+col = 8
+width = 1.0
+
+[[keys]]
+key = "0"
+shift_key = ")"
+row = 0
+col = 9
+width = 1.0
+
+[[keys]]
+key = "q"
+row = 1
+col = 0
+width = 1.0
+
+[[keys]]
+key = "w"
+row = 1
+col = 1
+width = 1.0
+
+[[keys]]
+key = "e"
+row = 1
+col = 2
+width = 1.0
+
+[[keys]]
+key = "r"
+row = 1
+col = 3
+width = 1.0
+
+[[keys]]
+key = "t"
+row = 1
+col = 4
+width = 1.0
+
+[[keys]]
+key = "y"
+row = 1
+col = 5
+width = 1.0
+
+[[keys]]
+key = "u"
+row = 1
+col = 6
+width = 1.0
+
+[[keys]]
+key = "i"
+row = 1
+col = 7
+width = 1.0
+
+[[keys]]
+key = "o"
+row = 1
+col = 8
+width = 1.0
+
+[[keys]]
+key = "p"
+row = 1
+col = 9
+width = 1.0
+
+[[keys]]
+key = "a"
+row = 2
+col = 0
+width = 1.0
+
+[[keys]]
+key = "s"
+row = 2
+col = 1
+width = 1.0
+
+[[keys]]
+key = "d"
+row = 2
+col = 2
+width = 1.0
+
+[[keys]]
+key = "f"
+row = 2
+col = 3
+width = 1.0
+
+[[keys]]
+key = "g"
+row = 2
+col = 4
+width = 1.0
+
+[[keys]]
+key = "h"
+row = 2
+col = 5
+width = 1.0
+
+[[keys]]
+key = "j"
+row = 2
+col = 6
+width = 1.0
+
+[[keys]]
+key = "k"
+row = 2
+col = 7
+width = 1.0
+
+[[keys]]
+key = "l"
+row = 2
+col = 8
+width = 1.0
+
+[[keys]]
+key = "SHIFT"
+row = 3
+col = 0
+width = 1.5
+
+[[keys]]
+key = "z"
+row = 3
+col = 1
+width = 1.0
+
+[[keys]]
+key = "x"
+row = 3
+col = 2
+width = 1.0
+
+[[keys]]
+key = "c"
+row = 3
+col = 3
+width = 1.0
+
+[[keys]]
+key = "v"
+row = 3
+col = 4
+width = 1.0
+
+[[keys]]
+key = "b"
+row = 3
+col = 5
+width = 1.0
+
+[[keys]]
+key = "n"
+row = 3
+col = 6
+width = 1.0
+
+[[keys]]
+key = "m"
+row = 3
+col = 7
+width = 1.0
+
+[[keys]]
+key = " "
+shift_key = " "
+row = 4
+col = 0
+width = 5.0

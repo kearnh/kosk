@@ -27,22 +27,21 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
     None
 }
 
-type Message = (&'static str, &'static str);
+enum StateUpdate {
+    Highlight((&'static str, &'static str)),
+}
 
 struct App {
     kb: Keyboard,
     enigo: Enigo,
     window_setup_done: bool,
-    rx: Receiver<Message>,
+    rx: Receiver<StateUpdate>,
 }
 
 impl App {
-    fn new(cc: &CreationContext<'_>, rx: Receiver<Message>) -> Self {
-        // Try to load custom layout, fall back to default
-        let kb = Keyboard::with_layout_file("keyboard_layout.toml").unwrap_or_else(|_| {
-            println!("No custom layout found, using default QWERTY");
-            Keyboard::new()
-        });
+    fn new(cc: &CreationContext<'_>, rx: Receiver<StateUpdate>) -> Self {
+        let kb =
+            Keyboard::with_layout_file("keyboard_layout.toml").unwrap_or_else(|_| Keyboard::new());
 
         // Calculate window size based on keyboard layout
         let (kb_width, kb_height) = kb.layout.calculate_size();
@@ -75,7 +74,10 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         while let Ok(x) = self.rx.try_recv() {
-            self.kb.highlight = x;
+            use StateUpdate::*;
+            match x {
+                Highlight(h) => self.kb.highlight = h,
+            }
         }
 
         ctx.set_visuals(egui::Visuals {
