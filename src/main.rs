@@ -12,7 +12,7 @@ use hidapi::{HidApi, HidDevice};
 use image::ImageReader;
 use qwerty_keyboard::qwerty_keyboard;
 
-use crate::qwerty_keyboard::Keyboard;
+use crate::qwerty_keyboard::{Highlight, Keyboard, RawKey};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -28,7 +28,8 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 }
 
 enum StateUpdate {
-    Highlight((&'static str, &'static str)),
+    Highlight0(Option<Highlight>),
+    Highlight1(Option<Highlight>),
 }
 
 struct App {
@@ -76,7 +77,8 @@ impl eframe::App for App {
         while let Ok(x) = self.rx.try_recv() {
             use StateUpdate::*;
             match x {
-                Highlight(h) => self.kb.highlight = h,
+                Highlight0(h) => self.kb.highlight.0 = h,
+                Highlight1(h) => self.kb.highlight.1 = h,
             }
         }
 
@@ -133,10 +135,10 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
                 if let Some(key) = qwerty_keyboard(ui, &self.kb) {
-                    if key == "SHIFT" {
+                    if key == RawKey::Shift {
                         self.kb.toggle_shift();
                     } else {
-                        _ = self.enigo.text(&key);
+                        let _ = key.send(&mut self.enigo);
                         // Auto-disable shift after typing a character (like mobile keyboards)
                         if self.kb.shift_state {
                             self.kb.shift_state = false;

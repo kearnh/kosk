@@ -1,37 +1,188 @@
-use std::collections::HashMap;
+use anyhow::Result;
+use egui::{Button, Color32, Ui, Vec2};
+use enigo::{Enigo, Keyboard as _};
+use serde::Deserialize;
 use std::fs;
 use std::path::Path;
+use std::{collections::HashMap, hint::unreachable_unchecked};
 
-use egui::{Button, Color32, Ui, Vec2};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Key {
-    pub key: String,
-    pub shift_key: Option<String>, // None means use uppercase of key
-    pub row: usize,
-    pub col: usize,
-    pub width: f32, // Width multiplier (1.0 = normal, 5.0 = space bar)
+#[derive(PartialEq, Eq, Debug, Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub enum RawKey {
+    Key(String),
+    Enter,
+    Skip,
+    Shift,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl TryFrom<String> for RawKey {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.to_uppercase().as_str() {
+            "ENTER" => Ok(RawKey::Enter),
+            "SKIP" => Ok(RawKey::Skip),
+            "SHIFT" => Ok(RawKey::Shift),
+            _ => Ok(RawKey::Key(value)),
+        }
+    }
+}
+
+impl RawKey {
+    pub fn send(self, enigo: &mut Enigo) -> Result<()> {
+        match self {
+            RawKey::Key(k) => enigo.text(&k)?,
+            RawKey::Enter => enigo.key(enigo::Key::Return, enigo::Direction::Click)?,
+            _ => (),
+        }
+        Ok(())
+    }
+}
+
+impl ToString for RawKey {
+    fn to_string(&self) -> String {
+        match self {
+            RawKey::Key(k) => k.clone(),
+            RawKey::Enter => "Enter".to_string(),
+            RawKey::Skip => unsafe { unreachable_unchecked() },
+            RawKey::Shift => "Shift".to_string(),
+        }
+    }
+}
+
+trait ToUpper {
+    fn to_upper(&self) -> Self;
+}
+
+impl ToUpper for RawKey {
+    fn to_upper(&self) -> Self {
+        match self {
+            RawKey::Key(k) => RawKey::Key(k.to_uppercase()),
+            _ => self.clone(),
+        }
+    }
+}
+
+impl ToUpper for String {
+    fn to_upper(&self) -> Self {
+        self.to_uppercase()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Key<T> {
+    normal: T,
+    shift: Option<T>,
+}
+
+impl<T: ToString + Clone + ToUpper> Key<T> {
+    fn display(&self, shifted: bool) -> String {
+        self.get(shifted).to_string()
+    }
+
+    fn get(&self, shifted: bool) -> T {
+        if shifted {
+            if let Some(k) = &self.shift {
+                k.clone()
+            } else {
+                self.normal.to_upper()
+            }
+        } else {
+            self.normal.clone()
+        }
+    }
+}
+
+// Helper struct for deserializing Key from table format
+#[derive(Deserialize)]
+struct KeyTable<T> {
+    normal: T,
+    shift: T,
+}
+
+impl<'de, T> Deserialize<'de> for Key<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, MapAccess, Visitor};
+        use std::fmt;
+        use std::marker::PhantomData;
+
+        struct KeyVisitor<T>(PhantomData<T>);
+
+        impl<'de, T> Visitor<'de> for KeyVisitor<T>
+        where
+            T: Deserialize<'de>,
+        {
+            type Value = Key<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or a table with 'normal' and 'shift' fields")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // Deserialize the string as T
+                let normal = T::deserialize(de::value::StrDeserializer::new(value))?;
+                Ok(Key {
+                    normal,
+                    shift: None,
+                })
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                // Deserialize as a table with normal and shift fields
+                let table = KeyTable::<T>::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(Key {
+                    normal: table.normal,
+                    shift: Some(table.shift),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(KeyVisitor(PhantomData))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct KeyButton {
+    display: Option<Key<String>>,
+    key: Key<RawKey>,
+    row: usize,
+    col: usize,
+    width: f32, // Width multiplier (1.0 = normal, 5.0 = space bar)
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct KeyboardLayout {
-    pub keys: Vec<Key>,
+    keys: Vec<KeyButton>,
     pub row_indents: Vec<f32>, // Indent in pixels for each row
     #[serde(skip)]
-    rows: Vec<Vec<Key>>,
+    rows: Vec<Vec<KeyButton>>,
 }
 
 impl KeyboardLayout {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let contents = fs::read_to_string(path)?;
-        let mut layout: KeyboardLayout = toml::from_str(&contents)?;
+    fn load(toml: &str) -> Result<Self> {
+        let mut layout: KeyboardLayout = toml::from_str(toml)?;
         layout.validate()?;
-        layout.compute_rows();
+        layout.normalise();
         Ok(layout)
     }
 
-    fn validate(&self) -> anyhow::Result<()> {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::load(&fs::read_to_string(path)?)
+    }
+
+    fn validate(&self) -> Result<()> {
         // Find max row number
         let max_row = self.keys.iter().map(|k| k.row).max().unwrap_or(0);
 
@@ -56,9 +207,9 @@ impl KeyboardLayout {
         Ok(())
     }
 
-    fn compute_rows(&mut self) {
+    fn normalise(&mut self) {
         // Group keys by row
-        let mut row_map: HashMap<usize, Vec<Key>> = HashMap::new();
+        let mut row_map: HashMap<usize, Vec<KeyButton>> = HashMap::new();
         for key in &self.keys {
             row_map
                 .entry(key.row)
@@ -84,9 +235,12 @@ impl KeyboardLayout {
                 for key in keys {
                     // Insert spacer(s) for gap
                     while expected_col < key.col {
-                        result.push(Key {
-                            key: "SKIP".to_string(),
-                            shift_key: None,
+                        result.push(KeyButton {
+                            display: None,
+                            key: Key {
+                                normal: RawKey::Skip,
+                                shift: None,
+                            },
                             row: key.row,
                             col: expected_col,
                             width: 1.0,
@@ -103,7 +257,7 @@ impl KeyboardLayout {
             .collect();
     }
 
-    pub fn rows(&self) -> &[Vec<Key>] {
+    pub fn rows(&self) -> &[Vec<KeyButton>] {
         &self.rows
     }
 
@@ -139,26 +293,28 @@ impl KeyboardLayout {
     }
 }
 
+pub type Highlight = (usize, usize);
+
 pub struct Keyboard {
-    pub highlight: (&'static str, &'static str),
+    pub highlight: (Option<Highlight>, Option<Highlight>),
     pub layout: KeyboardLayout,
     pub shift_state: bool,
 }
 
 impl Keyboard {
     pub fn new() -> Self {
+        let default = include_str!("default.toml");
         Self {
-            highlight: ("", ""),
-            layout: KeyboardLayout::load_from_file("default.toml")
-                .expect("Failed to load default QWERTY layout from default.toml"),
+            highlight: (None, None),
+            layout: KeyboardLayout::load(&default).expect("Failed to load default layout"),
             shift_state: false,
         }
     }
 
-    pub fn with_layout_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+    pub fn with_layout_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let layout = KeyboardLayout::load_from_file(path)?;
         Ok(Self {
-            highlight: ("", ""),
+            highlight: (None, None),
             layout,
             shift_state: false,
         })
@@ -174,8 +330,8 @@ pub const SPACING: f32 = 5.0;
 
 /// Creates a QWERTY keyboard UI in egui
 /// Returns the key that was pressed, if any
-pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<String> {
-    let mut pressed_key: Option<String> = None;
+pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
+    let mut pressed_key: Option<RawKey> = None;
 
     // Set semi-transparent button styling
     let style = ui.style_mut();
@@ -208,43 +364,38 @@ pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<String> {
 
                 for key in keys {
                     // Skip rendering for SKIP keys - just add space
-                    if key.key == "SKIP" {
+                    if key.key.normal == RawKey::Skip {
                         ui.add_space(button_size.x * key.width);
                         continue;
                     }
 
                     // Determine what to display based on shift state
-                    let display_label = if kb.shift_state {
-                        key.shift_key
-                            .clone()
-                            .unwrap_or_else(|| key.key.to_uppercase())
+                    let display_label = if let Some(d) = &key.display {
+                        d.get(kb.shift_state)
                     } else {
-                        key.key.clone()
+                        key.key.display(kb.shift_state)
                     };
 
                     let mut button = Button::new(&display_label);
 
                     // Highlight shift key when shift is active
-                    if key.key == "SHIFT" && kb.shift_state {
+                    if key.key.normal == RawKey::Shift && kb.shift_state {
                         button = button.selected(true);
-                    } else if kb.highlight.0 == key.key || kb.highlight.1 == key.key {
+                    } else if kb
+                        .highlight
+                        .0
+                        .is_some_and(|h| h.0 == key.row && h.1 == key.col)
+                        || kb
+                            .highlight
+                            .1
+                            .is_some_and(|h| h.0 == key.row && h.1 == key.col)
+                    {
                         button = button.selected(true);
                     }
 
                     let size = Vec2::new(button_size.x * key.width, button_size.y);
                     if ui.add_sized(size, button).clicked() {
-                        if key.key == "SHIFT" {
-                            // Return SHIFT as a special key press
-                            pressed_key = Some("SHIFT".to_string());
-                        } else {
-                            pressed_key = Some(if kb.shift_state {
-                                key.shift_key
-                                    .clone()
-                                    .unwrap_or_else(|| key.key.to_uppercase())
-                            } else {
-                                key.key.clone()
-                            });
-                        }
+                        pressed_key = Some(key.key.get(kb.shift_state));
                     }
                 }
             });

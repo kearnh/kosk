@@ -1,74 +1,82 @@
 # Default QWERTY keyboard layout
-row_indents = [15.0, 26.25, 37.5, 0.0, 115.0]
+row_indents = [0.0, 36.25, 47.5, 0.0, 125.0]
 
 [[keys]]
-key = "1"
-shift_key = "!"
+key = { normal = "`", shift = "~" }
 row = 0
 col = 0
 width = 1.0
 
 [[keys]]
-key = "2"
-shift_key = "@"
+key = { normal = "1", shift = "!" }
 row = 0
 col = 1
 width = 1.0
 
 [[keys]]
-key = "3"
-shift_key = "#"
+key = { normal = "2", shift = "@" }
 row = 0
 col = 2
 width = 1.0
 
 [[keys]]
-key = "4"
-shift_key = "$"
+key = { normal = "3", shift = "#" }
 row = 0
 col = 3
 width = 1.0
 
 [[keys]]
-key = "5"
-shift_key = "%"
+key = { normal = "4", shift = "$" }
 row = 0
 col = 4
 width = 1.0
 
 [[keys]]
-key = "6"
-shift_key = "^"
+key = { normal = "5", shift = "%" }
 row = 0
 col = 5
 width = 1.0
 
 [[keys]]
-key = "7"
-shift_key = "&"
+key = { normal = "6", shift = "^" }
 row = 0
 col = 6
 width = 1.0
 
 [[keys]]
-key = "8"
-shift_key = "*"
+key = { normal = "7", shift = "&" }
 row = 0
 col = 7
 width = 1.0
 
 [[keys]]
-key = "9"
-shift_key = "("
+key = { normal = "8", shift = "*" }
 row = 0
 col = 8
 width = 1.0
 
 [[keys]]
-key = "0"
-shift_key = ")"
+key = { normal = "9", shift = "(" }
 row = 0
 col = 9
+width = 1.0
+
+[[keys]]
+key = { normal = "0", shift = ")" }
+row = 0
+col = 10
+width = 1.0
+
+[[keys]]
+key = { normal = "-", shift = "_" }
+row = 0
+col = 11
+width = 1.0
+
+[[keys]]
+key = { normal = "=", shift = "+" }
+row = 0
+col = 12
 width = 1.0
 
 [[keys]]
@@ -132,6 +140,18 @@ col = 9
 width = 1.0
 
 [[keys]]
+key = { normal = "[", shift = "{" }
+row = 1
+col = 10
+width = 1.0
+
+[[keys]]
+key = { normal = "]", shift = "}" }
+row = 1
+col = 11
+width = 1.0
+
+[[keys]]
 key = "a"
 row = 2
 col = 0
@@ -186,10 +206,22 @@ col = 8
 width = 1.0
 
 [[keys]]
-key = "SHIFT"
+key = { normal = ";", shift = ":" }
+row = 2
+col = 9
+width = 1.0
+
+[[keys]]
+key = "Enter"
+row = 2
+col = 10
+width = 2.0
+
+[[keys]]
+key = "Shift"
 row = 3
 col = 0
-width = 1.5
+width = 2.0
 
 [[keys]]
 key = "z"
@@ -234,8 +266,25 @@ col = 7
 width = 1.0
 
 [[keys]]
+key = { normal = ",", shift = "<" }
+row = 3
+col = 8
+width = 1.0
+
+[[keys]]
+key = { normal = ".", shift = ">" }
+row = 3
+col = 9
+width = 1.0
+
+[[keys]]
+key = { normal = "/", shift = "?" }
+row = 3
+col = 10
+width = 1.0
+
+[[keys]]
 key = " "
-shift_key = " "
 row = 4
 col = 0
-width = 5.0
+width = 7.0
