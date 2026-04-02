@@ -157,64 +157,59 @@ where
 struct KeyButton {
     display: Option<Key<String>>,
     key: Key<RawKey>,
-    row: usize,
-    col: usize,
+    pos: KeyPos,
     width: f32, // Width multiplier (1.0 = normal, 5.0 = space bar)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug)]
 pub struct KeyboardLayout {
-    keys: Vec<KeyButton>,
-    pub row_indents: Vec<f32>, // Indent in pixels for each row
-    #[serde(skip)]
+    row_indents: Vec<f32>, // Indent in pixels for each row
     rows: Vec<Vec<KeyButton>>,
+    dims: (f32, f32),
+
+    // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
+    // with a key button, and key circles may overlap each other. Key selection for highlight will
+    // use closest center, will key press will return all overlapping keys to allow typo resistance,
+    // i.e. may decide on key press based on engligh word etc.
+    key_pos: Vec<Vec<(f32, f32, f32)>>,
 }
 
 impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
-        let mut layout: KeyboardLayout = toml::from_str(toml)?;
-        layout.validate()?;
-        layout.normalise();
-        Ok(layout)
-    }
+        #[derive(Debug, Clone, Deserialize)]
+        struct KeyboardLayoutFile {
+            keys: Vec<KeyButton>,
+            row_indents: Vec<f32>, // Indent in pixels for each row
+        }
+        let layout: KeyboardLayoutFile = toml::from_str(toml)?;
 
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::load(&fs::read_to_string(path)?)
-    }
+        // Group keys by row
+        let mut row_map: HashMap<usize, Vec<KeyButton>> = HashMap::new();
+        for key in &layout.keys {
+            row_map
+                .entry(key.pos.0)
+                .or_insert_with(Vec::new)
+                .push(key.clone());
+        }
 
-    fn validate(&self) -> Result<()> {
         // Find max row number
-        let max_row = self.keys.iter().map(|k| k.row).max().unwrap_or(0);
+        let max_row = layout.keys.iter().map(|k| k.pos.0).max().unwrap_or(0);
 
         // Check that row_indents length matches number of rows
-        if self.row_indents.len() != max_row + 1 {
+        if layout.row_indents.len() != max_row + 1 {
             anyhow::bail!(
                 "row_indents length ({}) doesn't match number of rows ({})",
-                self.row_indents.len(),
+                layout.row_indents.len(),
                 max_row + 1
             );
         }
 
         // Check for duplicate (row, col) pairs (SKIP keys are allowed to duplicate)
         let mut seen = std::collections::HashSet::new();
-        for key in &self.keys {
-            let coord = (key.row, key.col);
-            if !seen.insert(coord) {
-                anyhow::bail!("Duplicate key at row {}, col {}", key.row, key.col);
+        for key in &layout.keys {
+            if !seen.insert(key.pos) {
+                anyhow::bail!("Duplicate key at row {}, col {}", key.pos.0, key.pos.1);
             }
-        }
-
-        Ok(())
-    }
-
-    fn normalise(&mut self) {
-        // Group keys by row
-        let mut row_map: HashMap<usize, Vec<KeyButton>> = HashMap::new();
-        for key in &self.keys {
-            row_map
-                .entry(key.row)
-                .or_insert_with(Vec::new)
-                .push(key.clone());
         }
 
         // Sort by row number and store
@@ -222,11 +217,11 @@ impl KeyboardLayout {
         sorted_rows.sort_by_key(|(row_num, _)| *row_num);
 
         // Process each row: sort by col and insert spacers for gaps
-        self.rows = sorted_rows
+        let rows = sorted_rows
             .into_iter()
             .map(|(_, mut keys)| {
                 // Sort by column
-                keys.sort_by_key(|k| k.col);
+                keys.sort_by_key(|k| k.pos.1);
 
                 // Insert spacers for gaps
                 let mut result = Vec::new();
@@ -234,15 +229,14 @@ impl KeyboardLayout {
 
                 for key in keys {
                     // Insert spacer(s) for gap
-                    while expected_col < key.col {
+                    while expected_col < key.pos.1 {
                         result.push(KeyButton {
                             display: None,
                             key: Key {
                                 normal: RawKey::Skip,
                                 shift: None,
                             },
-                            row: key.row,
-                            col: expected_col,
+                            pos: (key.pos.0, expected_col),
                             width: 1.0,
                         });
                         expected_col += 1;
@@ -255,15 +249,28 @@ impl KeyboardLayout {
                 result
             })
             .collect();
+
+        let mut layout = KeyboardLayout {
+            row_indents: layout.row_indents,
+            rows,
+            dims: Default::default(),
+            key_pos: Default::default(),
+        };
+
+        layout.calculate_geometry();
+        Ok(layout)
     }
 
-    pub fn rows(&self) -> &[Vec<KeyButton>] {
-        &self.rows
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::load(&fs::read_to_string(path)?)
     }
 
-    /// Calculate the approximate size needed to display this keyboard layout
-    /// Returns (width, height) in pixels
-    pub fn calculate_size(&self) -> (f32, f32) {
+    pub fn get_dimensions(&self) -> (f32, f32) {
+        self.dims
+    }
+
+    // FIXME calculate key_pos
+    fn calculate_geometry(&mut self) {
         let num_rows = self.rows.len();
 
         // Find the row with the most total width (considering key widths and indents)
@@ -277,9 +284,9 @@ impl KeyboardLayout {
             let mut row_width = indent;
 
             for (i, key) in row.iter().enumerate() {
-                row_width += BUTTON_SIZE * key.width;
+                row_width += BUTTON_UNIT_WIDTH * key.width;
                 if i < row.len() - 1 {
-                    row_width += SPACING;
+                    row_width += UNIT_SPACING_X;
                 }
             }
 
@@ -287,16 +294,17 @@ impl KeyboardLayout {
         }
 
         // Calculate height: num_rows * button_height + (num_rows - 1) * spacing
-        let height = (num_rows as f32) * BUTTON_SIZE + ((num_rows - 1) as f32) * SPACING;
+        let height =
+            (num_rows as f32) * BUTTON_UNIT_HEIGHT + ((num_rows - 1) as f32) * UNIT_SPACING_Y;
 
-        (max_width, height)
+        self.dims = (max_width, height);
     }
 }
 
-pub type Highlight = (usize, usize);
+pub type KeyPos = (usize, usize);
 
 pub struct Keyboard {
-    pub highlight: (Option<Highlight>, Option<Highlight>),
+    pub selected: (Option<KeyPos>, Option<KeyPos>),
     pub layout: KeyboardLayout,
     pub shift_state: bool,
 }
@@ -305,7 +313,7 @@ impl Keyboard {
     pub fn new() -> Self {
         let default = include_str!("default.toml");
         Self {
-            highlight: (None, None),
+            selected: (None, None),
             layout: KeyboardLayout::load(&default).expect("Failed to load default layout"),
             shift_state: false,
         }
@@ -314,7 +322,7 @@ impl Keyboard {
     pub fn with_layout_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let layout = KeyboardLayout::load_from_file(path)?;
         Ok(Self {
-            highlight: (None, None),
+            selected: (None, None),
             layout,
             shift_state: false,
         })
@@ -323,14 +331,21 @@ impl Keyboard {
     pub fn toggle_shift(&mut self) {
         self.shift_state = !self.shift_state;
     }
+
+    fn is_selected(&self, pos: KeyPos) -> bool {
+        self.selected.0.is_some_and(|s| s == pos) || self.selected.1.is_some_and(|s| s == pos)
+    }
 }
 
-pub const BUTTON_SIZE: f32 = 40.0;
-pub const SPACING: f32 = 5.0;
+// FIXME should be part of layout
+const BUTTON_UNIT_WIDTH: f32 = 40.0;
+const BUTTON_UNIT_HEIGHT: f32 = 40.0;
+const UNIT_SPACING_X: f32 = 2.0;
+const UNIT_SPACING_Y: f32 = 2.0;
 
 /// Creates a QWERTY keyboard UI in egui
 /// Returns the key that was pressed, if any
-pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
+pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
     let mut pressed_key: Option<RawKey> = None;
 
     // Set semi-transparent button styling
@@ -348,15 +363,14 @@ pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
     style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
     style.visuals.selection.stroke.color = Color32::WHITE;
 
-    let button_size = Vec2::new(BUTTON_SIZE, BUTTON_SIZE);
-    let spacing = SPACING;
+    let button_size = Vec2::new(BUTTON_UNIT_WIDTH, BUTTON_UNIT_HEIGHT);
 
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(spacing, spacing);
+        ui.spacing_mut().item_spacing = Vec2::new(UNIT_SPACING_X, UNIT_SPACING_Y);
 
-        for (row_idx, keys) in kb.layout.rows().iter().enumerate() {
+        for (row_idx, keys) in kb.layout.rows.iter().enumerate() {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(spacing, spacing);
+                ui.spacing_mut().item_spacing = Vec2::new(UNIT_SPACING_X, UNIT_SPACING_Y);
 
                 // Add indent for this row
                 let indent = kb.layout.row_indents.get(row_idx).copied().unwrap_or(0.0);
@@ -378,18 +392,9 @@ pub fn qwerty_keyboard(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
 
                     let mut button = Button::new(&display_label);
 
-                    // Highlight shift key when shift is active
                     if key.key.normal == RawKey::Shift && kb.shift_state {
                         button = button.selected(true);
-                    } else if kb
-                        .highlight
-                        .0
-                        .is_some_and(|h| h.0 == key.row && h.1 == key.col)
-                        || kb
-                            .highlight
-                            .1
-                            .is_some_and(|h| h.0 == key.row && h.1 == key.col)
-                    {
+                    } else if kb.is_selected(key.pos) {
                         button = button.selected(true);
                     }
 

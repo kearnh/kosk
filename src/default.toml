@@ -3,288 +3,240 @@ row_indents = [0.0, 36.25, 47.5, 0.0, 125.0]
 
 [[keys]]
 key = { normal = "`", shift = "~" }
-row = 0
-col = 0
+pos = [0, 0]
 width = 1.0
 
 [[keys]]
 key = { normal = "1", shift = "!" }
-row = 0
-col = 1
+pos = [0, 1]
 width = 1.0
 
 [[keys]]
 key = { normal = "2", shift = "@" }
-row = 0
-col = 2
+pos = [0, 2]
 width = 1.0
 
 [[keys]]
 key = { normal = "3", shift = "#" }
-row = 0
-col = 3
+pos = [0, 3]
 width = 1.0
 
 [[keys]]
 key = { normal = "4", shift = "$" }
-row = 0
-col = 4
+pos = [0, 4]
 width = 1.0
 
 [[keys]]
 key = { normal = "5", shift = "%" }
-row = 0
-col = 5
+pos = [0, 5]
 width = 1.0
 
 [[keys]]
 key = { normal = "6", shift = "^" }
-row = 0
-col = 6
+pos = [0, 6]
 width = 1.0
 
 [[keys]]
 key = { normal = "7", shift = "&" }
-row = 0
-col = 7
+pos = [0, 7]
 width = 1.0
 
 [[keys]]
 key = { normal = "8", shift = "*" }
-row = 0
-col = 8
+pos = [0, 8]
 width = 1.0
 
 [[keys]]
 key = { normal = "9", shift = "(" }
-row = 0
-col = 9
+pos = [0, 9]
 width = 1.0
 
 [[keys]]
 key = { normal = "0", shift = ")" }
-row = 0
-col = 10
+pos = [0, 10]
 width = 1.0
 
 [[keys]]
 key = { normal = "-", shift = "_" }
-row = 0
-col = 11
+pos = [0, 11]
 width = 1.0
 
 [[keys]]
 key = { normal = "=", shift = "+" }
-row = 0
-col = 12
+pos = [0, 12]
 width = 1.0
 
 [[keys]]
 key = "q"
-row = 1
-col = 0
+pos = [1, 0]
 width = 1.0
 
 [[keys]]
 key = "w"
-row = 1
-col = 1
+pos = [1, 1]
 width = 1.0
 
 [[keys]]
 key = "e"
-row = 1
-col = 2
+pos = [1, 2]
 width = 1.0
 
 [[keys]]
 key = "r"
-row = 1
-col = 3
+pos = [1, 3]
 width = 1.0
 
 [[keys]]
 key = "t"
-row = 1
-col = 4
+pos = [1, 4]
 width = 1.0
 
 [[keys]]
 key = "y"
-row = 1
-col = 5
+pos = [1, 5]
 width = 1.0
 
 [[keys]]
 key = "u"
-row = 1
-col = 6
+pos = [1, 6]
 width = 1.0
 
 [[keys]]
 key = "i"
-row = 1
-col = 7
+pos = [1, 7]
 width = 1.0
 
 [[keys]]
 key = "o"
-row = 1
-col = 8
+pos = [1, 8]
 width = 1.0
 
 [[keys]]
 key = "p"
-row = 1
-col = 9
+pos = [1, 9]
 width = 1.0
 
 [[keys]]
 key = { normal = "[", shift = "{" }
-row = 1
-col = 10
+pos = [1, 10]
 width = 1.0
 
 [[keys]]
 key = { normal = "]", shift = "}" }
-row = 1
-col = 11
+pos = [1, 11]
 width = 1.0
 
 [[keys]]
 key = "a"
-row = 2
-col = 0
+pos = [2, 0]
 width = 1.0
 
 [[keys]]
 key = "s"
-row = 2
-col = 1
+pos = [2, 1]
 width = 1.0
 
 [[keys]]
 key = "d"
-row = 2
-col = 2
+pos = [2, 2]
 width = 1.0
 
 [[keys]]
 key = "f"
-row = 2
-col = 3
+pos = [2, 3]
 width = 1.0
 
 [[keys]]
 key = "g"
-row = 2
-col = 4
+pos = [2, 4]
 width = 1.0
 
 [[keys]]
 key = "h"
-row = 2
-col = 5
+pos = [2, 5]
 width = 1.0
 
 [[keys]]
 key = "j"
-row = 2
-col = 6
+pos = [2, 6]
 width = 1.0
 
 [[keys]]
 key = "k"
-row = 2
-col = 7
+pos = [2, 7]
 width = 1.0
 
 [[keys]]
 key = "l"
-row = 2
-col = 8
+pos = [2, 8]
 width = 1.0
 
 [[keys]]
 key = { normal = ";", shift = ":" }
-row = 2
-col = 9
+pos = [2, 9]
 width = 1.0
 
 [[keys]]
 key = "Enter"
-row = 2
-col = 10
+pos = [2, 10]
 width = 2.0
 
 [[keys]]
 key = "Shift"
-row = 3
-col = 0
+pos = [3, 0]
 width = 2.0
 
 [[keys]]
 key = "z"
-row = 3
-col = 1
+pos = [3, 1]
 width = 1.0
 
 [[keys]]
 key = "x"
-row = 3
-col = 2
+pos = [3, 2]
 width = 1.0
 
 [[keys]]
 key = "c"
-row = 3
-col = 3
+pos = [3, 3]
 width = 1.0
 
 [[keys]]
 key = "v"
-row = 3
-col = 4
+pos = [3, 4]
 width = 1.0
 
 [[keys]]
 key = "b"
-row = 3
-col = 5
+pos = [3, 5]
 width = 1.0
 
 [[keys]]
 key = "n"
-row = 3
-col = 6
+pos = [3, 6]
 width = 1.0
 
 [[keys]]
 key = "m"
-row = 3
-col = 7
+pos = [3, 7]
 width = 1.0
 
 [[keys]]
 key = { normal = ",", shift = "<" }
-row = 3
-col = 8
+pos = [3, 8]
 width = 1.0
 
 [[keys]]
 key = { normal = ".", shift = ">" }
-row = 3
-col = 9
+pos = [3, 9]
 width = 1.0
 
 [[keys]]
 key = { normal = "/", shift = "?" }
-row = 3
-col = 10
+pos = [3, 10]
 width = 1.0
 
 [[keys]]
 key = " "
-row = 4
-col = 0
+pos = [4, 0]
 width = 7.0

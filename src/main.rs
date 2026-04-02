@@ -1,18 +1,17 @@
 // #![windows_subsystem = "windows"]
 
+mod keyboard;
 mod ps4;
-mod qwerty_keyboard;
 
 use std::sync::mpsc::Receiver;
 
 use anyhow::{bail, Result};
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
-use enigo::{Enigo, Keyboard as _};
+use enigo::Enigo;
 use hidapi::{HidApi, HidDevice};
-use image::ImageReader;
-use qwerty_keyboard::qwerty_keyboard;
+use keyboard::draw_ui;
 
-use crate::qwerty_keyboard::{Highlight, Keyboard, RawKey};
+use crate::keyboard::{KeyPos, Keyboard, RawKey};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -28,8 +27,8 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 }
 
 enum StateUpdate {
-    Highlight0(Option<Highlight>),
-    Highlight1(Option<Highlight>),
+    Highlight0(Option<KeyPos>),
+    Highlight1(Option<KeyPos>),
 }
 
 struct App {
@@ -45,10 +44,7 @@ impl App {
             Keyboard::with_layout_file("keyboard_layout.toml").unwrap_or_else(|_| Keyboard::new());
 
         // Calculate window size based on keyboard layout
-        let (kb_width, kb_height) = kb.layout.calculate_size();
-        // let margin = 10.0 * 2.0; // inner margin on both sides
-        // let window_width = kb_width + margin;
-        // let window_height = kb_height + margin;
+        let (kb_width, kb_height) = kb.layout.get_dimensions();
 
         // Resize viewport to fit keyboard
         cc.egui_ctx
@@ -77,8 +73,8 @@ impl eframe::App for App {
         while let Ok(x) = self.rx.try_recv() {
             use StateUpdate::*;
             match x {
-                Highlight0(h) => self.kb.highlight.0 = h,
-                Highlight1(h) => self.kb.highlight.1 = h,
+                Highlight0(h) => self.kb.selected.0 = h,
+                Highlight1(h) => self.kb.selected.1 = h,
             }
         }
 
@@ -134,7 +130,7 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
-                if let Some(key) = qwerty_keyboard(ui, &self.kb) {
+                if let Some(key) = draw_ui(ui, &self.kb) {
                     if key == RawKey::Shift {
                         self.kb.toggle_shift();
                     } else {
