@@ -250,6 +250,8 @@ pub struct KeyboardLayout {
     // use closest center, will key press will return all overlapping keys to allow typo resistance,
     // i.e. may decide on key press based on engligh word etc.
     key_pos: Vec<Vec<Option<(f32, f32, f32)>>>,
+    // Bounding box of all selectable keys to prevent cursor from drifting into dead zones
+    selectable_bounds: (f32, f32, f32, f32), // min_x, min_y, max_x, max_y
 }
 
 impl KeyboardLayout {
@@ -336,6 +338,7 @@ impl KeyboardLayout {
             unit_spacing_y: layout.unit_spacing_y,
             radius_mult: layout.radius_mult,
             key_pos: Default::default(),
+            selectable_bounds: (0.0, 0.0, 0.0, 0.0),
         };
 
         layout.calculate_geometry();
@@ -382,6 +385,11 @@ impl KeyboardLayout {
 
         // Find the row with the most total width (considering key widths and indents)
         let mut max_width: f32 = 0.0;
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut key_pos_row = Vec::new();
             if row.is_empty() {
@@ -409,6 +417,12 @@ impl KeyboardLayout {
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
                     let radius = self.button_unit_width * mult;
                     key_pos_row.push(Some((center_x, center_y, radius)));
+
+                    // Update bounds for selectable keys
+                    min_x = min_x.min(center_x);
+                    max_x = max_x.max(center_x);
+                    min_y = min_y.min(center_y);
+                    max_y = max_y.max(center_y);
                 } else {
                     key_pos_row.push(None);
                 }
@@ -423,6 +437,7 @@ impl KeyboardLayout {
 
         self.dims = (max_width, total_height);
         self.key_pos = key_pos_rows;
+        self.selectable_bounds = (min_x, min_y, max_x, max_y);
     }
 }
 
@@ -602,8 +617,13 @@ impl Keyboard {
         let dx = x * range_x;
         let dy = y * range_y;
 
-        let cursor_x = center.0 + dx;
-        let cursor_y = center.1 + dy;
+        let mut cursor_x = center.0 + dx;
+        let mut cursor_y = center.1 + dy;
+
+        // Clamp cursor to the bounding box of selectable keys to prevent dead zones at edges
+        let (min_x, min_y, max_x, max_y) = self.layout.selectable_bounds;
+        cursor_x = cursor_x.clamp(min_x, max_x);
+        cursor_y = cursor_y.clamp(min_y, max_y);
 
         let mut candidate_keys = Vec::new();
 
