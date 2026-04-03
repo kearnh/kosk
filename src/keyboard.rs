@@ -245,13 +245,8 @@ pub struct KeyboardLayout {
     unit_spacing_y: f32,
     radius_mult: f32,
 
-    // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
-    // with a key button, and key circles may overlap each other. Key selection for highlight will
-    // use closest center, will key press will return all overlapping keys to allow typo resistance,
-    // i.e. may decide on key press based on engligh word etc.
+    // (x, y, r) where (x, y) is center of key, and r is a radius.
     key_pos: Vec<Vec<Option<(f32, f32, f32)>>>,
-    // Bounding box of all selectable keys to prevent cursor from drifting into dead zones
-    selectable_bounds: (f32, f32, f32, f32), // min_x, min_y, max_x, max_y
 }
 
 impl KeyboardLayout {
@@ -338,7 +333,6 @@ impl KeyboardLayout {
             unit_spacing_y: layout.unit_spacing_y,
             radius_mult: layout.radius_mult,
             key_pos: Default::default(),
-            selectable_bounds: (0.0, 0.0, 0.0, 0.0),
         };
 
         layout.calculate_geometry();
@@ -385,10 +379,6 @@ impl KeyboardLayout {
 
         // Find the row with the most total width (considering key widths and indents)
         let mut max_width: f32 = 0.0;
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
 
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut key_pos_row = Vec::new();
@@ -417,12 +407,6 @@ impl KeyboardLayout {
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
                     let radius = self.button_unit_width * mult;
                     key_pos_row.push(Some((center_x, center_y, radius)));
-
-                    // Update bounds for selectable keys
-                    min_x = min_x.min(center_x - radius);
-                    max_x = max_x.max(center_x + radius);
-                    min_y = min_y.min(center_y - radius);
-                    max_y = max_y.max(center_y + radius);
                 } else {
                     key_pos_row.push(None);
                 }
@@ -437,7 +421,6 @@ impl KeyboardLayout {
 
         self.dims = (max_width, total_height);
         self.key_pos = key_pos_rows;
-        self.selectable_bounds = (min_x, min_y, max_x, max_y);
     }
 }
 
@@ -457,6 +440,8 @@ pub struct Keyboard {
     stick_range_x: f32,
     stick_range_y: f32,
     stick_warp: f32,
+    left_selectable_bounds: (f32, f32, f32, f32),
+    right_selectable_bounds: (f32, f32, f32, f32),
 }
 
 impl Keyboard {
@@ -466,6 +451,10 @@ impl Keyboard {
         let (w, h) = layout.get_dimensions();
         let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
         let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
+        
+        let left_bounds = Self::calculate_reachable_bounds(&layout, left_stick_center, stick_range_x, stick_range_y);
+        let right_bounds = Self::calculate_reachable_bounds(&layout, right_stick_center, stick_range_x, stick_range_y);
+
         Self {
             selected: (None, None),
             layout,
@@ -478,6 +467,43 @@ impl Keyboard {
             stick_range_x,
             stick_range_y,
             stick_warp,
+            left_selectable_bounds: left_bounds,
+            right_selectable_bounds: right_bounds,
+        }
+    }
+
+    fn calculate_reachable_bounds(layout: &KeyboardLayout, center: (f32, f32), range_x: f32, range_y: f32) -> (f32, f32, f32, f32) {
+        let max_dx = layout.button_unit_width * range_x;
+        let max_dy = layout.button_unit_height * range_y;
+        let max_reach_sq = max_dx * max_dx + max_dy * max_dy;
+
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        let mut found = false;
+
+        for row in &layout.key_pos {
+            for pos in row {
+                if let Some((kx, ky, kr)) = *pos {
+                    let dist_sq = (kx - center.0).powi(2) + (ky - center.1).powi(2);
+                    // A key is reachable if its center is within the stick's max reach
+                    // (We use a slightly generous check to ensure edge keys are included)
+                    if dist_sq <= max_reach_sq * 1.1 {
+                        min_x = min_x.min(kx - kr);
+                        max_x = max_x.max(kx + kr);
+                        min_y = min_y.min(ky - kr);
+                        max_y = max_y.max(ky + kr);
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        if found {
+            (min_x, min_y, max_x, max_y)
+        } else {
+            (center.0, center.1, center.0, center.1)
         }
     }
 
@@ -564,6 +590,10 @@ impl Keyboard {
         let (w, h) = layout.get_dimensions();
         let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
         let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
+        
+        let left_bounds = Self::calculate_reachable_bounds(&layout, left_stick_center, stick_range_x, stick_range_y);
+        let right_bounds = Self::calculate_reachable_bounds(&layout, right_stick_center, stick_range_x, stick_range_y);
+
         Ok(Self {
             selected: (None, None),
             layout,
@@ -576,31 +606,30 @@ impl Keyboard {
             stick_range_x,
             stick_range_y,
             stick_warp,
+            left_selectable_bounds: left_bounds,
+            right_selectable_bounds: right_bounds,
         })
     }
 
     pub fn get_overlapping_keys_left(&self, stick: (i32, i32)) -> Vec<RawKey> {
-        self.get_overlapping_keys(self.left_stick_center, stick)
+        self.get_overlapping_keys(self.left_stick_center, stick, self.left_selectable_bounds)
     }
 
     pub fn get_overlapping_keys_right(&self, stick: (i32, i32)) -> Vec<RawKey> {
-        self.get_overlapping_keys(self.right_stick_center, stick)
+        self.get_overlapping_keys(self.right_stick_center, stick, self.right_selectable_bounds)
     }
 
-    fn get_overlapping_keys(&self, center: (f32, f32), stick: (i32, i32)) -> Vec<RawKey> {
+    fn get_overlapping_keys(&self, center: (f32, f32), stick: (i32, i32), bounds: (f32, f32, f32, f32)) -> Vec<RawKey> {
         // Normalise stick input to [-1.0, 1.0]
         let mut x = stick.0 as f32 / 128.0;
         let mut y = stick.1 as f32 / 128.0;
 
         // Apply a "elliptical-to-square" mapping/warp to counteract the circular physical limit.
-        // This scales the vector to push it further into the corners.
         if self.stick_warp > 0.0 {
             let u2 = x * x;
             let v2 = y * y;
             let offset = (u2 + v2).sqrt();
             if offset > 0.001 {
-                // Determine how much to scale based on the warp factor
-                // At warp=1.0, this pushes the circle out to fill the square corners.
                 let scale = (offset / (x.abs().max(y.abs()))).powf(self.stick_warp);
                 x *= scale;
                 y *= scale;
@@ -620,8 +649,8 @@ impl Keyboard {
         let mut cursor_x = center.0 + dx;
         let mut cursor_y = center.1 + dy;
 
-        // Clamp cursor to the bounding box of selectable keys to prevent dead zones at edges
-        let (min_x, min_y, max_x, max_y) = self.layout.selectable_bounds;
+        // Clamp cursor to the specific bounds for this stick
+        let (min_x, min_y, max_x, max_y) = bounds;
         cursor_x = cursor_x.clamp(min_x, max_x);
         cursor_y = cursor_y.clamp(min_y, max_y);
 
