@@ -419,10 +419,10 @@ impl KeyboardLayout {
                     key_pos_row.push(Some((center_x, center_y, radius)));
 
                     // Update bounds for selectable keys
-                    min_x = min_x.min(center_x);
-                    max_x = max_x.max(center_x);
-                    min_y = min_y.min(center_y);
-                    max_y = max_y.max(center_y);
+                    min_x = min_x.min(center_x - radius);
+                    max_x = max_x.max(center_x + radius);
+                    min_y = min_y.min(center_y - radius);
+                    max_y = max_y.max(center_y + radius);
                 } else {
                     key_pos_row.push(None);
                 }
@@ -667,9 +667,12 @@ impl Keyboard {
     }
 }
 
+const DEBUG: bool = true;
+
 /// Creates a QWERTY keyboard UI in egui
 /// Returns the key that was pressed, if any
-pub fn draw_ui(ui: &mut Ui, kb: &Keyboard, debug: bool) -> Option<RawKey> {
+pub fn draw_ui(ui: &mut Ui, kb: &Keyboard, dbg_lstick: (i32, i32)) -> Option<RawKey> {
+    dbg!(dbg_lstick);
     let mut pressed_key: Option<RawKey> = None;
 
     // Set semi-transparent button styling
@@ -788,7 +791,7 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard, debug: bool) -> Option<RawKey> {
             });
         }
 
-        if debug {
+        if DEBUG {
             let painter = ui.painter();
 
             for row in &kb.layout.key_pos {
