@@ -1,12 +1,17 @@
 use anyhow::Result;
 use hidapi::HidDevice;
 use std::sync::RwLock;
+use std::time::{Duration, Instant};
 
 const STICK_OFFSET: i32 = 128;
 const STICK_THRESHOLD: i32 = 10;
+/// How long to wait after the very first press before firing again.
+const DEBOUNCE_INITIAL: Duration = Duration::from_millis(400);
+/// Repeat interval once the initial delay has elapsed.
+const DEBOUNCE_REPEAT: Duration = Duration::from_millis(50);
 
-#[derive(Clone, Copy)]
-enum Dpad {
+#[derive(Clone, Debug)]
+pub enum Dpad {
     Up,
     Down,
     Left,
@@ -34,30 +39,24 @@ impl ToString for Dpad {
 }
 
 #[allow(unused)]
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Ps4InputData {
-    left: (i32, i32),
-    right: (i32, i32),
-    dpad: Option<Dpad>,
-    cross: bool,
-    circle: bool,
-    triangle: bool,
-    square: bool,
-    l1: bool,
-    r1: bool,
-    l3: bool,
-    r3: bool,
-    l2: Option<u8>,
-    r2: Option<u8>,
-    options: bool,
-    share: bool,
-    ps: bool,
-}
-
-impl Ps4InputData {
-    pub fn get_sticks(&self) -> (i32, i32, i32, i32) {
-        (self.left.0, self.left.1, self.right.0, self.right.1)
-    }
+    pub left: (i32, i32),
+    pub right: (i32, i32),
+    pub dpad: Option<Dpad>,
+    pub cross: bool,
+    pub circle: bool,
+    pub triangle: bool,
+    pub square: bool,
+    pub l1: bool,
+    pub r1: bool,
+    pub l3: bool,
+    pub r3: bool,
+    pub l2: Option<u8>,
+    pub r2: Option<u8>,
+    pub options: bool,
+    pub share: bool,
+    pub ps: bool,
 }
 
 struct Ps4Input {
@@ -129,15 +128,15 @@ impl Ps4Input {
         // Check for PS button - typically in extended report, but might be in byte7
         let ps = (report[7] & 0x01) != 0;
 
-        let lx_dev = (left_x - STICK_OFFSET).abs();
-        let ly_dev = (left_y - STICK_OFFSET).abs();
-        let rx_dev = (right_x - STICK_OFFSET).abs();
-        let ry_dev = (right_y - STICK_OFFSET).abs();
+        let lx = left_x - STICK_OFFSET;
+        let ly = left_y - STICK_OFFSET;
+        let rx = right_x - STICK_OFFSET;
+        let ry = right_y - STICK_OFFSET;
 
-        let sticks_active = lx_dev > STICK_THRESHOLD
-            || ly_dev > STICK_THRESHOLD
-            || rx_dev > STICK_THRESHOLD
-            || ry_dev > STICK_THRESHOLD;
+        let sticks_active = lx.abs() > STICK_THRESHOLD
+            || ly.abs() > STICK_THRESHOLD
+            || rx.abs() > STICK_THRESHOLD
+            || ry.abs() > STICK_THRESHOLD;
 
         let is_active = dpad.is_some()
             || sticks_active
@@ -155,27 +154,25 @@ impl Ps4Input {
             || share
             || ps;
 
-        if is_active {
-            let mut data = self.data.write().unwrap();
-            *data = Ps4InputData {
-                left: (left_x, left_y),
-                right: (right_x, right_y),
-                dpad,
-                cross,
-                circle,
-                triangle,
-                square,
-                l1,
-                r1,
-                l2,
-                r2,
-                l3,
-                r3,
-                options,
-                share,
-                ps,
-            };
-        }
+        let mut data = self.data.write().unwrap();
+        *data = Ps4InputData {
+            left: (lx, ly),
+            right: (rx, ry),
+            dpad,
+            cross,
+            circle,
+            triangle,
+            square,
+            l1,
+            r1,
+            l2,
+            r2,
+            l3,
+            r3,
+            options,
+            share,
+            ps,
+        };
 
         is_active
     }
@@ -185,9 +182,94 @@ impl Ps4Input {
     }
 }
 
+/// Per-button state machine for initial-delay + repeat-rate debouncing.
+#[derive(Default)]
+enum ButtonState {
+    /// Button is not held.
+    #[default]
+    Idle,
+    /// Button was just pressed; waiting out the initial delay before repeating.
+    InitialDelay { since: Instant },
+    /// Initial delay elapsed; firing repeatedly at DEBOUNCE_REPEAT interval.
+    Repeating { last: Instant },
+}
+
+/// Advance the state machine for one poll tick.
+/// Returns `true` when the press should be forwarded to the caller.
+fn debounce_allow(slot: &mut ButtonState, pressed: bool) -> bool {
+    if !pressed {
+        *slot = ButtonState::Idle;
+        return false;
+    }
+    let now = Instant::now();
+    match slot {
+        // First press — fire immediately and start the initial delay.
+        ButtonState::Idle => {
+            *slot = ButtonState::InitialDelay { since: now };
+            true
+        }
+        // Still within the initial hold delay — suppress.
+        ButtonState::InitialDelay { since } if now.duration_since(*since) < DEBOUNCE_INITIAL => {
+            false
+        }
+        // Initial delay elapsed — switch to repeat mode and fire.
+        ButtonState::InitialDelay { .. } => {
+            *slot = ButtonState::Repeating { last: now };
+            true
+        }
+        // Repeating, but repeat interval not yet elapsed — suppress.
+        ButtonState::Repeating { last } if now.duration_since(*last) < DEBOUNCE_REPEAT => false,
+        // Repeat interval elapsed — fire and update timestamp.
+        ButtonState::Repeating { last } => {
+            *last = now;
+            true
+        }
+    }
+}
+
+/// Holds per-button debounce state for every digital input.
+#[derive(Default)]
+struct DebounceState {
+    cross: ButtonState,
+    circle: ButtonState,
+    triangle: ButtonState,
+    square: ButtonState,
+    l1: ButtonState,
+    r1: ButtonState,
+    l3: ButtonState,
+    r3: ButtonState,
+    options: ButtonState,
+    share: ButtonState,
+    ps: ButtonState,
+    dpad: ButtonState,
+}
+
+impl DebounceState {
+    fn filter(&mut self, data: &mut Ps4InputData) {
+        data.cross = debounce_allow(&mut self.cross, data.cross);
+        data.circle = debounce_allow(&mut self.circle, data.circle);
+        data.triangle = debounce_allow(&mut self.triangle, data.triangle);
+        data.square = debounce_allow(&mut self.square, data.square);
+        data.l1 = debounce_allow(&mut self.l1, data.l1);
+        data.r1 = debounce_allow(&mut self.r1, data.r1);
+        data.l3 = debounce_allow(&mut self.l3, data.l3);
+        data.r3 = debounce_allow(&mut self.r3, data.r3);
+        data.options = debounce_allow(&mut self.options, data.options);
+        data.share = debounce_allow(&mut self.share, data.share);
+        data.ps = debounce_allow(&mut self.ps, data.ps);
+
+        // Triggers (l2/r2) are analog and not debounced.
+        if !debounce_allow(&mut self.dpad, data.dpad.is_some()) {
+            data.dpad = None;
+        }
+    }
+}
+
 pub struct Ps4Device {
     input: Ps4Input,
     device: HidDevice,
+    was_active: bool,
+    debounce: DebounceState,
 }
 
 impl Ps4Device {
@@ -195,6 +277,8 @@ impl Ps4Device {
         Self {
             input: Default::default(),
             device,
+            was_active: false,
+            debounce: Default::default(),
         }
     }
 
@@ -208,17 +292,41 @@ impl Ps4Device {
     }
 }
 
-impl<'a> Iterator for &'a Ps4Device {
-    type Item = Ps4InputData;
+impl<'a> Iterator for Ps4Device {
+    type Item = Option<Ps4InputData>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.poll() {
-                Ok(true) => {
-                    // Read and return a clone of the input data
-                    return Some(self.input.read());
+                Ok(_) => {
+                    let mut data = self.input.read();
+                    self.debounce.filter(&mut data);
+                    // Only treat the frame as active if anything survived debouncing.
+                    let still_active = data.dpad.is_some()
+                        || data.cross
+                        || data.circle
+                        || data.triangle
+                        || data.square
+                        || data.l1
+                        || data.r1
+                        || data.l2.is_some()
+                        || data.r2.is_some()
+                        || data.l3
+                        || data.r3
+                        || data.options
+                        || data.share
+                        || data.ps
+                        || data.left != (0, 0)
+                        || data.right != (0, 0);
+                    if still_active {
+                        self.was_active = true;
+                        return Some(Some(data));
+                    }
+                    if std::mem::replace(&mut self.was_active, false) {
+                        return Some(None);
+                    }
+                    continue;
                 }
-                Ok(false) => continue, // Keep polling until active
                 Err(e) => {
                     eprintln!("error: {}", e);
                     continue;

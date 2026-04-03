@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Button, Color32, Ui, Vec2};
+use egui::{Button, Color32, RichText, Ui, Vec2};
 use enigo::{Enigo, Keyboard as _};
 use serde::Deserialize;
 use std::fs;
@@ -13,6 +13,12 @@ pub enum RawKey {
     Enter,
     Skip,
     Shift,
+    Ctrl,
+    Alt,
+    Backspace,
+    Tab,
+    Paste,
+    Done,
 }
 
 impl TryFrom<String> for RawKey {
@@ -23,19 +29,35 @@ impl TryFrom<String> for RawKey {
             "ENTER" => Ok(RawKey::Enter),
             "SKIP" => Ok(RawKey::Skip),
             "SHIFT" => Ok(RawKey::Shift),
+            "CTRL" => Ok(RawKey::Ctrl),
+            "ALT" => Ok(RawKey::Alt),
+            "BACKSPACE" => Ok(RawKey::Backspace),
+            "TAB" => Ok(RawKey::Tab),
+            "PASTE" => Ok(RawKey::Paste),
+            "DONE" => Ok(RawKey::Done),
             _ => Ok(RawKey::Key(value)),
         }
     }
 }
 
-impl RawKey {
-    pub fn send(self, enigo: &mut Enigo) -> Result<()> {
+impl PartialEq<str> for RawKey {
+    fn eq(&self, other: &str) -> bool {
         match self {
-            RawKey::Key(k) => enigo.text(&k)?,
-            RawKey::Enter => enigo.key(enigo::Key::Return, enigo::Direction::Click)?,
-            _ => (),
+            RawKey::Key(k) => k == other,
+            _ => false,
         }
-        Ok(())
+    }
+}
+
+impl PartialEq<RawKey> for str {
+    fn eq(&self, other: &RawKey) -> bool {
+        other == self
+    }
+}
+
+impl PartialEq<&str> for RawKey {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
     }
 }
 
@@ -46,6 +68,12 @@ impl ToString for RawKey {
             RawKey::Enter => "Enter".to_string(),
             RawKey::Skip => unsafe { unreachable_unchecked() },
             RawKey::Shift => "Shift".to_string(),
+            RawKey::Ctrl => "Ctrl".to_string(),
+            RawKey::Alt => "Alt".to_string(),
+            RawKey::Backspace => "Backspace".to_string(),
+            RawKey::Tab => "Tab".to_string(),
+            RawKey::Paste => "Paste".to_string(),
+            RawKey::Done => "Done".to_string(),
         }
     }
 }
@@ -157,30 +185,75 @@ where
 struct KeyButton {
     display: Option<Key<String>>,
     key: Key<RawKey>,
-    pos: KeyPos,
+    pos: Pos,
     width: f32, // Width multiplier (1.0 = normal, 5.0 = space bar)
+    #[serde(default)]
+    radius_mult: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct KeyboardLayoutFile {
+    keys: Vec<KeyButton>,
+    row_indents: Vec<f32>, // Indent in pixels for each row
+    #[serde(default)]
+    row_heights: Vec<f32>, // Height multiplier for each row
+    #[serde(default = "default_button_unit_width")]
+    button_unit_width: f32,
+    #[serde(default = "default_button_unit_height")]
+    button_unit_height: f32,
+    #[serde(default = "default_unit_spacing_x")]
+    unit_spacing_x: f32,
+    #[serde(default = "default_unit_spacing_y")]
+    unit_spacing_y: f32,
+    #[serde(default = "default_radius_mult")]
+    radius_mult: f32,
+    #[serde(default = "default_font_size")]
+    font_size: f32,
+}
+
+fn default_button_unit_width() -> f32 {
+    40.0
+}
+fn default_button_unit_height() -> f32 {
+    40.0
+}
+fn default_unit_spacing_x() -> f32 {
+    2.0
+}
+fn default_unit_spacing_y() -> f32 {
+    2.0
+}
+fn default_radius_mult() -> f32 {
+    1.125
+}
+fn default_font_size() -> f32 {
+    18.0
 }
 
 #[derive(Debug)]
 pub struct KeyboardLayout {
     row_indents: Vec<f32>, // Indent in pixels for each row
+    row_heights: Vec<f32>, // Height multiplier for each row
     rows: Vec<Vec<KeyButton>>,
     dims: (f32, f32),
+
+    // Layout constants
+    pub font_size: f32,
+    button_unit_width: f32,
+    button_unit_height: f32,
+    unit_spacing_x: f32,
+    unit_spacing_y: f32,
+    radius_mult: f32,
 
     // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
     // with a key button, and key circles may overlap each other. Key selection for highlight will
     // use closest center, will key press will return all overlapping keys to allow typo resistance,
     // i.e. may decide on key press based on engligh word etc.
-    key_pos: Vec<Vec<(f32, f32, f32)>>,
+    key_pos: Vec<Vec<Option<(f32, f32, f32)>>>,
 }
 
 impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
-        #[derive(Debug, Clone, Deserialize)]
-        struct KeyboardLayoutFile {
-            keys: Vec<KeyButton>,
-            row_indents: Vec<f32>, // Indent in pixels for each row
-        }
         let layout: KeyboardLayoutFile = toml::from_str(toml)?;
 
         // Group keys by row
@@ -238,6 +311,7 @@ impl KeyboardLayout {
                             },
                             pos: (key.pos.0, expected_col),
                             width: 1.0,
+                            radius_mult: None,
                         });
                         expected_col += 1;
                     }
@@ -252,8 +326,15 @@ impl KeyboardLayout {
 
         let mut layout = KeyboardLayout {
             row_indents: layout.row_indents,
+            row_heights: layout.row_heights,
             rows,
             dims: Default::default(),
+            font_size: layout.font_size,
+            button_unit_width: layout.button_unit_width,
+            button_unit_height: layout.button_unit_height,
+            unit_spacing_x: layout.unit_spacing_x,
+            unit_spacing_y: layout.unit_spacing_y,
+            radius_mult: layout.radius_mult,
             key_pos: Default::default(),
         };
 
@@ -269,83 +350,306 @@ impl KeyboardLayout {
         self.dims
     }
 
-    // FIXME calculate key_pos
+    pub fn get_key_center(&self, key_name: &str) -> Option<(f32, f32)> {
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (col_idx, key_button) in row.iter().enumerate() {
+                if key_button.key.normal == key_name {
+                    if let Some(pos) = self.key_pos[row_idx][col_idx] {
+                        return Some((pos.0, pos.1));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn calculate_geometry(&mut self) {
+        let mut key_pos_rows = Vec::new();
         let num_rows = self.rows.len();
+
+        // Calculate height: sum of (row_height * button_unit_height) + spacing
+        let mut total_height = 0.0;
+        let mut row_tops = Vec::with_capacity(num_rows);
+
+        for i in 0..num_rows {
+            row_tops.push(total_height);
+            let height_mult = self.row_heights.get(i).copied().unwrap_or(1.0);
+            total_height += height_mult * self.button_unit_height;
+            if i < num_rows - 1 {
+                total_height += self.unit_spacing_y;
+            }
+        }
 
         // Find the row with the most total width (considering key widths and indents)
         let mut max_width: f32 = 0.0;
         for (row_idx, row) in self.rows.iter().enumerate() {
+            let mut key_pos_row = Vec::new();
             if row.is_empty() {
+                key_pos_rows.push(key_pos_row);
                 continue;
             }
 
-            let indent = self.row_indents.get(row_idx).copied().unwrap_or(0.0);
-            let mut row_width = indent;
+            let height_mult = self.row_heights.get(row_idx).copied().unwrap_or(1.0);
+            let row_height = height_mult * self.button_unit_height;
 
-            for (i, key) in row.iter().enumerate() {
-                row_width += BUTTON_UNIT_WIDTH * key.width;
-                if i < row.len() - 1 {
-                    row_width += UNIT_SPACING_X;
+            let indent = self.row_indents.get(row_idx).copied().unwrap_or(0.0);
+            let mut current_x = indent;
+            let center_y = row_tops[row_idx] + (row_height / 2.0);
+
+            for key in row {
+                let width = self.button_unit_width * key.width;
+                let center_x = current_x + (width / 2.0);
+
+                if key.key.normal != RawKey::Skip
+                    && key.key.normal != RawKey::Shift
+                    && key.key.normal != RawKey::Tab
+                    && key.key.normal != " "
+                {
+                    // Target radius for imprecise stick input
+                    let mult = key.radius_mult.unwrap_or(self.radius_mult);
+                    let radius = self.button_unit_width * mult;
+                    key_pos_row.push(Some((center_x, center_y, radius)));
+                } else {
+                    key_pos_row.push(None);
                 }
+
+                current_x += width + self.unit_spacing_x;
             }
 
-            max_width = max_width.max(row_width);
+            let row_width_total = current_x - self.unit_spacing_x;
+            max_width = max_width.max(row_width_total);
+            key_pos_rows.push(key_pos_row);
         }
 
-        // Calculate height: num_rows * button_height + (num_rows - 1) * spacing
-        let height =
-            (num_rows as f32) * BUTTON_UNIT_HEIGHT + ((num_rows - 1) as f32) * UNIT_SPACING_Y;
-
-        self.dims = (max_width, height);
+        self.dims = (max_width, total_height);
+        self.key_pos = key_pos_rows;
     }
 }
 
-pub type KeyPos = (usize, usize);
+pub type Pos = (usize, usize);
 
 pub struct Keyboard {
-    pub selected: (Option<KeyPos>, Option<KeyPos>),
+    pub selected: (Option<RawKey>, Option<RawKey>),
     pub layout: KeyboardLayout,
-    pub shift_state: bool,
+    // sends alternative key
+    shift_state: bool,
+    // adds shift modifier, different to shift_state in that it can be combined with other modifiers
+    shift_mod: bool,
+    ctrl_mod: bool,
+    alt_mod: bool,
+    left_stick_center: (f32, f32),
+    right_stick_center: (f32, f32),
+    stick_range_x: f32,
+    stick_range_y: f32,
+    stick_warp: f32,
 }
 
 impl Keyboard {
-    pub fn new() -> Self {
+    pub fn new(stick_range_x: f32, stick_range_y: f32, stick_warp: f32) -> Self {
         let default = include_str!("default.toml");
+        let layout = KeyboardLayout::load(&default).expect("Failed to load default layout");
+        let (w, h) = layout.get_dimensions();
+        let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
+        let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
         Self {
             selected: (None, None),
-            layout: KeyboardLayout::load(&default).expect("Failed to load default layout"),
+            layout,
             shift_state: false,
+            shift_mod: false,
+            ctrl_mod: false,
+            alt_mod: false,
+            left_stick_center,
+            right_stick_center,
+            stick_range_x,
+            stick_range_y,
+            stick_warp,
         }
     }
 
-    pub fn with_layout_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn send_key(&mut self, enigo: &mut Enigo, key: &RawKey) -> Result<()> {
+        macro_rules! mod_press {
+            () => {
+                if self.shift_mod {
+                    enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
+                }
+                if self.ctrl_mod {
+                    enigo.key(enigo::Key::Control, enigo::Direction::Press)?;
+                }
+                if self.alt_mod {
+                    enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
+                }
+            };
+        }
+        macro_rules! mod_release {
+            () => {
+                if self.alt_mod {
+                    enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
+                }
+                if self.ctrl_mod {
+                    enigo.key(enigo::Key::Control, enigo::Direction::Release)?;
+                }
+                if self.shift_mod {
+                    enigo.key(enigo::Key::Shift, enigo::Direction::Release)?;
+                }
+            };
+        }
+        match key {
+            RawKey::Key(k) => {
+                mod_press!();
+                if k.len() == 1 {
+                    enigo.key(
+                        enigo::Key::Unicode(k.chars().nth(0).unwrap()),
+                        enigo::Direction::Click,
+                    )?;
+                } else {
+                    enigo.text(&k)?;
+                }
+                mod_release!();
+            }
+            RawKey::Enter => {
+                mod_press!();
+                enigo.key(enigo::Key::Return, enigo::Direction::Click)?;
+                mod_release!();
+            }
+            RawKey::Backspace => {
+                mod_press!();
+                enigo.key(enigo::Key::Backspace, enigo::Direction::Click)?;
+                mod_release!();
+            }
+            RawKey::Tab => {
+                mod_press!();
+                enigo.key(enigo::Key::Tab, enigo::Direction::Click)?;
+                mod_release!();
+            }
+            RawKey::Paste => {
+                mod_press!();
+                enigo.key(enigo::Key::Control, enigo::Direction::Press)?;
+                enigo.key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
+                enigo.key(enigo::Key::Control, enigo::Direction::Release)?;
+                mod_release!();
+            }
+            _ => return Ok(()),
+        }
+
+        self.shift_state = false;
+        self.shift_mod = false;
+        self.ctrl_mod = false;
+        self.alt_mod = false;
+
+        Ok(())
+    }
+
+    pub fn with_layout_file(
+        path: impl AsRef<Path>,
+        stick_range_x: f32,
+        stick_range_y: f32,
+        stick_warp: f32,
+    ) -> Result<Self> {
         let layout = KeyboardLayout::load_from_file(path)?;
+        let (w, h) = layout.get_dimensions();
+        let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
+        let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
         Ok(Self {
             selected: (None, None),
             layout,
             shift_state: false,
+            shift_mod: false,
+            ctrl_mod: false,
+            alt_mod: false,
+            left_stick_center,
+            right_stick_center,
+            stick_range_x,
+            stick_range_y,
+            stick_warp,
         })
     }
 
-    pub fn toggle_shift(&mut self) {
-        self.shift_state = !self.shift_state;
+    pub fn get_overlapping_keys_left(&self, stick: (i32, i32)) -> Vec<RawKey> {
+        self.get_overlapping_keys(self.left_stick_center, stick)
     }
 
-    fn is_selected(&self, pos: KeyPos) -> bool {
-        self.selected.0.is_some_and(|s| s == pos) || self.selected.1.is_some_and(|s| s == pos)
+    pub fn get_overlapping_keys_right(&self, stick: (i32, i32)) -> Vec<RawKey> {
+        self.get_overlapping_keys(self.right_stick_center, stick)
+    }
+
+    fn get_overlapping_keys(&self, center: (f32, f32), stick: (i32, i32)) -> Vec<RawKey> {
+        // Normalise stick input to [-1.0, 1.0]
+        let mut x = stick.0 as f32 / 128.0;
+        let mut y = stick.1 as f32 / 128.0;
+
+        // Apply a "elliptical-to-square" mapping/warp to counteract the circular physical limit.
+        // This scales the vector to push it further into the corners.
+        if self.stick_warp > 0.0 {
+            let u2 = x * x;
+            let v2 = y * y;
+            let offset = (u2 + v2).sqrt();
+            if offset > 0.001 {
+                // Determine how much to scale based on the warp factor
+                // At warp=1.0, this pushes the circle out to fill the square corners.
+                let scale = (offset / (x.abs().max(y.abs()))).powf(self.stick_warp);
+                x *= scale;
+                y *= scale;
+            }
+        }
+
+        // Clip to square bounds
+        x = x.clamp(-1.0, 1.0);
+        y = y.clamp(-1.0, 1.0);
+
+        // Map stick to pixel offset
+        let range_x = self.layout.button_unit_width * self.stick_range_x;
+        let range_y = self.layout.button_unit_height * self.stick_range_y;
+        let dx = x * range_x;
+        let dy = y * range_y;
+
+        let cursor_x = center.0 + dx;
+        let cursor_y = center.1 + dy;
+
+        let mut candidate_keys = Vec::new();
+
+        for (row_idx, row) in self.layout.key_pos.iter().enumerate() {
+            for (col_idx, pos) in row.iter().enumerate() {
+                if let Some((kx, ky, kr)) = *pos {
+                    let distance_sq = (cursor_x - kx).powi(2) + (cursor_y - ky).powi(2);
+                    if distance_sq <= kr.powi(2) {
+                        let key_button = &self.layout.rows[row_idx][col_idx];
+                        candidate_keys.push((distance_sq, key_button.key.get(self.shift_state)));
+                    }
+                }
+            }
+        }
+
+        // Sort by distance (closest first)
+        candidate_keys.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        candidate_keys.into_iter().map(|(_, key)| key).collect()
+    }
+
+    pub fn toggle_shift(&mut self) {
+        if self.shift_state || self.shift_mod {
+            self.shift_state = false;
+            self.shift_mod = false;
+        } else {
+            if self.ctrl_mod || self.alt_mod {
+                self.shift_mod = !self.shift_mod
+            } else {
+                self.shift_state = !self.shift_state;
+            }
+        }
+    }
+
+    pub fn toggle_ctrl(&mut self) {
+        self.ctrl_mod = !self.ctrl_mod;
+    }
+
+    pub fn toggle_alt(&mut self) {
+        self.alt_mod = !self.alt_mod;
     }
 }
 
-// FIXME should be part of layout
-const BUTTON_UNIT_WIDTH: f32 = 40.0;
-const BUTTON_UNIT_HEIGHT: f32 = 40.0;
-const UNIT_SPACING_X: f32 = 2.0;
-const UNIT_SPACING_Y: f32 = 2.0;
-
 /// Creates a QWERTY keyboard UI in egui
 /// Returns the key that was pressed, if any
-pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
+pub fn draw_ui(ui: &mut Ui, kb: &Keyboard, debug: bool) -> Option<RawKey> {
     let mut pressed_key: Option<RawKey> = None;
 
     // Set semi-transparent button styling
@@ -363,18 +667,30 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
     style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
     style.visuals.selection.stroke.color = Color32::WHITE;
 
-    let button_size = Vec2::new(BUTTON_UNIT_WIDTH, BUTTON_UNIT_HEIGHT);
+    let button_size = Vec2::new(kb.layout.button_unit_width, kb.layout.button_unit_height);
 
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(UNIT_SPACING_X, UNIT_SPACING_Y);
+        ui.spacing_mut().item_spacing =
+            Vec2::new(kb.layout.unit_spacing_x, kb.layout.unit_spacing_y);
+
+        let layout_rect = ui.available_rect_before_wrap();
+
+        let left_centers = kb.get_overlapping_keys_left((0, 0));
+        let left_center = left_centers.first();
+        let right_centers = kb.get_overlapping_keys_right((0, 0));
+        let right_center = right_centers.first();
 
         for (row_idx, keys) in kb.layout.rows.iter().enumerate() {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(UNIT_SPACING_X, UNIT_SPACING_Y);
+                ui.spacing_mut().item_spacing =
+                    Vec2::new(kb.layout.unit_spacing_x, kb.layout.unit_spacing_y);
 
                 // Add indent for this row
                 let indent = kb.layout.row_indents.get(row_idx).copied().unwrap_or(0.0);
                 ui.add_space(indent);
+
+                let height_mult = kb.layout.row_heights.get(row_idx).copied().unwrap_or(1.0);
+                let row_height = kb.layout.button_unit_height * height_mult;
 
                 for key in keys {
                     // Skip rendering for SKIP keys - just add space
@@ -390,20 +706,86 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
                         key.key.display(kb.shift_state)
                     };
 
-                    let mut button = Button::new(&display_label);
+                    let button_text = RichText::new(&display_label).size(kb.layout.font_size);
+                    let mut button = Button::new(button_text);
 
                     if key.key.normal == RawKey::Shift && kb.shift_state {
                         button = button.selected(true);
-                    } else if kb.is_selected(key.pos) {
-                        button = button.selected(true);
+                    } else {
+                        let current_key = key.key.get(kb.shift_state);
+                        let sel0 = kb.selected.0.as_ref().is_some_and(|s| s == &current_key);
+                        let sel1 = kb.selected.1.as_ref().is_some_and(|s| s == &current_key);
+
+                        if sel0 && sel1 {
+                            // Purple for both
+                            button = button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
+                        } else if sel0
+                            || (kb.selected.0.is_none()
+                                && left_center.is_some_and(|c| c == &current_key))
+                        {
+                            // Blue for left stick
+                            button = button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
+                        } else if sel1
+                            || (kb.selected.1.is_none()
+                                && right_center.is_some_and(|c| c == &current_key))
+                        {
+                            // Green for right stick
+                            button = button.fill(Color32::from_rgb(50, 150, 80)).selected(true);
+                        }
                     }
 
-                    let size = Vec2::new(button_size.x * key.width, button_size.y);
-                    if ui.add_sized(size, button).clicked() {
+                    let size = Vec2::new(button_size.x * key.width, row_height);
+                    let response = ui.add_sized(size, button);
+
+                    // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
+                    if key.key.normal == " " && (kb.ctrl_mod || kb.alt_mod) {
+                        let mut mods = Vec::new();
+                        if kb.ctrl_mod {
+                            mods.push("ctrl");
+                        }
+                        if kb.shift_mod {
+                            mods.push("shift");
+                        }
+                        if kb.alt_mod {
+                            mods.push("alt");
+                        }
+                        let mod_string = mods.join("+");
+                        let rect = response.rect;
+                        let font_size = kb.layout.font_size * 0.6;
+                        ui.painter().text(
+                            rect.left_bottom() + Vec2::new(4.0, -4.0),
+                            egui::Align2::LEFT_BOTTOM,
+                            mod_string,
+                            egui::FontId::proportional(font_size),
+                            Color32::WHITE,
+                        );
+                    }
+
+                    if response.clicked() {
                         pressed_key = Some(key.key.get(kb.shift_state));
                     }
                 }
             });
+        }
+
+        if debug {
+            let painter = ui.painter();
+
+            for row in &kb.layout.key_pos {
+                for pos in row {
+                    if let Some((x, y, r)) = *pos {
+                        let center = layout_rect.min + Vec2::new(x, y);
+                        painter.circle_stroke(
+                            center,
+                            r,
+                            egui::Stroke::new(
+                                1.0,
+                                Color32::from_rgba_premultiplied(255, 0, 0, 128),
+                            ),
+                        );
+                    }
+                }
+            }
         }
     });
 

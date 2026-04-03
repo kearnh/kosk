@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.102"
+clap = { version = "4.5", features = ["derive"] }
 eframe = { version = "0.33.3", features = ["wgpu", "glow"] }
 egui = "0.33.3"
 enigo = "0.6.1"

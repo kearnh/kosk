@@ -3,15 +3,19 @@
 mod keyboard;
 mod ps4;
 
-use std::sync::mpsc::Receiver;
+use std::sync::{mpsc::Receiver, Arc, RwLock};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
+use clap::Parser;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
 use enigo::Enigo;
 use hidapi::{HidApi, HidDevice};
 use keyboard::draw_ui;
 
-use crate::keyboard::{KeyPos, Keyboard, RawKey};
+use crate::{
+    keyboard::{Keyboard, RawKey},
+    ps4::Dpad,
+};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -26,25 +30,89 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
     None
 }
 
+#[derive(Parser, Debug)]
+#[command(name = "kosk")]
+#[command(about = "Keyboard On-Screen for Kontroller", long_about = None)]
+struct Args {
+    /// Path to keyboard layout TOML file
+    #[arg(short, long)]
+    layout: Option<String>,
+
+    /// Sensitivity/range multiplier for the horizontal stick axis
+    #[arg(long, default_value_t = 3.0)]
+    stick_x: f32,
+
+    /// Sensitivity/range multiplier for the vertical stick axis
+    #[arg(long, default_value_t = 2.5)]
+    stick_y: f32,
+
+    /// Stick warp factor (0.0 = circle, 1.0 = square)
+    #[arg(long, default_value_t = 1.0)]
+    stick_warp: f32,
+
+    /// Trigger threshold for key press (0-255)
+    #[arg(long, default_value_t = 40)]
+    trigger_threshold: u8,
+}
+
 enum StateUpdate {
-    Highlight0(Option<KeyPos>),
-    Highlight1(Option<KeyPos>),
+    SelectLeft(Option<RawKey>),
+    SelectRight(Option<RawKey>),
+    Unselect,
+    Done,
 }
 
 struct App {
-    kb: Keyboard,
+    kb: Arc<RwLock<Keyboard>>,
     enigo: Enigo,
     window_setup_done: bool,
     rx: Receiver<StateUpdate>,
 }
 
 impl App {
-    fn new(cc: &CreationContext<'_>, rx: Receiver<StateUpdate>) -> Self {
-        let kb =
-            Keyboard::with_layout_file("keyboard_layout.toml").unwrap_or_else(|_| Keyboard::new());
+    fn new(cc: &CreationContext<'_>, kb: Arc<RwLock<Keyboard>>, rx: Receiver<StateUpdate>) -> Self {
+        // Configure fonts for Unicode support
+        let mut fonts = egui::FontDefinitions::default();
+
+        // On Windows, use Segoe UI Symbol and Emoji as fallbacks for unicode characters
+        #[cfg(target_os = "windows")]
+        {
+            let mut font_added = false;
+            if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\seguisym.ttf") {
+                fonts.font_data.insert(
+                    "SegoeUISymbol".to_owned(),
+                    egui::FontData::from_owned(font_data).into(),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("SegoeUISymbol".to_owned());
+                font_added = true;
+            }
+            if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\seguiemj.ttf") {
+                fonts.font_data.insert(
+                    "SegoeUIEmoji".to_owned(),
+                    egui::FontData::from_owned(font_data).into(),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("SegoeUIEmoji".to_owned());
+                font_added = true;
+            }
+
+            if font_added {
+                cc.egui_ctx.set_fonts(fonts);
+            }
+        }
 
         // Calculate window size based on keyboard layout
-        let (kb_width, kb_height) = kb.layout.get_dimensions();
+        let (kb_width, kb_height) = {
+            let kb_lock = kb.read().unwrap();
+            kb_lock.layout.get_dimensions()
+        };
 
         // Resize viewport to fit keyboard
         cc.egui_ctx
@@ -72,9 +140,12 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         while let Ok(x) = self.rx.try_recv() {
             use StateUpdate::*;
+            let mut kb = self.kb.write().unwrap();
             match x {
-                Highlight0(h) => self.kb.selected.0 = h,
-                Highlight1(h) => self.kb.selected.1 = h,
+                SelectLeft(h) => kb.selected.0 = h,
+                SelectRight(h) => kb.selected.1 = h,
+                Unselect => kb.selected = (None, None),
+                Done => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             }
         }
 
@@ -130,15 +201,19 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
-                if let Some(key) = draw_ui(ui, &self.kb) {
+                let kb_read = self.kb.read().unwrap();
+                if let Some(key) = draw_ui(ui, &kb_read, false) {
+                    drop(kb_read); // Release read lock before acquiring write lock
+                    let mut kb = self.kb.write().unwrap();
+
+                    if key == RawKey::Done {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+
                     if key == RawKey::Shift {
-                        self.kb.toggle_shift();
+                        kb.toggle_shift();
                     } else {
-                        let _ = key.send(&mut self.enigo);
-                        // Auto-disable shift after typing a character (like mobile keyboards)
-                        if self.kb.shift_state {
-                            self.kb.shift_state = false;
-                        }
+                        let _ = kb.send_key(&mut self.enigo, &key);
                     }
                 }
             });
@@ -146,17 +221,12 @@ impl eframe::App for App {
 }
 
 fn main() -> Result<()> {
+    let args = Args::parse();
+
     println!(
         "Looking for PS4 controller (VID:{:04x}, PID:{:04x})...",
         PS4_VID, PS4_PID
     );
-
-    // let keymap = ImageReader::open("map.png")?.decode()?;
-
-    // for input in &ps4 {
-    //     let (left_x, left_y, right_x, right_y) = input.get_sticks();
-    //     println!("({}, {}) : ({}, {})", left_x, left_y, right_x, right_y);
-    // }
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
     let native_options = eframe::NativeOptions {
@@ -172,29 +242,161 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
+    let kb = {
+        let k = if let Some(layout_path) = args.layout {
+            Keyboard::with_layout_file(&layout_path, args.stick_x, args.stick_y, args.stick_warp)?
+        } else {
+            Keyboard::new(args.stick_x, args.stick_y, args.stick_warp)
+        };
+        Arc::new(RwLock::new(k))
+    };
+
+    // Spawn a thread to echo keyboard input from stdin
+    std::thread::spawn(|| {
+        use std::io::{self, BufRead};
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            if let Ok(text) = line {
+                println!("[Echo] {}", text);
+            }
+        }
+    });
+
     eframe::run_native(
         "KOSK",
         native_options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
             let (tx, rx) = std::sync::mpsc::channel();
+            let kb_clone = kb.clone();
             std::thread::spawn(move || -> Result<()> {
-                let hid = HidApi::new()?;
-
-                let device = match find_device(&hid, (PS4_VID, PS4_PID)) {
-                    Some(device) => device,
-                    None => bail!("PS4 controller not found."),
+                let device = loop {
+                    let hid = HidApi::new()?;
+                    match find_device(&hid, (PS4_VID, PS4_PID)) {
+                        Some(device) => break device,
+                        None => {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            continue;
+                        }
+                    }
                 };
 
-                let ps4 = ps4::Ps4Device::new(device);
+                let mut enigo = Enigo::new(&Default::default())?;
 
-                for input in &ps4 {
+                let ps4 = ps4::Ps4Device::new(device);
+                let mut l2_was_pressed = false;
+                let mut r2_was_pressed = false;
+                let trigger_threshold = args.trigger_threshold;
+
+                let mut pos = 0usize;
+
+                for input in ps4 {
+                    let input = match input {
+                        Some(input) => input,
+                        None => {
+                            // no input, reset selected
+                            let _ = tx.send(StateUpdate::Unselect);
+                            continue;
+                        }
+                    };
+
+                    let kb = kb_clone.read().unwrap();
+
+                    let overlapping_left = kb.get_overlapping_keys_left(input.left);
+                    let selected_left = overlapping_left.first().cloned();
+
+                    let overlapping_right = kb.get_overlapping_keys_right(input.right);
+                    let selected_right = overlapping_right.first().cloned();
+
+                    drop(kb);
+
+                    let _ = tx.send(StateUpdate::SelectLeft(selected_left.clone()));
+                    let _ = tx.send(StateUpdate::SelectRight(selected_right.clone()));
+
+                    let mut stick_press =
+                        |input: &Option<u8>,
+                         was_pressed: &mut bool,
+                         kb: Arc<RwLock<Keyboard>>,
+                         key: &Option<RawKey>| {
+                            let val = input.unwrap_or(0);
+                            let pressed = val > trigger_threshold;
+
+                            if pressed && !*was_pressed {
+                                match key {
+                                    Some(RawKey::Done) => {
+                                        let _ = tx.send(StateUpdate::Done);
+                                    }
+                                    Some(key) => {
+                                        let mut kb_write = kb.write().unwrap();
+                                        let _ = kb_write.send_key(&mut enigo, key);
+                                    }
+                                    _ => (),
+                                }
+                            }
+                            *was_pressed = pressed;
+                        };
+                    stick_press(
+                        &input.l2,
+                        &mut l2_was_pressed,
+                        kb_clone.clone(),
+                        &selected_left,
+                    );
+                    stick_press(
+                        &input.r2,
+                        &mut r2_was_pressed,
+                        kb_clone.clone(),
+                        &selected_right,
+                    );
+
+                    if input.cross {
+                        let mut kb_write = kb_clone.write().unwrap();
+                        kb_write.send_key(&mut enigo, &RawKey::Key(" ".to_string()))?;
+                    }
+
+                    if input.square {
+                        let mut kb_write = kb_clone.write().unwrap();
+                        kb_write.send_key(&mut enigo, &RawKey::Backspace)?;
+                    }
+
+                    if input.triangle {
+                        let mut kb_write = kb_clone.write().unwrap();
+                        kb_write.toggle_shift();
+                    }
+
+                    if input.l3 {
+                        let mut kb_write = kb_clone.write().unwrap();
+                        kb_write.toggle_ctrl();
+                    }
+
+                    if input.r3 {
+                        let mut kb_write = kb_clone.write().unwrap();
+                        kb_write.toggle_alt();
+                    }
+
+                    if matches!(input.dpad, Some(Dpad::Down)) {
+                        let (kb_width, kb_height) = {
+                            let kb_lock = kb_clone.read().unwrap();
+                            kb_lock.layout.get_dimensions()
+                        };
+                        if let Some(size) = ctx.input(|i| i.viewport().monitor_size) {
+                            let xy = [
+                                (0.0, 0.0),
+                                (size.x - kb_width, 0.0),
+                                (size.x - kb_width, size.y - kb_height),
+                                (0.0, size.y - kb_height),
+                            ][pos];
+                            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(xy.into()));
+                            pos += 1;
+                            pos %= 4;
+                        }
+                    }
+
                     ctx.request_repaint();
                 }
 
                 Ok(())
             });
-            Ok(Box::new(App::new(cc, rx)))
+            Ok(Box::new(App::new(cc, kb, rx)))
         }),
     )
     .unwrap();
