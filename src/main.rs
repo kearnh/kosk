@@ -309,11 +309,11 @@ fn main() -> Result<()> {
 
                         let kb = kb_clone.read().unwrap();
 
-                        let overlapping_left = kb.get_overlapping_keys_left(input.left);
-                        let selected_left = overlapping_left.first().cloned();
+                        let overlapping_left = kb.get_nearest_key_left(input.left);
+                        let selected_left = overlapping_left.clone();
 
-                        let overlapping_right = kb.get_overlapping_keys_right(input.right);
-                        let selected_right = overlapping_right.first().cloned();
+                        let overlapping_right = kb.get_nearest_key_right(input.right);
+                        let selected_right = overlapping_right.clone();
 
                         drop(kb);
 

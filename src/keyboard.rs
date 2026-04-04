@@ -466,9 +466,6 @@ pub struct Keyboard {
     pub(crate) stick_warp: f32,
     left_selectable_bounds: (f32, f32, f32, f32),
     right_selectable_bounds: (f32, f32, f32, f32),
-
-    dbg_last_left_cursor_x: std::sync::atomic::AtomicU32,
-    dbg_last_left_cursor_y: std::sync::atomic::AtomicU32,
 }
 
 impl Keyboard {
@@ -506,9 +503,6 @@ impl Keyboard {
             stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
-
-            dbg_last_left_cursor_x: Default::default(),
-            dbg_last_left_cursor_y: Default::default(),
         }
     }
 
@@ -663,36 +657,23 @@ impl Keyboard {
             stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
-            dbg_last_left_cursor_x: Default::default(),
-            dbg_last_left_cursor_y: Default::default(),
         })
     }
 
-    pub fn get_overlapping_keys_left(&self, stick: (i32, i32)) -> Vec<RawKey> {
-        self.get_overlapping_keys(
-            self.left_stick_center,
-            stick,
-            self.left_selectable_bounds,
-            true,
-        )
+    pub fn get_nearest_key_left(&self, stick: (i32, i32)) -> Option<RawKey> {
+        self.get_nearest_key(self.left_stick_center, stick, self.left_selectable_bounds)
     }
 
-    pub fn get_overlapping_keys_right(&self, stick: (i32, i32)) -> Vec<RawKey> {
-        self.get_overlapping_keys(
-            self.right_stick_center,
-            stick,
-            self.right_selectable_bounds,
-            false,
-        )
+    pub fn get_nearest_key_right(&self, stick: (i32, i32)) -> Option<RawKey> {
+        self.get_nearest_key(self.right_stick_center, stick, self.right_selectable_bounds)
     }
 
-    fn get_overlapping_keys(
+    fn get_nearest_key(
         &self,
         center: (f32, f32),
         stick: (i32, i32),
         bounds: (f32, f32, f32, f32),
-        debug: bool,
-    ) -> Vec<RawKey> {
+    ) -> Option<RawKey> {
         // Normalise stick input to [-1.0, 1.0]
         let x = stick.0 as f32 / 128.0;
         let y = stick.1 as f32 / 128.0;
@@ -713,31 +694,21 @@ impl Keyboard {
         cursor_x = cursor_x.clamp(min_x, max_x);
         cursor_y = cursor_y.clamp(min_y, max_y);
 
-        if debug {
-            self.dbg_last_left_cursor_x
-                .store(cursor_x.to_bits(), std::sync::atomic::Ordering::Relaxed);
-            self.dbg_last_left_cursor_y
-                .store(cursor_y.to_bits(), std::sync::atomic::Ordering::Relaxed);
-        }
-
-        let mut candidate_keys = Vec::new();
+        let mut candidate = (f32::MAX, None);
 
         for (row_idx, row) in self.layout.key_hit_boxes.iter().enumerate() {
             for (col_idx, h) in row.iter().enumerate() {
                 if let Some((kx, ky, kr)) = *h {
                     let distance_sq = (cursor_x - kx).powi(2) + (cursor_y - ky).powi(2);
-                    if distance_sq <= kr.powi(2) {
+                    if distance_sq <= kr.powi(2) && distance_sq < candidate.0 {
                         let key_button = &self.layout.rows[row_idx][col_idx];
-                        candidate_keys.push((distance_sq, key_button.key.get(self.shift_state)));
+                        candidate = (distance_sq, Some(key_button.key.get(self.shift_state)));
                     }
                 }
             }
         }
 
-        // Sort by distance (closest first)
-        candidate_keys.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-        candidate_keys.into_iter().map(|(_, key)| key).collect()
+        candidate.1
     }
 
     pub fn toggle_shift(&mut self) {
@@ -791,20 +762,8 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
             Vec2::new(kb.layout.unit_spacing_x, kb.layout.unit_spacing_y);
 
         // FIXME can this not be done once up-front
-        let left_centers = kb.get_overlapping_keys(
-            kb.left_stick_center,
-            (0, 0),
-            kb.left_selectable_bounds,
-            false,
-        );
-        let left_center = left_centers.first();
-        let right_centers = kb.get_overlapping_keys(
-            kb.right_stick_center,
-            (0, 0),
-            kb.right_selectable_bounds,
-            false,
-        );
-        let right_center = right_centers.first();
+        let left_center = kb.get_nearest_key_left((0, 0));
+        let right_center = kb.get_nearest_key_right((0, 0));
 
         for (row_idx, keys) in kb.layout.rows.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -847,13 +806,13 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
                             button = button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
                         } else if sel0
                             || (kb.selected.0.is_none()
-                                && left_center.is_some_and(|c| c == &current_key))
+                                && left_center.as_ref().is_some_and(|c| c == &current_key))
                         {
                             // Blue for left stick
                             button = button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
                         } else if sel1
                             || (kb.selected.1.is_none()
-                                && right_center.is_some_and(|c| c == &current_key))
+                                && right_center.as_ref().is_some_and(|c| c == &current_key))
                         {
                             // Green for right stick
                             button = button.fill(Color32::from_rgb(50, 150, 80)).selected(true);
@@ -896,20 +855,6 @@ pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
 
         if DEBUG {
             let painter = ui.painter();
-
-            let bits = kb
-                .dbg_last_left_cursor_x
-                .load(std::sync::atomic::Ordering::Relaxed);
-            let lx = f32::from_bits(bits);
-            let bits = kb
-                .dbg_last_left_cursor_y
-                .load(std::sync::atomic::Ordering::Relaxed);
-            let ly = f32::from_bits(bits);
-            painter.circle_filled(
-                (lx, ly).into(),
-                4.0,
-                Color32::from_rgba_premultiplied(0, 0, 255, 255),
-            );
 
             let (x0, y0, x1, y1) = kb.left_selectable_bounds;
             let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
