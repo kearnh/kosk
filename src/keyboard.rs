@@ -40,6 +40,7 @@ pub enum RawKey {
     Tab,
     Paste,
     Done,
+    Menu,
 }
 
 impl TryFrom<String> for RawKey {
@@ -56,6 +57,7 @@ impl TryFrom<String> for RawKey {
             "TAB" => Ok(RawKey::Tab),
             "PASTE" => Ok(RawKey::Paste),
             "DONE" => Ok(RawKey::Done),
+            "MENU" => Ok(RawKey::Menu),
             _ => Ok(RawKey::Key(value)),
         }
     }
@@ -95,6 +97,7 @@ impl ToString for RawKey {
             RawKey::Tab => "Tab".to_string(),
             RawKey::Paste => "Paste".to_string(),
             RawKey::Done => "Done".to_string(),
+            RawKey::Menu => "Menu".to_string(),
         }
     }
 }
@@ -700,10 +703,12 @@ impl Keyboard {
 
         // Set semi-transparent button styling
         let style = ui.style_mut();
-        style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
+        style.visuals.widgets.inactive.weak_bg_fill =
+            Color32::from_rgba_premultiplied(60, 60, 60, 128);
         style.visuals.widgets.inactive.bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
         style.visuals.widgets.inactive.fg_stroke.color = Color32::WHITE;
-        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
+        style.visuals.widgets.hovered.weak_bg_fill =
+            Color32::from_rgba_premultiplied(80, 80, 80, 180);
         style.visuals.widgets.hovered.bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
         style.visuals.widgets.hovered.fg_stroke.color = Color32::WHITE;
         style.visuals.widgets.active.weak_bg_fill =
@@ -713,7 +718,10 @@ impl Keyboard {
         style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
         style.visuals.selection.stroke.color = Color32::WHITE;
 
-        let button_size = Vec2::new(self.layout.button_unit_width, self.layout.button_unit_height);
+        let button_size = Vec2::new(
+            self.layout.button_unit_width,
+            self.layout.button_unit_height,
+        );
 
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing =
@@ -761,13 +769,15 @@ impl Keyboard {
 
                             if sel0 && sel1 {
                                 // Purple for both
-                                button = button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
+                                button =
+                                    button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
                             } else if sel0
                                 || (self.selected.0.is_none()
                                     && left_center.as_ref().is_some_and(|c| c == &current_key))
                             {
                                 // Blue for left stick
-                                button = button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
+                                button =
+                                    button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
                             } else if sel1
                                 || (self.selected.1.is_none()
                                     && right_center.as_ref().is_some_and(|c| c == &current_key))

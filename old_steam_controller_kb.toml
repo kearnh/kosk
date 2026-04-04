@@ -131,8 +131,8 @@ pos = [1, 10]
 width = 1.4
 
 [[keys]]
-key = "X"
-display = { normal = "€", shift = "€" }
+key = "Menu"
+display = { normal = "⠿", shift = "⠿" }
 pos = [2, 0]
 width = 0.8
 
