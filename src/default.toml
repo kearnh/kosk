@@ -1,8 +1,8 @@
 # Steam Controller keyboard layout
 row_indents = [0.0, 0.0, 0.0, 0.0, 0.0]
 row_heights = [1.0, 1.3, 1.1, 1.3, 1.0]
-button_unit_width = 48.0
-button_unit_height = 54.0
+button_unit_width = 32.0
+button_unit_height = 36.0
 unit_spacing_x = 4.0
 unit_spacing_y = 4.0
 radius_mult = 1.125
@@ -71,7 +71,7 @@ width = 1.0
 
 [[keys]]
 key = "Backspace"
-display = { normal = "<-", shift = "<-" }
+display = { normal = "⌫", shift = "⌫" }
 pos = [0, 12]
 width = 1.0
 
@@ -188,7 +188,7 @@ width = 1.0
 
 [[keys]]
 key = "Enter"
-display = { normal = "Enter", shift = "Enter" }
+display = { normal = "⏎", shift = "⏎" }
 pos = [2, 11]
 width = 1.8
 

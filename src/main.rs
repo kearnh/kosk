@@ -55,7 +55,7 @@ struct Args {
     trigger_threshold: u8,
 }
 
-enum StateUpdate {
+enum AppMessage {
     SelectLeft(Option<RawKey>),
     SelectRight(Option<RawKey>),
     Unselect,
@@ -66,11 +66,11 @@ struct App {
     kb: Arc<RwLock<Keyboard>>,
     enigo: Enigo,
     window_setup_done: bool,
-    rx: Receiver<StateUpdate>,
+    rx: Receiver<AppMessage>,
 }
 
 impl App {
-    fn new(cc: &CreationContext<'_>, kb: Arc<RwLock<Keyboard>>, rx: Receiver<StateUpdate>) -> Self {
+    fn new(cc: &CreationContext<'_>, kb: Arc<RwLock<Keyboard>>, rx: Receiver<AppMessage>) -> Self {
         // Configure fonts for Unicode support
         let mut fonts = egui::FontDefinitions::default();
 
@@ -120,6 +120,12 @@ impl App {
                 kb_width + 10.0,
                 kb_height + 10.0,
             )));
+        if let Some(size) = cc.egui_ctx.input(|i| i.viewport().monitor_size) {
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                    (size.x - kb_width, size.y - kb_height).into(),
+                ));
+        }
 
         Self {
             kb,
@@ -139,7 +145,7 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         while let Ok(x) = self.rx.try_recv() {
-            use StateUpdate::*;
+            use AppMessage::*;
             let mut kb = self.kb.write().unwrap();
             match x {
                 SelectLeft(h) => kb.selected.0 = h,
@@ -202,7 +208,7 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
                 let kb_read = self.kb.read().unwrap();
-                if let Some(key) = draw_ui(ui, &kb_read, false) {
+                if let Some(key) = draw_ui(ui, &kb_read) {
                     drop(kb_read); // Release read lock before acquiring write lock
                     let mut kb = self.kb.write().unwrap();
 
@@ -270,131 +276,133 @@ fn main() -> Result<()> {
             let (tx, rx) = std::sync::mpsc::channel();
             let kb_clone = kb.clone();
             std::thread::spawn(move || -> Result<()> {
-                let device = loop {
-                    let hid = HidApi::new()?;
-                    match find_device(&hid, (PS4_VID, PS4_PID)) {
-                        Some(device) => break device,
-                        None => {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            continue;
-                        }
-                    }
-                };
-
-                let mut enigo = Enigo::new(&Default::default())?;
-
-                let ps4 = ps4::Ps4Device::new(device);
-                let mut l2_was_pressed = false;
-                let mut r2_was_pressed = false;
-                let trigger_threshold = args.trigger_threshold;
-
-                let mut pos = 0usize;
-
-                for input in ps4 {
-                    let input = match input {
-                        Some(input) => input,
-                        None => {
-                            // no input, reset selected
-                            let _ = tx.send(StateUpdate::Unselect);
-                            continue;
+                loop {
+                    let device = loop {
+                        let hid = HidApi::new()?;
+                        match find_device(&hid, (PS4_VID, PS4_PID)) {
+                            Some(device) => break device,
+                            None => {
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                                continue;
+                            }
                         }
                     };
 
-                    let kb = kb_clone.read().unwrap();
+                    let mut enigo = Enigo::new(&Default::default())?;
 
-                    let overlapping_left = kb.get_overlapping_keys_left(input.left);
-                    let selected_left = overlapping_left.first().cloned();
+                    let ps4 = ps4::Ps4Device::new(device);
+                    let mut l2_was_pressed = false;
+                    let mut r2_was_pressed = false;
+                    let trigger_threshold = args.trigger_threshold;
 
-                    let overlapping_right = kb.get_overlapping_keys_right(input.right);
-                    let selected_right = overlapping_right.first().cloned();
+                    let mut pos = 0usize;
 
-                    drop(kb);
-
-                    let _ = tx.send(StateUpdate::SelectLeft(selected_left.clone()));
-                    let _ = tx.send(StateUpdate::SelectRight(selected_right.clone()));
-
-                    let mut stick_press =
-                        |input: &Option<u8>,
-                         was_pressed: &mut bool,
-                         kb: Arc<RwLock<Keyboard>>,
-                         key: &Option<RawKey>| {
-                            let val = input.unwrap_or(0);
-                            let pressed = val > trigger_threshold;
-
-                            if pressed && !*was_pressed {
-                                match key {
-                                    Some(RawKey::Done) => {
-                                        let _ = tx.send(StateUpdate::Done);
-                                    }
-                                    Some(key) => {
-                                        let mut kb_write = kb.write().unwrap();
-                                        let _ = kb_write.send_key(&mut enigo, key);
-                                    }
-                                    _ => (),
-                                }
+                    for input in ps4 {
+                        let input = match input {
+                            Some(input) => input,
+                            None => {
+                                // no input, reset selected
+                                let _ = tx.send(AppMessage::Unselect);
+                                continue;
                             }
-                            *was_pressed = pressed;
                         };
-                    stick_press(
-                        &input.l2,
-                        &mut l2_was_pressed,
-                        kb_clone.clone(),
-                        &selected_left,
-                    );
-                    stick_press(
-                        &input.r2,
-                        &mut r2_was_pressed,
-                        kb_clone.clone(),
-                        &selected_right,
-                    );
 
-                    if input.cross {
-                        let mut kb_write = kb_clone.write().unwrap();
-                        kb_write.send_key(&mut enigo, &RawKey::Key(" ".to_string()))?;
-                    }
+                        let kb = kb_clone.read().unwrap();
 
-                    if input.square {
-                        let mut kb_write = kb_clone.write().unwrap();
-                        kb_write.send_key(&mut enigo, &RawKey::Backspace)?;
-                    }
+                        let overlapping_left = kb.get_overlapping_keys_left(input.left);
+                        let selected_left = overlapping_left.first().cloned();
 
-                    if input.triangle {
-                        let mut kb_write = kb_clone.write().unwrap();
-                        kb_write.toggle_shift();
-                    }
+                        let overlapping_right = kb.get_overlapping_keys_right(input.right);
+                        let selected_right = overlapping_right.first().cloned();
 
-                    if input.l3 {
-                        let mut kb_write = kb_clone.write().unwrap();
-                        kb_write.toggle_ctrl();
-                    }
+                        drop(kb);
 
-                    if input.r3 {
-                        let mut kb_write = kb_clone.write().unwrap();
-                        kb_write.toggle_alt();
-                    }
+                        let _ = tx.send(AppMessage::SelectLeft(selected_left.clone()));
+                        let _ = tx.send(AppMessage::SelectRight(selected_right.clone()));
 
-                    if matches!(input.dpad, Some(Dpad::Down)) {
-                        let (kb_width, kb_height) = {
-                            let kb_lock = kb_clone.read().unwrap();
-                            kb_lock.layout.get_dimensions()
-                        };
-                        if let Some(size) = ctx.input(|i| i.viewport().monitor_size) {
-                            let xy = [
-                                (0.0, 0.0),
-                                (size.x - kb_width, 0.0),
-                                (size.x - kb_width, size.y - kb_height),
-                                (0.0, size.y - kb_height),
-                            ][pos];
-                            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(xy.into()));
-                            pos += 1;
-                            pos %= 4;
+                        let mut stick_press =
+                            |input: &Option<u8>,
+                             was_pressed: &mut bool,
+                             kb: Arc<RwLock<Keyboard>>,
+                             key: &Option<RawKey>| {
+                                let val = input.unwrap_or(0);
+                                let pressed = val > trigger_threshold;
+
+                                if pressed && !*was_pressed {
+                                    match key {
+                                        Some(RawKey::Done) => {
+                                            let _ = tx.send(AppMessage::Done);
+                                        }
+                                        Some(key) => {
+                                            let mut kb_write = kb.write().unwrap();
+                                            let _ = kb_write.send_key(&mut enigo, key);
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                                *was_pressed = pressed;
+                            };
+                        stick_press(
+                            &input.l2,
+                            &mut l2_was_pressed,
+                            kb_clone.clone(),
+                            &selected_left,
+                        );
+                        stick_press(
+                            &input.r2,
+                            &mut r2_was_pressed,
+                            kb_clone.clone(),
+                            &selected_right,
+                        );
+
+                        if input.cross {
+                            let mut kb_write = kb_clone.write().unwrap();
+                            kb_write.send_key(&mut enigo, &RawKey::Key(" ".to_string()))?;
                         }
+
+                        if input.square {
+                            let mut kb_write = kb_clone.write().unwrap();
+                            kb_write.send_key(&mut enigo, &RawKey::Backspace)?;
+                        }
+
+                        if input.triangle {
+                            let mut kb_write = kb_clone.write().unwrap();
+                            kb_write.toggle_shift();
+                        }
+
+                        if input.l3 {
+                            let mut kb_write = kb_clone.write().unwrap();
+                            kb_write.toggle_ctrl();
+                        }
+
+                        if input.r3 {
+                            let mut kb_write = kb_clone.write().unwrap();
+                            kb_write.toggle_alt();
+                        }
+
+                        if matches!(input.dpad, Some(Dpad::Down)) {
+                            let (kb_width, kb_height) = {
+                                let kb_lock = kb_clone.read().unwrap();
+                                kb_lock.layout.get_dimensions()
+                            };
+                            if let Some(size) = ctx.input(|i| i.viewport().monitor_size) {
+                                let xy = [
+                                    (0.0, 0.0),
+                                    (size.x - kb_width, 0.0),
+                                    (size.x - kb_width, size.y - kb_height),
+                                    (0.0, size.y - kb_height),
+                                ][pos];
+                                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                                    xy.into(),
+                                ));
+                                pos += 1;
+                                pos %= 4;
+                            }
+                        }
+
+                        ctx.request_repaint();
                     }
-
-                    ctx.request_repaint();
                 }
-
-                Ok(())
             });
             Ok(Box::new(App::new(cc, kb, rx)))
         }),

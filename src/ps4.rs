@@ -327,9 +327,8 @@ impl<'a> Iterator for Ps4Device {
                     }
                     continue;
                 }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    continue;
+                Err(_) => {
+                    return None;
                 }
             }
         }
