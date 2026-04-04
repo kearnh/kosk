@@ -10,7 +10,6 @@ use clap::Parser;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
 use enigo::Enigo;
 use hidapi::{HidApi, HidDevice};
-use keyboard::draw_ui;
 
 use crate::{
     keyboard::{Keyboard, RawKey},
@@ -207,7 +206,7 @@ impl eframe::App for App {
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
                 let kb_read = self.kb.read().unwrap();
-                if let Some(key) = draw_ui(ui, &kb_read) {
+                if let Some(key) = kb_read.draw_ui(ui) {
                     drop(kb_read); // Release read lock before acquiring write lock
                     let mut kb = self.kb.write().unwrap();
 

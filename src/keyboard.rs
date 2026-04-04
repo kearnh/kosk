@@ -694,156 +694,154 @@ impl Keyboard {
     pub fn toggle_alt(&mut self) {
         self.alt_mod = !self.alt_mod;
     }
-}
 
-const DEBUG: bool = false;
+    pub fn draw_ui(&self, ui: &mut Ui) -> Option<RawKey> {
+        let mut pressed_key: Option<RawKey> = None;
 
-/// Creates a QWERTY keyboard UI in egui
-/// Returns the key that was pressed, if any
-pub fn draw_ui(ui: &mut Ui, kb: &Keyboard) -> Option<RawKey> {
-    let mut pressed_key: Option<RawKey> = None;
+        // Set semi-transparent button styling
+        let style = ui.style_mut();
+        style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
+        style.visuals.widgets.inactive.bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
+        style.visuals.widgets.inactive.fg_stroke.color = Color32::WHITE;
+        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
+        style.visuals.widgets.hovered.bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
+        style.visuals.widgets.hovered.fg_stroke.color = Color32::WHITE;
+        style.visuals.widgets.active.weak_bg_fill =
+            Color32::from_rgba_premultiplied(100, 100, 100, 200);
+        style.visuals.widgets.active.bg_fill = Color32::from_rgba_premultiplied(100, 100, 100, 200);
+        style.visuals.widgets.active.fg_stroke.color = Color32::WHITE;
+        style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
+        style.visuals.selection.stroke.color = Color32::WHITE;
 
-    // Set semi-transparent button styling
-    let style = ui.style_mut();
-    style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
-    style.visuals.widgets.inactive.bg_fill = Color32::from_rgba_premultiplied(60, 60, 60, 128);
-    style.visuals.widgets.inactive.fg_stroke.color = Color32::WHITE;
-    style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
-    style.visuals.widgets.hovered.bg_fill = Color32::from_rgba_premultiplied(80, 80, 80, 180);
-    style.visuals.widgets.hovered.fg_stroke.color = Color32::WHITE;
-    style.visuals.widgets.active.weak_bg_fill =
-        Color32::from_rgba_premultiplied(100, 100, 100, 200);
-    style.visuals.widgets.active.bg_fill = Color32::from_rgba_premultiplied(100, 100, 100, 200);
-    style.visuals.widgets.active.fg_stroke.color = Color32::WHITE;
-    style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
-    style.visuals.selection.stroke.color = Color32::WHITE;
+        let button_size = Vec2::new(self.layout.button_unit_width, self.layout.button_unit_height);
 
-    let button_size = Vec2::new(kb.layout.button_unit_width, kb.layout.button_unit_height);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing =
+                Vec2::new(self.layout.unit_spacing_x, self.layout.unit_spacing_y);
 
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing =
-            Vec2::new(kb.layout.unit_spacing_x, kb.layout.unit_spacing_y);
+            // FIXME can this not be done once up-front
+            let left_center = self.get_nearest_key_left((0, 0));
+            let right_center = self.get_nearest_key_right((0, 0));
 
-        // FIXME can this not be done once up-front
-        let left_center = kb.get_nearest_key_left((0, 0));
-        let right_center = kb.get_nearest_key_right((0, 0));
+            for (row_idx, keys) in self.layout.rows.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing =
+                        Vec2::new(self.layout.unit_spacing_x, self.layout.unit_spacing_y);
 
-        for (row_idx, keys) in kb.layout.rows.iter().enumerate() {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing =
-                    Vec2::new(kb.layout.unit_spacing_x, kb.layout.unit_spacing_y);
+                    // Add indent for this row
+                    let indent = self.layout.row_indents.get(row_idx).copied().unwrap_or(0.0);
+                    ui.add_space(indent);
 
-                // Add indent for this row
-                let indent = kb.layout.row_indents.get(row_idx).copied().unwrap_or(0.0);
-                ui.add_space(indent);
+                    let height_mult = self.layout.row_heights.get(row_idx).copied().unwrap_or(1.0);
+                    let row_height = self.layout.button_unit_height * height_mult;
 
-                let height_mult = kb.layout.row_heights.get(row_idx).copied().unwrap_or(1.0);
-                let row_height = kb.layout.button_unit_height * height_mult;
+                    for key in keys {
+                        // Skip rendering for SKIP keys - just add space
+                        if key.key.normal == RawKey::Skip {
+                            ui.add_space(button_size.x * key.width);
+                            continue;
+                        }
 
-                for key in keys {
-                    // Skip rendering for SKIP keys - just add space
-                    if key.key.normal == RawKey::Skip {
-                        ui.add_space(button_size.x * key.width);
-                        continue;
-                    }
+                        // Determine what to display based on shift state
+                        let display_label = if let Some(d) = &key.display {
+                            d.get(self.shift_state)
+                        } else {
+                            key.key.display(self.shift_state)
+                        };
 
-                    // Determine what to display based on shift state
-                    let display_label = if let Some(d) = &key.display {
-                        d.get(kb.shift_state)
-                    } else {
-                        key.key.display(kb.shift_state)
-                    };
+                        let button_text = RichText::new(&display_label).size(self.layout.font_size);
+                        let mut button = Button::new(button_text);
 
-                    let button_text = RichText::new(&display_label).size(kb.layout.font_size);
-                    let mut button = Button::new(button_text);
+                        if key.key.normal == RawKey::Shift && self.shift_state {
+                            button = button.selected(true);
+                        } else {
+                            let current_key = key.key.get(self.shift_state);
+                            let sel0 = self.selected.0.as_ref().is_some_and(|s| s == &current_key);
+                            let sel1 = self.selected.1.as_ref().is_some_and(|s| s == &current_key);
 
-                    if key.key.normal == RawKey::Shift && kb.shift_state {
-                        button = button.selected(true);
-                    } else {
-                        let current_key = key.key.get(kb.shift_state);
-                        let sel0 = kb.selected.0.as_ref().is_some_and(|s| s == &current_key);
-                        let sel1 = kb.selected.1.as_ref().is_some_and(|s| s == &current_key);
+                            if sel0 && sel1 {
+                                // Purple for both
+                                button = button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
+                            } else if sel0
+                                || (self.selected.0.is_none()
+                                    && left_center.as_ref().is_some_and(|c| c == &current_key))
+                            {
+                                // Blue for left stick
+                                button = button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
+                            } else if sel1
+                                || (self.selected.1.is_none()
+                                    && right_center.as_ref().is_some_and(|c| c == &current_key))
+                            {
+                                // Green for right stick
+                                button = button.fill(Color32::from_rgb(50, 150, 80)).selected(true);
+                            }
+                        }
 
-                        if sel0 && sel1 {
-                            // Purple for both
-                            button = button.fill(Color32::from_rgb(120, 60, 180)).selected(true);
-                        } else if sel0
-                            || (kb.selected.0.is_none()
-                                && left_center.as_ref().is_some_and(|c| c == &current_key))
-                        {
-                            // Blue for left stick
-                            button = button.fill(Color32::from_rgb(50, 100, 180)).selected(true);
-                        } else if sel1
-                            || (kb.selected.1.is_none()
-                                && right_center.as_ref().is_some_and(|c| c == &current_key))
-                        {
-                            // Green for right stick
-                            button = button.fill(Color32::from_rgb(50, 150, 80)).selected(true);
+                        let size = Vec2::new(button_size.x * key.width, row_height);
+                        let response = ui.add_sized(size, button);
+
+                        // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
+                        if key.key.normal == " " && (self.ctrl_mod || self.alt_mod) {
+                            let mut mods = Vec::new();
+                            if self.ctrl_mod {
+                                mods.push("ctrl");
+                            }
+                            if self.shift_mod {
+                                mods.push("shift");
+                            }
+                            if self.alt_mod {
+                                mods.push("alt");
+                            }
+                            let mod_string = mods.join("+");
+                            let rect = response.rect;
+                            let font_size = self.layout.font_size * 0.6;
+                            ui.painter().text(
+                                rect.left_bottom() + Vec2::new(4.0, -4.0),
+                                egui::Align2::LEFT_BOTTOM,
+                                mod_string,
+                                egui::FontId::proportional(font_size),
+                                Color32::WHITE,
+                            );
+                        }
+
+                        if response.clicked() {
+                            pressed_key = Some(key.key.get(self.shift_state));
                         }
                     }
+                });
+            }
 
-                    let size = Vec2::new(button_size.x * key.width, row_height);
-                    let response = ui.add_sized(size, button);
+            if DEBUG {
+                let painter = ui.painter();
 
-                    // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                    if key.key.normal == " " && (kb.ctrl_mod || kb.alt_mod) {
-                        let mut mods = Vec::new();
-                        if kb.ctrl_mod {
-                            mods.push("ctrl");
+                let (x0, y0, x1, y1) = self.left_selectable_bounds;
+                let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+                painter.rect_stroke(
+                    r,
+                    egui::CornerRadius::default(),
+                    egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 255)),
+                    egui::StrokeKind::Middle,
+                );
+
+                for row in &self.layout.key_hit_boxes {
+                    for h in row {
+                        if let Some((x, y, r)) = *h {
+                            painter.circle_stroke(
+                                (x, y).into(),
+                                r,
+                                egui::Stroke::new(
+                                    1.0,
+                                    Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                ),
+                            );
                         }
-                        if kb.shift_mod {
-                            mods.push("shift");
-                        }
-                        if kb.alt_mod {
-                            mods.push("alt");
-                        }
-                        let mod_string = mods.join("+");
-                        let rect = response.rect;
-                        let font_size = kb.layout.font_size * 0.6;
-                        ui.painter().text(
-                            rect.left_bottom() + Vec2::new(4.0, -4.0),
-                            egui::Align2::LEFT_BOTTOM,
-                            mod_string,
-                            egui::FontId::proportional(font_size),
-                            Color32::WHITE,
-                        );
-                    }
-
-                    if response.clicked() {
-                        pressed_key = Some(key.key.get(kb.shift_state));
-                    }
-                }
-            });
-        }
-
-        if DEBUG {
-            let painter = ui.painter();
-
-            let (x0, y0, x1, y1) = kb.left_selectable_bounds;
-            let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-            painter.rect_stroke(
-                r,
-                egui::CornerRadius::default(),
-                egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 255)),
-                egui::StrokeKind::Middle,
-            );
-
-            for row in &kb.layout.key_hit_boxes {
-                for h in row {
-                    if let Some((x, y, r)) = *h {
-                        painter.circle_stroke(
-                            (x, y).into(),
-                            r,
-                            egui::Stroke::new(
-                                1.0,
-                                Color32::from_rgba_premultiplied(0, 192, 255, 128),
-                            ),
-                        );
                     }
                 }
             }
-        }
-    });
+        });
 
-    pressed_key
+        pressed_key
+    }
 }
+
+const DEBUG: bool = false;
