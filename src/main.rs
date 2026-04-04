@@ -35,8 +35,7 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 #[command(about = "Keyboard On-Screen for Kontroller", long_about = None)]
 struct Args {
     /// Path to keyboard layout TOML file
-    #[arg(short, long)]
-    layout: Option<String>,
+    layout: String,
 
     /// Sensitivity/range multiplier for the horizontal stick axis
     #[arg(long, default_value_t = 3.0)]
@@ -249,12 +248,12 @@ fn main() -> Result<()> {
     };
 
     let kb = {
-        let k = if let Some(layout_path) = args.layout {
-            Keyboard::with_layout_file(&layout_path, args.stick_x, args.stick_y, args.stick_warp)?
-        } else {
-            Keyboard::new(args.stick_x, args.stick_y, args.stick_warp)
-        };
-        Arc::new(RwLock::new(k))
+        Arc::new(RwLock::new(Keyboard::new(
+            &args.layout,
+            args.stick_x,
+            args.stick_y,
+            args.stick_warp,
+        )?))
     };
 
     // Spawn a thread to echo keyboard input from stdin

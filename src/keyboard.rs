@@ -469,9 +469,13 @@ pub struct Keyboard {
 }
 
 impl Keyboard {
-    pub fn new(stick_range_x: f32, stick_range_y: f32, stick_warp: f32) -> Self {
-        let default = include_str!("default.toml");
-        let layout = KeyboardLayout::load(&default).expect("Failed to load default layout");
+    pub fn new(
+        layout_path: impl AsRef<Path>,
+        stick_range_x: f32,
+        stick_range_y: f32,
+        stick_warp: f32,
+    ) -> Result<Self> {
+        let layout = KeyboardLayout::load_from_file(layout_path)?;
         let (w, h) = layout.get_dimensions();
         let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
         let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
@@ -489,7 +493,7 @@ impl Keyboard {
             stick_range_y,
         );
 
-        Self {
+        Ok(Self {
             selected: (None, None),
             layout,
             shift_state: false,
@@ -503,7 +507,7 @@ impl Keyboard {
             stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
-        }
+        })
     }
 
     fn calculate_reachable_bounds(
@@ -617,47 +621,6 @@ impl Keyboard {
         self.alt_mod = false;
 
         Ok(())
-    }
-
-    pub fn with_layout_file(
-        path: impl AsRef<Path>,
-        stick_range_x: f32,
-        stick_range_y: f32,
-        stick_warp: f32,
-    ) -> Result<Self> {
-        let layout = KeyboardLayout::load_from_file(path)?;
-        let (w, h) = layout.get_dimensions();
-        let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
-        let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
-
-        let left_bounds = Self::calculate_reachable_bounds(
-            &layout,
-            left_stick_center,
-            stick_range_x,
-            stick_range_y,
-        );
-        let right_bounds = Self::calculate_reachable_bounds(
-            &layout,
-            right_stick_center,
-            stick_range_x,
-            stick_range_y,
-        );
-
-        Ok(Self {
-            selected: (None, None),
-            layout,
-            shift_state: false,
-            shift_mod: false,
-            ctrl_mod: false,
-            alt_mod: false,
-            left_stick_center,
-            right_stick_center,
-            stick_range_x,
-            stick_range_y,
-            stick_warp,
-            left_selectable_bounds: left_bounds,
-            right_selectable_bounds: right_bounds,
-        })
     }
 
     pub fn get_nearest_key_left(&self, stick: (i32, i32)) -> Option<RawKey> {
