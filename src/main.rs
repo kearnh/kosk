@@ -11,7 +11,7 @@ use clap::Parser;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
 use hidapi::{HidApi, HidDevice};
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, KeyboardState};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -51,12 +51,12 @@ struct Args {
 }
 
 struct App {
-    state: Arc<Mutex<AppState>>,
+    state: Arc<Mutex<Box<dyn AppState>>>,
     window_setup_done: bool,
 }
 
 impl App {
-    fn new(cc: &CreationContext<'_>, state: Arc<Mutex<AppState>>) -> Self {
+    fn new(cc: &CreationContext<'_>, state: Arc<Mutex<Box<dyn AppState>>>) -> Self {
         // Configure fonts for Unicode support
         let mut fonts = egui::FontDefinitions::default();
 
@@ -228,14 +228,17 @@ fn main() -> Result<()> {
                 let monitor_size = ctx
                     .input(|i| i.viewport().monitor_size)
                     .ok_or(anyhow::anyhow!("could not get monitor size"))?;
-                Arc::new(Mutex::new(AppState::start_state(
+                
+                let keyboard_state = KeyboardState::new(
                     &args.layout,
                     args.stick_x,
                     args.stick_y,
                     args.stick_warp,
                     args.trigger_threshold,
                     (monitor_size.x, monitor_size.y),
-                )?))
+                )?;
+                
+                Arc::new(Mutex::new(Box::new(keyboard_state) as Box<dyn AppState>))
             };
 
             let state_clone = state.clone();
