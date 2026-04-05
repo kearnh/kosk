@@ -228,7 +228,7 @@ fn main() -> Result<()> {
                 let monitor_size = ctx
                     .input(|i| i.viewport().monitor_size)
                     .ok_or(anyhow::anyhow!("could not get monitor size"))?;
-                
+
                 let keyboard_state = KeyboardState::new(
                     &args.layout,
                     args.stick_x,
@@ -237,7 +237,7 @@ fn main() -> Result<()> {
                     args.trigger_threshold,
                     (monitor_size.x, monitor_size.y),
                 )?;
-                
+
                 Arc::new(Mutex::new(Box::new(keyboard_state) as Box<dyn AppState>))
             };
 
