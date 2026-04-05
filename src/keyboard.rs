@@ -97,7 +97,7 @@ impl ToString for RawKey {
             RawKey::Tab => "Tab".to_string(),
             RawKey::Paste => "Paste".to_string(),
             RawKey::Done => "Done".to_string(),
-            RawKey::Menu => "Menu".to_string(),
+            RawKey::Menu => "Done".to_string(),
         }
     }
 }
@@ -469,6 +469,7 @@ pub struct Keyboard {
     pub(crate) stick_warp: f32,
     left_selectable_bounds: (f32, f32, f32, f32),
     right_selectable_bounds: (f32, f32, f32, f32),
+    enigo: Enigo,
 }
 
 impl Keyboard {
@@ -510,6 +511,7 @@ impl Keyboard {
             stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
+            enigo: Enigo::new(&Default::default())?,
         })
     }
 
@@ -553,30 +555,33 @@ impl Keyboard {
         }
     }
 
-    pub fn send_key(&mut self, enigo: &mut Enigo, key: &RawKey) -> Result<()> {
+    pub fn send_key(&mut self, key: &RawKey) -> Result<()> {
         macro_rules! mod_press {
             () => {
                 if self.shift_mod {
-                    enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
+                    self.enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
                 }
                 if self.ctrl_mod {
-                    enigo.key(enigo::Key::Control, enigo::Direction::Press)?;
+                    self.enigo
+                        .key(enigo::Key::Control, enigo::Direction::Press)?;
                 }
                 if self.alt_mod {
-                    enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
+                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
                 }
             };
         }
         macro_rules! mod_release {
             () => {
                 if self.alt_mod {
-                    enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
+                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
                 }
                 if self.ctrl_mod {
-                    enigo.key(enigo::Key::Control, enigo::Direction::Release)?;
+                    self.enigo
+                        .key(enigo::Key::Control, enigo::Direction::Release)?;
                 }
                 if self.shift_mod {
-                    enigo.key(enigo::Key::Shift, enigo::Direction::Release)?;
+                    self.enigo
+                        .key(enigo::Key::Shift, enigo::Direction::Release)?;
                 }
             };
         }
@@ -584,35 +589,40 @@ impl Keyboard {
             RawKey::Key(k) => {
                 mod_press!();
                 if k.len() == 1 {
-                    enigo.key(
+                    self.enigo.key(
                         enigo::Key::Unicode(k.chars().nth(0).unwrap()),
                         enigo::Direction::Click,
                     )?;
                 } else {
-                    enigo.text(&k)?;
+                    self.enigo.text(&k)?;
                 }
                 mod_release!();
             }
             RawKey::Enter => {
                 mod_press!();
-                enigo.key(enigo::Key::Return, enigo::Direction::Click)?;
+                self.enigo
+                    .key(enigo::Key::Return, enigo::Direction::Click)?;
                 mod_release!();
             }
             RawKey::Backspace => {
                 mod_press!();
-                enigo.key(enigo::Key::Backspace, enigo::Direction::Click)?;
+                self.enigo
+                    .key(enigo::Key::Backspace, enigo::Direction::Click)?;
                 mod_release!();
             }
             RawKey::Tab => {
                 mod_press!();
-                enigo.key(enigo::Key::Tab, enigo::Direction::Click)?;
+                self.enigo.key(enigo::Key::Tab, enigo::Direction::Click)?;
                 mod_release!();
             }
             RawKey::Paste => {
                 mod_press!();
-                enigo.key(enigo::Key::Control, enigo::Direction::Press)?;
-                enigo.key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
-                enigo.key(enigo::Key::Control, enigo::Direction::Release)?;
+                self.enigo
+                    .key(enigo::Key::Control, enigo::Direction::Press)?;
+                self.enigo
+                    .key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
+                self.enigo
+                    .key(enigo::Key::Control, enigo::Direction::Release)?;
                 mod_release!();
             }
             _ => return Ok(()),
