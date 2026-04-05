@@ -31,13 +31,11 @@ fn warp(mut x: f32, mut y: f32, warp: f32) -> (f32, f32) {
 #[serde(try_from = "String")]
 pub enum RawKey {
     Key(String),
-    Enter,
+    Enigo(enigo::Key),
     Skip,
     Shift,
     Ctrl,
     Alt,
-    Backspace,
-    Tab,
     Paste,
     Done,
     Menu,
@@ -48,13 +46,13 @@ impl TryFrom<String> for RawKey {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.to_uppercase().as_str() {
-            "ENTER" => Ok(RawKey::Enter),
+            "ENTER" => Ok(RawKey::Enigo(enigo::Key::Return)),
+            "BACKSPACE" => Ok(RawKey::Enigo(enigo::Key::Backspace)),
+            "TAB" => Ok(RawKey::Enigo(enigo::Key::Tab)),
             "SKIP" => Ok(RawKey::Skip),
             "SHIFT" => Ok(RawKey::Shift),
             "CTRL" => Ok(RawKey::Ctrl),
             "ALT" => Ok(RawKey::Alt),
-            "BACKSPACE" => Ok(RawKey::Backspace),
-            "TAB" => Ok(RawKey::Tab),
             "PASTE" => Ok(RawKey::Paste),
             "DONE" => Ok(RawKey::Done),
             "MENU" => Ok(RawKey::Menu),
@@ -88,13 +86,11 @@ impl ToString for RawKey {
     fn to_string(&self) -> String {
         match self {
             RawKey::Key(k) => k.clone(),
-            RawKey::Enter => "Enter".to_string(),
+            RawKey::Enigo(k) => format!("{:?}", k),
             RawKey::Skip => unsafe { unreachable_unchecked() },
             RawKey::Shift => "Shift".to_string(),
             RawKey::Ctrl => "Ctrl".to_string(),
             RawKey::Alt => "Alt".to_string(),
-            RawKey::Backspace => "Backspace".to_string(),
-            RawKey::Tab => "Tab".to_string(),
             RawKey::Paste => "Paste".to_string(),
             RawKey::Done => "Done".to_string(),
             RawKey::Menu => "Done".to_string(),
@@ -598,21 +594,9 @@ impl Keyboard {
                 }
                 mod_release!();
             }
-            RawKey::Enter => {
+            RawKey::Enigo(k) => {
                 mod_press!();
-                self.enigo
-                    .key(enigo::Key::Return, enigo::Direction::Click)?;
-                mod_release!();
-            }
-            RawKey::Backspace => {
-                mod_press!();
-                self.enigo
-                    .key(enigo::Key::Backspace, enigo::Direction::Click)?;
-                mod_release!();
-            }
-            RawKey::Tab => {
-                mod_press!();
-                self.enigo.key(enigo::Key::Tab, enigo::Direction::Click)?;
+                self.enigo.key(k.clone(), enigo::Direction::Click)?;
                 mod_release!();
             }
             RawKey::Paste => {
