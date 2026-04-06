@@ -240,6 +240,9 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("{:#}", e);
+        eprintln!("Error: {}", e);
+        for cause in e.chain().skip(1) {
+            eprintln!("Caused by: {}", cause);
+        }
     }
 }
