@@ -1,6 +1,5 @@
 use anyhow::Result;
 use egui::{Button, Context, Ui};
-use std::path::Path;
 
 use crate::{
     config,
@@ -20,16 +19,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(
-        monitor_size: (f32, f32),
-    ) -> Result<Self> {
+    pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
         let cfg = config::get();
-        let kb_inner = Keyboard::new(
-            &cfg.layout,
-            cfg.stick_x,
-            cfg.stick_y,
-            cfg.stick_warp,
-        )?;
+        let kb_inner = Keyboard::new(&cfg.layout, cfg.stick_x, cfg.stick_y, cfg.stick_warp)?;
         let kb = KeyboardState {
             kb: kb_inner,
             l2_was_pressed: false,

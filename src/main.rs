@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
 mod config;
@@ -164,11 +164,6 @@ impl eframe::App for App {
 fn main() -> Result<()> {
     config::init();
 
-    println!(
-        "Looking for PS4 controller (VID:{:04x}, PID:{:04x})...",
-        PS4_VID, PS4_PID
-    );
-
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -184,6 +179,7 @@ fn main() -> Result<()> {
     };
 
     // Spawn a thread to echo keyboard input from stdin
+    #[cfg(debug_assertions)]
     std::thread::spawn(|| {
         use std::io::{self, BufRead};
         let stdin = io::stdin();
@@ -205,9 +201,7 @@ fn main() -> Result<()> {
                     .input(|i| i.viewport().monitor_size)
                     .ok_or(anyhow::anyhow!("could not get monitor size"))?;
 
-                let state = AppState::new(
-                    (monitor_size.x, monitor_size.y),
-                )?;
+                let state = AppState::new((monitor_size.x, monitor_size.y))?;
 
                 Arc::new(Mutex::new(state))
             };

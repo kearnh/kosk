@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 
 #[derive(Parser, Debug)]
 #[command(name = "kosk")]
-#[command(about = "Keyboard On-Screen for Kontroller", long_about = None)]
 pub struct Args {
     /// Path to keyboard layout TOML file
     pub layout: String,
