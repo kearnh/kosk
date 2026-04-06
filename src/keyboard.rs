@@ -592,14 +592,7 @@ impl Keyboard {
         match key {
             RawKey::Key(k) => {
                 mod_press!();
-                if k.len() == 1 {
-                    self.enigo.key(
-                        enigo::Key::Unicode(k.chars().nth(0).unwrap()),
-                        enigo::Direction::Click,
-                    )?;
-                } else {
-                    self.enigo.text(&k)?;
-                }
+                self.enigo.text(&k)?;
                 mod_release!();
             }
             RawKey::Enigo(k) => {
