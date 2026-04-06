@@ -161,7 +161,7 @@ impl eframe::App for App {
     }
 }
 
-fn main() -> Result<()> {
+fn run() -> Result<()> {
     config::init()?;
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
@@ -233,7 +233,13 @@ fn main() -> Result<()> {
             Ok(Box::new(App::new(cc, state)))
         }),
     )
-    .map_err(|e| anyhow::anyhow!("eframe error: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("{:#}", e))?;
 
     Ok(())
+}
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("{:#}", e);
+    }
 }
