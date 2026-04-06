@@ -268,7 +268,7 @@ fn main() -> Result<()> {
             Ok(Box::new(App::new(cc, state)))
         }),
     )
-    .unwrap();
+    .map_err(|e| anyhow::anyhow!("eframe error: {}", e))?;
 
     Ok(())
 }
