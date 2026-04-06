@@ -162,7 +162,7 @@ impl eframe::App for App {
 }
 
 fn main() -> Result<()> {
-    config::init();
+    config::init()?;
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
     let native_options = eframe::NativeOptions {

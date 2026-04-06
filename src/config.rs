@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use std::fs;
@@ -32,21 +33,30 @@ pub struct Config {
     pub trigger_threshold: u8,
 }
 
-fn default_stick_x() -> f32 { 3.0 }
-fn default_stick_y() -> f32 { 2.5 }
-fn default_stick_warp() -> f32 { 1.0 }
-fn default_trigger_threshold() -> u8 { 40 }
+fn default_stick_x() -> f32 {
+    3.0
+}
+fn default_stick_y() -> f32 {
+    2.5
+}
+fn default_stick_warp() -> f32 {
+    1.0
+}
+fn default_trigger_threshold() -> u8 {
+    40
+}
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
-pub fn init() {
+pub fn init() -> Result<()> {
     let args = Args::parse();
-    let config_content = fs::read_to_string(&args.config_path)
-        .expect("Could not read config file");
-    let config: Config = toml::from_str(&config_content)
-        .expect("Could not parse config TOML");
-    
+    let config_content =
+        fs::read_to_string(&args.config_path).context("Could not read config file")?;
+    let config: Config = toml::from_str(&config_content).context("Could not parse config TOML")?;
+
     CONFIG.set(config).expect("Config was already initialized");
+
+    Ok(())
 }
 
 pub fn get() -> &'static Config {
