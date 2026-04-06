@@ -45,19 +45,28 @@ impl TryFrom<String> for RawKey {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_uppercase().as_str() {
-            "ENTER" => Ok(RawKey::Enigo(enigo::Key::Return)),
-            "BACKSPACE" => Ok(RawKey::Enigo(enigo::Key::Backspace)),
-            "TAB" => Ok(RawKey::Enigo(enigo::Key::Tab)),
-            "SKIP" => Ok(RawKey::Skip),
-            "SHIFT" => Ok(RawKey::Shift),
-            "CTRL" => Ok(RawKey::Ctrl),
-            "ALT" => Ok(RawKey::Alt),
-            "PASTE" => Ok(RawKey::Paste),
-            "DONE" => Ok(RawKey::Done),
-            "MENU" => Ok(RawKey::Menu),
-            _ => Ok(RawKey::Key(value)),
+        if value.len() == 1 {
+            return Ok(RawKey::Key(value));
         }
+
+        let upper = value.to_uppercase();
+
+        match upper.as_str() {
+            "SKIP" => return Ok(RawKey::Skip),
+            "SHIFT" => return Ok(RawKey::Shift),
+            "CTRL" => return Ok(RawKey::Ctrl),
+            "ALT" => return Ok(RawKey::Alt),
+            "PASTE" => return Ok(RawKey::Paste),
+            "DONE" => return Ok(RawKey::Done),
+            "MENU" => return Ok(RawKey::Menu),
+            _ => {}
+        }
+
+        if let Ok(key) = serde_plain::from_str::<enigo::Key>(&value) {
+            return Ok(RawKey::Enigo(key));
+        }
+
+        Err(format!("unknown key '{}'", value))
     }
 }
 
@@ -423,7 +432,6 @@ impl KeyboardLayout {
 
                 if key.key.normal != RawKey::Skip
                     && key.key.normal != RawKey::Shift
-                    && key.key.normal != RawKey::Tab
                     && key.key.normal != " "
                 {
                     // Target radius for imprecise stick input

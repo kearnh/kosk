@@ -125,7 +125,7 @@ impl AppState for KeyboardState {
         }
 
         if input.square {
-            self.kb.send_key(&RawKey::Backspace)?;
+            self.kb.send_key(&RawKey::Enigo(enigo::Key::Backspace))?;
         }
 
         if input.triangle {

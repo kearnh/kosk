@@ -182,7 +182,7 @@ pos = [2, 9]
 width = 1.0
 
 [[keys]]
-key = "Enter"
+key = "Return"
 pos = [2, 10]
 width = 2.0
 

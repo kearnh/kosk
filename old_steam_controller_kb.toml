@@ -187,7 +187,7 @@ pos = [2, 10]
 width = 1.0
 
 [[keys]]
-key = "Enter"
+key = "Return"
 display = { normal = "⏎", shift = "⏎" }
 pos = [2, 11]
 width = 1.8
