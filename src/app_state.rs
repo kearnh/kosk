@@ -3,6 +3,7 @@ use egui::{Button, Context, Ui};
 use std::path::Path;
 
 use crate::{
+    config,
     keyboard::{Keyboard, RawKey},
     ps4::{Dpad, Ps4InputData},
 };
@@ -20,19 +21,20 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        layout_path: impl AsRef<Path>,
-        stick_range_x: f32,
-        stick_range_y: f32,
-        stick_warp: f32,
-        trigger_threshold: u8,
         monitor_size: (f32, f32),
     ) -> Result<Self> {
-        let kb = Keyboard::new(layout_path, stick_range_x, stick_range_y, stick_warp)?;
+        let cfg = config::get();
+        let kb_inner = Keyboard::new(
+            &cfg.layout,
+            cfg.stick_x,
+            cfg.stick_y,
+            cfg.stick_warp,
+        )?;
         let kb = KeyboardState {
-            kb,
+            kb: kb_inner,
             l2_was_pressed: false,
             r2_was_pressed: false,
-            trigger_threshold,
+            trigger_threshold: cfg.trigger_threshold,
             pos: 0,
             monitor_size,
         };
@@ -125,7 +127,7 @@ impl KeyboardState {
                     Some(RawKey::Done) => {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    Some(RawKey::Menu) => {}
+                    Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
                         self.kb.send_key(&key)?;
                     }
@@ -143,6 +145,7 @@ impl KeyboardState {
                     Some(RawKey::Done) => {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
+                    Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
                         self.kb.send_key(&key).expect("send_key");
                     }
@@ -205,6 +208,11 @@ impl MenuState {
         ctx: &Context,
         input: &Option<Ps4InputData>,
     ) -> Result<StateId> {
+        if let Some(input) = input {
+            if input.cross {
+                return Ok(StateId::Keyboard);
+            }
+        }
         Ok(StateId::Menu)
     }
 }

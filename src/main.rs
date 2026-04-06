@@ -1,13 +1,13 @@
 // #![windows_subsystem = "windows"]
 
 mod app_state;
+mod config;
 mod keyboard;
 mod ps4;
 
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
-use clap::Parser;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
 use hidapi::{HidApi, HidDevice};
 
@@ -24,30 +24,6 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
         }
     }
     None
-}
-
-#[derive(Parser, Debug)]
-#[command(name = "kosk")]
-#[command(about = "Keyboard On-Screen for Kontroller", long_about = None)]
-struct Args {
-    /// Path to keyboard layout TOML file
-    layout: String,
-
-    /// Sensitivity/range multiplier for the horizontal stick axis
-    #[arg(long, default_value_t = 3.0)]
-    stick_x: f32,
-
-    /// Sensitivity/range multiplier for the vertical stick axis
-    #[arg(long, default_value_t = 2.5)]
-    stick_y: f32,
-
-    /// Stick warp factor (0.0 = circle, 1.0 = square)
-    #[arg(long, default_value_t = 1.0)]
-    stick_warp: f32,
-
-    /// Trigger threshold for key press (0-255)
-    #[arg(long, default_value_t = 40)]
-    trigger_threshold: u8,
 }
 
 struct App {
@@ -186,7 +162,7 @@ impl eframe::App for App {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    config::init();
 
     println!(
         "Looking for PS4 controller (VID:{:04x}, PID:{:04x})...",
@@ -230,11 +206,6 @@ fn main() -> Result<()> {
                     .ok_or(anyhow::anyhow!("could not get monitor size"))?;
 
                 let state = AppState::new(
-                    &args.layout,
-                    args.stick_x,
-                    args.stick_y,
-                    args.stick_warp,
-                    args.trigger_threshold,
                     (monitor_size.x, monitor_size.y),
                 )?;
 
