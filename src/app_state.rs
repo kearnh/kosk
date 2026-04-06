@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Context, Ui};
+use egui::{Button, Context, Ui};
 use std::path::Path;
 
 use crate::{
@@ -7,26 +7,18 @@ use crate::{
     ps4::{Dpad, Ps4InputData},
 };
 
-pub trait AppState: Send {
-    fn window_size(&self) -> (f32, f32);
-    fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui);
-    fn handle_controller_input(
-        &mut self,
-        ctx: &Context,
-        input: &Option<Ps4InputData>,
-    ) -> Result<()>;
+pub enum StateId {
+    Menu,
+    Keyboard,
 }
 
-pub struct KeyboardState {
-    kb: Keyboard,
-    l2_was_pressed: bool,
-    r2_was_pressed: bool,
-    trigger_threshold: u8,
-    pos: usize,
-    monitor_size: (f32, f32),
+pub struct AppState {
+    state: StateId,
+    kb: KeyboardState,
+    menu: MenuState,
 }
 
-impl KeyboardState {
+impl AppState {
     pub fn new(
         layout_path: impl AsRef<Path>,
         stick_range_x: f32,
@@ -36,47 +28,86 @@ impl KeyboardState {
         monitor_size: (f32, f32),
     ) -> Result<Self> {
         let kb = Keyboard::new(layout_path, stick_range_x, stick_range_y, stick_warp)?;
-        Ok(Self {
+        let kb = KeyboardState {
             kb,
             l2_was_pressed: false,
             r2_was_pressed: false,
             trigger_threshold,
             pos: 0,
             monitor_size,
+        };
+        Ok(Self {
+            state: StateId::Keyboard,
+            kb,
+            menu: MenuState,
         })
+    }
+
+    pub fn window_size(&self) -> (f32, f32) {
+        self.kb.kb.layout.get_dimensions()
+    }
+
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
+        let id = match self.state {
+            StateId::Keyboard => self.kb.draw_ui(ctx, ui),
+            StateId::Menu => self.menu.draw_ui(ctx, ui),
+        };
+        self.state = id;
+    }
+
+    pub fn handle_controller_input(
+        &mut self,
+        ctx: &Context,
+        input: &Option<Ps4InputData>,
+    ) -> Result<()> {
+        let id = match self.state {
+            StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
+            StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
+        };
+        self.state = id;
+        Ok(())
     }
 }
 
-impl AppState for KeyboardState {
-    fn window_size(&self) -> (f32, f32) {
-        self.kb.layout.get_dimensions()
-    }
+struct KeyboardState {
+    kb: Keyboard,
+    l2_was_pressed: bool,
+    r2_was_pressed: bool,
+    trigger_threshold: u8,
+    pos: usize,
+    monitor_size: (f32, f32),
+}
 
-    fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
+impl KeyboardState {
+    fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
         if let Some(key) = self.kb.draw_ui(ui) {
-            if key == RawKey::Done {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                return;
-            }
-            if key == RawKey::Shift {
-                self.kb.toggle_shift();
-            } else {
-                self.kb.send_key(&key).expect("send key");
+            match key {
+                RawKey::Done => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                RawKey::Shift => {
+                    self.kb.toggle_shift();
+                }
+                RawKey::Menu => return StateId::Menu,
+                _ => {
+                    self.kb.send_key(&key).expect("send key");
+                }
             }
         }
+        StateId::Keyboard
     }
 
     fn handle_controller_input(
         &mut self,
         ctx: &Context,
         input: &Option<Ps4InputData>,
-    ) -> Result<()> {
+    ) -> Result<StateId> {
         let input = match input {
             Some(input) => input,
             None => {
                 // end of inputs, reset
                 self.kb.selected = (None, None);
-                return Ok(());
+                return Ok(StateId::Keyboard);
             }
         };
 
@@ -94,6 +125,7 @@ impl AppState for KeyboardState {
                     Some(RawKey::Done) => {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
+                    Some(RawKey::Menu) => {}
                     Some(key) => {
                         self.kb.send_key(&key)?;
                     }
@@ -154,6 +186,25 @@ impl AppState for KeyboardState {
             self.pos %= 4;
         }
 
-        Ok(())
+        Ok(StateId::Keyboard)
+    }
+}
+
+struct MenuState;
+
+impl MenuState {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
+        if ui.add(Button::new("back")).clicked() {
+            return StateId::Keyboard;
+        }
+        StateId::Menu
+    }
+
+    fn handle_controller_input(
+        &mut self,
+        ctx: &Context,
+        input: &Option<Ps4InputData>,
+    ) -> Result<StateId> {
+        Ok(StateId::Menu)
     }
 }
