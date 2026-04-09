@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -62,72 +62,80 @@ static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::Onc
 static CONFIG_VERSION: AtomicU32 = AtomicU32::new(0);
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-// Reload the config from file
-fn reload_config() -> Result<()> {
-    let path = CONFIG_PATH.get().ok_or(anyhow::anyhow!("Config path not set"))?;
+/// Load configuration file and return the resolved layout path
+fn load_config() -> Result<PathBuf> {
+    let config_path = CONFIG_PATH.get().ok_or(anyhow::anyhow!("Config path not set"))?;
     
-    // Debounce: avoid reloading too frequently
-    static LAST_RELOAD: AtomicU32 = AtomicU32::new(0);
+    static LAST_LOAD: AtomicU32 = AtomicU32::new(0);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as u32;
     
-    let last = LAST_RELOAD.load(Ordering::Relaxed);
-    if now.wrapping_sub(last) < 1 { // 1 second debounce
-        return Ok(());
+    let last = LAST_LOAD.load(Ordering::Relaxed);
+    if last > 0 && now.wrapping_sub(last) < 1 {
+        return Err(anyhow::anyhow!("Reload debounced"));
     }
     
-    let config_content = fs::read_to_string(path)
+    let config_content = fs::read_to_string(config_path)
         .context("Could not read config file")?;
     let new_config: Config = toml::from_str(&config_content)
         .context("Could not parse config TOML")?;
     
-    if !fs::exists(&new_config.layout)? {
-        bail!(r#"cannot find layout file "{}""#, &new_config.layout);
+    let layout_path = if PathBuf::from(&new_config.layout).is_absolute() {
+        PathBuf::from(&new_config.layout)
+    } else {
+        config_path.parent()
+            .ok_or_else(|| anyhow::anyhow!("Config file has no parent directory"))?
+            .join(&new_config.layout)
+    };
+    
+    if !fs::exists(&layout_path)? {
+        bail!(r#"cannot find layout file "{}""#, layout_path.display());
     }
     
-    // Update the config instance
     if let Some(instance) = CONFIG_INSTANCE.get() {
         let mut config = instance.lock().unwrap();
         *config = new_config;
-        CONFIG_VERSION.fetch_add(1, Ordering::SeqCst);
-        LAST_RELOAD.store(now, Ordering::Relaxed);
-        println!("Config reloaded successfully");
+    } else {
+        CONFIG_INSTANCE.set(Arc::new(Mutex::new(new_config)))
+            .expect("Config was already initialized");
     }
     
-    Ok(())
+    CONFIG_VERSION.fetch_add(1, Ordering::SeqCst);
+    LAST_LOAD.store(now, Ordering::Relaxed);
+    
+    Ok(layout_path)
 }
 
-pub fn init() -> Result<()> {
-    let args = Args::parse();
-    let config_path = PathBuf::from(&args.config_path);
-    
-    // Load initial config
-    let config_content = fs::read_to_string(&config_path)
-        .context("Could not read config file")?;
-    let config: Config = toml::from_str(&config_content)
-        .context("Could not parse config TOML")?;
-    
-    if !fs::exists(&config.layout)? {
-        bail!(r#"cannot find layout file "{}""#, &config.layout);
-    }
-    
-    // Store config instance and path
-    CONFIG_INSTANCE.set(Arc::new(Mutex::new(config))).expect("Config was already initialized");
-    CONFIG_PATH.set(config_path.clone()).expect("Config path was already set");
-    
-    // Setup file watcher in a separate thread
+/// Start a watcher thread that monitors both config and layout files
+fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) {
     std::thread::spawn(move || {
-        let mut watcher = match notify::recommended_watcher(|res: Result<Event, notify::Error>| {
+        let should_exit = Arc::new(AtomicBool::new(false));
+        let should_exit_clone = Arc::clone(&should_exit);
+        
+        let mut watcher = match notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
             match res {
                 Ok(event) => {
-                    // Check if it's a modify event for our config file
                     if event.kind == EventKind::Modify(notify::event::ModifyKind::Data(_)) {
-                        // Check if the modified file is our config file
-                        if event.paths.iter().any(|p| p == &config_path) {
-                            if let Err(e) = reload_config() {
-                                eprintln!("Failed to reload config: {}", e);
+                        let should_reload = event.paths.iter().any(|p| {
+                            p == &config_path || p == &layout_path
+                        });
+                        
+                        if should_reload {
+                            match load_config() {
+                                Ok(new_layout_path) => {
+                                    if new_layout_path != layout_path {
+                                        eprintln!("Layout file changed to {}", new_layout_path.display());
+                                        start_watcher_thread(config_path.clone(), new_layout_path);
+                                        should_exit_clone.store(true, Ordering::Relaxed);
+                                    }
+                                }
+                                Err(e) => {
+                                    if e.to_string() != "Reload debounced" {
+                                        eprintln!("Failed to reload config: {}", e);
+                                    }
+                                }
                             }
                         }
                     }
@@ -147,11 +155,29 @@ pub fn init() -> Result<()> {
             return;
         }
         
-        // Keep the watcher alive
-        loop {
-            std::thread::sleep(Duration::from_secs(1));
+        if let Err(e) = watcher.watch(&layout_path, notify::RecursiveMode::NonRecursive) {
+            eprintln!("Failed to watch layout file: {}", e);
+            return;
         }
+        
+        while !should_exit.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        
+        eprintln!("Watcher thread exiting");
     });
+}
+
+pub fn init() -> Result<()> {
+    let args = Args::parse();
+    let config_path = PathBuf::from(&args.config_path);
+    
+    CONFIG_PATH.set(config_path.clone())
+        .expect("Config path was already set");
+    
+    let initial_layout_path = load_config()?;
+    
+    start_watcher_thread(config_path, initial_layout_path);
     
     Ok(())
 }
