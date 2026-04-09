@@ -27,7 +27,6 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 struct App {
     state: Arc<Mutex<AppState>>,
     window_setup_done: bool,
-    config_version: u32, // Track config changes
 }
 
 impl App {
@@ -69,9 +68,6 @@ impl App {
             }
         }
 
-        // Get initial config version
-        let config_version = config::version();
-
         // Resize viewport to fit state reported size
         let (width, height) = {
             let s = state.lock().unwrap();
@@ -93,7 +89,6 @@ impl App {
         Self {
             state,
             window_setup_done: false,
-            config_version,
         }
     }
 }
@@ -110,25 +105,6 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // Check if config has changed
-        let current_version = config::version();
-        if current_version != self.config_version {
-            self.config_version = current_version;
-
-            // Reload keyboard from new config
-            let mut state = self.state.lock().unwrap();
-            if let Err(e) = state.reload_from_config() {
-                eprintln!("Failed to reload keyboard from config: {}", e);
-            }
-
-            // Update window size based on new layout
-            let (width, height) = state.window_size();
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
-                width + 10.0,
-                height + 10.0,
-            )));
-        }
-
         let is_transparent = config::get().transparent;
 
         ctx.set_visuals(egui::Visuals {
@@ -237,11 +213,6 @@ fn main() -> Result<()> {
         native_options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
-            config::on_change(move || {
-                ctx.request_repaint();
-            })?;
-
-            let ctx = cc.egui_ctx.clone();
 
             let state = {
                 let monitor_size = ctx
@@ -253,6 +224,27 @@ fn main() -> Result<()> {
                 Arc::new(Mutex::new(state))
             };
 
+            let state_for_callback = state.clone();
+            let ctx_for_callback = ctx.clone();
+            config::on_change(move || {
+                let state_lock = state_for_callback.clone();
+                let ctx_clone = ctx_for_callback.clone();
+                
+                std::thread::spawn(move || {
+                    let mut s = state_lock.lock().unwrap();
+                    if let Err(e) = s.reload_from_config() {
+                        eprintln!("Failed to reload keyboard from config: {}", e);
+                    }
+                    let (width, height) = s.window_size();
+                    ctx_clone.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
+                        width + 10.0,
+                        height + 10.0,
+                    )));
+                    ctx_clone.request_repaint();
+                });
+            })?;
+
+            let ctx = cc.egui_ctx.clone();
             let state_clone = state.clone();
             std::thread::spawn(move || -> Result<()> {
                 loop {

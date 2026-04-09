@@ -59,7 +59,6 @@ fn default_transparent() -> bool {
 
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
-static CONFIG_VERSION: AtomicU32 = AtomicU32::new(0);
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 /// Load configuration file and return the resolved layout path
@@ -105,7 +104,6 @@ fn load_config() -> Result<PathBuf> {
             .expect("Config was already initialized");
     }
 
-    CONFIG_VERSION.fetch_add(1, Ordering::SeqCst);
     LAST_LOAD.store(now, Ordering::Relaxed);
 
     Ok(layout_path)
@@ -195,10 +193,6 @@ pub fn get() -> Config {
         .expect("Config must be initialized before use");
     let config = instance.lock().unwrap();
     config.clone()
-}
-
-pub fn version() -> u32 {
-    CONFIG_VERSION.load(Ordering::SeqCst)
 }
 
 type ConfigChangeCallback = Box<dyn Fn() + Send + Sync + 'static>;
