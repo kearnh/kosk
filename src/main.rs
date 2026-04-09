@@ -71,7 +71,7 @@ impl App {
 
         // Get initial config version
         let config_version = config::version();
-        
+
         // Resize viewport to fit state reported size
         let (width, height) = {
             let s = state.lock().unwrap();
@@ -114,13 +114,13 @@ impl eframe::App for App {
         let current_version = config::version();
         if current_version != self.config_version {
             self.config_version = current_version;
-            
+
             // Reload keyboard from new config
             let mut state = self.state.lock().unwrap();
             if let Err(e) = state.reload_from_config() {
                 eprintln!("Failed to reload keyboard from config: {}", e);
             }
-            
+
             // Update window size based on new layout
             let (width, height) = state.window_size();
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
@@ -163,7 +163,7 @@ impl eframe::App for App {
                         // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
                         let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                         let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE.0 as isize);
-                        
+
                         if is_transparent {
                             new_ex_style |= WS_EX_LAYERED.0 as isize;
                         }
