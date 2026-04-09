@@ -6,7 +6,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 #[derive(Parser, Debug)]
 #[command(name = "kosk")]
@@ -148,11 +148,10 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
                         match load_config() {
                             Ok(new_layout_path) => {
                                 if new_layout_path != layout_path {
-                                    eprintln!(
-                                        "Layout file changed to {}",
-                                        new_layout_path.display()
-                                    );
                                     start_watcher_thread(config_path.clone(), new_layout_path)?;
+
+                                    ON_CHANGE_CALLBACK.get().map(|f| f());
+
                                     break;
                                 }
                             }
@@ -200,4 +199,18 @@ pub fn get() -> Config {
 
 pub fn version() -> u32 {
     CONFIG_VERSION.load(Ordering::SeqCst)
+}
+
+type ConfigChangeCallback = Box<dyn Fn() + Send + Sync + 'static>;
+static ON_CHANGE_CALLBACK: OnceLock<ConfigChangeCallback> = OnceLock::new();
+
+// Add a function to set the callback
+pub fn on_change<F>(callback: F) -> Result<()>
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    ON_CHANGE_CALLBACK
+        .set(Box::new(callback))
+        .map_err(|_| anyhow::anyhow!("could not set config on_change callback"))?;
+    Ok(())
 }

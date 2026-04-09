@@ -237,6 +237,11 @@ fn main() -> Result<()> {
         native_options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
+            config::on_change(move || {
+                ctx.request_repaint();
+            })?;
+
+            let ctx = cc.egui_ctx.clone();
 
             let state = {
                 let monitor_size = ctx
