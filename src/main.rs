@@ -1,17 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app_state;
-mod config;
-mod keyboard;
-mod ps4;
-
-use std::sync::{Arc, Mutex};
-
+use crate::state::AppState;
 use anyhow::Result;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
 use hidapi::{HidApi, HidDevice};
+use std::sync::{Arc, Mutex};
 
-use crate::app_state::AppState;
+mod config;
+mod keyboard;
+mod ps4;
+mod state;
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -161,7 +159,7 @@ impl eframe::App for App {
     }
 }
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     config::init()?;
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
@@ -236,13 +234,4 @@ fn run() -> Result<()> {
     .map_err(|e| anyhow::anyhow!("{:#}", e))?;
 
     Ok(())
-}
-
-fn main() {
-    if let Err(e) = run() {
-        eprintln!("Error: {}", e);
-        for cause in e.chain().skip(1) {
-            eprintln!("Caused by: {}", cause);
-        }
-    }
 }

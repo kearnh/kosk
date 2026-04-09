@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use std::fs;
@@ -53,6 +53,10 @@ pub fn init() -> Result<()> {
     let config_content =
         fs::read_to_string(&args.config_path).context("Could not read config file")?;
     let config: Config = toml::from_str(&config_content).context("Could not parse config TOML")?;
+
+    if !fs::exists(&config.layout)? {
+        bail!(r#"cannot find layout file "{}""#, &config.layout);
+    }
 
     CONFIG.set(config).expect("Config was already initialized");
 

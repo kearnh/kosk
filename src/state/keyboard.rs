@@ -1,79 +1,22 @@
-use anyhow::Result;
-use egui::{Button, Context, Ui};
-
 use crate::{
-    config,
     keyboard::{Keyboard, RawKey},
     ps4::{Dpad, Ps4InputData},
+    state::StateId,
 };
+use anyhow::Result;
+use egui::{Context, Ui};
 
-pub enum StateId {
-    Menu,
-    Keyboard,
-}
-
-pub struct AppState {
-    state: StateId,
-    kb: KeyboardState,
-    menu: MenuState,
-}
-
-impl AppState {
-    pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
-        let cfg = config::get();
-        let kb_inner = Keyboard::new(&cfg.layout, cfg.stick_x, cfg.stick_y, cfg.stick_warp)?;
-        let kb = KeyboardState {
-            kb: kb_inner,
-            l2_was_pressed: false,
-            r2_was_pressed: false,
-            trigger_threshold: cfg.trigger_threshold,
-            pos: 0,
-            monitor_size,
-        };
-        Ok(Self {
-            state: StateId::Keyboard,
-            kb,
-            menu: MenuState,
-        })
-    }
-
-    pub fn window_size(&self) -> (f32, f32) {
-        self.kb.kb.layout.get_dimensions()
-    }
-
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
-        let id = match self.state {
-            StateId::Keyboard => self.kb.draw_ui(ctx, ui),
-            StateId::Menu => self.menu.draw_ui(ctx, ui),
-        };
-        self.state = id;
-    }
-
-    pub fn handle_controller_input(
-        &mut self,
-        ctx: &Context,
-        input: &Option<Ps4InputData>,
-    ) -> Result<()> {
-        let id = match self.state {
-            StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
-            StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
-        };
-        self.state = id;
-        Ok(())
-    }
-}
-
-struct KeyboardState {
-    kb: Keyboard,
-    l2_was_pressed: bool,
-    r2_was_pressed: bool,
-    trigger_threshold: u8,
-    pos: usize,
-    monitor_size: (f32, f32),
+pub(super) struct KeyboardState {
+    pub(super) kb: Keyboard,
+    pub(super) l2_was_pressed: bool,
+    pub(super) r2_was_pressed: bool,
+    pub(super) trigger_threshold: u8,
+    pub(super) pos: usize,
+    pub(super) monitor_size: (f32, f32),
 }
 
 impl KeyboardState {
-    fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
+    pub(super) fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
         if let Some(key) = self.kb.draw_ui(ui) {
             match key {
                 RawKey::Done => {
@@ -91,7 +34,7 @@ impl KeyboardState {
         StateId::Keyboard
     }
 
-    fn handle_controller_input(
+    pub(super) fn handle_controller_input(
         &mut self,
         ctx: &Context,
         input: &Option<Ps4InputData>,
@@ -182,29 +125,5 @@ impl KeyboardState {
         }
 
         Ok(StateId::Keyboard)
-    }
-}
-
-struct MenuState;
-
-impl MenuState {
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
-        if ui.add(Button::new("back")).clicked() {
-            return StateId::Keyboard;
-        }
-        StateId::Menu
-    }
-
-    fn handle_controller_input(
-        &mut self,
-        ctx: &Context,
-        input: &Option<Ps4InputData>,
-    ) -> Result<StateId> {
-        if let Some(input) = input {
-            if input.cross {
-                return Ok(StateId::Keyboard);
-            }
-        }
-        Ok(StateId::Menu)
     }
 }
