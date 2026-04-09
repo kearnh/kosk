@@ -95,15 +95,29 @@ impl App {
 
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        // Semi-transparent dark background so users know there's a window
-        // RGBA: slightly dark with ~30% opacity
-        [0.08, 0.08, 0.08, 0.3]
+        if config::get().transparent {
+            // Semi-transparent dark background so users know there's a window
+            // RGBA: slightly dark with ~30% opacity
+            [0.08, 0.08, 0.08, 0.3]
+        } else {
+            [0.08, 0.08, 0.08, 1.0]
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        let is_transparent = config::get().transparent;
+
         ctx.set_visuals(egui::Visuals {
-            window_fill: egui::Color32::TRANSPARENT,
-            panel_fill: egui::Color32::from_rgba_premultiplied(20, 20, 20, 100), // Semi-transparent dark background
+            window_fill: if is_transparent {
+                egui::Color32::TRANSPARENT
+            } else {
+                egui::Color32::from_rgb(20, 20, 20)
+            },
+            panel_fill: if is_transparent {
+                egui::Color32::from_rgba_premultiplied(20, 20, 20, 100)
+            } else {
+                egui::Color32::from_rgb(20, 20, 20)
+            },
             ..Default::default()
         });
 
@@ -124,24 +138,30 @@ impl eframe::App for App {
                     unsafe {
                         // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
                         let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                        let new_ex_style = current_ex_style
-                            | (WS_EX_NOACTIVATE.0 as isize)
-                            | (WS_EX_LAYERED.0 as isize);
+                        let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE.0 as isize);
+                        
+                        if is_transparent {
+                            new_ex_style |= WS_EX_LAYERED.0 as isize;
+                        }
 
                         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
 
-                        // Set layered window attributes for alpha transparency
-                        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+                        if is_transparent {
+                            // Set layered window attributes for alpha transparency
+                            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+                        }
 
                         // Enable DWM blur behind for transparency (only once)
                         if !self.window_setup_done {
-                            let bb = DWM_BLURBEHIND {
-                                dwFlags: DWM_BB_ENABLE,
-                                fEnable: true.into(),
-                                hRgnBlur: Default::default(),
-                                fTransitionOnMaximized: false.into(),
-                            };
-                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                            if is_transparent {
+                                let bb = DWM_BLURBEHIND {
+                                    dwFlags: DWM_BB_ENABLE,
+                                    fEnable: true.into(),
+                                    hRgnBlur: Default::default(),
+                                    fTransitionOnMaximized: false.into(),
+                                };
+                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                            }
                             self.window_setup_done = true;
                         }
                     }
@@ -165,7 +185,7 @@ fn main() -> Result<()> {
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_transparent(true)
+            .with_transparent(config::get().transparent)
             .with_active(false)
             .with_always_on_top()
             .with_decorations(false)
