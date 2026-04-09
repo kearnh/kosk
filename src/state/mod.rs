@@ -40,6 +40,18 @@ impl AppState {
         })
     }
 
+    // Add this new method to reload from config
+    pub fn reload_from_config(&mut self) -> Result<()> {
+        let cfg = config::get();
+        
+        // Recreate keyboard with new config
+        let kb_inner = Keyboard::new(&cfg.layout, cfg.stick_x, cfg.stick_y, cfg.stick_warp)?;
+        self.kb.kb = kb_inner;
+        self.kb.trigger_threshold = cfg.trigger_threshold;
+        
+        Ok(())
+    }
+
     pub fn window_size(&self) -> (f32, f32) {
         self.kb.kb.layout.get_dimensions()
     }
