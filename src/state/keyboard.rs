@@ -11,8 +11,6 @@ pub(super) struct KeyboardState {
     pub(super) l2_was_pressed: bool,
     pub(super) r2_was_pressed: bool,
     pub(super) trigger_threshold: u8,
-    pub(super) pos: usize,
-    pub(super) monitor_size: (f32, f32),
 }
 
 impl KeyboardState {
@@ -108,20 +106,6 @@ impl KeyboardState {
 
         if input.r3 {
             self.kb.toggle_alt();
-        }
-
-        if matches!(input.dpad, Some(Dpad::Down)) {
-            let (kb_width, kb_height) = { self.kb.layout.get_dimensions() };
-            let (size_x, size_y) = self.monitor_size;
-            let xy = [
-                (0.0, 0.0),
-                (size_x - kb_width, 0.0),
-                (size_x - kb_width, size_y - kb_height),
-                (0.0, size_y - kb_height),
-            ][self.pos];
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(xy.into()));
-            self.pos += 1;
-            self.pos %= 4;
         }
 
         Ok(StateId::Keyboard)

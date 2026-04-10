@@ -79,12 +79,6 @@ impl App {
                 width + 10.0,
                 height + 10.0,
             )));
-        if let Some(size) = cc.egui_ctx.input(|i| i.viewport().monitor_size) {
-            cc.egui_ctx
-                .send_viewport_cmd(egui::ViewportCommand::OuterPosition(
-                    (size.x - width, size.y - height).into(),
-                ));
-        }
 
         Self {
             state,
@@ -221,6 +215,10 @@ fn main() -> Result<()> {
 
                 let state = AppState::new((monitor_size.x, monitor_size.y))?;
 
+                // move window to reported position
+                let pos = state.get_position();
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+
                 Arc::new(Mutex::new(state))
             };
 
@@ -229,8 +227,8 @@ fn main() -> Result<()> {
             config::on_change(move || {
                 let state_lock = state_for_callback.clone();
                 let ctx_clone = ctx_for_callback.clone();
-                
-                // Spawn a separate thread to avoid deadlocking the notify watcher thread 
+
+                // Spawn a separate thread to avoid deadlocking the notify watcher thread
                 // if the main UI thread is currently holding the AppState lock.
                 std::thread::spawn(move || {
                     let mut s = state_lock.lock().unwrap();
@@ -242,6 +240,10 @@ fn main() -> Result<()> {
                         width + 10.0,
                         height + 10.0,
                     )));
+
+                    let pos = s.get_position();
+                    ctx_clone.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+
                     ctx_clone.request_repaint();
                 });
             })?;
