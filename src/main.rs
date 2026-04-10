@@ -230,6 +230,8 @@ fn main() -> Result<()> {
                 let state_lock = state_for_callback.clone();
                 let ctx_clone = ctx_for_callback.clone();
                 
+                // Spawn a separate thread to avoid deadlocking the notify watcher thread 
+                // if the main UI thread is currently holding the AppState lock.
                 std::thread::spawn(move || {
                     let mut s = state_lock.lock().unwrap();
                     if let Err(e) = s.reload_from_config() {
