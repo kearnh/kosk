@@ -1,8 +1,9 @@
 layout = "old_steam_controller_kb.toml"
 # layout = "qwerty.toml"
-transparent = false
+transparent = true
+stick_warp = 1.0
 
 [debug]
 show_stick_cursors = true
-show_stick_bounds = true
+# show_stick_bounds = true
 # show_hitboxes = true

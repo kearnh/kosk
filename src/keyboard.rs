@@ -9,7 +9,25 @@ use std::{collections::HashMap, hint::unreachable_unchecked};
 use crate::config;
 use crate::debug::DebugPlugin;
 
-fn warp(mut x: f32, mut y: f32, warp: f32) -> (f32, f32) {
+#[derive(Debug, Clone, Copy, Deserialize)]
+struct UnscaledPixelUnitY(f32);
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+struct UnscaledPixelUnitX(f32);
+
+impl From<f32> for UnscaledPixelUnitX {
+    fn from(value: f32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<f32> for UnscaledPixelUnitY {
+    fn from(value: f32) -> Self {
+        Self(value)
+    }
+}
+
+fn warp(mut x: f32, mut y: f32, warp: f32) -> (UnscaledPixelUnitX, UnscaledPixelUnitY) {
     if warp > 0.0 {
         let u2 = x * x;
         let v2 = y * y;
@@ -27,7 +45,7 @@ fn warp(mut x: f32, mut y: f32, warp: f32) -> (f32, f32) {
     x = x.clamp(-1.0, 1.0);
     y = y.clamp(-1.0, 1.0);
 
-    (x, y)
+    (x.into(), y.into())
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Deserialize)]
@@ -218,7 +236,7 @@ struct KeyButton {
     display: Option<Key<String>>,
     key: Key<RawKey>,
     pos: Pos,
-    width: f32, // Width multiplier (1.0 = normal, 5.0 = space bar)
+    width: UnscaledPixelUnitX,
     #[serde(default)]
     radius_mult: Option<f32>,
 }
@@ -226,33 +244,33 @@ struct KeyButton {
 #[derive(Debug, Clone, Deserialize)]
 struct KeyboardLayoutFile {
     keys: Vec<KeyButton>,
-    row_indents: Vec<f32>, // Indent in pixels for each row
+    row_indents: Vec<f32>,
     #[serde(default)]
-    row_heights: Vec<f32>, // Height multiplier for each row
-    #[serde(default = "default_button_unit_width")]
-    button_unit_width: f32,
-    #[serde(default = "default_button_unit_height")]
-    button_unit_height: f32,
-    #[serde(default = "default_unit_spacing_x")]
-    unit_spacing_x: f32,
-    #[serde(default = "default_unit_spacing_y")]
-    unit_spacing_y: f32,
+    row_heights: Vec<f32>,
+    #[serde(default = "default_scale_x")]
+    scale_x: f32,
+    #[serde(default = "default_scale_y")]
+    scale_y: f32,
+    #[serde(default = "default_pad_x")]
+    pad_x: f32,
+    #[serde(default = "default_pad_y")]
+    pad_y: f32,
     #[serde(default = "default_radius_mult")]
     radius_mult: f32,
     #[serde(default = "default_font_size")]
     font_size: f32,
 }
 
-fn default_button_unit_width() -> f32 {
+fn default_scale_x() -> f32 {
     40.0
 }
-fn default_button_unit_height() -> f32 {
+fn default_scale_y() -> f32 {
     40.0
 }
-fn default_unit_spacing_x() -> f32 {
+fn default_pad_x() -> f32 {
     2.0
 }
-fn default_unit_spacing_y() -> f32 {
+fn default_pad_y() -> f32 {
     2.0
 }
 fn default_radius_mult() -> f32 {
@@ -264,17 +282,17 @@ fn default_font_size() -> f32 {
 
 #[derive(Debug)]
 pub struct KeyboardLayout {
-    row_indents: Vec<f32>, // Indent in pixels for each row
-    row_heights: Vec<f32>, // Height multiplier for each row
+    row_indents: Vec<UnscaledPixelUnitX>,
+    row_heights: Vec<UnscaledPixelUnitY>,
     rows: Vec<Vec<KeyButton>>,
     dims: (f32, f32),
 
     // Layout constants
     pub font_size: f32,
-    button_unit_width: f32,
-    button_unit_height: f32,
-    unit_spacing_x: f32,
-    unit_spacing_y: f32,
+    scale_x: f32,
+    scale_y: f32,
+    pad_x: UnscaledPixelUnitX,
+    pad_y: UnscaledPixelUnitY,
     radius_mult: f32,
 
     // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
@@ -342,7 +360,7 @@ impl KeyboardLayout {
                                 shift: None,
                             },
                             pos: (key.pos.0, expected_col),
-                            width: 1.0,
+                            width: 1.0.into(),
                             radius_mult: None,
                         });
                         expected_col += 1;
@@ -357,16 +375,16 @@ impl KeyboardLayout {
             .collect();
 
         let mut layout = KeyboardLayout {
-            row_indents: layout.row_indents,
-            row_heights: layout.row_heights,
+            row_indents: layout.row_indents.into_iter().map(Into::into).collect(),
+            row_heights: layout.row_heights.into_iter().map(Into::into).collect(),
             rows,
             dims: Default::default(),
             font_size: layout.font_size,
-            button_unit_width: layout.button_unit_width,
-            button_unit_height: layout.button_unit_height,
-            unit_spacing_x: layout.unit_spacing_x,
-            unit_spacing_y: layout.unit_spacing_y,
-            radius_mult: layout.radius_mult,
+            scale_x: layout.scale_x,
+            scale_y: layout.scale_y,
+            pad_x: layout.pad_x.into(),
+            pad_y: layout.pad_y.into(),
+            radius_mult: layout.radius_mult.into(),
             key_hit_boxes: Default::default(),
         };
 
@@ -376,6 +394,14 @@ impl KeyboardLayout {
 
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         Self::load(&fs::read_to_string(path)?)
+    }
+
+    fn scale_x(&self, val: UnscaledPixelUnitX) -> f32 {
+        self.scale_x * val.0
+    }
+
+    fn scale_y(&self, val: UnscaledPixelUnitY) -> f32 {
+        self.scale_y * val.0
     }
 
     pub fn get_dimensions(&self) -> (f32, f32) {
@@ -405,10 +431,10 @@ impl KeyboardLayout {
 
         for i in 0..num_rows {
             row_tops.push(total_height);
-            let height_mult = self.row_heights.get(i).copied().unwrap_or(1.0);
-            total_height += height_mult * self.button_unit_height;
+            let height = self.row_heights.get(i).copied().unwrap_or(1.0.into());
+            total_height += self.scale_y(height);
             if i < num_rows - 1 {
-                total_height += self.unit_spacing_y;
+                total_height += self.scale_y(self.pad_y);
             }
         }
 
@@ -422,15 +448,15 @@ impl KeyboardLayout {
                 continue;
             }
 
-            let height_mult = self.row_heights.get(row_idx).copied().unwrap_or(1.0);
-            let row_height = height_mult * self.button_unit_height;
+            let height = self.row_heights.get(row_idx).copied().unwrap_or(1.0.into());
+            let row_height = self.scale_y(height);
 
-            let indent = self.row_indents.get(row_idx).copied().unwrap_or(0.0);
-            let mut current_x = indent;
+            let indent = self.row_indents.get(row_idx).copied().unwrap_or(0.0.into());
+            let mut current_x = self.scale_x(indent);
             let center_y = row_tops[row_idx] + (row_height / 2.0);
 
             for key in row {
-                let width = self.button_unit_width * key.width;
+                let width = self.scale_x(key.width);
                 let center_x = current_x + (width / 2.0);
 
                 if key.key.normal != RawKey::Skip
@@ -439,16 +465,16 @@ impl KeyboardLayout {
                 {
                     // Target radius for imprecise stick input
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
-                    let radius = self.button_unit_width * mult;
+                    let radius = self.scale_x * mult;
                     hitboxes_row.push(Some((center_x, center_y, radius)));
                 } else {
                     hitboxes_row.push(None);
                 }
 
-                current_x += width + self.unit_spacing_x;
+                current_x += width + self.scale_x(self.pad_x);
             }
 
-            let row_width_total = current_x - self.unit_spacing_x;
+            let row_width_total = current_x - self.scale_x(self.pad_x);
             max_width = max_width.max(row_width_total);
             key_hit_boxes.push(hitboxes_row);
         }
@@ -528,8 +554,8 @@ impl Keyboard {
         scale_x: f32,
         scale_y: f32,
     ) -> (f32, f32, f32, f32) {
-        let max_dx = layout.button_unit_width * scale_x;
-        let max_dy = layout.button_unit_height * scale_y;
+        let max_dx = layout.scale_x * scale_x;
+        let max_dy = layout.scale_y * scale_y;
         let max_reach_sq = max_dx * max_dx + max_dy * max_dy;
 
         let mut min_x = f32::MAX;
@@ -547,8 +573,7 @@ impl Keyboard {
                         min_x = min_x.min(kx - kr);
                         max_x = max_x.max(kx + kr);
                         min_y = min_y.min(ky - kr);
-                        max_y =
-                            max_y.max(ky + kr - layout.button_unit_height * 0.707 /* HACK */);
+                        max_y = max_y.max(ky + kr - layout.scale_y * 0.707 /* HACK */);
                         found = true;
                     }
                 }
@@ -642,13 +667,10 @@ impl Keyboard {
         let x = stick.0 as f32 / 128.0;
         let y = stick.1 as f32 / 128.0;
 
-        let (x, y) = warp(x, y, self.stick_warp);
-
         // Map stick to pixel offset
-        let scale_x = self.layout.button_unit_width * self.stick_scale_x;
-        let scale_y = self.layout.button_unit_height * self.stick_scale_y;
-        let dx = x * scale_x;
-        let dy = y * scale_y;
+        let (x, y) = warp(x, y, self.stick_warp);
+        let dx = self.layout.scale_x(x) * self.stick_scale_x;
+        let dy = self.layout.scale_y(y) * self.stick_scale_y;
 
         let mut cursor_x = center.0 + dx;
         let mut cursor_y = center.1 + dy;
@@ -716,14 +738,11 @@ impl Keyboard {
         style.visuals.selection.bg_fill = Color32::from_rgba_premultiplied(50, 100, 180, 220);
         style.visuals.selection.stroke.color = Color32::WHITE;
 
-        let button_size = Vec2::new(
-            self.layout.button_unit_width,
-            self.layout.button_unit_height,
-        );
+        let pad_x = self.layout.scale_x(self.layout.pad_x);
+        let pad_y = self.layout.scale_y(self.layout.pad_y);
 
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing =
-                Vec2::new(self.layout.unit_spacing_x, self.layout.unit_spacing_y);
+            ui.spacing_mut().item_spacing = Vec2::new(pad_x, pad_y);
 
             // FIXME can this not be done once up-front
             let left_center = self.get_nearest_key_left((0, 0));
@@ -731,20 +750,29 @@ impl Keyboard {
 
             for (row_idx, keys) in self.layout.rows.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing =
-                        Vec2::new(self.layout.unit_spacing_x, self.layout.unit_spacing_y);
+                    ui.spacing_mut().item_spacing = Vec2::new(pad_x, pad_y);
 
                     // Add indent for this row
-                    let indent = self.layout.row_indents.get(row_idx).copied().unwrap_or(0.0);
-                    ui.add_space(indent);
+                    let indent = self
+                        .layout
+                        .row_indents
+                        .get(row_idx)
+                        .copied()
+                        .unwrap_or(0.0.into());
+                    ui.add_space(self.layout.scale_x(indent));
 
-                    let height_mult = self.layout.row_heights.get(row_idx).copied().unwrap_or(1.0);
-                    let row_height = self.layout.button_unit_height * height_mult;
+                    let height = self
+                        .layout
+                        .row_heights
+                        .get(row_idx)
+                        .copied()
+                        .unwrap_or(1.0.into());
+                    let row_height = self.layout.scale_y(height);
 
                     for key in keys {
                         // Skip rendering for SKIP keys - just add space
                         if key.key.normal == RawKey::Skip {
-                            ui.add_space(button_size.x * key.width);
+                            ui.add_space(self.layout.scale_x(key.width));
                             continue;
                         }
 
@@ -785,7 +813,7 @@ impl Keyboard {
                             }
                         }
 
-                        let size = Vec2::new(button_size.x * key.width, row_height);
+                        let size = Vec2::new(self.layout.scale_x(key.width), row_height);
                         let response = ui.add_sized(size, button);
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
@@ -826,20 +854,17 @@ impl Keyboard {
                     let d_lock = ctx.plugin::<DebugPlugin>();
                     let d = d_lock.lock();
                     if let Some(input) = &d.controller_input {
-                        let scale_x = self.layout.button_unit_width * self.stick_scale_x;
-                        let scale_y = self.layout.button_unit_height * self.stick_scale_y;
-
                         let (x, y) = input.left;
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
-                        let dx = x * scale_x;
-                        let dy = y * scale_y;
+                        let dx = self.layout.scale_x(x) * self.stick_scale_x;
+                        let dy = self.layout.scale_y(y) * self.stick_scale_y;
                         let xy = (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy);
                         painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 0, 255));
 
                         let (x, y) = input.right;
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
-                        let dx = x * scale_x;
-                        let dy = y * scale_y;
+                        let dx = self.layout.scale_x(x) * self.stick_scale_x;
+                        let dy = self.layout.scale_y(y) * self.stick_scale_y;
                         let xy = (
                             self.right_stick_center.0 + dx,
                             self.right_stick_center.1 + dy,
