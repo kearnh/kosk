@@ -33,12 +33,12 @@ pub struct Config {
     pub layout: String,
 
     /// Sensitivity/range multiplier for the horizontal stick axis
-    #[serde(default = "default_stick_x")]
-    pub stick_x: f32,
+    #[serde(default = "default_stick_scale_x")]
+    pub stick_scale_x: f32,
 
     /// Sensitivity/range multiplier for the vertical stick axis
-    #[serde(default = "default_stick_y")]
-    pub stick_y: f32,
+    #[serde(default = "default_stick_scale_y")]
+    pub stick_scale_y: f32,
 
     /// Stick warp factor (0.0 = circle, 1.0 = square)
     #[serde(default = "default_stick_warp")]
@@ -56,10 +56,10 @@ pub struct Config {
     pub debug: Option<Debug>,
 }
 
-fn default_stick_x() -> f32 {
+fn default_stick_scale_x() -> f32 {
     3.0
 }
-fn default_stick_y() -> f32 {
+fn default_stick_scale_y() -> f32 {
     2.5
 }
 fn default_stick_warp() -> f32 {

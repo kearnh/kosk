@@ -471,8 +471,8 @@ pub struct Keyboard {
     alt_mod: bool,
     pub(crate) left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
-    pub(crate) stick_range_x: f32,
-    pub(crate) stick_range_y: f32,
+    pub(crate) stick_scale_x: f32,
+    pub(crate) stick_scale_y: f32,
     pub(crate) stick_warp: f32,
     left_selectable_bounds: (f32, f32, f32, f32),
     right_selectable_bounds: (f32, f32, f32, f32),
@@ -482,8 +482,8 @@ pub struct Keyboard {
 impl Keyboard {
     pub fn new(
         layout_path: impl AsRef<Path>,
-        stick_range_x: f32,
-        stick_range_y: f32,
+        stick_scale_x: f32,
+        stick_scale_y: f32,
         stick_warp: f32,
     ) -> Result<Self> {
         let layout = KeyboardLayout::load_from_file(layout_path)?;
@@ -494,14 +494,14 @@ impl Keyboard {
         let left_bounds = Self::calculate_reachable_bounds(
             &layout,
             left_stick_center,
-            stick_range_x,
-            stick_range_y,
+            stick_scale_x,
+            stick_scale_y,
         );
         let right_bounds = Self::calculate_reachable_bounds(
             &layout,
             right_stick_center,
-            stick_range_x,
-            stick_range_y,
+            stick_scale_x,
+            stick_scale_y,
         );
 
         Ok(Self {
@@ -513,8 +513,8 @@ impl Keyboard {
             alt_mod: false,
             left_stick_center,
             right_stick_center,
-            stick_range_x,
-            stick_range_y,
+            stick_scale_x,
+            stick_scale_y,
             stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
@@ -525,11 +525,11 @@ impl Keyboard {
     fn calculate_reachable_bounds(
         layout: &KeyboardLayout,
         center: (f32, f32),
-        range_x: f32,
-        range_y: f32,
+        scale_x: f32,
+        scale_y: f32,
     ) -> (f32, f32, f32, f32) {
-        let max_dx = layout.button_unit_width * range_x;
-        let max_dy = layout.button_unit_height * range_y;
+        let max_dx = layout.button_unit_width * scale_x;
+        let max_dy = layout.button_unit_height * scale_y;
         let max_reach_sq = max_dx * max_dx + max_dy * max_dy;
 
         let mut min_x = f32::MAX;
@@ -645,10 +645,10 @@ impl Keyboard {
         let (x, y) = warp(x, y, self.stick_warp);
 
         // Map stick to pixel offset
-        let range_x = self.layout.button_unit_width * self.stick_range_x;
-        let range_y = self.layout.button_unit_height * self.stick_range_y;
-        let dx = x * range_x;
-        let dy = y * range_y;
+        let scale_x = self.layout.button_unit_width * self.stick_scale_x;
+        let scale_y = self.layout.button_unit_height * self.stick_scale_y;
+        let dx = x * scale_x;
+        let dy = y * scale_y;
 
         let mut cursor_x = center.0 + dx;
         let mut cursor_y = center.1 + dy;
@@ -826,20 +826,20 @@ impl Keyboard {
                     let d_lock = ctx.plugin::<DebugPlugin>();
                     let d = d_lock.lock();
                     if let Some(input) = &d.controller_input {
-                        let range_x = self.layout.button_unit_width * self.stick_range_x;
-                        let range_y = self.layout.button_unit_height * self.stick_range_y;
+                        let scale_x = self.layout.button_unit_width * self.stick_scale_x;
+                        let scale_y = self.layout.button_unit_height * self.stick_scale_y;
 
                         let (x, y) = input.left;
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
-                        let dx = x * range_x;
-                        let dy = y * range_y;
+                        let dx = x * scale_x;
+                        let dy = y * scale_y;
                         let xy = (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy);
                         painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 0, 255));
 
                         let (x, y) = input.right;
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
-                        let dx = x * range_x;
-                        let dy = y * range_y;
+                        let dx = x * scale_x;
+                        let dy = y * scale_y;
                         let xy = (
                             self.right_stick_center.0 + dx,
                             self.right_stick_center.1 + dy,
