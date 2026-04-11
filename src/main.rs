@@ -7,6 +7,7 @@ use hidapi::{HidApi, HidDevice};
 use std::sync::{Arc, Mutex};
 
 mod config;
+mod debug;
 mod keyboard;
 mod ps4;
 mod state;
@@ -79,6 +80,8 @@ impl App {
                 width + 10.0,
                 height + 10.0,
             )));
+
+        debug::register(&cc.egui_ctx);
 
         Self {
             state,
@@ -224,7 +227,7 @@ fn main() -> Result<()> {
 
             let state_for_callback = state.clone();
             let ctx_for_callback = ctx.clone();
-            config::on_change(move || {
+            config::on_changed(move || {
                 let state_lock = state_for_callback.clone();
                 let ctx_clone = ctx_for_callback.clone();
 

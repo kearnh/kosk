@@ -1,6 +1,6 @@
 use crate::{
     keyboard::{Keyboard, RawKey},
-    ps4::{Dpad, Ps4InputData},
+    ps4::Ps4InputData,
     state::StateId,
 };
 use anyhow::Result;
@@ -15,7 +15,7 @@ pub(super) struct KeyboardState {
 
 impl KeyboardState {
     pub(super) fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
-        if let Some(key) = self.kb.draw_ui(ui) {
+        if let Some(key) = self.kb.draw_ui(ctx, ui) {
             match key {
                 RawKey::Done => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);

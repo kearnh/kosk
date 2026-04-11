@@ -15,6 +15,18 @@ pub struct Args {
     pub config_path: String,
 }
 
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct Debug {
+    #[serde(default)]
+    pub show_stick_cursors: bool,
+
+    #[serde(default)]
+    pub show_hitboxes: bool,
+
+    #[serde(default)]
+    pub show_stick_bounds: bool,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     /// Path to keyboard layout TOML file
@@ -39,6 +51,9 @@ pub struct Config {
     /// Whether the window should be transparent
     #[serde(default = "default_transparent")]
     pub transparent: bool,
+
+    #[serde(default)]
+    pub debug: Option<Debug>,
 }
 
 fn default_stick_x() -> f32 {
@@ -199,7 +214,7 @@ type ConfigChangeCallback = Box<dyn Fn() + Send + Sync + 'static>;
 static ON_CHANGE_CALLBACK: OnceLock<ConfigChangeCallback> = OnceLock::new();
 
 // Add a function to set the callback
-pub fn on_change<F>(callback: F) -> Result<()>
+pub fn on_changed<F>(callback: F) -> Result<()>
 where
     F: Fn() + Send + Sync + 'static,
 {

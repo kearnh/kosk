@@ -6,7 +6,7 @@ button_unit_height = 36.0
 unit_spacing_x = 4.0
 unit_spacing_y = 4.0
 radius_mult = 1.125
-font_size = 20.0
+font_size = 24.0
 
 [[keys]]
 key = { normal = "1", shift = "!" }

@@ -1,5 +1,6 @@
 use crate::{
     config,
+    debug::DebugPlugin,
     keyboard::Keyboard,
     ps4::{Dpad, Ps4InputData},
     state::{keyboard::KeyboardState, menu::MenuState},
@@ -108,12 +109,18 @@ impl AppState {
         ctx: &Context,
         input: &Option<Ps4InputData>,
     ) -> Result<()> {
-        // temporary, position will be set in menu somehow
-        if matches!(input.clone().and_then(|i| i.dpad), Some(Dpad::Down)) {
-            self.pos.incr();
-            let pos = self.get_position();
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
-            return Ok(());
+        if let Some(input) = input {
+            // temporary, position will be set in menu somehow
+            if matches!(input.dpad, Some(Dpad::Down)) {
+                self.pos.incr();
+                let pos = self.get_position();
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+                return Ok(());
+            }
+
+            if config::get().debug.is_some() {
+                ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.clone()));
+            }
         }
 
         let id = match self.state {

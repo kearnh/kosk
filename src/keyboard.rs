@@ -1,10 +1,13 @@
 use anyhow::Result;
-use egui::{Button, Color32, RichText, Ui, Vec2};
+use egui::{Button, Color32, Context, RichText, Ui, Vec2};
 use enigo::{Enigo, Keyboard as _};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 use std::{collections::HashMap, hint::unreachable_unchecked};
+
+use crate::config;
+use crate::debug::DebugPlugin;
 
 fn warp(mut x: f32, mut y: f32, warp: f32) -> (f32, f32) {
     if warp > 0.0 {
@@ -693,7 +696,7 @@ impl Keyboard {
         self.alt_mod = !self.alt_mod;
     }
 
-    pub fn draw_ui(&self, ui: &mut Ui) -> Option<RawKey> {
+    pub fn draw_ui(&self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
         let mut pressed_key: Option<RawKey> = None;
 
         // Set semi-transparent button styling
@@ -816,29 +819,68 @@ impl Keyboard {
                 });
             }
 
-            if DEBUG {
+            if let Some(debug) = config::get().debug {
                 let painter = ui.painter();
 
-                let (x0, y0, x1, y1) = self.left_selectable_bounds;
-                let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-                painter.rect_stroke(
-                    r,
-                    egui::CornerRadius::default(),
-                    egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 255)),
-                    egui::StrokeKind::Middle,
-                );
+                if debug.show_stick_cursors {
+                    let d_lock = ctx.plugin::<DebugPlugin>();
+                    let d = d_lock.lock();
+                    if let Some(input) = &d.controller_input {
+                        let range_x = self.layout.button_unit_width * self.stick_range_x;
+                        let range_y = self.layout.button_unit_height * self.stick_range_y;
 
-                for row in &self.layout.key_hit_boxes {
-                    for h in row {
-                        if let Some((x, y, r)) = *h {
-                            painter.circle_stroke(
-                                (x, y).into(),
-                                r,
-                                egui::Stroke::new(
-                                    1.0,
-                                    Color32::from_rgba_premultiplied(0, 192, 255, 128),
-                                ),
-                            );
+                        let (x, y) = input.left;
+                        let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
+                        let dx = x * range_x;
+                        let dy = y * range_y;
+                        let xy = (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy);
+                        painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 0, 255));
+
+                        let (x, y) = input.right;
+                        let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
+                        let dx = x * range_x;
+                        let dy = y * range_y;
+                        let xy = (
+                            self.right_stick_center.0 + dx,
+                            self.right_stick_center.1 + dy,
+                        );
+                        painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 255, 0));
+                    }
+                }
+
+                if debug.show_stick_bounds {
+                    let (x0, y0, x1, y1) = self.left_selectable_bounds;
+                    let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+                    painter.rect_stroke(
+                        r,
+                        egui::CornerRadius::default(),
+                        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 255, 0, 255)),
+                        egui::StrokeKind::Middle,
+                    );
+
+                    let (x0, y0, x1, y1) = self.right_selectable_bounds;
+                    let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+                    painter.rect_stroke(
+                        r,
+                        egui::CornerRadius::default(),
+                        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 255, 255)),
+                        egui::StrokeKind::Middle,
+                    );
+                }
+
+                if debug.show_hitboxes {
+                    for row in &self.layout.key_hit_boxes {
+                        for h in row {
+                            if let Some((x, y, r)) = *h {
+                                painter.circle_stroke(
+                                    (x, y).into(),
+                                    r,
+                                    egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                    ),
+                                );
+                            }
                         }
                     }
                 }
@@ -848,5 +890,3 @@ impl Keyboard {
         pressed_key
     }
 }
-
-const DEBUG: bool = false;
