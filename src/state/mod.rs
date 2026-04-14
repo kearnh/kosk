@@ -2,7 +2,7 @@ use crate::{
     config,
     debug::DebugPlugin,
     keyboard::Keyboard,
-    ps4::{Dpad, Ps4InputData},
+    ps4::Ps4InputData,
     state::{keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
 };
 use anyhow::Result;
@@ -33,7 +33,7 @@ impl WindowPos {
             WindowPos::TopRight => WindowPos::BottomRight,
             WindowPos::BottomRight => WindowPos::BottomLeft,
             WindowPos::BottomLeft => WindowPos::TopLeft,
-            WindowPos::Absolute(_) => WindowPos::TopLeft,
+            WindowPos::Absolute(..) => WindowPos::TopLeft,
         };
     }
 }
@@ -89,7 +89,7 @@ impl AppState {
             WindowPos::TopRight => 1,
             WindowPos::BottomRight => 2,
             WindowPos::BottomLeft => 3,
-            WindowPos::Absolute(_) => unreachable!(),
+            WindowPos::Absolute(..) => unreachable!(),
         }]
     }
 
@@ -123,7 +123,13 @@ impl AppState {
         let id = match self.state {
             StateId::Keyboard => self.kb.draw_ui(ctx, ui),
             StateId::Menu => self.menu.draw_ui(ctx, ui),
-            StateId::MoveWindow => self.move_window.draw_ui(ctx, ui, self),
+            StateId::MoveWindow => {
+                let (next_state, movement) = self.move_window.draw_ui(ctx, ui);
+                if let Some((dx, dy)) = movement {
+                    self.move_window_relative(dx, dy);
+                }
+                next_state
+            }
         };
         self.state = id;
     }
