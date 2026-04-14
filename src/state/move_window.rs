@@ -26,35 +26,65 @@ impl MoveWindowState {
                 egui::Grid::new("move_grid")
                     .spacing([10.0, 10.0])
                     .show(ui, |ui| {
-                        // Row 1: Corner, Up, Corner
+                        // Row 1
                         if ui.button("↖").clicked() {
                             movement = Some(WindowPos::TopLeft);
                         }
-                        if ui.button("↑").clicked() {
-                            movement = Some(WindowPos::Absolute(x, y - 10.0));
+                        ui.label("");
+                        if ui.button("↑ B").clicked() {
+                            movement = Some(WindowPos::Absolute(x, y - 100.0));
                         }
+                        ui.label("");
                         if ui.button("↗").clicked() {
                             movement = Some(WindowPos::TopRight);
                         }
                         ui.end_row();
 
-                        // Row 2: Left, Spacer, Right
-                        if ui.button("←").clicked() {
-                            movement = Some(WindowPos::Absolute(x - 50.0, y));
+                        // Row 2
+                        ui.label("");
+                        if ui.button("↑ s").clicked() {
+                            movement = Some(WindowPos::Absolute(x, y - 10.0));
                         }
                         ui.label("");
-                        if ui.button("→").clicked() {
-                            movement = Some(WindowPos::Absolute(x + 50.0, y));
+                        ui.label("");
+                        ui.label("");
+                        ui.end_row();
+
+                        // Row 3
+                        if ui.button("← B").clicked() {
+                            movement = Some(WindowPos::Absolute(x - 100.0, y));
+                        }
+                        if ui.button("← s").clicked() {
+                            movement = Some(WindowPos::Absolute(x - 10.0, y));
+                        }
+                        ui.label("");
+                        if ui.button("→ s").clicked() {
+                            movement = Some(WindowPos::Absolute(x + 10.0, y));
+                        }
+                        if ui.button("→ B").clicked() {
+                            movement = Some(WindowPos::Absolute(x + 100.0, y));
                         }
                         ui.end_row();
 
-                        // Row 3: Corner, Down, Corner
+                        // Row 4
+                        ui.label("");
+                        if ui.button("↓ s").clicked() {
+                            movement = Some(WindowPos::Absolute(x, y + 10.0));
+                        }
+                        ui.label("");
+                        ui.label("");
+                        ui.label("");
+                        ui.end_row();
+
+                        // Row 5
                         if ui.button("↙").clicked() {
                             movement = Some(WindowPos::BottomLeft);
                         }
-                        if ui.button("↓").clicked() {
-                            movement = Some(WindowPos::Absolute(x, y + 10.0));
+                        ui.label("");
+                        if ui.button("↓ B").clicked() {
+                            movement = Some(WindowPos::Absolute(x, y + 100.0));
                         }
+                        ui.label("");
                         if ui.button("↘").clicked() {
                             movement = Some(WindowPos::BottomRight);
                         }
