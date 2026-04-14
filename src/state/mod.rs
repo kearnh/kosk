@@ -120,7 +120,7 @@ impl AppState {
             StateId::Menu => self.menu.draw_ui(ctx, ui),
             StateId::MoveWindow => {
                 let (x, y) = self.get_position();
-                let (next_state, movement) = self.move_window.draw_ui(ctx, ui, &self.pos, (x, y));
+                let (next_state, movement) = self.move_window.draw_ui(ctx, ui, (x, y));
                 if let Some(new_pos) = movement {
                     self.pos = new_pos;
                     ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
