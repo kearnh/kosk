@@ -16,9 +16,7 @@ pub(super) struct MenuState {
 }
 
 fn on_move() -> Option<StateId> {
-    // FIXME
-    dbg!();
-    None
+    Some(StateId::MoveWindow)
 }
 
 fn on_back() -> Option<StateId> {
@@ -74,10 +72,10 @@ impl MenuState {
 
         let n = match input.dpad {
             Some(Dpad::Up) => -1,
-            Some(Dpad::Down) => -1,
+            Some(Dpad::Down) => 1,
             _ => 0,
         };
-        self.selected = (self.selected as isize + n) as usize % self.buttons.len();
+        self.selected = (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
 
         if input.circle {
             return Ok(StateId::Keyboard);

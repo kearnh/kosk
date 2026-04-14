@@ -3,17 +3,19 @@ use crate::{
     debug::DebugPlugin,
     keyboard::Keyboard,
     ps4::{Dpad, Ps4InputData},
-    state::{keyboard::KeyboardState, menu::MenuState},
+    state::{keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
 };
 use anyhow::Result;
 use egui::{Context, Ui};
 
 mod keyboard;
 mod menu;
+mod move_window;
 
 pub enum StateId {
     Menu,
     Keyboard,
+    MoveWindow,
 }
 
 pub enum WindowPos {
@@ -21,8 +23,7 @@ pub enum WindowPos {
     TopRight,
     BottomRight,
     BottomLeft,
-    // Todo
-    // Absolute(f32, f32)
+    Absolute(f32, f32),
 }
 
 impl WindowPos {
@@ -32,6 +33,7 @@ impl WindowPos {
             WindowPos::TopRight => WindowPos::BottomRight,
             WindowPos::BottomRight => WindowPos::BottomLeft,
             WindowPos::BottomLeft => WindowPos::TopLeft,
+            WindowPos::Absolute(_) => WindowPos::TopLeft,
         };
     }
 }
@@ -40,6 +42,7 @@ pub struct AppState {
     state: StateId,
     kb: KeyboardState,
     menu: MenuState,
+    move_window: MoveWindowState,
     pos: WindowPos,
     monitor_size: (f32, f32),
 }
@@ -64,12 +67,16 @@ impl AppState {
             state: StateId::Keyboard,
             kb,
             menu: MenuState::new(),
+            move_window: MoveWindowState::new(),
             pos: WindowPos::BottomRight,
             monitor_size,
         })
     }
 
     pub fn get_position(&self) -> (f32, f32) {
+        if let WindowPos::Absolute(x, y) = self.pos {
+            return (x, y);
+        }
         let (kb_width, kb_height) = self.window_size();
         let (size_x, size_y) = self.monitor_size;
         [
@@ -82,7 +89,13 @@ impl AppState {
             WindowPos::TopRight => 1,
             WindowPos::BottomRight => 2,
             WindowPos::BottomLeft => 3,
+            WindowPos::Absolute(_) => unreachable!(),
         }]
+    }
+
+    pub fn move_window_relative(&mut self, dx: f32, dy: f32) {
+        let (x, y) = self.get_position();
+        self.pos = WindowPos::Absolute(x + dx, y + dy);
     }
 
     // Add this new method to reload from config
@@ -110,6 +123,7 @@ impl AppState {
         let id = match self.state {
             StateId::Keyboard => self.kb.draw_ui(ctx, ui),
             StateId::Menu => self.menu.draw_ui(ctx, ui),
+            StateId::MoveWindow => self.move_window.draw_ui(ctx, ui, self),
         };
         self.state = id;
     }
@@ -128,6 +142,7 @@ impl AppState {
         let id = match self.state {
             StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
             StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
+            StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input)?,
         };
         self.state = id;
         Ok(())
