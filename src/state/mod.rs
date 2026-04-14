@@ -122,7 +122,20 @@ impl AppState {
                 let (x, y) = self.get_position();
                 let (next_state, movement) = self.move_window.draw_ui(ctx, ui, (x, y));
                 if let Some(new_pos) = movement {
-                    self.pos = new_pos;
+                    if let WindowPos::Absolute(mut x, mut y) = new_pos {
+                        let (win_w, win_h) = self.window_size();
+                        let (mon_w, mon_h) = self.monitor_size;
+                        
+                        // Clamp X between 0 and (Monitor Width - Window Width)
+                        x = x.clamp(0.0, mon_w - win_w);
+                        // Clamp Y between 0 and (Monitor Height - Window Height)
+                        y = y.clamp(0.0, mon_h - win_h);
+                        
+                        self.pos = WindowPos::Absolute(x, y);
+                    } else {
+                        self.pos = new_pos;
+                    }
+                    
                     ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
                         self.get_position().into(),
                     ));
