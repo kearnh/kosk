@@ -47,7 +47,12 @@ pub struct AppState {
 impl AppState {
     pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
         let cfg = config::get();
-        let kb_inner = Keyboard::new(&cfg.layout, cfg.stick_scale_x, cfg.stick_scale_y, cfg.stick_warp)?;
+        let kb_inner = Keyboard::new(
+            &cfg.layout,
+            cfg.stick_scale_x,
+            cfg.stick_scale_y,
+            cfg.stick_warp,
+        )?;
         let kb = KeyboardState {
             kb: kb_inner,
             l2_was_pressed: false,
@@ -58,7 +63,7 @@ impl AppState {
         Ok(Self {
             state: StateId::Keyboard,
             kb,
-            menu: MenuState,
+            menu: MenuState::new(),
             pos: WindowPos::BottomRight,
             monitor_size,
         })
@@ -85,7 +90,12 @@ impl AppState {
         let cfg = config::get();
 
         // Recreate keyboard with new config
-        let kb_inner = Keyboard::new(&cfg.layout, cfg.stick_scale_x, cfg.stick_scale_y, cfg.stick_warp)?;
+        let kb_inner = Keyboard::new(
+            &cfg.layout,
+            cfg.stick_scale_x,
+            cfg.stick_scale_y,
+            cfg.stick_warp,
+        )?;
         self.kb.kb = kb_inner;
         self.kb.trigger_threshold = cfg.trigger_threshold;
 
@@ -110,14 +120,6 @@ impl AppState {
         input: &Option<Ps4InputData>,
     ) -> Result<()> {
         if let Some(input) = input {
-            // temporary, position will be set in menu somehow
-            if matches!(input.dpad, Some(Dpad::Down)) {
-                self.pos.incr();
-                let pos = self.get_position();
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
-                return Ok(());
-            }
-
             if config::get().debug.is_some() {
                 ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.clone()));
             }
