@@ -93,11 +93,6 @@ impl AppState {
         }]
     }
 
-    pub fn move_window_relative(&mut self, dx: f32, dy: f32) {
-        let (x, y) = self.get_position();
-        self.pos = WindowPos::Absolute(x + dx, y + dy);
-    }
-
     // Add this new method to reload from config
     pub fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
@@ -126,7 +121,11 @@ impl AppState {
             StateId::MoveWindow => {
                 let (next_state, movement) = self.move_window.draw_ui(ctx, ui);
                 if let Some((dx, dy)) = movement {
-                    self.move_window_relative(dx, dy);
+                    let (x, y) = self.get_position();
+                    self.pos = WindowPos::Absolute(x + dx, y + dy);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                        self.get_position().into(),
+                    ));
                 }
                 next_state
             }
