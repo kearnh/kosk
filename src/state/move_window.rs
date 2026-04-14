@@ -38,7 +38,7 @@ impl MoveWindowState {
                 return StateId::Menu; 
             }
             StateId::MoveWindow
-        });
+        }).inner;
 
         (next_state, movement)
     }
