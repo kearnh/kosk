@@ -119,10 +119,10 @@ impl AppState {
             StateId::Keyboard => self.kb.draw_ui(ctx, ui),
             StateId::Menu => self.menu.draw_ui(ctx, ui),
             StateId::MoveWindow => {
-                let (next_state, movement) = self.move_window.draw_ui(ctx, ui);
-                if let Some((dx, dy)) = movement {
-                    let (x, y) = self.get_position();
-                    self.pos = WindowPos::Absolute(x + dx, y + dy);
+                let (x, y) = self.get_position();
+                let (next_state, movement) = self.move_window.draw_ui(ctx, ui, &self.pos, (x, y));
+                if let Some(new_pos) = movement {
+                    self.pos = new_pos;
                     ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
                         self.get_position().into(),
                     ));
