@@ -1,5 +1,7 @@
 layout = "old_steam_controller_kb.toml"
 # layout = "qwerty.toml"
+scale_x = 36.0
+scale_y = 40.0
 transparent = true
 stick_warp = 1.0
 

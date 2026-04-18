@@ -247,10 +247,6 @@ struct KeyboardLayoutFile {
     row_indents: Vec<f32>,
     #[serde(default)]
     row_heights: Vec<f32>,
-    #[serde(default = "default_scale_x")]
-    scale_x: f32,
-    #[serde(default = "default_scale_y")]
-    scale_y: f32,
     #[serde(default = "default_pad_x")]
     pad_x: f32,
     #[serde(default = "default_pad_y")]
@@ -261,12 +257,6 @@ struct KeyboardLayoutFile {
     font_size: f32,
 }
 
-fn default_scale_x() -> f32 {
-    40.0
-}
-fn default_scale_y() -> f32 {
-    40.0
-}
 fn default_pad_x() -> f32 {
     2.0
 }
@@ -374,14 +364,15 @@ impl KeyboardLayout {
             })
             .collect();
 
+        let cfg = config::get();
         let mut layout = KeyboardLayout {
             row_indents: layout.row_indents.into_iter().map(Into::into).collect(),
             row_heights: layout.row_heights.into_iter().map(Into::into).collect(),
             rows,
             dims: Default::default(),
             font_size: layout.font_size,
-            scale_x: layout.scale_x,
-            scale_y: layout.scale_y,
+            scale_x: cfg.scale_x,
+            scale_y: cfg.scale_y,
             pad_x: layout.pad_x.into(),
             pad_y: layout.pad_y.into(),
             radius_mult: layout.radius_mult.into(),
@@ -506,13 +497,10 @@ pub struct Keyboard {
 }
 
 impl Keyboard {
-    pub fn new(
-        layout_path: impl AsRef<Path>,
-        stick_scale_x: f32,
-        stick_scale_y: f32,
-        stick_warp: f32,
-    ) -> Result<Self> {
-        let layout = KeyboardLayout::load_from_file(layout_path)?;
+    pub fn new() -> Result<Self> {
+        let cfg = config::get();
+
+        let layout = KeyboardLayout::load_from_file(cfg.layout)?;
         let (w, h) = layout.get_dimensions();
         let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
         let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
@@ -520,14 +508,14 @@ impl Keyboard {
         let left_bounds = Self::calculate_reachable_bounds(
             &layout,
             left_stick_center,
-            stick_scale_x,
-            stick_scale_y,
+            cfg.stick_scale_x,
+            cfg.stick_scale_y,
         );
         let right_bounds = Self::calculate_reachable_bounds(
             &layout,
             right_stick_center,
-            stick_scale_x,
-            stick_scale_y,
+            cfg.stick_scale_x,
+            cfg.stick_scale_y,
         );
 
         Ok(Self {
@@ -539,9 +527,9 @@ impl Keyboard {
             alt_mod: false,
             left_stick_center,
             right_stick_center,
-            stick_scale_x,
-            stick_scale_y,
-            stick_warp,
+            stick_scale_x: cfg.stick_scale_x,
+            stick_scale_y: cfg.stick_scale_y,
+            stick_warp: cfg.stick_warp,
             left_selectable_bounds: left_bounds,
             right_selectable_bounds: right_bounds,
             enigo: Enigo::new(&Default::default())?,

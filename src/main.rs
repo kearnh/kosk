@@ -167,6 +167,12 @@ impl eframe::App for App {
             }
         }
 
+        {
+            let s = self.state.lock().unwrap();
+            let pos = s.get_position(ctx.content_rect());
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+        }
+
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
@@ -218,10 +224,6 @@ fn main() -> Result<()> {
 
                 let state = AppState::new((monitor_size.x, monitor_size.y))?;
 
-                // move window to reported position
-                let pos = state.get_position();
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
-
                 Arc::new(Mutex::new(state))
             };
 
@@ -243,9 +245,6 @@ fn main() -> Result<()> {
                         width + 10.0,
                         height + 10.0,
                     )));
-
-                    let pos = s.get_position();
-                    ctx_clone.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
 
                     ctx_clone.request_repaint();
                 });

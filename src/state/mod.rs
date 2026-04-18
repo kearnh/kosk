@@ -6,7 +6,7 @@ use crate::{
     state::{keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
 };
 use anyhow::Result;
-use egui::{Context, Ui};
+use egui::{Context, Rect, Ui};
 
 mod keyboard;
 mod menu;
@@ -26,18 +26,6 @@ pub enum WindowPos {
     Absolute(f32, f32),
 }
 
-impl WindowPos {
-    fn incr(&mut self) {
-        *self = match self {
-            WindowPos::TopLeft => WindowPos::TopRight,
-            WindowPos::TopRight => WindowPos::BottomRight,
-            WindowPos::BottomRight => WindowPos::BottomLeft,
-            WindowPos::BottomLeft => WindowPos::TopLeft,
-            WindowPos::Absolute(..) => WindowPos::TopLeft,
-        };
-    }
-}
-
 pub struct AppState {
     state: StateId,
     kb: KeyboardState,
@@ -50,12 +38,8 @@ pub struct AppState {
 impl AppState {
     pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
         let cfg = config::get();
-        let kb_inner = Keyboard::new(
-            &cfg.layout,
-            cfg.stick_scale_x,
-            cfg.stick_scale_y,
-            cfg.stick_warp,
-        )?;
+
+        let kb_inner = Keyboard::new()?;
         let kb = KeyboardState {
             kb: kb_inner,
             l2_was_pressed: false,
@@ -67,23 +51,23 @@ impl AppState {
             state: StateId::Keyboard,
             kb,
             menu: MenuState::new(),
-            move_window: MoveWindowState::new(),
+            move_window: MoveWindowState::new(cfg.scale_x, cfg.scale_y),
             pos: WindowPos::BottomRight,
             monitor_size,
         })
     }
 
-    pub fn get_position(&self) -> (f32, f32) {
+    pub fn get_position(&self, content_rect: Rect) -> (f32, f32) {
         if let WindowPos::Absolute(x, y) = self.pos {
             return (x, y);
         }
-        let (kb_width, kb_height) = self.window_size();
+        let (w, h) = content_rect.max.into();
         let (size_x, size_y) = self.monitor_size;
         [
             (0.0, 0.0),
-            (size_x - kb_width, 0.0),
-            (size_x - kb_width, size_y - kb_height),
-            (0.0, size_y - kb_height),
+            (size_x - w, 0.0),
+            (size_x - w, size_y - h),
+            (0.0, size_y - h),
         ][match self.pos {
             WindowPos::TopLeft => 0,
             WindowPos::TopRight => 1,
@@ -96,17 +80,9 @@ impl AppState {
     // Add this new method to reload from config
     pub fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
-
-        // Recreate keyboard with new config
-        let kb_inner = Keyboard::new(
-            &cfg.layout,
-            cfg.stick_scale_x,
-            cfg.stick_scale_y,
-            cfg.stick_warp,
-        )?;
-        self.kb.kb = kb_inner;
+        self.kb.kb = Keyboard::new()?;
         self.kb.trigger_threshold = cfg.trigger_threshold;
-
+        self.move_window = MoveWindowState::new(cfg.scale_x, cfg.scale_y);
         Ok(())
     }
 
@@ -115,30 +91,26 @@ impl AppState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
+        let r = ctx.content_rect();
         let id = match self.state {
             StateId::Keyboard => self.kb.draw_ui(ctx, ui),
             StateId::Menu => self.menu.draw_ui(ctx, ui),
             StateId::MoveWindow => {
-                let (x, y) = self.get_position();
+                let (x, y) = self.get_position(r);
                 let (next_state, movement) = self.move_window.draw_ui(ctx, ui, (x, y));
                 if let Some(new_pos) = movement {
                     if let WindowPos::Absolute(mut x, mut y) = new_pos {
-                        let (win_w, win_h) = self.window_size();
                         let (mon_w, mon_h) = self.monitor_size;
-                        
+
                         // Clamp X between 0 and (Monitor Width - Window Width)
-                        x = x.clamp(0.0, mon_w - win_w);
+                        x = x.clamp(0.0, mon_w - r.width());
                         // Clamp Y between 0 and (Monitor Height - Window Height)
-                        y = y.clamp(0.0, mon_h - win_h);
-                        
+                        y = y.clamp(0.0, mon_h - r.height());
+
                         self.pos = WindowPos::Absolute(x, y);
                     } else {
                         self.pos = new_pos;
                     }
-                    
-                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
-                        self.get_position().into(),
-                    ));
                 }
                 next_state
             }

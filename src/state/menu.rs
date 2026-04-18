@@ -75,7 +75,8 @@ impl MenuState {
             Some(Dpad::Down) => 1,
             _ => 0,
         };
-        self.selected = (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
+        self.selected =
+            (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
 
         if input.circle {
             return Ok(StateId::Keyboard);

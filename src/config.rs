@@ -54,6 +54,11 @@ pub struct Config {
 
     #[serde(default)]
     pub debug: Option<Debug>,
+
+    #[serde(default = "default_scale_x")]
+    pub scale_x: f32,
+    #[serde(default = "default_scale_y")]
+    pub scale_y: f32,
 }
 
 fn default_stick_scale_x() -> f32 {
@@ -70,6 +75,14 @@ fn default_trigger_threshold() -> u8 {
 }
 fn default_transparent() -> bool {
     true
+}
+
+fn default_scale_x() -> f32 {
+    40.0
+}
+
+fn default_scale_y() -> f32 {
+    40.0
 }
 
 // Static variables for config management
