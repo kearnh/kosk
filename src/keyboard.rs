@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Button, Color32, Context, RichText, Ui, Vec2};
+use egui::{Button, Color32, Context, Rect, RichText, Ui, Vec2};
 use enigo::{Enigo, Keyboard as _};
 use serde::Deserialize;
 use std::fs;
@@ -255,6 +255,10 @@ struct KeyboardLayoutFile {
     radius_mult: f32,
     #[serde(default = "default_font_size")]
     font_size: f32,
+    #[serde(default)]
+    left_stick_bounds: Vec<Rect>,
+    #[serde(default)]
+    right_stick_bounds: Vec<Rect>,
 }
 
 fn default_pad_x() -> f32 {
@@ -290,6 +294,9 @@ pub struct KeyboardLayout {
     // use closest center, will key press will return all overlapping keys to allow typo resistance,
     // i.e. may decide on key press based on engligh word etc.
     key_hit_boxes: Vec<Vec<Option<(f32, f32, f32)>>>,
+
+    left_stick_bounds: Vec<Rect>,
+    right_stick_bounds: Vec<Rect>,
 }
 
 impl KeyboardLayout {
@@ -377,6 +384,8 @@ impl KeyboardLayout {
             pad_y: layout.pad_y.into(),
             radius_mult: layout.radius_mult.into(),
             key_hit_boxes: Default::default(),
+            left_stick_bounds: layout.left_stick_bounds,
+            right_stick_bounds: layout.right_stick_bounds,
         };
 
         layout.calculate_geometry();
@@ -491,8 +500,6 @@ pub struct Keyboard {
     pub(crate) stick_scale_x: f32,
     pub(crate) stick_scale_y: f32,
     pub(crate) stick_warp: f32,
-    left_selectable_bounds: (f32, f32, f32, f32),
-    right_selectable_bounds: (f32, f32, f32, f32),
     enigo: Enigo,
 }
 
@@ -504,19 +511,6 @@ impl Keyboard {
         let (w, h) = layout.get_dimensions();
         let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
         let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
-
-        let left_bounds = Self::calculate_reachable_bounds(
-            &layout,
-            left_stick_center,
-            cfg.stick_scale_x,
-            cfg.stick_scale_y,
-        );
-        let right_bounds = Self::calculate_reachable_bounds(
-            &layout,
-            right_stick_center,
-            cfg.stick_scale_x,
-            cfg.stick_scale_y,
-        );
 
         Ok(Self {
             selected: (None, None),
@@ -530,8 +524,6 @@ impl Keyboard {
             stick_scale_x: cfg.stick_scale_x,
             stick_scale_y: cfg.stick_scale_y,
             stick_warp: cfg.stick_warp,
-            left_selectable_bounds: left_bounds,
-            right_selectable_bounds: right_bounds,
             enigo: Enigo::new(&Default::default())?,
         })
     }
@@ -638,18 +630,26 @@ impl Keyboard {
     }
 
     pub fn get_nearest_key_left(&self, stick: (i32, i32)) -> Option<RawKey> {
-        self.get_nearest_key(self.left_stick_center, stick, self.left_selectable_bounds)
+        self.get_nearest_key(
+            self.left_stick_center,
+            stick,
+            &self.layout.left_stick_bounds,
+        )
     }
 
     pub fn get_nearest_key_right(&self, stick: (i32, i32)) -> Option<RawKey> {
-        self.get_nearest_key(self.right_stick_center, stick, self.right_selectable_bounds)
+        self.get_nearest_key(
+            self.right_stick_center,
+            stick,
+            &self.layout.right_stick_bounds,
+        )
     }
 
     fn get_nearest_key(
         &self,
         center: (f32, f32),
         stick: (i32, i32),
-        bounds: (f32, f32, f32, f32),
+        bounds: &[Rect],
     ) -> Option<RawKey> {
         // Normalise stick input to [-1.0, 1.0]
         let x = stick.0 as f32 / 128.0;
@@ -664,7 +664,27 @@ impl Keyboard {
         let mut cursor_y = center.1 + dy;
 
         // Clamp cursor to the specific bounds for this stick
-        let (min_x, min_y, max_x, max_y) = bounds;
+        let bounds = bounds
+            .iter()
+            .filter(|r| r.contains((cursor_x, cursor_y).into()));
+
+        let min_x = bounds
+            .clone()
+            .min_by(|a, b| a.min.x.total_cmp(&b.min.x))?
+            .min
+            .x;
+        let min_y = bounds
+            .clone()
+            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))?
+            .max
+            .y;
+        let max_x = bounds
+            .clone()
+            .max_by(|a, b| a.max.x.total_cmp(&b.max.x))?
+            .max
+            .x;
+        let max_y = bounds.max_by(|a, b| a.max.y.total_cmp(&b.max.y))?.min.y;
+
         cursor_x = cursor_x.clamp(min_x, max_x);
         cursor_y = cursor_y.clamp(min_y, max_y);
 
@@ -861,25 +881,25 @@ impl Keyboard {
                     }
                 }
 
-                if debug.show_stick_bounds {
-                    let (x0, y0, x1, y1) = self.left_selectable_bounds;
-                    let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-                    painter.rect_stroke(
-                        r,
-                        egui::CornerRadius::default(),
-                        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 255, 0, 255)),
-                        egui::StrokeKind::Middle,
-                    );
+                // if debug.show_stick_bounds {
+                //     let (x0, y0, x1, y1) = self.left_selectable_bounds;
+                //     let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+                //     painter.rect_stroke(
+                //         r,
+                //         egui::CornerRadius::default(),
+                //         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 255, 0, 255)),
+                //         egui::StrokeKind::Middle,
+                //     );
 
-                    let (x0, y0, x1, y1) = self.right_selectable_bounds;
-                    let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-                    painter.rect_stroke(
-                        r,
-                        egui::CornerRadius::default(),
-                        egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 255, 255)),
-                        egui::StrokeKind::Middle,
-                    );
-                }
+                //     let (x0, y0, x1, y1) = self.right_selectable_bounds;
+                //     let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+                //     painter.rect_stroke(
+                //         r,
+                //         egui::CornerRadius::default(),
+                //         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 255, 255)),
+                //         egui::StrokeKind::Middle,
+                //     );
+                // }
 
                 if debug.show_hitboxes {
                     for row in &self.layout.key_hit_boxes {
