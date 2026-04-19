@@ -279,6 +279,36 @@ fn default_font_size() -> f32 {
 }
 
 #[derive(Debug)]
+enum HitBox {
+    Circle { x: f32, y: f32, r: f32 },
+}
+
+impl HitBox {
+    fn center(&self) -> (f32, f32) {
+        match self {
+            HitBox::Circle { x, y, .. } => (*x, *y),
+        }
+    }
+
+    fn contains(&self, x: f32, y: f32) -> Option<f32> {
+        match self {
+            HitBox::Circle {
+                x: kx,
+                y: ky,
+                r: kr,
+            } => {
+                let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
+                if distance_sq <= kr.powi(2) {
+                    Some(distance_sq)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct KeyboardLayout {
     row_indents: Vec<UnscaledPixelUnitX>,
     row_heights: Vec<UnscaledPixelUnitY>,
@@ -297,7 +327,7 @@ pub struct KeyboardLayout {
     // with a key button, and key circles may overlap each other. Key selection for highlight will
     // use closest center, will key press will return all overlapping keys to allow typo resistance,
     // i.e. may decide on key press based on engligh word etc.
-    key_hit_boxes: Vec<Vec<Option<(f32, f32, f32)>>>,
+    key_hit_boxes: Vec<Vec<Option<HitBox>>>,
 
     left_stick_bounds: Vec<Rect>,
     right_stick_bounds: Vec<Rect>,
@@ -435,8 +465,8 @@ impl KeyboardLayout {
         for (row_idx, row) in self.rows.iter().enumerate() {
             for (col_idx, key_button) in row.iter().enumerate() {
                 if key_button.key.normal == key_name {
-                    if let Some(h) = self.key_hit_boxes[row_idx][col_idx] {
-                        return Some((h.0, h.1));
+                    if let Some(h) = &self.key_hit_boxes[row_idx][col_idx] {
+                        return Some(h.center());
                     }
                 }
             }
@@ -489,7 +519,11 @@ impl KeyboardLayout {
                     // Target radius for imprecise stick input
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
                     let radius = self.scale_x * mult;
-                    hitboxes_row.push(Some((center_x, center_y, radius)));
+                    hitboxes_row.push(Some(HitBox::Circle {
+                        x: center_x,
+                        y: center_y,
+                        r: radius,
+                    }));
                 } else {
                     hitboxes_row.push(None);
                 }
@@ -677,11 +711,12 @@ impl Keyboard {
 
         for (row_idx, row) in self.layout.key_hit_boxes.iter().enumerate() {
             for (col_idx, h) in row.iter().enumerate() {
-                if let Some((kx, ky, kr)) = *h {
-                    let distance_sq = (cursor_x - kx).powi(2) + (cursor_y - ky).powi(2);
-                    if distance_sq <= kr.powi(2) && distance_sq < candidate.0 {
-                        let key_button = &self.layout.rows[row_idx][col_idx];
-                        candidate = (distance_sq, Some(key_button.key.get(self.shift_state)));
+                if let Some(h) = h {
+                    if let Some(d) = h.contains(cursor_x, cursor_y) {
+                        if d < candidate.0 {
+                            let key_button = &self.layout.rows[row_idx][col_idx];
+                            candidate = (d, Some(key_button.key.get(self.shift_state)));
+                        }
                     }
                 }
             }
@@ -896,7 +931,7 @@ impl Keyboard {
                 if debug.show_hitboxes {
                     for row in &self.layout.key_hit_boxes {
                         for h in row {
-                            if let Some((x, y, r)) = *h {
+                            if let Some(HitBox::Circle { x, y, r }) = *h {
                                 painter.circle_stroke(
                                     (x, y).into(),
                                     r,
