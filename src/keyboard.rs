@@ -970,16 +970,14 @@ impl Keyboard {
                                         );
                                     }
                                     HitBox::Ellipse { x, y, rx, ry } => {
-                                        painter.ellipse_stroke(
-                                            egui::Rect::from_center_size(
-                                                [*x, *y].into(),
-                                                Vec2::new(*rx * 2.0, *ry * 2.0),
-                                            ),
+                                        painter.add(egui::EllipseShape::stroke(
+                                            [*x, *y].into(),
+                                            Vec2::new(*rx, *ry),
                                             egui::Stroke::new(
                                                 1.0,
                                                 Color32::from_rgba_premultiplied(0, 192, 255, 128),
                                             ),
-                                        );
+                                        ));
                                     }
                                 }
                             }
