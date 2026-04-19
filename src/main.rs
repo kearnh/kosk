@@ -7,9 +7,9 @@ use hidapi::{HidApi, HidDevice};
 use std::sync::{Arc, Mutex};
 
 mod config;
+mod controller;
 mod debug;
 mod keyboard;
-mod ps4;
 mod state;
 
 const PS4_VID: u16 = 0x054c;
@@ -265,7 +265,7 @@ fn main() -> Result<()> {
                         }
                     };
 
-                    let ps4 = ps4::Ps4Device::new(device);
+                    let ps4 = controller::ps4::Ps4Device::new(device);
                     for input in ps4 {
                         let mut s = state_clone.lock().unwrap();
                         if let Err(e) = s.handle_controller_input(&ctx, &input) {

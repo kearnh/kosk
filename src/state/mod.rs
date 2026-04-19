@@ -1,8 +1,8 @@
 use crate::{
     config,
+    controller::ControllerInput,
     debug::DebugPlugin,
     keyboard::Keyboard,
-    ps4::Ps4InputData,
     state::{keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
 };
 use anyhow::Result;
@@ -121,11 +121,11 @@ impl AppState {
     pub fn handle_controller_input(
         &mut self,
         ctx: &Context,
-        input: &Option<Ps4InputData>,
+        input: &Option<Box<dyn ControllerInput>>,
     ) -> Result<()> {
         if let Some(input) = input {
             if config::get().debug.is_some() {
-                ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.clone()));
+                ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
             }
         }
 

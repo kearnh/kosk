@@ -1,9 +1,9 @@
 use egui::{Context, Plugin};
 
-use crate::ps4::Ps4InputData;
+use crate::controller::ControllerInput;
 
 pub struct DebugPlugin {
-    pub controller_input: Option<Ps4InputData>,
+    pub controller_input: Option<Box<dyn ControllerInput + Send + Sync>>,
 }
 
 impl DebugPlugin {

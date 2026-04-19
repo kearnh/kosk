@@ -1,5 +1,7 @@
-use crate::ps4::Ps4InputData;
-use crate::state::{StateId, WindowPos};
+use crate::{
+    controller::ControllerInput,
+    state::{StateId, WindowPos},
+};
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
 
@@ -79,10 +81,10 @@ impl MoveWindowState {
     pub fn handle_controller_input(
         &mut self,
         _ctx: &Context,
-        input: &Option<Ps4InputData>,
+        input: &Option<Box<dyn ControllerInput>>,
     ) -> Result<StateId> {
         if let Some(input) = input {
-            if input.circle {
+            if input.face_right() {
                 return Ok(StateId::Menu);
             }
         }

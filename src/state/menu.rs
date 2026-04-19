@@ -1,5 +1,5 @@
 use crate::{
-    ps4::{Dpad, Ps4InputData},
+    controller::{ControllerInput, Dpad},
     state::StateId,
 };
 use anyhow::Result;
@@ -63,14 +63,14 @@ impl MenuState {
     pub(super) fn handle_controller_input(
         &mut self,
         _: &Context,
-        input: &Option<Ps4InputData>,
+        input: &Option<Box<dyn ControllerInput>>,
     ) -> Result<StateId> {
         let input = match input {
             Some(input) => input,
             None => return Ok(StateId::Menu),
         };
 
-        let n = match input.dpad {
+        let n = match input.dpad() {
             Some(Dpad::Up) => -1,
             Some(Dpad::Down) => 1,
             _ => 0,
@@ -78,11 +78,11 @@ impl MenuState {
         self.selected =
             (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
 
-        if input.circle {
+        if input.face_right() {
             return Ok(StateId::Keyboard);
         }
 
-        if input.cross {
+        if input.face_bottom() {
             return Ok((self.buttons[self.selected].callback)().unwrap_or(StateId::Menu));
         }
 

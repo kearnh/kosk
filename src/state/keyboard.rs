@@ -1,6 +1,6 @@
 use crate::{
+    controller::ControllerInput,
     keyboard::{Keyboard, RawKey},
-    ps4::Ps4InputData,
     state::StateId,
 };
 use anyhow::Result;
@@ -35,7 +35,7 @@ impl KeyboardState {
     pub(super) fn handle_controller_input(
         &mut self,
         ctx: &Context,
-        input: &Option<Ps4InputData>,
+        input: &Option<Box<dyn ControllerInput>>,
     ) -> Result<StateId> {
         let input = match input {
             Some(input) => input,
@@ -46,13 +46,13 @@ impl KeyboardState {
             }
         };
 
-        let selected_left = self.kb.get_nearest_key_left(input.left);
-        let selected_right = self.kb.get_nearest_key_right(input.right);
+        let selected_left = self.kb.get_nearest_key_left(input.left_stick());
+        let selected_right = self.kb.get_nearest_key_right(input.right_stick());
 
         self.kb.selected = (selected_left.clone(), selected_right.clone());
 
         {
-            let val = input.l2.unwrap_or(0);
+            let val = input.trigger_left().unwrap_or(0);
             let pressed = val > self.trigger_threshold;
 
             if pressed && !self.l2_was_pressed {
@@ -70,7 +70,7 @@ impl KeyboardState {
             self.l2_was_pressed = pressed;
         }
         {
-            let val = input.r2.unwrap_or(0);
+            let val = input.trigger_right().unwrap_or(0);
             let pressed = val > self.trigger_threshold;
 
             if pressed && !self.r2_was_pressed {
@@ -88,23 +88,23 @@ impl KeyboardState {
             self.r2_was_pressed = pressed;
         }
 
-        if input.cross {
+        if input.face_bottom() {
             self.kb.send_key(&RawKey::Key(" ".to_string()))?;
         }
 
-        if input.square {
+        if input.face_left() {
             self.kb.send_key(&RawKey::Enigo(enigo::Key::Backspace))?;
         }
 
-        if input.triangle {
+        if input.face_top() {
             self.kb.toggle_shift();
         }
 
-        if input.l3 {
+        if input.stick_left() {
             self.kb.toggle_ctrl();
         }
 
-        if input.r3 {
+        if input.stick_right() {
             self.kb.toggle_alt();
         }
 

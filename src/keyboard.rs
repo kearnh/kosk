@@ -842,14 +842,14 @@ impl Keyboard {
                     let d_lock = ctx.plugin::<DebugPlugin>();
                     let d = d_lock.lock();
                     if let Some(input) = &d.controller_input {
-                        let (x, y) = input.left;
+                        let (x, y) = input.left_stick();
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
                         let dx = self.layout.scale_x(x) * self.stick_scale_x;
                         let dy = self.layout.scale_y(y) * self.stick_scale_y;
                         let xy = (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy);
                         painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 0, 255));
 
-                        let (x, y) = input.right;
+                        let (x, y) = input.right_stick();
                         let (x, y) = warp(x as f32 / 128.0, y as f32 / 128.0, self.stick_warp);
                         let dx = self.layout.scale_x(x) * self.stick_scale_x;
                         let dy = self.layout.scale_y(y) * self.stick_scale_y;
