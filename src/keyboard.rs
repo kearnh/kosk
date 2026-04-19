@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Button, Color32, Context, Rect, RichText, Ui, Vec2};
+use egui::{Button, Color32, Context, Pos2, Rect, RichText, Ui, Vec2};
 use enigo::{Enigo, Keyboard as _};
 use serde::Deserialize;
 use std::fs;
@@ -340,6 +340,7 @@ pub struct KeyboardLayout {
 
     left_stick_bounds: Vec<Rect>,
     right_stick_bounds: Vec<Rect>,
+    captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
 }
 
 impl KeyboardLayout {
@@ -446,9 +447,9 @@ impl KeyboardLayout {
                         .scale_from_center2(scale)
                 })
                 .collect(),
+            captured_centres: None,
         };
 
-        layout.calculate_geometry();
         Ok(layout)
     }
 
@@ -469,6 +470,19 @@ impl KeyboardLayout {
     }
 
     pub fn get_key_center(&self, key_name: &str) -> Option<(f32, f32)> {
+        if let Some(centres) = &self.captured_centres {
+            for (row_idx, row) in centres.iter().enumerate() {
+                for (col_idx, centre) in row.iter().enumerate() {
+                    if let Some(pos) = centre {
+                        let key_button = &self.rows[row_idx][col_idx];
+                        if key_button.key.normal == key_name {
+                            return Some((pos.x, pos.y));
+                        }
+                    }
+                }
+            }
+        }
+
         for (row_idx, row) in self.rows.iter().enumerate() {
             for (col_idx, key_button) in row.iter().enumerate() {
                 if key_button.key.normal == key_name {
@@ -482,24 +496,16 @@ impl KeyboardLayout {
     }
 
     fn calculate_geometry(&mut self) {
+        let centres = match &self.captured_centres {
+            Some(c) => c,
+            None => return,
+        };
+
         let mut key_hit_boxes = Vec::new();
         let num_rows = self.rows.len();
 
-        // Calculate height: sum of (row_height * button_unit_height) + spacing
-        let mut total_height = 0.0;
-        let mut row_tops = Vec::with_capacity(num_rows);
-
-        for i in 0..num_rows {
-            row_tops.push(total_height);
-            let height = self.row_heights.get(i).copied().unwrap_or(1.0.into());
-            total_height += self.scale_y(height);
-            if i < num_rows - 1 {
-                total_height += self.scale_y(self.pad_y);
-            }
-        }
-
-        // Find the row with the most total width (considering key widths and indents)
         let mut max_width: f32 = 0.0;
+        let mut total_height = 0.0;
 
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut hitboxes_row = Vec::new();
@@ -511,46 +517,70 @@ impl KeyboardLayout {
             let height = self.row_heights.get(row_idx).copied().unwrap_or(1.0.into());
             let row_height = self.scale_y(height);
 
-            let indent = self.row_indents.get(row_idx).copied().unwrap_or(0.0.into());
-            let mut current_x = self.scale_x(indent);
-            let center_y = row_tops[row_idx] + (row_height / 2.0);
+            for (col_idx, key) in row.iter().enumerate() {
+                if let Some(Some(pos)) = centres.get(row_idx).and_then(|r| r.get(col_idx)) {
+                    let center_x = pos.x;
+                    let center_y = pos.y;
 
-            for key in row {
-                let width = self.scale_x(key.width);
-                let center_x = current_x + (width / 2.0);
-
-                if key.key.normal != RawKey::Skip
-                    && key.key.normal != RawKey::Shift
-                    && key.key.normal != " "
-                {
-                    if width / row_height >= 1.2 {
-                        hitboxes_row.push(Some(HitBox::Ellipse {
-                            x: center_x,
-                            y: center_y,
-                            rx: (width / 2.0) * 1.4142,
-                            ry: (row_height / 2.0) * 1.4142,
-                        }));
+                    if key.key.normal != RawKey::Skip
+                        && key.key.normal != RawKey::Shift
+                        && key.key.normal != " "
+                    {
+                        let width = self.scale_x(key.width);
+                        if width / row_height >= 1.2 {
+                            hitboxes_row.push(Some(HitBox::Ellipse {
+                                x: center_x,
+                                y: center_y,
+                                rx: (width / 2.0) * 1.4142,
+                                ry: (row_height / 2.0) * 1.4142,
+                            }));
+                        } else {
+                            let radius = self.scale_x * 1.125;
+                            hitboxes_row.push(Some(HitBox::Circle {
+                                x: center_x,
+                                y: center_y,
+                                r: radius,
+                            }));
+                        }
                     } else {
-                        let radius = self.scale_x * 1.125;
-                        hitboxes_row.push(Some(HitBox::Circle {
-                            x: center_x,
-                            y: center_y,
-                            r: radius,
-                        }));
+                        hitboxes_row.push(None);
                     }
                 } else {
                     hitboxes_row.push(None);
                 }
-
-                current_x += width + self.scale_x(self.pad_x);
             }
 
-            let row_width_total = current_x - self.scale_x(self.pad_x);
-            max_width = max_width.max(row_width_total);
             key_hit_boxes.push(hitboxes_row);
         }
 
-        self.dims = (max_width, total_height);
+        // We can't easily derive total_height/max_width from centres without iterating again,
+        // so we keep a simplified version of the original logic or just use the captured bounds.
+        // For now, we'll keep the dims as they were or let them be updated by the capture.
+        // Since we need dims for the stick centers in Keyboard::new, but we capture in draw_ui,
+        // we'll update dims based on the captured centres.
+        if !centres.is_empty() {
+            let mut min_x = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut min_y = f32::MAX;
+            let mut max_y = f32::MIN;
+            let mut found = false;
+
+            for row in centres {
+                for centre in row {
+                    if let Some(pos) = centre {
+                        min_x = min_x.min(pos.x);
+                        max_x = max_x.max(pos.x);
+                        min_y = min_y.min(pos.y);
+                        max_y = max_y.max(pos.y);
+                        found = true;
+                    }
+                }
+            }
+            if found {
+                self.dims = (max_x - min_x, max_y - min_y);
+            }
+        }
+
         self.key_hit_boxes = key_hit_boxes;
     }
 }
@@ -760,7 +790,7 @@ impl Keyboard {
         self.alt_mod = !self.alt_mod;
     }
 
-    pub fn draw_ui(&self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
         let mut pressed_key: Option<RawKey> = None;
 
         // Set semi-transparent button styling
@@ -782,6 +812,9 @@ impl Keyboard {
 
         let pad_x = self.layout.scale_x(self.layout.pad_x);
         let pad_y = self.layout.scale_y(self.layout.pad_y);
+
+        let mut capturing_centres = self.layout.captured_centres.is_none();
+        let mut captured_data = Vec::new();
 
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(pad_x, pad_y);
@@ -811,10 +844,15 @@ impl Keyboard {
                         .unwrap_or(1.0.into());
                     let row_height = self.layout.scale_y(height);
 
+                    let mut row_centres = Vec::new();
+
                     for key in keys {
                         // Skip rendering for SKIP keys - just add space
                         if key.key.normal == RawKey::Skip {
                             ui.add_space(self.layout.scale_x(key.width));
+                            if capturing_centres {
+                                row_centres.push(None);
+                            }
                             continue;
                         }
 
@@ -858,6 +896,10 @@ impl Keyboard {
                         let size = Vec2::new(self.layout.scale_x(key.width), row_height);
                         let response = ui.add_sized(size, button);
 
+                        if capturing_centres {
+                            row_centres.push(Some(response.rect.center()));
+                        }
+
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
                         if key.key.normal == " " && (self.ctrl_mod || self.alt_mod) {
                             let mut mods = Vec::new();
@@ -885,6 +927,9 @@ impl Keyboard {
                         if response.clicked() {
                             pressed_key = Some(key.key.get(self.shift_state));
                         }
+                    }
+                    if capturing_centres {
+                        captured_data.push(row_centres);
                     }
                 });
             }
@@ -977,6 +1022,11 @@ impl Keyboard {
                 }
             }
         });
+
+        if capturing_centres {
+            self.layout.captured_centres = Some(captured_data);
+            self.layout.calculate_geometry();
+        }
 
         pressed_key
     }
