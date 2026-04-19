@@ -663,30 +663,29 @@ impl Keyboard {
         let mut cursor_x = center.0 + dx;
         let mut cursor_y = center.1 + dy;
 
-        // Clamp cursor to the specific bounds for this stick
-        let bounds = bounds
-            .iter()
-            .filter(|r| r.contains((cursor_x, cursor_y).into()));
+        if !bounds.is_empty() {
+            // Check if we are already inside any of the bounds
+            let is_inside = bounds.iter().any(|r| r.contains((cursor_x, cursor_y).into()));
 
-        let min_x = bounds
-            .clone()
-            .min_by(|a, b| a.min.x.total_cmp(&b.min.x))?
-            .min
-            .x;
-        let min_y = bounds
-            .clone()
-            .min_by(|a, b| a.min.y.total_cmp(&b.min.y))?
-            .max
-            .y;
-        let max_x = bounds
-            .clone()
-            .max_by(|a, b| a.max.x.total_cmp(&b.max.x))?
-            .max
-            .x;
-        let max_y = bounds.max_by(|a, b| a.max.y.total_cmp(&b.max.y))?.min.y;
+            if !is_inside {
+                // We are outside all bounds. Find the closest point on the closest rectangle.
+                let mut closest_point = (cursor_x, cursor_y);
+                let mut min_dist_sq = f32::MAX;
 
-        cursor_x = cursor_x.clamp(min_x, max_x);
-        cursor_y = cursor_y.clamp(min_y, max_y);
+                for r in bounds {
+                    // Clamp the cursor to the individual rectangle to find the closest point on it
+                    let clamped_x = cursor_x.clamp(r.min.x, r.max.x);
+                    let clamped_y = cursor_y.clamp(r.min.y, r.max.y);
+                    
+                    let dist_sq = (cursor_x - clamped_x).powi(2) + (cursor_y - clamped_y).powi(2);
+                    if dist_sq < min_dist_sq {
+                        min_dist_sq = dist_sq;
+                        closest_point = (clamped_x, clamped_y);
+                    }
+                }
+                (cursor_x, cursor_y) = closest_point;
+            }
+        }
 
         let mut candidate = (f32::MAX, None);
 
