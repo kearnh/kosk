@@ -237,8 +237,6 @@ struct KeyButton {
     key: Key<RawKey>,
     pos: Pos,
     width: UnscaledPixelUnitX,
-    #[serde(default)]
-    radius_mult: Option<f32>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -257,8 +255,6 @@ struct KeyboardLayoutFile {
     pad_x: f32,
     #[serde(default = "default_pad_y")]
     pad_y: f32,
-    #[serde(default = "default_radius_mult")]
-    radius_mult: f32,
     #[serde(default = "default_font_size")]
     font_size: f32,
     #[serde(default)]
@@ -270,9 +266,6 @@ fn default_pad_x() -> f32 {
 }
 fn default_pad_y() -> f32 {
     2.0
-}
-fn default_radius_mult() -> f32 {
-    1.125
 }
 fn default_font_size() -> f32 {
     18.0
@@ -338,7 +331,6 @@ pub struct KeyboardLayout {
     scale_y: f32,
     pad_x: UnscaledPixelUnitX,
     pad_y: UnscaledPixelUnitY,
-    radius_mult: f32,
 
     // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
     // with a key button, and key circles may overlap each other. Key selection for highlight will
@@ -409,7 +401,6 @@ impl KeyboardLayout {
                             },
                             pos: (key.pos.0, expected_col),
                             width: 1.0.into(),
-                            radius_mult: None,
                         });
                         expected_col += 1;
                     }
@@ -436,7 +427,6 @@ impl KeyboardLayout {
             scale_y: cfg.scale_y,
             pad_x: layout.pad_x.into(),
             pad_y: layout.pad_y.into(),
-            radius_mult: layout.radius_mult.into(),
             key_hit_boxes: Default::default(),
             left_stick_bounds: layout
                 .stick_bounds
@@ -533,17 +523,15 @@ impl KeyboardLayout {
                     && key.key.normal != RawKey::Shift
                     && key.key.normal != " "
                 {
-                    let mult = key.radius_mult.unwrap_or(self.radius_mult);
-
                     if width / row_height >= 1.2 {
                         hitboxes_row.push(Some(HitBox::Ellipse {
                             x: center_x,
                             y: center_y,
-                            rx: (width / 2.0) * mult,
-                            ry: (row_height / 2.0) * mult,
+                            rx: (width / 2.0) * 1.4142,
+                            ry: (row_height / 2.0) * 1.4142,
                         }));
                     } else {
-                        let radius = self.scale_x * mult;
+                        let radius = self.scale_x * 1.125;
                         hitboxes_row.push(Some(HitBox::Circle {
                             x: center_x,
                             y: center_y,
@@ -955,8 +943,11 @@ impl Keyboard {
                     }
                 }
                 if debug.show_hitboxes {
-                    for row in &self.layout.key_hit_boxes {
-                        for h in row {
+                    for (i, row) in self.layout.key_hit_boxes.iter().enumerate() {
+                        for (j, h) in row.iter().enumerate() {
+                            if self.layout.rows[i][j].key.normal != "d" {
+                                continue;
+                            }
                             if let Some(hitbox) = h {
                                 match hitbox {
                                     HitBox::Circle { x, y, r } => {
@@ -970,7 +961,7 @@ impl Keyboard {
                                         );
                                     }
                                     HitBox::Ellipse { x, y, rx, ry } => {
-                                        painter.add(egui::EllipseShape::stroke(
+                                        painter.add(egui::epaint::EllipseShape::stroke(
                                             [*x, *y].into(),
                                             Vec2::new(*rx, *ry),
                                             egui::Stroke::new(
