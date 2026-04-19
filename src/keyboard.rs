@@ -281,12 +281,14 @@ fn default_font_size() -> f32 {
 #[derive(Debug)]
 enum HitBox {
     Circle { x: f32, y: f32, r: f32 },
+    Ellipse { x: f32, y: f32, rx: f32, ry: f32 },
 }
 
 impl HitBox {
     fn center(&self) -> (f32, f32) {
         match self {
             HitBox::Circle { x, y, .. } => (*x, *y),
+            HitBox::Ellipse { x, y, .. } => (*x, *y),
         }
     }
 
@@ -300,6 +302,16 @@ impl HitBox {
                 let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
                 if distance_sq <= kr.powi(2) {
                     Some(distance_sq)
+                } else {
+                    None
+                }
+            }
+            HitBox::Ellipse { x: kx, y: ky, rx, ry } => {
+                let dx = x - kx;
+                let dy = y - ky;
+                let val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+                if val <= 1.0 {
+                    Some(val) // Return a value proportional to distance for the nearest-key logic
                 } else {
                     None
                 }
@@ -516,14 +528,23 @@ impl KeyboardLayout {
                     && key.key.normal != RawKey::Shift
                     && key.key.normal != " "
                 {
-                    // Target radius for imprecise stick input
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
-                    let radius = self.scale_x * mult;
-                    hitboxes_row.push(Some(HitBox::Circle {
-                        x: center_x,
-                        y: center_y,
-                        r: radius,
-                    }));
+                    
+                    if width / row_height >= 1.2 {
+                        hitboxes_row.push(Some(HitBox::Ellipse {
+                            x: center_x,
+                            y: center_y,
+                            rx: (width / 2.0) * mult,
+                            ry: (row_height / 2.0) * mult,
+                        }));
+                    } else {
+                        let radius = self.scale_x * mult;
+                        hitboxes_row.push(Some(HitBox::Circle {
+                            x: center_x,
+                            y: center_y,
+                            r: radius,
+                        }));
+                    }
                 } else {
                     hitboxes_row.push(None);
                 }
@@ -931,15 +952,22 @@ impl Keyboard {
                 if debug.show_hitboxes {
                     for row in &self.layout.key_hit_boxes {
                         for h in row {
-                            if let Some(HitBox::Circle { x, y, r }) = *h {
-                                painter.circle_stroke(
-                                    (x, y).into(),
-                                    r,
-                                    egui::Stroke::new(
-                                        1.0,
-                                        Color32::from_rgba_premultiplied(0, 192, 255, 128),
-                                    ),
-                                );
+                            if let Some(hitbox) = h {
+                                match hitbox {
+                                    HitBox::Circle { x, y, r } => {
+                                        painter.circle_stroke(
+                                            (x, y).into(),
+                                            *r,
+                                            egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 192, 255, 128)),
+                                        );
+                                    }
+                                    HitBox::Ellipse { x, y, rx, ry } => {
+                                        painter.ellipse_stroke(
+                                            egui::Rect::from_center_size([*x, *y].into(), Vec2::new(*rx * 2.0, *ry * 2.0)),
+                                            egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 192, 255, 128)),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
