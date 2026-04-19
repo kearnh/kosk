@@ -306,7 +306,12 @@ impl HitBox {
                     None
                 }
             }
-            HitBox::Ellipse { x: kx, y: ky, rx, ry } => {
+            HitBox::Ellipse {
+                x: kx,
+                y: ky,
+                rx,
+                ry,
+            } => {
                 let dx = x - kx;
                 let dy = y - ky;
                 let val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
@@ -529,7 +534,7 @@ impl KeyboardLayout {
                     && key.key.normal != " "
                 {
                     let mult = key.radius_mult.unwrap_or(self.radius_mult);
-                    
+
                     if width / row_height >= 1.2 {
                         hitboxes_row.push(Some(HitBox::Ellipse {
                             x: center_x,
@@ -956,15 +961,24 @@ impl Keyboard {
                                 match hitbox {
                                     HitBox::Circle { x, y, r } => {
                                         painter.circle_stroke(
-                                            (x, y).into(),
+                                            [*x, *y].into(),
                                             *r,
-                                            egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 192, 255, 128)),
+                                            egui::Stroke::new(
+                                                1.0,
+                                                Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                            ),
                                         );
                                     }
                                     HitBox::Ellipse { x, y, rx, ry } => {
                                         painter.ellipse_stroke(
-                                            egui::Rect::from_center_size([*x, *y].into(), Vec2::new(*rx * 2.0, *ry * 2.0)),
-                                            egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 192, 255, 128)),
+                                            egui::Rect::from_center_size(
+                                                [*x, *y].into(),
+                                                Vec2::new(*rx * 2.0, *ry * 2.0),
+                                            ),
+                                            egui::Stroke::new(
+                                                1.0,
+                                                Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                            ),
                                         );
                                     }
                                 }
