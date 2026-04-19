@@ -241,6 +241,12 @@ struct KeyButton {
     radius_mult: Option<f32>,
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+struct StickBounds {
+    left: Vec<Rect>,
+    right: Vec<Rect>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct KeyboardLayoutFile {
     keys: Vec<KeyButton>,
@@ -256,9 +262,7 @@ struct KeyboardLayoutFile {
     #[serde(default = "default_font_size")]
     font_size: f32,
     #[serde(default)]
-    left_stick_bounds: Vec<Rect>,
-    #[serde(default)]
-    right_stick_bounds: Vec<Rect>,
+    stick_bounds: StickBounds,
 }
 
 fn default_pad_x() -> f32 {
@@ -372,6 +376,9 @@ impl KeyboardLayout {
             .collect();
 
         let cfg = config::get();
+
+        let scale: Vec2 = (cfg.scale_x, cfg.scale_y).into();
+
         let mut layout = KeyboardLayout {
             row_indents: layout.row_indents.into_iter().map(Into::into).collect(),
             row_heights: layout.row_heights.into_iter().map(Into::into).collect(),
@@ -384,8 +391,24 @@ impl KeyboardLayout {
             pad_y: layout.pad_y.into(),
             radius_mult: layout.radius_mult.into(),
             key_hit_boxes: Default::default(),
-            left_stick_bounds: layout.left_stick_bounds,
-            right_stick_bounds: layout.right_stick_bounds,
+            left_stick_bounds: layout
+                .stick_bounds
+                .left
+                .into_iter()
+                .map(|r| {
+                    r.translate(r.center().to_vec2() * scale)
+                        .scale_from_center2(scale)
+                })
+                .collect(),
+            right_stick_bounds: layout
+                .stick_bounds
+                .right
+                .into_iter()
+                .map(|r| {
+                    r.translate(r.center().to_vec2() * scale)
+                        .scale_from_center2(scale)
+                })
+                .collect(),
         };
 
         layout.calculate_geometry();
@@ -528,45 +551,6 @@ impl Keyboard {
         })
     }
 
-    fn calculate_reachable_bounds(
-        layout: &KeyboardLayout,
-        center: (f32, f32),
-        scale_x: f32,
-        scale_y: f32,
-    ) -> (f32, f32, f32, f32) {
-        let max_dx = layout.scale_x * scale_x;
-        let max_dy = layout.scale_y * scale_y;
-        let max_reach_sq = max_dx * max_dx + max_dy * max_dy;
-
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-        let mut found = false;
-
-        for row in &layout.key_hit_boxes {
-            for h in row {
-                if let Some((kx, ky, kr)) = *h {
-                    let dist_sq = (kx - center.0).powi(2) + (ky - center.1).powi(2);
-                    // A key is reachable if its center is within the stick's max reach
-                    if dist_sq <= max_reach_sq {
-                        min_x = min_x.min(kx - kr);
-                        max_x = max_x.max(kx + kr);
-                        min_y = min_y.min(ky - kr);
-                        max_y = max_y.max(ky + kr - layout.scale_y * 0.707 /* HACK */);
-                        found = true;
-                    }
-                }
-            }
-        }
-
-        if found {
-            (min_x, min_y, max_x, max_y)
-        } else {
-            (center.0, center.1, center.0, center.1)
-        }
-    }
-
     pub fn send_key(&mut self, key: &RawKey) -> Result<()> {
         macro_rules! mod_press {
             () => {
@@ -665,7 +649,9 @@ impl Keyboard {
 
         if !bounds.is_empty() {
             // Check if we are already inside any of the bounds
-            let is_inside = bounds.iter().any(|r| r.contains((cursor_x, cursor_y).into()));
+            let is_inside = bounds
+                .iter()
+                .any(|r| r.contains((cursor_x, cursor_y).into()));
 
             if !is_inside {
                 // We are outside all bounds. Find the closest point on the closest rectangle.
@@ -676,7 +662,7 @@ impl Keyboard {
                     // Clamp the cursor to the individual rectangle to find the closest point on it
                     let clamped_x = cursor_x.clamp(r.min.x, r.max.x);
                     let clamped_y = cursor_y.clamp(r.min.y, r.max.y);
-                    
+
                     let dist_sq = (cursor_x - clamped_x).powi(2) + (cursor_y - clamped_y).powi(2);
                     if dist_sq < min_dist_sq {
                         min_dist_sq = dist_sq;
@@ -880,26 +866,33 @@ impl Keyboard {
                     }
                 }
 
-                // if debug.show_stick_bounds {
-                //     let (x0, y0, x1, y1) = self.left_selectable_bounds;
-                //     let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-                //     painter.rect_stroke(
-                //         r,
-                //         egui::CornerRadius::default(),
-                //         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 255, 0, 255)),
-                //         egui::StrokeKind::Middle,
-                //     );
+                if debug.show_stick_bounds {
+                    // Draw left stick bounds in blue
+                    for r in &self.layout.left_stick_bounds {
+                        painter.rect_stroke(
+                            r.clone(),
+                            egui::CornerRadius::default(),
+                            egui::Stroke::new(
+                                1.0,
+                                Color32::from_rgba_premultiplied(0, 0, 255, 255),
+                            ),
+                            egui::StrokeKind::Middle,
+                        );
+                    }
 
-                //     let (x0, y0, x1, y1) = self.right_selectable_bounds;
-                //     let r = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
-                //     painter.rect_stroke(
-                //         r,
-                //         egui::CornerRadius::default(),
-                //         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 255, 255)),
-                //         egui::StrokeKind::Middle,
-                //     );
-                // }
-
+                    // Draw right stick bounds in green
+                    for r in &self.layout.right_stick_bounds {
+                        painter.rect_stroke(
+                            r.clone(),
+                            egui::CornerRadius::default(),
+                            egui::Stroke::new(
+                                1.0,
+                                Color32::from_rgba_premultiplied(0, 255, 0, 255),
+                            ),
+                            egui::StrokeKind::Middle,
+                        );
+                    }
+                }
                 if debug.show_hitboxes {
                     for row in &self.layout.key_hit_boxes {
                         for h in row {

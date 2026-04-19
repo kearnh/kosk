@@ -6,6 +6,17 @@ pad_y = 0.1
 radius_mult = 1.125
 font_size = 24.0
 
+[stick_bounds]
+left = [
+    { min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } },
+    { min = { x = 0.0, y = 5.0 }, max = { x = 1.25, y = 6.2 } },
+]
+right = [
+    { min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } },
+    { min = { x = 10.4, y = 5.0 }, max = { x = 14.0, y = 6.2 } },
+]
+
+
 [[keys]]
 key = { normal = "1", shift = "!" }
 pos = [0, 0]

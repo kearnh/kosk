@@ -7,5 +7,5 @@ stick_warp = 1.0
 
 [debug]
 show_stick_cursors = true
-# show_stick_bounds = true
-# show_hitboxes = true
+show_stick_bounds = true
+show_hitboxes = true
