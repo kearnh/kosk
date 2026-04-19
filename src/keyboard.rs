@@ -278,13 +278,6 @@ enum HitBox {
 }
 
 impl HitBox {
-    fn center(&self) -> (f32, f32) {
-        match self {
-            HitBox::Circle { x, y, .. } => (*x, *y),
-            HitBox::Ellipse { x, y, .. } => (*x, *y),
-        }
-    }
-
     fn contains(&self, x: f32, y: f32) -> Option<f32> {
         match self {
             HitBox::Circle {
@@ -323,7 +316,6 @@ pub struct KeyboardLayout {
     row_indents: Vec<UnscaledPixelUnitX>,
     row_heights: Vec<UnscaledPixelUnitY>,
     rows: Vec<Vec<KeyButton>>,
-    dims: (f32, f32),
 
     // Layout constants
     pub font_size: f32,
@@ -340,6 +332,7 @@ pub struct KeyboardLayout {
 
     left_stick_bounds: Vec<Rect>,
     right_stick_bounds: Vec<Rect>,
+
     captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
 }
 
@@ -418,11 +411,10 @@ impl KeyboardLayout {
 
         let scale: Vec2 = (cfg.scale_x, cfg.scale_y).into();
 
-        let mut layout = KeyboardLayout {
+        let layout = KeyboardLayout {
             row_indents: layout.row_indents.into_iter().map(Into::into).collect(),
             row_heights: layout.row_heights.into_iter().map(Into::into).collect(),
             rows,
-            dims: Default::default(),
             font_size: layout.font_size,
             scale_x: cfg.scale_x,
             scale_y: cfg.scale_y,
@@ -465,29 +457,13 @@ impl KeyboardLayout {
         self.scale_y * val.0
     }
 
-    pub fn get_dimensions(&self) -> (f32, f32) {
-        self.dims
-    }
-
     pub fn get_key_center(&self, key_name: &str) -> Option<(f32, f32)> {
-        if let Some(centres) = &self.captured_centres {
-            for (row_idx, row) in centres.iter().enumerate() {
-                for (col_idx, centre) in row.iter().enumerate() {
-                    if let Some(pos) = centre {
-                        let key_button = &self.rows[row_idx][col_idx];
-                        if key_button.key.normal == key_name {
-                            return Some((pos.x, pos.y));
-                        }
-                    }
-                }
-            }
-        }
-
         for (row_idx, row) in self.rows.iter().enumerate() {
             for (col_idx, key_button) in row.iter().enumerate() {
                 if key_button.key.normal == key_name {
-                    if let Some(h) = &self.key_hit_boxes[row_idx][col_idx] {
-                        return Some(h.center());
+                    if let Some(centres) = &self.captured_centres {
+                        let pos = centres[row_idx][col_idx]?;
+                        return Some((pos.x, pos.y));
                     }
                 }
             }
@@ -495,17 +471,13 @@ impl KeyboardLayout {
         None
     }
 
-    fn calculate_geometry(&mut self) {
+    fn calculate_hitboxes(&mut self) {
         let centres = match &self.captured_centres {
             Some(c) => c,
             None => return,
         };
 
         let mut key_hit_boxes = Vec::new();
-        let num_rows = self.rows.len();
-
-        let mut max_width: f32 = 0.0;
-        let mut total_height = 0.0;
 
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut hitboxes_row = Vec::new();
@@ -553,34 +525,6 @@ impl KeyboardLayout {
             key_hit_boxes.push(hitboxes_row);
         }
 
-        // We can't easily derive total_height/max_width from centres without iterating again,
-        // so we keep a simplified version of the original logic or just use the captured bounds.
-        // For now, we'll keep the dims as they were or let them be updated by the capture.
-        // Since we need dims for the stick centers in Keyboard::new, but we capture in draw_ui,
-        // we'll update dims based on the captured centres.
-        if !centres.is_empty() {
-            let mut min_x = f32::MAX;
-            let mut max_x = f32::MIN;
-            let mut min_y = f32::MAX;
-            let mut max_y = f32::MIN;
-            let mut found = false;
-
-            for row in centres {
-                for centre in row {
-                    if let Some(pos) = centre {
-                        min_x = min_x.min(pos.x);
-                        max_x = max_x.max(pos.x);
-                        min_y = min_y.min(pos.y);
-                        max_y = max_y.max(pos.y);
-                        found = true;
-                    }
-                }
-            }
-            if found {
-                self.dims = (max_x - min_x, max_y - min_y);
-            }
-        }
-
         self.key_hit_boxes = key_hit_boxes;
     }
 }
@@ -596,11 +540,11 @@ pub struct Keyboard {
     shift_mod: bool,
     ctrl_mod: bool,
     alt_mod: bool,
-    pub(crate) left_stick_center: (f32, f32),
+    left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
-    pub(crate) stick_scale_x: f32,
-    pub(crate) stick_scale_y: f32,
-    pub(crate) stick_warp: f32,
+    stick_scale_x: f32,
+    stick_scale_y: f32,
+    stick_warp: f32,
     enigo: Enigo,
 }
 
@@ -609,9 +553,6 @@ impl Keyboard {
         let cfg = config::get();
 
         let layout = KeyboardLayout::load_from_file(cfg.layout)?;
-        let (w, h) = layout.get_dimensions();
-        let left_stick_center = layout.get_key_center("d").unwrap_or((w * 0.25, h * 0.5));
-        let right_stick_center = layout.get_key_center("k").unwrap_or((w * 0.75, h * 0.5));
 
         Ok(Self {
             selected: (None, None),
@@ -620,8 +561,8 @@ impl Keyboard {
             shift_mod: false,
             ctrl_mod: false,
             alt_mod: false,
-            left_stick_center,
-            right_stick_center,
+            left_stick_center: Default::default(),
+            right_stick_center: Default::default(),
             stick_scale_x: cfg.stick_scale_x,
             stick_scale_y: cfg.stick_scale_y,
             stick_warp: cfg.stick_warp,
@@ -813,7 +754,7 @@ impl Keyboard {
         let pad_x = self.layout.scale_x(self.layout.pad_x);
         let pad_y = self.layout.scale_y(self.layout.pad_y);
 
-        let mut capturing_centres = self.layout.captured_centres.is_none();
+        let capturing_centres = self.layout.captured_centres.is_none();
         let mut captured_data = Vec::new();
 
         ui.vertical(|ui| {
@@ -988,11 +929,8 @@ impl Keyboard {
                     }
                 }
                 if debug.show_hitboxes {
-                    for (i, row) in self.layout.key_hit_boxes.iter().enumerate() {
-                        for (j, h) in row.iter().enumerate() {
-                            if self.layout.rows[i][j].key.normal != "d" {
-                                continue;
-                            }
+                    for row in &self.layout.key_hit_boxes {
+                        for h in row {
                             if let Some(hitbox) = h {
                                 match hitbox {
                                     HitBox::Circle { x, y, r } => {
@@ -1025,7 +963,10 @@ impl Keyboard {
 
         if capturing_centres {
             self.layout.captured_centres = Some(captured_data);
-            self.layout.calculate_geometry();
+            self.layout.calculate_hitboxes();
+
+            self.left_stick_center = self.layout.get_key_center("d").unwrap_or_default();
+            self.right_stick_center = self.layout.get_key_center("k").unwrap_or_default();
         }
 
         pressed_key

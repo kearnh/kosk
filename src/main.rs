@@ -3,6 +3,7 @@
 use crate::state::AppState;
 use anyhow::Result;
 use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
+use egui::Rect;
 use hidapi::{HidApi, HidDevice};
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +29,7 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 struct App {
     state: Arc<Mutex<AppState>>,
     window_setup_done: bool,
+    content_rect: Rect,
 }
 
 impl App {
@@ -69,23 +71,12 @@ impl App {
             }
         }
 
-        // Resize viewport to fit state reported size
-        let (width, height) = {
-            let s = state.lock().unwrap();
-            s.window_size()
-        };
-
-        cc.egui_ctx
-            .send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
-                width + 10.0,
-                height + 10.0,
-            )));
-
         debug::register(&cc.egui_ctx);
 
         Self {
             state,
             window_setup_done: false,
+            content_rect: Rect::EVERYTHING,
         }
     }
 }
@@ -179,6 +170,12 @@ impl eframe::App for App {
                 let mut s = self.state.lock().unwrap();
                 s.draw_ui(ctx, ui);
             });
+
+        let r = ctx.content_rect();
+        if r != self.content_rect {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(r.max - r.min));
+            self.content_rect = r;
+        }
     }
 }
 
@@ -240,12 +237,6 @@ fn main() -> Result<()> {
                     if let Err(e) = s.reload_from_config() {
                         eprintln!("Failed to reload keyboard from config: {}", e);
                     }
-                    let (width, height) = s.window_size();
-                    ctx_clone.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::Vec2::new(
-                        width + 10.0,
-                        height + 10.0,
-                    )));
-
                     ctx_clone.request_repaint();
                 });
             })?;

@@ -86,10 +86,6 @@ impl AppState {
         Ok(())
     }
 
-    pub fn window_size(&self) -> (f32, f32) {
-        self.kb.kb.layout.get_dimensions()
-    }
-
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
         let r = ctx.content_rect();
         let id = match self.state {
