@@ -310,11 +310,11 @@ impl<'a> Iterator for Ps4Device {
 }
 
 impl ControllerInput for Ps4InputData {
-    fn left_stick(&self) -> (i32, i32) {
-        self.left
+    fn left_stick_raw(&self) -> (f32, f32) {
+        (self.left.0 as f32 / 128.0, self.left.1 as f32 / 128.0)
     }
-    fn right_stick(&self) -> (i32, i32) {
-        self.right
+    fn right_stick_raw(&self) -> (f32, f32) {
+        (self.right.0 as f32 / 128.0, self.right.1 as f32 / 128.0)
     }
     fn dpad(&self) -> Option<Dpad> {
         self.dpad.clone()

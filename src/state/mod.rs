@@ -2,8 +2,11 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    keyboard::Keyboard,
-    state::{keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
+    state::{
+        keyboard::{Keyboard, KeyboardState},
+        menu::MenuState,
+        move_window::MoveWindowState,
+    },
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};

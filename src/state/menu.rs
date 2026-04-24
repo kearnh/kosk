@@ -10,7 +10,7 @@ struct MenuButton {
     callback: Box<dyn Fn() -> Option<StateId> + Send + Sync>,
 }
 
-pub(super) struct MenuState {
+pub struct MenuState {
     buttons: Vec<MenuButton>,
     selected: usize,
 }
@@ -24,7 +24,7 @@ fn on_back() -> Option<StateId> {
 }
 
 impl MenuState {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             buttons: vec![
                 MenuButton {
@@ -46,7 +46,7 @@ impl MenuState {
         clicked
     }
 
-    pub(super) fn draw_ui(&mut self, _: &Context, ui: &mut Ui) -> StateId {
+    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui) -> StateId {
         let mut n = 0;
 
         for b in self.buttons.iter() {
@@ -60,7 +60,7 @@ impl MenuState {
         StateId::Menu
     }
 
-    pub(super) fn handle_controller_input(
+    pub fn handle_controller_input(
         &mut self,
         _: &Context,
         input: &Option<Box<dyn ControllerInput>>,

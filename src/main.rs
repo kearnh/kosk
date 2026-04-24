@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 mod config;
 mod controller;
 mod debug;
-mod keyboard;
 mod state;
 
 const PS4_VID: u16 = 0x054c;

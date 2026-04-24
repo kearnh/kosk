@@ -1,3 +1,5 @@
+use crate::config;
+
 pub mod ps4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,10 +30,40 @@ impl ToString for Dpad {
     }
 }
 
+fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
+    if warp > 0.0 {
+        let u2 = x * x;
+        let v2 = y * y;
+        let offset = (u2 + v2).sqrt();
+        if offset > 0.001 {
+            // Determine how much to scale based on the warp factor
+            // At warp=1.0, this pushes the circle out to fill the square corners.
+            let scale = (offset / (x.abs().max(y.abs()))).powf(warp);
+            x *= scale;
+            y *= scale;
+        }
+    }
+
+    // Clip to square bounds
+    x = x.clamp(-1.0, 1.0);
+    y = y.clamp(-1.0, 1.0);
+
+    (x, y)
+}
+
 #[allow(unused)]
 pub trait ControllerInput {
-    fn left_stick(&self) -> (i32, i32);
-    fn right_stick(&self) -> (i32, i32);
+    fn left_stick_raw(&self) -> (f32, f32);
+    fn right_stick_raw(&self) -> (f32, f32);
+
+    // FIXME can we cache stick_warp somehow so we don't have to constantly lock config mutex?
+    fn left_stick(&self) -> (f32, f32) {
+        warp(self.left_stick_raw(), config::get().stick_warp)
+    }
+    fn right_stick(&self) -> (f32, f32) {
+        warp(self.right_stick_raw(), config::get().stick_warp)
+    }
+
     fn dpad(&self) -> Option<Dpad>;
     fn face_bottom(&self) -> bool;
     fn face_right(&self) -> bool;
