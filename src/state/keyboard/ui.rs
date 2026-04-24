@@ -76,7 +76,10 @@ impl Keyboard {
         match key {
             RawKey::Key(k) => {
                 mod_press!();
-                self.enigo.text(&k)?;
+                if let Some(c) = k.chars().next() {
+                    self.enigo
+                        .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
+                }
                 mod_release!();
             }
             RawKey::Enigo(k) => {
