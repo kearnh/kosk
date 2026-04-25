@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{Button, Color32, Context, Rect, RichText, Ui, Vec2};
+use egui::{Button, Color32, Context, RichText, Ui, Vec2};
 
 use crate::config;
 use crate::state::keyboard::key::RawKey;
@@ -29,7 +29,6 @@ impl Keyboard {
     pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
         self.layout.get_nearest_key_right(stick, shift_state)
     }
-
 
     pub fn draw_ui(
         &mut self,

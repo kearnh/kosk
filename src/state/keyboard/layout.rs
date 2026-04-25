@@ -375,10 +375,18 @@ impl KeyboardLayout {
         let (x, y) = stick;
         let dx = self.scale_x(x.into()) * self.stick_scale_x;
         let dy = self.scale_y(y.into()) * self.stick_scale_y;
-        (self.right_stick_center.0 + dx, self.right_stick_center.1 + dy)
+        (
+            self.right_stick_center.0 + dx,
+            self.right_stick_center.1 + dy,
+        )
     }
 
-    fn get_nearest_key_with_bounds(&self, cursor: (f32, f32), bounds: &[Rect], shift_state: bool) -> Option<RawKey> {
+    fn get_nearest_key_with_bounds(
+        &self,
+        cursor: (f32, f32),
+        bounds: &[Rect],
+        shift_state: bool,
+    ) -> Option<RawKey> {
         let (x, y) = cursor;
         let mut cursor_x = x;
         let mut cursor_y = y;
