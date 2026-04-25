@@ -1,12 +1,9 @@
-use crate::{
-    controller::ControllerInput,
-    state::StateId,
-};
+use crate::{controller::ControllerInput, state::StateId};
 use anyhow::Result;
 use egui::{Context, Ui};
 use enigo::{Enigo, Keyboard as _};
-pub use ui::Keyboard;
 pub use key::RawKey;
+pub use ui::Keyboard;
 
 mod key;
 mod layout;

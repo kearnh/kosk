@@ -133,7 +133,10 @@ impl AppState {
             StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
             StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
             StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input)?,
-            StateId::TextInput => self.text_input.handle_controller_input(ctx, input, &mut self.kb)?,
+            StateId::TextInput => {
+                self.text_input
+                    .handle_controller_input(ctx, input, &mut self.kb)?
+            }
         };
         self.state = id;
         Ok(())

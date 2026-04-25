@@ -1,6 +1,6 @@
 use crate::{
     controller::ControllerInput,
-    state::keyboard::{RawKey, KeyboardState},
+    state::keyboard::{KeyboardState, RawKey},
 };
 use anyhow::Result;
 use egui::{Context, TextEdit, Ui};
@@ -62,17 +62,17 @@ impl TextInputState {
     ) -> crate::state::StateId {
         // Draw text input box
         ui.vertical(|ui| {
-            let response = ui.add(
+            let _response = ui.add(
                 TextEdit::singleline(&mut self.text)
                     .desired_width(400.0)
-                    .hint_text("Type here...")
+                    .hint_text("Type here..."),
             );
         });
-        
+
         // Draw the keyboard by calling keyboard_state's draw_ui
         // Accept that mouse clicks will send keys directly (future problem)
         let next_state = keyboard_state.draw_ui(ctx, ui);
-        
+
         // If keyboard_state wants to change state (e.g., to Menu), respect that
         if next_state != crate::state::StateId::Keyboard {
             next_state
@@ -91,7 +91,7 @@ impl TextInputState {
         // This updates shift state, mods, and selection
         // TODO: This may consume inputs that text input needs
         let keyboard_next_state = keyboard_state.handle_controller_input(ctx, input)?;
-        
+
         // If keyboard_state wants to change state, respect that
         if keyboard_next_state != crate::state::StateId::Keyboard {
             return Ok(keyboard_next_state);
