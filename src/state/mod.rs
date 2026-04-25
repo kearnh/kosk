@@ -14,11 +14,13 @@ use egui::{Context, Rect, Ui};
 mod keyboard;
 mod menu;
 mod move_window;
+mod text_input;
 
 pub enum StateId {
     Menu,
     Keyboard,
     MoveWindow,
+    TextInput,
 }
 
 pub enum WindowPos {
@@ -34,6 +36,7 @@ pub struct AppState {
     kb: KeyboardState,
     menu: MenuState,
     move_window: MoveWindowState,
+    text_input: text_input::TextInputState,
     pos: WindowPos,
     monitor_size: (f32, f32),
 }
@@ -43,12 +46,14 @@ impl AppState {
         let cfg = config::get();
 
         let kb = KeyboardState::new()?;
+        let text_input = text_input::TextInputState::new();
 
         Ok(Self {
             state: StateId::Keyboard,
             kb,
             menu: MenuState::new(),
             move_window: MoveWindowState::new(cfg.scale_x, cfg.scale_y),
+            text_input,
             pos: WindowPos::BottomRight,
             monitor_size,
         })
@@ -107,6 +112,7 @@ impl AppState {
                 }
                 next_state
             }
+            StateId::TextInput => self.text_input.draw_ui(ctx, ui, &mut self.kb),
         };
         self.state = id;
     }
@@ -126,6 +132,7 @@ impl AppState {
             StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
             StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
             StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input)?,
+            StateId::TextInput => self.text_input.handle_controller_input(ctx, input, &mut self.kb)?,
         };
         self.state = id;
         Ok(())

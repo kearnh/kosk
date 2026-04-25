@@ -17,11 +17,11 @@ pub struct KeyboardState {
     pub l2_was_pressed: bool,
     pub r2_was_pressed: bool,
     pub trigger_threshold: u8,
-    shift_state: bool,
-    shift_mod: bool,
-    ctrl_mod: bool,
-    alt_mod: bool,
-    enigo: Enigo,
+    pub shift_state: bool,
+    pub shift_mod: bool,
+    pub ctrl_mod: bool,
+    pub alt_mod: bool,
+    pub enigo: Enigo,
 }
 
 impl KeyboardState {

@@ -28,6 +28,10 @@ impl MenuState {
         Self {
             buttons: vec![
                 MenuButton {
+                    text: "Text Input",
+                    callback: Box::new(|| Some(StateId::TextInput)),
+                },
+                MenuButton {
                     text: "Move",
                     callback: Box::new(on_move),
                 },
