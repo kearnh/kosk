@@ -4,6 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use egui::{Context, Ui};
+use enigo::{Enigo, Keyboard as _};
 pub use ui::Keyboard;
 
 mod key;
@@ -16,21 +17,136 @@ pub struct KeyboardState {
     pub l2_was_pressed: bool,
     pub r2_was_pressed: bool,
     pub trigger_threshold: u8,
+    shift_state: bool,
+    shift_mod: bool,
+    ctrl_mod: bool,
+    alt_mod: bool,
+    enigo: Enigo,
 }
 
 impl KeyboardState {
+    pub fn new() -> Result<Self> {
+        let cfg = crate::config::get();
+        let kb = Keyboard::new()?;
+
+        Ok(Self {
+            kb,
+            l2_was_pressed: false,
+            r2_was_pressed: false,
+            trigger_threshold: cfg.trigger_threshold,
+            shift_state: false,
+            shift_mod: false,
+            ctrl_mod: false,
+            alt_mod: false,
+            enigo: Enigo::new(&Default::default())?,
+        })
+    }
+
+    pub fn send_key(&mut self, key: &RawKey) -> Result<()> {
+        macro_rules! mod_press {
+            () => {
+                if self.shift_mod {
+                    self.enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
+                }
+                if self.ctrl_mod {
+                    self.enigo
+                        .key(enigo::Key::Control, enigo::Direction::Press)?;
+                }
+                if self.alt_mod {
+                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
+                }
+            };
+        }
+        macro_rules! mod_release {
+            () => {
+                if self.alt_mod {
+                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
+                }
+                if self.ctrl_mod {
+                    self.enigo
+                        .key(enigo::Key::Control, enigo::Direction::Release)?;
+                }
+                if self.shift_mod {
+                    self.enigo
+                        .key(enigo::Key::Shift, enigo::Direction::Release)?;
+                }
+            };
+        }
+        match key {
+            RawKey::Key(k) => {
+                mod_press!();
+                if let Some(c) = k.chars().next() {
+                    self.enigo
+                        .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
+                }
+                mod_release!();
+            }
+            RawKey::Enigo(k) => {
+                mod_press!();
+                self.enigo.key(*k, enigo::Direction::Click)?;
+                mod_release!();
+            }
+            RawKey::Paste => {
+                mod_press!();
+                self.enigo
+                    .key(enigo::Key::Control, enigo::Direction::Press)?;
+                self.enigo
+                    .key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
+                self.enigo
+                    .key(enigo::Key::Control, enigo::Direction::Release)?;
+                mod_release!();
+            }
+            _ => return Ok(()),
+        }
+
+        self.shift_state = false;
+        self.shift_mod = false;
+        self.ctrl_mod = false;
+        self.alt_mod = false;
+
+        Ok(())
+    }
+
+    pub fn toggle_shift(&mut self) {
+        if self.shift_state || self.shift_mod {
+            self.shift_state = false;
+            self.shift_mod = false;
+        } else {
+            if self.ctrl_mod || self.alt_mod {
+                self.shift_mod = !self.shift_mod
+            } else {
+                self.shift_state = !self.shift_state;
+            }
+        }
+    }
+
+    pub fn toggle_ctrl(&mut self) {
+        self.ctrl_mod = !self.ctrl_mod;
+    }
+
+    pub fn toggle_alt(&mut self) {
+        self.alt_mod = !self.alt_mod;
+    }
+
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
-        if let Some(key) = self.kb.draw_ui(ctx, ui) {
+        if let Some(key) = self.kb.draw_ui(
+            ctx,
+            ui,
+            self.shift_state,
+            self.shift_mod,
+            self.ctrl_mod,
+            self.alt_mod,
+        ) {
             match key {
                 RawKey::Done => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 RawKey::Shift => {
-                    self.kb.toggle_shift();
+                    self.toggle_shift();
                 }
                 RawKey::Menu => return StateId::Menu,
                 _ => {
-                    self.kb.send_key(&key).expect("send key");
+                    self.send_key(&key).expect("send key");
                 }
             }
         }
@@ -51,8 +167,8 @@ impl KeyboardState {
             }
         };
 
-        let selected_left = self.kb.get_nearest_key_left(input.left_stick());
-        let selected_right = self.kb.get_nearest_key_right(input.right_stick());
+        let selected_left = self.kb.get_nearest_key_left(input.left_stick(), self.shift_state);
+        let selected_right = self.kb.get_nearest_key_right(input.right_stick(), self.shift_state);
 
         self.kb.selected = (selected_left.clone(), selected_right.clone());
 
@@ -67,7 +183,7 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
-                        self.kb.send_key(&key)?;
+                        self.send_key(&key)?;
                     }
                     _ => (),
                 }
@@ -85,7 +201,7 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
-                        self.kb.send_key(&key).expect("send_key");
+                        self.send_key(&key).expect("send_key");
                     }
                     _ => (),
                 }
@@ -94,23 +210,23 @@ impl KeyboardState {
         }
 
         if input.face_bottom() {
-            self.kb.send_key(&RawKey::Key(" ".to_string()))?;
+            self.send_key(&RawKey::Key(" ".to_string()))?;
         }
 
         if input.face_left() {
-            self.kb.send_key(&RawKey::Enigo(enigo::Key::Backspace))?;
+            self.send_key(&RawKey::Enigo(enigo::Key::Backspace))?;
         }
 
         if input.face_top() {
-            self.kb.toggle_shift();
+            self.toggle_shift();
         }
 
         if input.stick_left() {
-            self.kb.toggle_ctrl();
+            self.toggle_ctrl();
         }
 
         if input.stick_right() {
-            self.kb.toggle_alt();
+            self.toggle_alt();
         }
 
         Ok(StateId::Keyboard)

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use egui::{Button, Color32, Context, Rect, RichText, Ui, Vec2};
-use enigo::{Enigo, Keyboard as _};
 
 use crate::config;
 use crate::state::keyboard::key::RawKey;
@@ -9,17 +8,10 @@ use crate::state::keyboard::layout::KeyboardLayout;
 pub struct Keyboard {
     pub selected: (Option<RawKey>, Option<RawKey>),
     pub layout: KeyboardLayout,
-    // sends alternative key
-    shift_state: bool,
-    // adds shift modifier, different to shift_state in that it can be combined with other modifiers
-    shift_mod: bool,
-    ctrl_mod: bool,
-    alt_mod: bool,
     left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
     stick_scale_x: f32,
     stick_scale_y: f32,
-    enigo: Enigo,
 }
 
 impl Keyboard {
@@ -31,96 +23,28 @@ impl Keyboard {
         Ok(Self {
             selected: (None, None),
             layout,
-            shift_state: false,
-            shift_mod: false,
-            ctrl_mod: false,
-            alt_mod: false,
             left_stick_center: Default::default(),
             right_stick_center: Default::default(),
             stick_scale_x: cfg.stick_scale_x,
             stick_scale_y: cfg.stick_scale_y,
-            enigo: Enigo::new(&Default::default())?,
         })
     }
 
-    pub fn send_key(&mut self, key: &RawKey) -> Result<()> {
-        macro_rules! mod_press {
-            () => {
-                if self.shift_mod {
-                    self.enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
-                }
-                if self.ctrl_mod {
-                    self.enigo
-                        .key(enigo::Key::Control, enigo::Direction::Press)?;
-                }
-                if self.alt_mod {
-                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
-                }
-            };
-        }
-        macro_rules! mod_release {
-            () => {
-                if self.alt_mod {
-                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
-                }
-                if self.ctrl_mod {
-                    self.enigo
-                        .key(enigo::Key::Control, enigo::Direction::Release)?;
-                }
-                if self.shift_mod {
-                    self.enigo
-                        .key(enigo::Key::Shift, enigo::Direction::Release)?;
-                }
-            };
-        }
-        match key {
-            RawKey::Key(k) => {
-                mod_press!();
-                if let Some(c) = k.chars().next() {
-                    self.enigo
-                        .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
-                }
-                mod_release!();
-            }
-            RawKey::Enigo(k) => {
-                mod_press!();
-                self.enigo.key(*k, enigo::Direction::Click)?;
-                mod_release!();
-            }
-            RawKey::Paste => {
-                mod_press!();
-                self.enigo
-                    .key(enigo::Key::Control, enigo::Direction::Press)?;
-                self.enigo
-                    .key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
-                self.enigo
-                    .key(enigo::Key::Control, enigo::Direction::Release)?;
-                mod_release!();
-            }
-            _ => return Ok(()),
-        }
-
-        self.shift_state = false;
-        self.shift_mod = false;
-        self.ctrl_mod = false;
-        self.alt_mod = false;
-
-        Ok(())
-    }
-
-    pub fn get_nearest_key_left(&self, stick: (f32, f32)) -> Option<RawKey> {
+    pub fn get_nearest_key_left(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
         self.get_nearest_key(
             self.left_stick_center,
             stick,
             &self.layout.left_stick_bounds,
+            shift_state,
         )
     }
 
-    pub fn get_nearest_key_right(&self, stick: (f32, f32)) -> Option<RawKey> {
+    pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
         self.get_nearest_key(
             self.right_stick_center,
             stick,
             &self.layout.right_stick_bounds,
+            shift_state,
         )
     }
 
@@ -129,6 +53,7 @@ impl Keyboard {
         center: (f32, f32),
         stick: (f32, f32),
         bounds: &[Rect],
+        shift_state: bool,
     ) -> Option<RawKey> {
         let (x, y) = stick;
         let dx = self.layout.scale_x(x.into()) * self.stick_scale_x;
@@ -163,31 +88,18 @@ impl Keyboard {
             }
         }
 
-        self.layout.get_key_at(cursor_x, cursor_y, self.shift_state)
+        self.layout.get_key_at(cursor_x, cursor_y, shift_state)
     }
 
-    pub fn toggle_shift(&mut self) {
-        if self.shift_state || self.shift_mod {
-            self.shift_state = false;
-            self.shift_mod = false;
-        } else {
-            if self.ctrl_mod || self.alt_mod {
-                self.shift_mod = !self.shift_mod
-            } else {
-                self.shift_state = !self.shift_state;
-            }
-        }
-    }
-
-    pub fn toggle_ctrl(&mut self) {
-        self.ctrl_mod = !self.ctrl_mod;
-    }
-
-    pub fn toggle_alt(&mut self) {
-        self.alt_mod = !self.alt_mod;
-    }
-
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+    pub fn draw_ui(
+        &mut self,
+        ctx: &Context,
+        ui: &mut Ui,
+        shift_state: bool,
+        shift_mod: bool,
+        ctrl_mod: bool,
+        alt_mod: bool,
+    ) -> Option<RawKey> {
         let mut pressed_key: Option<RawKey> = None;
 
         // Set semi-transparent button styling
@@ -216,8 +128,8 @@ impl Keyboard {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(pad_x, pad_y);
 
-            let left_center = self.get_nearest_key_left((0.0, 0.0));
-            let right_center = self.get_nearest_key_right((0.0, 0.0));
+            let left_center = self.get_nearest_key_left((0.0, 0.0), shift_state);
+            let right_center = self.get_nearest_key_right((0.0, 0.0), shift_state);
 
             for (keys, indent, height) in &self.layout {
                 ui.horizontal(|ui| {
@@ -240,14 +152,14 @@ impl Keyboard {
                         }
 
                         let mut button = Button::new(
-                            RichText::new(key.display(self.shift_state))
+                            RichText::new(key.display(shift_state))
                                 .size(self.layout.font_size),
                         );
 
-                        if key.is_key(self.shift_state, &RawKey::Shift) && self.shift_state {
+                        if key.is_key(shift_state, &RawKey::Shift) && shift_state {
                             button = button.selected(true);
                         } else {
-                            let current_key = key.key(self.shift_state);
+                            let current_key = key.key(shift_state);
                             let sel0 = self.selected.0.as_ref().is_some_and(|s| s == &current_key);
                             let sel1 = self.selected.1.as_ref().is_some_and(|s| s == &current_key);
 
@@ -279,15 +191,15 @@ impl Keyboard {
                         }
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                        if key.is_key(self.shift_state, " ") && (self.ctrl_mod || self.alt_mod) {
+                        if key.is_key(shift_state, " ") && (ctrl_mod || alt_mod) {
                             let mut mods = Vec::new();
-                            if self.ctrl_mod {
+                            if ctrl_mod {
                                 mods.push("ctrl");
                             }
-                            if self.shift_mod {
+                            if shift_mod {
                                 mods.push("shift");
                             }
-                            if self.alt_mod {
+                            if alt_mod {
                                 mods.push("alt");
                             }
                             let mod_string = mods.join("+");
@@ -303,7 +215,7 @@ impl Keyboard {
                         }
 
                         if response.clicked() {
-                            pressed_key = Some(key.key(self.shift_state));
+                            pressed_key = Some(key.key(shift_state));
                         }
                     }
                     if capturing_centres {
