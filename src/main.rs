@@ -2,7 +2,8 @@
 
 use crate::state::AppState;
 use anyhow::Result;
-use eframe::{wgpu::rwh::HasWindowHandle, CreationContext};
+use eframe::CreationContext;
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use egui::Rect;
 use hidapi::{HidApi, HidDevice};
 use std::sync::{Arc, Mutex};
@@ -110,9 +111,8 @@ impl eframe::App for App {
 
         // Setup window styles (non-transparent parts)
         if let Ok(h) = frame.window_handle() {
-            use eframe::wgpu::rwh::RawWindowHandle::*;
             match h.as_raw() {
-                Win32(h) => {
+                RawWindowHandle::Win32(h) => {
                     use windows_sys::Win32::Foundation::{COLORREF, HWND};
                     use windows_sys::Win32::Graphics::Dwm::{
                         DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
@@ -182,11 +182,10 @@ fn main() -> Result<()> {
     config::init()?;
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
-    let renderer = if cfg!(feature = "wgpu") {
-        eframe::Renderer::Wgpu
-    } else {
-        eframe::Renderer::Glow
-    };
+    #[cfg(feature = "wgpu")]
+    let renderer = eframe::Renderer::Wgpu;
+    #[cfg(not(feature = "wgpu"))]
+    let renderer = eframe::Renderer::Glow;
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
