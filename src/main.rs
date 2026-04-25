@@ -182,6 +182,12 @@ fn main() -> Result<()> {
     config::init()?;
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
+    let renderer = if cfg!(feature = "wgpu") {
+        eframe::Renderer::Wgpu
+    } else {
+        eframe::Renderer::Glow
+    };
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_transparent(config::get().transparent)
@@ -190,7 +196,7 @@ fn main() -> Result<()> {
             .with_decorations(false)
             .with_resizable(false)
             .with_inner_size([520.0, 250.0]), // Initial size, will be resized by App::new()
-        renderer: eframe::Renderer::Glow,
+        renderer,
         centered: true,
         ..Default::default()
     };

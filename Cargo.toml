@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
-eframe = { version = "0.33.3", features = ["wgpu", "glow"] }
+eframe = { version = "0.33.3", default-features = false, features = ["glow"] }
 egui = { version = "0.33.3", features = ["serde"] }
 enigo = { version = "0.6.1", features = ["serde"] }
 hidapi = "2.6.5"
@@ -19,3 +19,6 @@ windows-sys = { version = "0.52", features = [
     "Win32_Graphics_Dwm",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[features]
+wgpu = ["eframe/wgpu"]
