@@ -1,6 +1,6 @@
 use crate::{
     controller::{ControllerInput, Dpad},
-    state::{event::Event, State1d},
+    state::{event::Event, StateId},
 };
 use anyhow::Result;
 use egui::{Button, Context, Ui};
