@@ -146,6 +146,12 @@ pub struct KeyboardLayout {
     pub pad_x: UnscaledPixelUnitX,
     pub pad_y: UnscaledPixelUnitY,
 
+    // Stick scaling and centers
+    stick_scale_x: f32,
+    stick_scale_y: f32,
+    left_stick_center: (f32, f32),
+    right_stick_center: (f32, f32),
+
     // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
     // with a key button, and key circles may overlap each other. Key selection for highlight will
     // use closest center, will key press will return all overlapping keys to allow typo resistance,
@@ -239,6 +245,10 @@ impl KeyboardLayout {
             scale_y: cfg.scale_y,
             pad_x: layout.pad_x.into(),
             pad_y: layout.pad_y.into(),
+            stick_scale_x: cfg.stick_scale_x,
+            stick_scale_y: cfg.stick_scale_y,
+            left_stick_center: (0.0, 0.0),
+            right_stick_center: (0.0, 0.0),
             key_hit_boxes: Default::default(),
             left_stick_bounds: layout
                 .stick_bounds

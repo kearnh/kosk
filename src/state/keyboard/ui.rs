@@ -6,12 +6,8 @@ use crate::state::keyboard::key::RawKey;
 use crate::state::keyboard::layout::KeyboardLayout;
 
 pub struct Keyboard {
-    pub selected: (Option<RawKey>, Option<RawKey>),
+    pub selected: (Option<Raw1Key>, Option<RawKey>),
     pub layout: KeyboardLayout,
-    left_stick_center: (f32, f32),
-    right_stick_center: (f32, f32),
-    stick_scale_x: f32,
-    stick_scale_y: f32,
 }
 
 impl Keyboard {
@@ -23,73 +19,17 @@ impl Keyboard {
         Ok(Self {
             selected: (None, None),
             layout,
-            left_stick_center: Default::default(),
-            right_stick_center: Default::default(),
-            stick_scale_x: cfg.stick_scale_x,
-            stick_scale_y: cfg.stick_scale_y,
         })
     }
 
     pub fn get_nearest_key_left(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        self.get_nearest_key(
-            self.left_stick_center,
-            stick,
-            &self.layout.left_stick_bounds,
-            shift_state,
-        )
+        self.layout.get_nearest_key_left(stick, shift_state)
     }
 
     pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        self.get_nearest_key(
-            self.right_stick_center,
-            stick,
-            &self.layout.right_stick_bounds,
-            shift_state,
-        )
+        self.layout.get_nearest_key_right(stick, shift_state)
     }
 
-    fn get_nearest_key(
-        &self,
-        center: (f32, f32),
-        stick: (f32, f32),
-        bounds: &[Rect],
-        shift_state: bool,
-    ) -> Option<RawKey> {
-        let (x, y) = stick;
-        let dx = self.layout.scale_x(x.into()) * self.stick_scale_x;
-        let dy = self.layout.scale_y(y.into()) * self.stick_scale_y;
-
-        let mut cursor_x = center.0 + dx;
-        let mut cursor_y = center.1 + dy;
-
-        if !bounds.is_empty() {
-            // Check if we are already inside any of the bounds
-            let is_inside = bounds
-                .iter()
-                .any(|r| r.contains((cursor_x, cursor_y).into()));
-
-            if !is_inside {
-                // We are outside all bounds. Find the closest point on the closest rectangle.
-                let mut closest_point = (cursor_x, cursor_y);
-                let mut min_dist_sq = f32::MAX;
-
-                for r in bounds {
-                    // Clamp the cursor to the individual rectangle to find the closest point on it
-                    let clamped_x = cursor_x.clamp(r.min.x, r.max.x);
-                    let clamped_y = cursor_y.clamp(r.min.y, r.max.y);
-
-                    let dist_sq = (cursor_x - clamped_x).powi(2) + (cursor_y - clamped_y).powi(2);
-                    if dist_sq < min_dist_sq {
-                        min_dist_sq = dist_sq;
-                        closest_point = (clamped_x, clamped_y);
-                    }
-                }
-                (cursor_x, cursor_y) = closest_point;
-            }
-        }
-
-        self.layout.get_key_at(cursor_x, cursor_y, shift_state)
-    }
 
     pub fn draw_ui(
         &mut self,
@@ -224,20 +164,10 @@ impl Keyboard {
             }
         });
 
-        self.layout.draw_debug(
-            ctx,
-            ui,
-            (self.stick_scale_x, self.stick_scale_y),
-            self.left_stick_center,
-            self.right_stick_center,
-        );
+        self.layout.draw_debug(ctx, ui);
 
         if capturing_centres {
-            self.layout.captured_centres = Some(captured_data);
-            self.layout.calculate_hitboxes();
-
-            self.left_stick_center = self.layout.get_key_center("d").unwrap_or_default();
-            self.right_stick_center = self.layout.get_key_center("k").unwrap_or_default();
+            self.layout.update_geometry(captured_data);
         }
 
         pressed_key
