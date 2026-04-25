@@ -1,6 +1,6 @@
 use crate::{
     controller::ControllerInput,
-    state::{StateId, WindowPos},
+    state::{event::Event, StateId, WindowPos},
 };
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
@@ -47,7 +47,7 @@ impl MoveWindowState {
 
                     // Row 2
                     if ui.add_sized(size, Button::new("←")).clicked() {
-                        movement = Some(WindowPos::Absolute(x - 100.0, nun_close));
+                        movement = Some(WindowPos::Absolute(x - 100.0, y));
                     }
                     ui.add_sized(size, Label::new(""));
                     if ui.add_sized(size, Button::new("→")).clicked() {

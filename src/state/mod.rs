@@ -97,7 +97,7 @@ impl AppState {
         Ok(())
     }
 
-    fn process_events(&mut2) {
+    fn process_events(&mut self) {
         for event in self.events.drain(..) {
             match event {
                 Event::SendKey(key, direction) => {
