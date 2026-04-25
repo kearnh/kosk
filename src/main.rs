@@ -202,7 +202,7 @@ fn main() -> Result<()> {
     std::thread::spawn(|| {
         use std::io::{self, BufRead};
         let stdin = io::stdin();
-        for text in stdin.lock().lines().flatten() {
+        for text in stdin.lock().lines().map_while(Result::ok) {
             println!("[Echo] {}", text);
         }
     });

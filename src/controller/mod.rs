@@ -14,9 +14,9 @@ pub enum Dpad {
     DownLeft,
 }
 
-impl ToString for Dpad {
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for Dpad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Dpad::Up => "↑",
             Dpad::UpRight => "↗",
             Dpad::Right => "→",
@@ -25,8 +25,8 @@ impl ToString for Dpad {
             Dpad::DownLeft => "↙",
             Dpad::Left => "←",
             Dpad::UpLeft => "↖",
-        }
-        .to_string()
+        };
+        write!(f, "{}", s)
     }
 }
 

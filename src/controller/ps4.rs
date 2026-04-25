@@ -266,7 +266,7 @@ impl Ps4Device {
     }
 }
 
-impl<'a> Iterator for Ps4Device {
+impl Iterator for Ps4Device {
     type Item = Option<Box<dyn ControllerInput>>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -66,18 +66,18 @@ impl PartialEq<&str> for RawKey {
     }
 }
 
-impl ToString for RawKey {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for RawKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RawKey::Key(k) => k.clone(),
-            RawKey::Enigo(k) => format!("{:?}", k),
+            RawKey::Key(k) => write!(f, "{}", k),
+            RawKey::Enigo(k) => write!(f, "{:?}", k),
             RawKey::Skip => unsafe { unreachable_unchecked() },
-            RawKey::Shift => "Shift".to_string(),
-            RawKey::Ctrl => "Ctrl".to_string(),
-            RawKey::Alt => "Alt".to_string(),
-            RawKey::Paste => "Paste".to_string(),
-            RawKey::Done => "Done".to_string(),
-            RawKey::Menu => "Done".to_string(),
+            RawKey::Shift => write!(f, "Shift"),
+            RawKey::Ctrl => write!(f, "Ctrl"),
+            RawKey::Alt => write!(f, "Alt"),
+            RawKey::Paste => write!(f, "Paste"),
+            RawKey::Done => write!(f, "Done"),
+            RawKey::Menu => write!(f, "Done"),
         }
     }
 }

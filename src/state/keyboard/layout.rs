@@ -325,8 +325,8 @@ impl KeyboardLayout {
                             hitboxes_row.push(Some(HitBox::Ellipse {
                                 x: center_x,
                                 y: center_y,
-                                rx: (width / 2.0) * 1.4142,
-                                ry: (row_height / 2.0) * 1.4142,
+                                rx: (width / 2.0) * std::f32::consts::SQRT_2,
+                                ry: (row_height / 2.0) * std::f32::consts::SQRT_2,
                             }));
                         } else {
                             let radius = self.scale_x * 1.125;
