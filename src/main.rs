@@ -111,49 +111,46 @@ impl eframe::App for App {
 
         // Setup window styles (non-transparent parts)
         if let Ok(h) = frame.window_handle() {
-            match h.as_raw() {
-                RawWindowHandle::Win32(h) => {
-                    use windows_sys::Win32::Foundation::{COLORREF, HWND};
-                    use windows_sys::Win32::Graphics::Dwm::{
-                        DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
-                    };
-                    use windows_sys::Win32::UI::WindowsAndMessaging::{
-                        GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
-                        GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-                    };
-                    let hwnd = h.hwnd.get() as HWND;
-                    unsafe {
-                        // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
-                        let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                        let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE as isize);
+            if let RawWindowHandle::Win32(h) = h.as_raw() {
+                use windows_sys::Win32::Foundation::{COLORREF, HWND};
+                use windows_sys::Win32::Graphics::Dwm::{
+                    DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
+                };
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
+                    GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+                };
+                let hwnd = h.hwnd.get() as HWND;
+                unsafe {
+                    // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
+                    let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                    let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE as isize);
 
+                    if is_transparent {
+                        new_ex_style |= WS_EX_LAYERED as isize;
+                    }
+
+                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
+
+                    if is_transparent {
+                        // Set layered window attributes for alpha transparency
+                        let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
+                    }
+
+                    // Enable DWM blur behind for transparency (only once)
+                    if !self.window_setup_done {
                         if is_transparent {
-                            new_ex_style |= WS_EX_LAYERED as isize;
+                            let bb = DWM_BLURBEHIND {
+                                dwFlags: DWM_BB_ENABLE,
+                                fEnable: 1,
+                                hRgnBlur: 0,
+                                fTransitionOnMaximized: 0,
+                            };
+                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
                         }
-
-                        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
-
-                        if is_transparent {
-                            // Set layered window attributes for alpha transparency
-                            let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
-                        }
-
-                        // Enable DWM blur behind for transparency (only once)
-                        if !self.window_setup_done {
-                            if is_transparent {
-                                let bb = DWM_BLURBEHIND {
-                                    dwFlags: DWM_BB_ENABLE,
-                                    fEnable: 1,
-                                    hRgnBlur: 0,
-                                    fTransitionOnMaximized: 0,
-                                };
-                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
-                            }
-                            self.window_setup_done = true;
-                        }
+                        self.window_setup_done = true;
                     }
                 }
-                _ => {}
             }
         }
 
@@ -205,10 +202,8 @@ fn main() -> Result<()> {
     std::thread::spawn(|| {
         use std::io::{self, BufRead};
         let stdin = io::stdin();
-        for line in stdin.lock().lines() {
-            if let Ok(text) = line {
-                println!("[Echo] {}", text);
-            }
+        for text in stdin.lock().lines().flatten() {
+            println!("[Echo] {}", text);
         }
     });
 
