@@ -67,6 +67,9 @@ impl TextInputState {
                 }
                 Event::SendKey(_, _) => {}
                 Event::SendText(_) => todo!(),
+                Event::ChangeState(_) => {
+                    output_events.push(event);
+                }
             }
         }
     }
@@ -119,7 +122,7 @@ impl TextInputState {
         if !handled {
             let mut kb_events = vec![];
             keyboard_state.handle_controller_input(ctx, input, &mut kb_events)?;
-            self.process_events(kb_1));
+            self.process_events(kb_events, events);
         }
 
         Ok(())

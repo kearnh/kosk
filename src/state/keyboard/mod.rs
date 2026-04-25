@@ -161,13 +161,13 @@ impl KeyboardState {
         ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut Vec<Event>,
-    ) -> Result<StateId> {
+    ) -> Result<()> {
         let input = match input {
             Some(input) => input,
             None => {
                 // end of inputs, reset
                 self.kb.selected = (None, None);
-                return Ok(StateId::Keyboard);
+                return Ok(());
             }
         };
 
@@ -189,7 +189,9 @@ impl KeyboardState {
                     Some(RawKey::Done) => {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    Some(RawKey::Menu) => return Ok(StateId::Menu),
+                    Some(RawKey::Menu) => {
+                        events.push(Event::ChangeState(StateId::Menu));
+                    }
                     Some(key) => {
                         self.send_key(&key, events)?;
                     }
@@ -207,7 +209,9 @@ impl KeyboardState {
                     Some(RawKey::Done) => {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    Some(RawKey::Menu) => return Ok(StateId::Menu),
+                    Some(RawKey::Menu) => {
+                        events.push(Event::ChangeState(StateId::Menu));
+                    }
                     Some(key) => {
                         self.send_key(&key, events).expect("send_key");
                     }
@@ -238,9 +242,9 @@ impl KeyboardState {
         }
 
         if matches!(input.dpad(), Some(Dpad::Up)) {
-            return Ok(StateId::TextInput);
+            events.push(Event::ChangeState(StateId::TextInput));
         }
 
-        Ok(StateId::Keyboard)
+        Ok(())
     }
 }

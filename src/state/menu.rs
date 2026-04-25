@@ -54,10 +54,11 @@ impl MenuState {
         &mut self,
         _: &Context,
         input: &Option<Box<dyn ControllerInput>>,
-    ) -> Result<StateId> {
+        events: &mut Vec<Event>,
+    ) -> Result<()> {
         let input = match input {
             Some(input) => input,
-            None => return Ok(StateId::Menu),
+            None => return Ok(()),
         };
 
         let n = match input.dpad() {
@@ -69,13 +70,17 @@ impl MenuState {
             (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
 
         if input.face_right() {
-            return Ok(StateId::Keyboard);
+            events.push(Event::ChangeState(StateId::Keyboard));
+            return Ok(());
         }
 
         if input.face_bottom() {
-            return Ok((self.buttons[self.selected].callback)().unwrap_or(StateId::Menu));
+            if let Some(id) = (self.buttons[self.selected].callback)() {
+                events.push(Event::ChangeState(id));
+            }
+            return Ok(());
         }
 
-        Ok(StateId::Menu)
+        Ok(())
     }
 }
