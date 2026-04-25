@@ -113,22 +113,22 @@ impl eframe::App for App {
             use eframe::wgpu::rwh::RawWindowHandle::*;
             match h.as_raw() {
                 Win32(h) => {
-                    use windows::Win32::Foundation::{COLORREF, HWND};
-                    use windows::Win32::Graphics::Dwm::{
+                    use windows_sys::Win32::Foundation::{COLORREF, HWND};
+                    use windows_sys::Win32::Graphics::Dwm::{
                         DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
                     };
-                    use windows::Win32::UI::WindowsAndMessaging::{
+                    use windows_sys::Win32::UI::WindowsAndMessaging::{
                         GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
                         GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
                     };
-                    let hwnd = HWND(h.hwnd.get() as _);
+                    let hwnd = h.hwnd.get() as HWND;
                     unsafe {
                         // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
                         let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                        let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE.0 as isize);
+                        let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE as isize);
 
                         if is_transparent {
-                            new_ex_style |= WS_EX_LAYERED.0 as isize;
+                            new_ex_style |= WS_EX_LAYERED as isize;
                         }
 
                         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
@@ -143,9 +143,9 @@ impl eframe::App for App {
                             if is_transparent {
                                 let bb = DWM_BLURBEHIND {
                                     dwFlags: DWM_BB_ENABLE,
-                                    fEnable: true.into(),
-                                    hRgnBlur: Default::default(),
-                                    fTransitionOnMaximized: false.into(),
+                                    fEnable: 1,
+                                    hRgnBlur: std::ptr::null_mut(),
+                                    fTransitionOnMaximized: 0,
                                 };
                                 let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
                             }

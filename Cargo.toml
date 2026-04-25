@@ -14,9 +14,8 @@ notify = "6.1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_plain = "1.0.2"
 toml = "0.8"
-windows = { version = "0.62.2", features = [
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Graphics",
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
     "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
 ] }
