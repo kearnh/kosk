@@ -42,13 +42,7 @@ impl AppState {
     pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
         let cfg = config::get();
 
-        let kb_inner = Keyboard::new()?;
-        let kb = KeyboardState {
-            kb: kb_inner,
-            l2_was_pressed: false,
-            r2_was_pressed: false,
-            trigger_threshold: cfg.trigger_threshold,
-        };
+        let kb = KeyboardState::new()?;
 
         Ok(Self {
             state: StateId::Keyboard,
