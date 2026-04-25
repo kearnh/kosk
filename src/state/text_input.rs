@@ -1,6 +1,6 @@
 use crate::{
     controller::ControllerInput,
-    state::keyboard::{key::RawKey, KeyboardState},
+    state::keyboard::{RawKey, KeyboardState},
 };
 use anyhow::Result;
 use egui::{Context, TextEdit, Ui};
@@ -67,19 +67,18 @@ impl TextInputState {
                     .desired_width(400.0)
                     .hint_text("Type here...")
             );
-            
-            // Draw the keyboard by calling keyboard_state's draw_ui
-            // Accept that mouse clicks will send keys directly (future problem)
-            let next_state = keyboard_state.draw_ui(ctx, ui);
-            
-            // If keyboard_state wants to change state (e.g., to Menu), respect that
-            if next_state != crate::state::StateId::Keyboard {
-                return next_state;
-            }
         });
-
-        // Otherwise stay in TextInput
-        crate::state::StateId::TextInput
+        
+        // Draw the keyboard by calling keyboard_state's draw_ui
+        // Accept that mouse clicks will send keys directly (future problem)
+        let next_state = keyboard_state.draw_ui(ctx, ui);
+        
+        // If keyboard_state wants to change state (e.g., to Menu), respect that
+        if next_state != crate::state::StateId::Keyboard {
+            next_state
+        } else {
+            crate::state::StateId::TextInput
+        }
     }
 
     pub fn handle_controller_input(
