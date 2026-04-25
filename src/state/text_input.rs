@@ -55,6 +55,25 @@ impl TextInputState {
         }
     }
 
+    fn build_display_string(&self) -> String {
+        let mut display = String::new();
+        let cursor_char = '\u{258f}'; // Left eighth block character
+        
+        for (i, ch) in self.text.chars().enumerate() {
+            if i == self.cursor_pos {
+                display.push(cursor_char);
+            }
+            display.push(ch);
+        }
+        
+        // If cursor is at the end
+        if self.cursor_pos == self.text.len() {
+            display.push(cursor_char);
+        }
+        
+        display
+    }
+
     fn process_events(&mut self, events: Vec<Event>, output_events: &mut Vec<Event>) {
         for event in events {
             match event {
@@ -83,8 +102,9 @@ impl TextInputState {
     ) {
         // Draw text input box
         ui.vertical(|ui| {
+            let mut display_text = self.build_display_string();
             let _ = ui.add(
-                TextEdit::singleline(&mut self.text)
+                TextEdit::singleline(&mut display_text)
                     .desired_width(400.0)
                     .interactive(false),
             );
