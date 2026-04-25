@@ -152,8 +152,7 @@ impl Keyboard {
                         }
 
                         let mut button = Button::new(
-                            RichText::new(key.display(shift_state))
-                                .size(self.layout.font_size),
+                            RichText::new(key.display(shift_state)).size(self.layout.font_size),
                         );
 
                         if key.is_key(shift_state, &RawKey::Shift) && shift_state {

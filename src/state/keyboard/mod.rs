@@ -167,8 +167,12 @@ impl KeyboardState {
             }
         };
 
-        let selected_left = self.kb.get_nearest_key_left(input.left_stick(), self.shift_state);
-        let selected_right = self.kb.get_nearest_key_right(input.right_stick(), self.shift_state);
+        let selected_left = self
+            .kb
+            .get_nearest_key_left(input.left_stick(), self.shift_state);
+        let selected_right = self
+            .kb
+            .get_nearest_key_right(input.right_stick(), self.shift_state);
 
         self.kb.selected = (selected_left.clone(), selected_right.clone());
 
