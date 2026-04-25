@@ -6,7 +6,7 @@ use crate::state::keyboard::key::RawKey;
 use crate::state::keyboard::layout::KeyboardLayout;
 
 pub struct Keyboard {
-    pub selected: (Option<Raw1Key>, Option<RawKey>),
+    pub selected: (Option<RawKey>, Option<RawKey>),
     pub layout: KeyboardLayout,
 }
 

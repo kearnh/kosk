@@ -357,6 +357,66 @@ impl KeyboardLayout {
         self.key_hit_boxes = key_hit_boxes;
     }
 
+    pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
+        self.captured_centres = Some(captured_centres);
+        self.calculate_hitboxes();
+        self.left_stick_center = self.get_key_center("d").unwrap_or_default();
+        self.right_stick_center = self.get_key_center("k").unwrap_or_default();
+    }
+
+    pub fn stick_to_cursor_left(&self, stick: (f32, f32)) -> (f32, f32) {
+        let (x, y) = stick;
+        let dx = self.scale_x(x.into()) * self.stick_scale_x;
+        let dy = self.scale_y(y.into()) * self.stick_scale_y;
+        (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy)
+    }
+
+    pub fn stick_to_cursor_right(&self, stick: (f32, f32)) -> (f32, f32) {
+        let (x, y) = stick;
+        let dx = self.scale_x(x.into()) * self.stick_scale_x;
+        let dy = self.scale_y(y.into()) * self.stick_scale_y;
+        (self.right_stick_center.0 + dx, self.right_stick_center.1 + dy)
+    }
+
+    fn get_nearest_key_with_bounds(&self, cursor: (f32, f32), bounds: &[Rect], shift_state: bool) -> Option<RawKey> {
+        let (x, y) = cursor;
+        let mut cursor_x = x;
+        let mut cursor_y = y;
+        if !bounds.is_empty() {
+            // Check if we are already inside any of the bounds
+            let is_inside = bounds
+                .iter()
+                .any(|r| r.contains((cursor_x, cursor_y).into()));
+            if !is_inside {
+                // We are outside all bounds. Find the closest point on the closest rectangle.
+                let mut closest_point = (cursor_x, cursor_y);
+                let mut min_dist_sq = f32::MAX;
+                for r in bounds {
+                    // Clamp the cursor to the individual rectangle to find the closest point on it
+                    let clamped_x = cursor_x.clamp(r.min.x, r.max.x);
+                    let clamped_y = cursor_y.clamp(r.min.y, r.max.y);
+                    let dist_sq = (cursor_x - clamped_x).powi(2) + (cursor_y - clamped_y).powi(2);
+                    if dist_sq < min_dist_sq {
+                        min_dist_sq = dist_sq;
+                        closest_point = (clamped_x, clamped_y);
+                    }
+                }
+                (cursor_x, cursor_y) = closest_point;
+            }
+        }
+        self.get_key_at(cursor_x, cursor_y, shift_state)
+    }
+
+    pub fn get_nearest_key_left(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
+        let cursor = self.stick_to_cursor_left(stick);
+        self.get_nearest_key_with_bounds(cursor, &self.left_stick_bounds, shift_state)
+    }
+
+    pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
+        let cursor = self.stick_to_cursor_right(stick);
+        self.get_nearest_key_with_bounds(cursor, &self.right_stick_bounds, shift_state)
+    }
+
     pub fn get_key_at(&self, x: f32, y: f32, shifted: bool) -> Option<RawKey> {
         let mut candidate = (f32::MAX, None);
         for (row_idx, row) in self.key_hit_boxes.iter().enumerate() {
@@ -374,14 +434,7 @@ impl KeyboardLayout {
         candidate.1
     }
 
-    pub fn draw_debug(
-        &self,
-        ctx: &Context,
-        ui: &mut Ui,
-        (stick_scale_x, stick_scale_y): (f32, f32),
-        (left_stick_center_x, left_stick_center_y): (f32, f32),
-        (right_stick_center_x, right_stick_center_y): (f32, f32),
-    ) {
+    pub fn draw_debug(&self, ctx: &Context, ui: &mut Ui) {
         if let Some(debug) = config::get().debug {
             let painter = ui.painter();
 
@@ -390,16 +443,20 @@ impl KeyboardLayout {
                 let d = d_lock.lock();
                 if let Some(input) = &d.controller_input {
                     let (x, y) = input.left_stick();
-                    let dx = self.scale_x(x.into()) * stick_scale_x;
-                    let dy = self.scale_y(y.into()) * stick_scale_y;
-                    let xy = (left_stick_center_x + dx, left_stick_center_y + dy);
-                    painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 0, 255));
+                    let (cursor_x, cursor_y) = self.stick_to_cursor_left((x, y));
+                    painter.circle_filled(
+                        [cursor_x, cursor_y].into(),
+                        8.0,
+                        Color32::from_rgb(0, 0, 255),
+                    );
 
                     let (x, y) = input.right_stick();
-                    let dx = self.scale_x(x.into()) * stick_scale_x;
-                    let dy = self.scale_y(y.into()) * stick_scale_y;
-                    let xy = (right_stick_center_x + dx, right_stick_center_y + dy);
-                    painter.circle_filled(xy.into(), 8.0, Color32::from_rgb(0, 255, 0));
+                    let (cursor_x, cursor_y) = self.stick_to_cursor_right((x, y));
+                    painter.circle_filled(
+                        [cursor_x, cursor_y].into(),
+                        8.0,
+                        Color32::from_rgb(0, 255, 0),
+                    );
                 }
             }
 
