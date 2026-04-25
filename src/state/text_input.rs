@@ -47,7 +47,7 @@ impl TextInputState {
 
     fn submit_text(&mut self, keyboard_state: &mut KeyboardState) -> Result<()> {
         if !self.text.is_empty() {
-            keyboard_state.enigo.key_sequence(&self.text)?;
+            keyboard_state.send_text(&self.text)?;
             self.text.clear();
             self.cursor_pos = 0;
         }

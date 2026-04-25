@@ -6,6 +6,7 @@ use anyhow::Result;
 use egui::{Context, Ui};
 use enigo::{Enigo, Keyboard as _};
 pub use ui::Keyboard;
+pub use key::RawKey;
 
 mod key;
 mod layout;
@@ -104,6 +105,14 @@ impl KeyboardState {
         self.ctrl_mod = false;
         self.alt_mod = false;
 
+        Ok(())
+    }
+
+    pub fn send_text(&mut self, text: &str) -> Result<()> {
+        for c in text.chars() {
+            self.enigo
+                .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
+        }
         Ok(())
     }
 

@@ -16,6 +16,7 @@ mod menu;
 mod move_window;
 mod text_input;
 
+#[derive(PartialEq)]
 pub enum StateId {
     Menu,
     Keyboard,
