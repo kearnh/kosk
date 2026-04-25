@@ -15,29 +15,17 @@ pub struct MenuState {
     selected: usize,
 }
 
-fn on_move() -> Option<StateId> {
-    Some(StateId::MoveWindow)
-}
-
-fn on_back() -> Option<StateId> {
-    Some(StateId::Keyboard)
-}
-
 impl MenuState {
     pub fn new() -> Self {
         Self {
             buttons: vec![
                 MenuButton {
-                    text: "Text Input",
-                    callback: Box::new(|| Some(StateId::TextInput)),
-                },
-                MenuButton {
                     text: "Move",
-                    callback: Box::new(on_move),
+                    callback: Box::new(|| Some(StateId::MoveWindow)),
                 },
                 MenuButton {
                     text: "Back",
-                    callback: Box::new(on_back),
+                    callback: Box::new(|| Some(StateId::Keyboard)),
                 },
             ],
             selected: 0,

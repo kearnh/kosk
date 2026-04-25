@@ -3,6 +3,7 @@ use crate::{
     controller::ControllerInput,
     debug::DebugPlugin,
     state::{
+        event::Event,
         keyboard::{Keyboard, KeyboardState},
         menu::MenuState,
         move_window::MoveWindowState,
@@ -10,7 +11,9 @@ use crate::{
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
+use enigo::{Enigo, Keyboard as _};
 
+mod event;
 mod keyboard;
 mod menu;
 mod move_window;
@@ -40,6 +43,9 @@ pub struct AppState {
     text_input: text_input::TextInputState,
     pos: WindowPos,
     monitor_size: (f32, f32),
+    // reusable events buffer
+    events: Vec<Event>,
+    enigo: Enigo,
 }
 
 impl AppState {
@@ -57,6 +63,8 @@ impl AppState {
             text_input,
             pos: WindowPos::BottomRight,
             monitor_size,
+            events: vec![],
+            enigo: Enigo::new(&Default::default())?,
         })
     }
 
@@ -89,10 +97,20 @@ impl AppState {
         Ok(())
     }
 
+    fn process_events(&mut self) {
+        for event in self.events.drain(..) {
+            // FIXME ignoring errors
+            let _ = match event {
+                Event::SendKey(key, direction) => self.enigo.key(key, direction),
+                Event::SendText(text) => self.enigo.text(&text),
+            };
+        }
+    }
+
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
         let r = ctx.content_rect();
         let id = match self.state {
-            StateId::Keyboard => self.kb.draw_ui(ctx, ui),
+            StateId::Keyboard => self.kb.draw_ui(ctx, ui, &mut self.events),
             StateId::Menu => self.menu.draw_ui(ctx, ui),
             StateId::MoveWindow => {
                 let (x, y) = self.get_position(r);
@@ -113,8 +131,11 @@ impl AppState {
                 }
                 next_state
             }
-            StateId::TextInput => self.text_input.draw_ui(ctx, ui, &mut self.kb),
+            StateId::TextInput => self
+                .text_input
+                .draw_ui(ctx, ui, &mut self.events, &mut self.kb),
         };
+        self.process_events();
         self.state = id;
     }
 
@@ -130,14 +151,19 @@ impl AppState {
         }
 
         let id = match self.state {
-            StateId::Keyboard => self.kb.handle_controller_input(ctx, input)?,
+            StateId::Keyboard => self
+                .kb
+                .handle_controller_input(ctx, input, &mut self.events)?,
             StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
             StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input)?,
-            StateId::TextInput => {
-                self.text_input
-                    .handle_controller_input(ctx, input, &mut self.kb)?
-            }
+            StateId::TextInput => self.text_input.handle_controller_input(
+                ctx,
+                input,
+                &mut self.events,
+                &mut self.kb,
+            )?,
         };
+        self.process_events();
         self.state = id;
         Ok(())
     }

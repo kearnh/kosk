@@ -1,8 +1,9 @@
-use crate::{controller::ControllerInput, state::StateId};
+use crate::{
+    controller::{ControllerInput, Dpad},
+    state::{event::Event, keyboard::key::RawKey, StateId},
+};
 use anyhow::Result;
 use egui::{Context, Ui};
-use enigo::{Enigo, Keyboard as _};
-pub use key::RawKey;
 pub use ui::Keyboard;
 
 mod key;
@@ -19,7 +20,6 @@ pub struct KeyboardState {
     pub shift_mod: bool,
     pub ctrl_mod: bool,
     pub alt_mod: bool,
-    pub enigo: Enigo,
 }
 
 impl KeyboardState {
@@ -36,37 +36,36 @@ impl KeyboardState {
             shift_mod: false,
             ctrl_mod: false,
             alt_mod: false,
-            enigo: Enigo::new(&Default::default())?,
         })
     }
 
-    pub fn send_key(&mut self, key: &RawKey) -> Result<()> {
+    pub fn send_key(&mut self, key: &RawKey, events: &mut Vec<Event>) -> Result<()> {
         macro_rules! mod_press {
             () => {
                 if self.shift_mod {
-                    self.enigo.key(enigo::Key::Shift, enigo::Direction::Press)?;
+                    events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
                 if self.ctrl_mod {
-                    self.enigo
-                        .key(enigo::Key::Control, enigo::Direction::Press)?;
+                    events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
                 }
                 if self.alt_mod {
-                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Press)?;
+                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press));
                 }
             };
         }
         macro_rules! mod_release {
             () => {
                 if self.alt_mod {
-                    self.enigo.key(enigo::Key::Alt, enigo::Direction::Release)?;
+                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release));
                 }
                 if self.ctrl_mod {
-                    self.enigo
-                        .key(enigo::Key::Control, enigo::Direction::Release)?;
+                    events.push(Event::SendKey(
+                        enigo::Key::Control,
+                        enigo::Direction::Release,
+                    ));
                 }
                 if self.shift_mod {
-                    self.enigo
-                        .key(enigo::Key::Shift, enigo::Direction::Release)?;
+                    events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
             };
         }
@@ -74,24 +73,29 @@ impl KeyboardState {
             RawKey::Key(k) => {
                 mod_press!();
                 if let Some(c) = k.chars().next() {
-                    self.enigo
-                        .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
+                    events.push(Event::SendKey(
+                        enigo::Key::Unicode(c),
+                        enigo::Direction::Click,
+                    ));
                 }
                 mod_release!();
             }
             RawKey::Enigo(k) => {
                 mod_press!();
-                self.enigo.key(*k, enigo::Direction::Click)?;
+                events.push(Event::SendKey(*k, enigo::Direction::Click));
                 mod_release!();
             }
             RawKey::Paste => {
                 mod_press!();
-                self.enigo
-                    .key(enigo::Key::Control, enigo::Direction::Press)?;
-                self.enigo
-                    .key(enigo::Key::Unicode('v'), enigo::Direction::Click)?;
-                self.enigo
-                    .key(enigo::Key::Control, enigo::Direction::Release)?;
+                events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
+                events.push(Event::SendKey(
+                    enigo::Key::Unicode('v'),
+                    enigo::Direction::Click,
+                ));
+                events.push(Event::SendKey(
+                    enigo::Key::Control,
+                    enigo::Direction::Release,
+                ));
                 mod_release!();
             }
             _ => return Ok(()),
@@ -102,14 +106,6 @@ impl KeyboardState {
         self.ctrl_mod = false;
         self.alt_mod = false;
 
-        Ok(())
-    }
-
-    pub fn send_text(&mut self, text: &str) -> Result<()> {
-        for c in text.chars() {
-            self.enigo
-                .key(enigo::Key::Unicode(c), enigo::Direction::Click)?;
-        }
         Ok(())
     }
 
@@ -134,7 +130,7 @@ impl KeyboardState {
         self.alt_mod = !self.alt_mod;
     }
 
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) -> StateId {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) -> StateId {
         if let Some(key) = self.kb.draw_ui(
             ctx,
             ui,
@@ -152,7 +148,7 @@ impl KeyboardState {
                 }
                 RawKey::Menu => return StateId::Menu,
                 _ => {
-                    self.send_key(&key).expect("send key");
+                    self.send_key(&key, events).expect("send key");
                 }
             }
         }
@@ -163,6 +159,7 @@ impl KeyboardState {
         &mut self,
         ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
+        events: &mut Vec<Event>,
     ) -> Result<StateId> {
         let input = match input {
             Some(input) => input,
@@ -193,7 +190,7 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
-                        self.send_key(&key)?;
+                        self.send_key(&key, events)?;
                     }
                     _ => (),
                 }
@@ -211,7 +208,7 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => return Ok(StateId::Menu),
                     Some(key) => {
-                        self.send_key(&key).expect("send_key");
+                        self.send_key(&key, events).expect("send_key");
                     }
                     _ => (),
                 }
@@ -220,11 +217,11 @@ impl KeyboardState {
         }
 
         if input.face_bottom() {
-            self.send_key(&RawKey::Key(" ".to_string()))?;
+            self.send_key(&RawKey::Key(" ".to_string()), events)?;
         }
 
         if input.face_left() {
-            self.send_key(&RawKey::Enigo(enigo::Key::Backspace))?;
+            self.send_key(&RawKey::Enigo(enigo::Key::Backspace), events)?;
         }
 
         if input.face_top() {
@@ -237,6 +234,10 @@ impl KeyboardState {
 
         if input.stick_right() {
             self.toggle_alt();
+        }
+
+        if matches!(input.dpad(), Some(Dpad::Up)) {
+            return Ok(StateId::TextInput);
         }
 
         Ok(StateId::Keyboard)

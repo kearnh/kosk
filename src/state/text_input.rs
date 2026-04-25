@@ -1,6 +1,6 @@
 use crate::{
-    controller::ControllerInput,
-    state::keyboard::{KeyboardState, RawKey},
+    controller::{ControllerInput, Dpad},
+    state::{event::Event, keyboard::KeyboardState, StateId},
 };
 use anyhow::Result;
 use egui::{Context, TextEdit, Ui};
@@ -45,39 +45,56 @@ impl TextInputState {
         }
     }
 
-    fn submit_text(&mut self, keyboard_state: &mut KeyboardState) -> Result<()> {
+    fn submit_text(&mut self, events: &mut Vec<Event>) {
         if !self.text.is_empty() {
-            keyboard_state.send_text(&self.text)?;
+            events.push(Event::SendText(self.text.to_string()));
+            events.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
             self.text.clear();
             self.cursor_pos = 0;
         }
-        Ok(())
+    }
+
+    fn process_events(&mut self, events: Vec<Event>, output_events: &mut Vec<Event>) {
+        for event in events {
+            match event {
+                Event::SendKey(enigo::Key::Unicode(ch), enigo::Direction::Click) => {
+                    self.insert_char(ch);
+                }
+                Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click) => self.backspace(),
+                Event::SendKey(enigo::Key::Return, enigo::Direction::Click) => {
+                    self.submit_text(output_events)
+                }
+                Event::SendKey(_, _) => {}
+                Event::SendText(_) => todo!(),
+            }
+        }
     }
 
     pub fn draw_ui(
         &mut self,
         ctx: &Context,
         ui: &mut Ui,
+        events: &mut Vec<Event>,
         keyboard_state: &mut KeyboardState,
-    ) -> crate::state::StateId {
+    ) -> StateId {
         // Draw text input box
         ui.vertical(|ui| {
-            let _response = ui.add(
+            let _ = ui.add(
                 TextEdit::singleline(&mut self.text)
                     .desired_width(400.0)
-                    .hint_text("Type here..."),
+                    .interactive(false),
             );
         });
 
-        // Draw the keyboard by calling keyboard_state's draw_ui
-        // Accept that mouse clicks will send keys directly (future problem)
-        let next_state = keyboard_state.draw_ui(ctx, ui);
+        let mut kb_events = vec![];
+        let next_state = keyboard_state.draw_ui(ctx, ui, &mut kb_events);
+        self.process_events(kb_events, events);
 
         // If keyboard_state wants to change state (e.g., to Menu), respect that
-        if next_state != crate::state::StateId::Keyboard {
+        if next_state != StateId::Keyboard {
             next_state
         } else {
-            crate::state::StateId::TextInput
+            StateId::TextInput
         }
     }
 
@@ -85,72 +102,36 @@ impl TextInputState {
         &mut self,
         ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
+        events: &mut Vec<Event>,
         keyboard_state: &mut KeyboardState,
-    ) -> Result<crate::state::StateId> {
-        // Let keyboard_state handle controller input first
-        // This updates shift state, mods, and selection
-        // TODO: This may consume inputs that text input needs
-        let keyboard_next_state = keyboard_state.handle_controller_input(ctx, input)?;
-
-        // If keyboard_state wants to change state, respect that
-        if keyboard_next_state != crate::state::StateId::Keyboard {
-            return Ok(keyboard_next_state);
-        }
-
-        // Now handle text input specific logic
-        let input = match input {
-            Some(input) => input,
-            None => return Ok(crate::state::StateId::TextInput),
-        };
-
-        // Use keyboard_state's trigger state to detect presses
-        {
-            let val = input.trigger_left().unwrap_or(0);
-            let pressed = val > keyboard_state.trigger_threshold;
-
-            if pressed && !keyboard_state.l2_was_pressed {
-                // Insert character from left stick selection
-                if let Some(RawKey::Key(ch)) = &keyboard_state.kb.selected.0 {
-                    if let Some(c) = ch.chars().next() {
-                        self.insert_char(c);
-                    }
-                }
+    ) -> Result<StateId> {
+        let mut handled = false;
+        if let Some(input) = input {
+            if matches!(input.dpad(), Some(Dpad::Left)) {
+                dbg!();
+                self.move_cursor_left();
+                handled = true;
             }
-            keyboard_state.l2_was_pressed = pressed;
-        }
-
-        {
-            let val = input.trigger_right().unwrap_or(0);
-            let pressed = val > keyboard_state.trigger_threshold;
-
-            if pressed && !keyboard_state.r2_was_pressed {
-                self.submit_text(keyboard_state)?;
+            if matches!(input.dpad(), Some(Dpad::Right)) {
+                self.move_cursor_right();
+                handled = true;
             }
-            keyboard_state.r2_was_pressed = pressed;
+            if matches!(input.dpad(), Some(Dpad::Up)) {
+                return Ok(StateId::Keyboard);
+            }
         }
 
-        // Handle face buttons for text editing
-        // TODO: These may conflict with keyboard_state's handling
-        if input.face_bottom() {
-            self.insert_char(' ');
+        if !handled {
+            let mut kb_events = vec![];
+            let keyboard_next_state =
+                keyboard_state.handle_controller_input(ctx, input, &mut kb_events)?;
+            self.process_events(kb_events, events);
+
+            if keyboard_next_state != StateId::Keyboard {
+                return Ok(keyboard_next_state);
+            }
         }
 
-        if input.face_left() {
-            self.backspace();
-        }
-
-        // D-pad for cursor movement
-        match input.dpad() {
-            Some(crate::controller::Dpad::Left) => self.move_cursor_left(),
-            Some(crate::controller::Dpad::Right) => self.move_cursor_right(),
-            _ => {}
-        }
-
-        // Face right to exit back to keyboard mode
-        if input.face_right() {
-            return Ok(crate::state::StateId::Keyboard);
-        }
-
-        Ok(crate::state::StateId::TextInput)
+        Ok(StateId::TextInput)
     }
 }
