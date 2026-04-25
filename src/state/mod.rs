@@ -157,8 +157,13 @@ impl AppState {
             StateId::Keyboard => self
                 .kb
                 .handle_controller_input(ctx, input, &mut self.events)?,
-            StateId::Menu => self.menu.handle_controller_input(ctx, input, &mut self.events)?,
-            StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input, &mut self.events)?,
+            StateId::Menu => self
+                .menu
+                .handle_controller_input(ctx, input, &mut self.events)?,
+            StateId::MoveWindow => {
+                self.move_window
+                    .handle_controller_input(ctx, input, &mut self.events)?
+            }
             StateId::TextInput => self.text_input.handle_controller_input(
                 ctx,
                 input,
