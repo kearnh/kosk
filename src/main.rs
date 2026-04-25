@@ -135,7 +135,7 @@ impl eframe::App for App {
 
                         if is_transparent {
                             // Set layered window attributes for alpha transparency
-                            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+                            let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
                         }
 
                         // Enable DWM blur behind for transparency (only once)
@@ -144,7 +144,7 @@ impl eframe::App for App {
                                 let bb = DWM_BLURBEHIND {
                                     dwFlags: DWM_BB_ENABLE,
                                     fEnable: 1,
-                                    hRgnBlur: std::ptr::null_mut(),
+                                    hRgnBlur: 0,
                                     fTransitionOnMaximized: 0,
                                 };
                                 let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
