@@ -165,10 +165,7 @@ impl KeyboardLayout {
         // Group keys by row
         let mut row_map: HashMap<usize, Vec<KeyButton>> = HashMap::new();
         for key in &layout.keys {
-            row_map
-                .entry(key.pos.0)
-                .or_default()
-                .push(key.clone());
+            row_map.entry(key.pos.0).or_default().push(key.clone());
         }
 
         // Find max row number

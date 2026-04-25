@@ -3,9 +3,9 @@
 use crate::state::AppState;
 use anyhow::Result;
 use eframe::CreationContext;
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use egui::Rect;
 use hidapi::{HidApi, HidDevice};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
 
 mod config;
@@ -117,8 +117,8 @@ impl eframe::App for App {
                     DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
                 };
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW,
-                    GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+                    GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+                    LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
                 };
                 let hwnd = h.hwnd.get() as HWND;
                 unsafe {

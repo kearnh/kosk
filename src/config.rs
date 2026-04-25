@@ -175,7 +175,9 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
                                 if new_layout_path != layout_path {
                                     start_watcher_thread(config_path.clone(), new_layout_path)?;
 
-                                    if let Some(f) = ON_CHANGE_CALLBACK.get() { f() }
+                                    if let Some(f) = ON_CHANGE_CALLBACK.get() {
+                                        f()
+                                    }
 
                                     break;
                                 }
