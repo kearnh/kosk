@@ -84,7 +84,7 @@ impl Keyboard {
             }
             RawKey::Enigo(k) => {
                 mod_press!();
-                self.enigo.key(k.clone(), enigo::Direction::Click)?;
+                self.enigo.key(*k, enigo::Direction::Click)?;
                 mod_release!();
             }
             RawKey::Paste => {
@@ -240,7 +240,7 @@ impl Keyboard {
                         }
 
                         let mut button = Button::new(
-                            RichText::new(&key.display(self.shift_state))
+                            RichText::new(key.display(self.shift_state))
                                 .size(self.layout.font_size),
                         );
 

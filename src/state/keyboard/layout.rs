@@ -167,7 +167,7 @@ impl KeyboardLayout {
         for key in &layout.keys {
             row_map
                 .entry(key.pos.0)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(key.clone());
         }
 
@@ -400,7 +400,7 @@ impl KeyboardLayout {
                 // Draw left stick bounds in blue
                 for r in &self.left_stick_bounds {
                     painter.rect_stroke(
-                        r.clone(),
+                        *r,
                         egui::CornerRadius::default(),
                         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 0, 255, 255)),
                         egui::StrokeKind::Middle,
@@ -410,7 +410,7 @@ impl KeyboardLayout {
                 // Draw right stick bounds in green
                 for r in &self.right_stick_bounds {
                     painter.rect_stroke(
-                        r.clone(),
+                        *r,
                         egui::CornerRadius::default(),
                         egui::Stroke::new(1.0, Color32::from_rgba_premultiplied(0, 255, 0, 255)),
                         egui::StrokeKind::Middle,
@@ -419,29 +419,27 @@ impl KeyboardLayout {
             }
             if debug.show_hitboxes {
                 for row in &self.key_hit_boxes {
-                    for h in row {
-                        if let Some(hitbox) = h {
-                            match hitbox {
-                                HitBox::Circle { x, y, r } => {
-                                    painter.circle_stroke(
-                                        [*x, *y].into(),
-                                        *r,
-                                        egui::Stroke::new(
-                                            1.0,
-                                            Color32::from_rgba_premultiplied(0, 192, 255, 128),
-                                        ),
-                                    );
-                                }
-                                HitBox::Ellipse { x, y, rx, ry } => {
-                                    painter.add(egui::epaint::EllipseShape::stroke(
-                                        [*x, *y].into(),
-                                        Vec2::new(*rx, *ry),
-                                        egui::Stroke::new(
-                                            1.0,
-                                            Color32::from_rgba_premultiplied(0, 192, 255, 128),
-                                        ),
-                                    ));
-                                }
+                    for hitbox in row.iter().flatten() {
+                        match hitbox {
+                            HitBox::Circle { x, y, r } => {
+                                painter.circle_stroke(
+                                    [*x, *y].into(),
+                                    *r,
+                                    egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                    ),
+                                );
+                            }
+                            HitBox::Ellipse { x, y, rx, ry } => {
+                                painter.add(egui::epaint::EllipseShape::stroke(
+                                    [*x, *y].into(),
+                                    Vec2::new(*rx, *ry),
+                                    egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgba_premultiplied(0, 192, 255, 128),
+                                    ),
+                                ));
                             }
                         }
                     }

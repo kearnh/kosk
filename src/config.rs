@@ -166,8 +166,7 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
                     let should_reload = event
                         .paths
                         .iter()
-                        .map(std::fs::canonicalize)
-                        .flatten()
+                        .flat_map(std::fs::canonicalize)
                         .any(|p| p == config_path || p == layout_path);
 
                     if should_reload {
@@ -176,7 +175,7 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
                                 if new_layout_path != layout_path {
                                     start_watcher_thread(config_path.clone(), new_layout_path)?;
 
-                                    ON_CHANGE_CALLBACK.get().map(|f| f());
+                                    if let Some(f) = ON_CHANGE_CALLBACK.get() { f() }
 
                                     break;
                                 }
