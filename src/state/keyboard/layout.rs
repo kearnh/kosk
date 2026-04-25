@@ -152,10 +152,6 @@ pub struct KeyboardLayout {
     left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
 
-    // (x, y, r) where (x, y) is center of key, and r is a radius. This will not overlap exactly
-    // with a key button, and key circles may overlap each other. Key selection for highlight will
-    // use closest center, will key press will return all overlapping keys to allow typo resistance,
-    // i.e. may decide on key press based on engligh word etc.
     key_hit_boxes: Vec<Vec<Option<HitBox>>>,
 
     pub left_stick_bounds: Vec<Rect>,
@@ -300,7 +296,7 @@ impl KeyboardLayout {
         None
     }
 
-    pub fn calculate_hitboxes(&mut self) {
+    fn calculate_hitboxes(&mut self) {
         let centres = match &self.captured_centres {
             Some(c) => c,
             None => return,
