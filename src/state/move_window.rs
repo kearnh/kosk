@@ -20,74 +20,73 @@ impl MoveWindowState {
         _ctx: &Context,
         ui: &mut Ui,
         current_coords: (f32, f32),
-    ) -> (StateId, Option<WindowPos>) {
+        events: &mut Vec<Event>,
+    ) -> Option<WindowPos> {
         let mut movement: Option<WindowPos> = None;
         let (x, y) = current_coords;
 
-        let next_state = ui
-            .vertical_centered(|ui| {
-                ui.heading("Move Window");
+        ui.vertical_centered(|ui| {
+            ui.heading("Move Window");
 
-                egui::Grid::new("move_grid")
-                    .spacing([10.0, 10.0])
-                    .show(ui, |ui| {
-                        let size = [1.5 * self.scale_x, 1.5 * self.scale_y];
+            egui::Grid::new("move_grid")
+                .spacing([10.0, 10.0])
+                .show(ui, |ui| {
+                    let size = [1.5 * self.scale_x, 1.5 * self.scale_y];
 
-                        // Row 1
-                        if ui.add_sized(size, Button::new("\u{25f0}")).clicked() {
-                            movement = Some(WindowPos::TopLeft);
-                        }
-                        if ui.add_sized(size, Button::new("↑")).clicked() {
-                            movement = Some(WindowPos::Absolute(x, y - 100.0));
-                        }
-                        if ui.add_sized(size, Button::new("\u{25f3}")).clicked() {
-                            movement = Some(WindowPos::TopRight);
-                        }
-                        ui.end_row();
+                    // Row 1
+                    if ui.add_sized(size, Button::new("\u{25f0}")).clicked() {
+                        movement = Some(WindowPos::TopLeft);
+                    }
+                    if ui.add_sized(size, Button::new("↑")).clicked() {
+                        movement = Some(WindowPos::Absolute(x, y - 100.0));
+                    }
+                    if ui.add_sized(size, Button::new("\u{25f3}")).clicked() {
+                        movement = Some(WindowPos::TopRight);
+                    }
+                    ui.end_row();
 
-                        // Row 2
-                        if ui.add_sized(size, Button::new("←")).clicked() {
-                            movement = Some(WindowPos::Absolute(x - 100.0, y));
-                        }
-                        ui.add_sized(size, Label::new(""));
-                        if ui.add_sized(size, Button::new("→")).clicked() {
-                            movement = Some(WindowPos::Absolute(x + 100.0, y));
-                        }
-                        ui.end_row();
+                    // Row 2
+                    if ui.add_sized(size, Button::new("←")).clicked() {
+                        movement = Some(WindowPos::Absolute(x - 100.0, nun_close));
+                    }
+                    ui.add_sized(size, Label::new(""));
+                    if ui.add_sized(size, Button::new("→")).clicked() {
+                        movement = Some(WindowPos::Absolute(x + 100.0, y));
+                    }
+                    ui.end_row();
 
-                        // Row 3
-                        if ui.add_sized(size, Button::new("\u{25f1}")).clicked() {
-                            movement = Some(WindowPos::BottomLeft);
-                        }
-                        if ui.add_sized(size, Button::new("↓")).clicked() {
-                            movement = Some(WindowPos::Absolute(x, y + 100.0));
-                        }
-                        if ui.add_sized(size, Button::new("\u{25f2}")).clicked() {
-                            movement = Some(WindowPos::BottomRight);
-                        }
-                        ui.end_row();
-                    });
+                    // Row 3
+                    if ui.add_sized(size, Button::new("\u{25f1}")).clicked() {
+                        movement = Some(WindowPos::BottomLeft);
+                    }
+                    if ui.add_sized(size, Button::new("↓")).clicked() {
+                        movement = Some(WindowPos::Absolute(x, y + 100.0));
+                    }
+                    if ui.add_sized(size, Button::new("\u{25f2}")).clicked() {
+                        movement = Some(WindowPos::BottomRight);
+                    }
+                    ui.end_row();
+                });
 
-                if ui.button("Back").clicked() {
-                    return StateId::Menu;
-                }
-                StateId::MoveWindow
-            })
-            .inner;
+            if ui.button("Back").clicked() {
+                events.push(Event::ChangeState(StateId::Menu));
+            }
+        });
 
-        (next_state, movement)
+        movement
     }
 
     pub fn handle_controller_input(
         &mut self,
         _ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
-    ) -> Result<StateId> {
+        events: &mut Vec<Event>,
+    ) -> Result<()> {
         if let Some(input) = input {
             if input.face_right() {
-                return Ok(StateId::Menu);
+                events.push(Event::ChangeState(StateId::Menu));
             }
         }
-        Ok(StateId::MoveWindow)
+        Ok(())
     }
 }

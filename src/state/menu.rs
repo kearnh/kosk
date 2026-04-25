@@ -38,18 +38,16 @@ impl MenuState {
         clicked
     }
 
-    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui) -> StateId {
+    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
         let mut n = 0;
 
         for b in self.buttons.iter() {
             if self.btn(ui, b.text, &mut n).clicked() {
                 if let Some(id) = (b.callback)() {
-                    return id;
+                    events.push(Event::ChangeState(id));
                 }
             }
         }
-
-        StateId::Menu
     }
 
     pub fn handle_controller_input(

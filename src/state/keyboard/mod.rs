@@ -130,7 +130,7 @@ impl KeyboardState {
         self.alt_mod = !self.alt_mod;
     }
 
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) -> StateId {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
         if let Some(key) = self.kb.draw_ui(
             ctx,
             ui,
@@ -146,13 +146,14 @@ impl KeyboardState {
                 RawKey::Shift => {
                     self.toggle_shift();
                 }
-                RawKey::Menu => return StateId::Menu,
+                RawKey::Menu => {
+                    events.push(Event::ChangeState(StateId::Menu));
+                }
                 _ => {
                     self.send_key(&key, events).expect("send key");
                 }
             }
         }
-        StateId::Keyboard
     }
 
     pub fn handle_controller_input(

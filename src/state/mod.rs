@@ -97,46 +97,49 @@ impl AppState {
         Ok(())
     }
 
-    fn process_events(&mut self) {
+    fn process_events(&mut2) {
         for event in self.events.drain(..) {
-            // FIXME ignoring errors
-            let _ = match event {
-                Event::SendKey(key, direction) => self.enigo.key(key, direction),
-                Event::SendText(text) => self.enigo.text(&text),
-            };
+            match event {
+                Event::SendKey(key, direction) => {
+                    let _ = self.enigo.key(key, direction);
+                }
+                Event::SendText(text) => {
+                    let _ = self.enigo.text(&text);
+                }
+                Event::ChangeState(state) => {
+                    self.state = state;
+                }
+            }
         }
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
-        let r = ctx.content_rect();
-        let id = match self.state {
+        match self.state {
             StateId::Keyboard => self.kb.draw_ui(ctx, ui, &mut self.events),
-            StateId::Menu => self.menu.draw_ui(ctx, ui),
+            StateId::Menu => self.menu.draw_ui(ctx, ui, &mut self.events),
             StateId::MoveWindow => {
-                let (x, y) = self.get_position(r);
-                let (next_state, movement) = self.move_window.draw_ui(ctx, ui, (x, y));
+                let (x, y) = self.get_position(ctx.content_rect());
+                let movement = self.move_window.draw_ui(ctx, ui, (x, y), &mut self.events);
                 if let Some(new_pos) = movement {
                     if let WindowPos::Absolute(mut x, mut y) = new_pos {
                         let (mon_w, mon_h) = self.monitor_size;
 
                         // Clamp X between 0 and (Monitor Width - Window Width)
-                        x = x.clamp(0.0, mon_w - r.width());
+                        x = x.clamp(0.0, mon_w - ctx.content_rect().width());
                         // Clamp Y between 0 and (Monitor Height - Window Height)
-                        y = y.clamp(0.0, mon_h - r.height());
+                        y = y.clamp(0.0, mon_h - ctx.content_rect().height());
 
                         self.pos = WindowPos::Absolute(x, y);
                     } else {
                         self.pos = new_pos;
                     }
                 }
-                next_state
             }
             StateId::TextInput => self
                 .text_input
                 .draw_ui(ctx, ui, &mut self.events, &mut self.kb),
-        };
+        }
         self.process_events();
-        self.state = id;
     }
 
     pub fn handle_controller_input(
@@ -150,21 +153,20 @@ impl AppState {
             }
         }
 
-        let id = match self.state {
+        match self.state {
             StateId::Keyboard => self
                 .kb
                 .handle_controller_input(ctx, input, &mut self.events)?,
-            StateId::Menu => self.menu.handle_controller_input(ctx, input)?,
-            StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input)?,
+            StateId::Menu => self.menu.handle_controller_input(ctx, input, &mut self.events)?,
+            StateId::MoveWindow => self.move_window.handle_controller_input(ctx, input, &mut self.events)?,
             StateId::TextInput => self.text_input.handle_controller_input(
                 ctx,
                 input,
                 &mut self.events,
                 &mut self.kb,
             )?,
-        };
+        }
         self.process_events();
-        self.state = id;
         Ok(())
     }
 }

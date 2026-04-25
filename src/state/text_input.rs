@@ -49,6 +49,7 @@ impl TextInputState {
         if !self.text.is_empty() {
             events.push(Event::SendText(self.text.to_string()));
             events.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
+            events.push(Event::ChangeState(StateId::Keyboard));
             self.text.clear();
             self.cursor_pos = 0;
         }
@@ -76,7 +77,7 @@ impl TextInputState {
         ui: &mut Ui,
         events: &mut Vec<Event>,
         keyboard_state: &mut KeyboardState,
-    ) -> StateId {
+    ) {
         // Draw text input box
         ui.vertical(|ui| {
             let _ = ui.add(
@@ -87,15 +88,8 @@ impl TextInputState {
         });
 
         let mut kb_events = vec![];
-        let next_state = keyboard_state.draw_ui(ctx, ui, &mut kb_events);
+        keyboard_state.draw_ui(ctx, ui, &mut kb_events);
         self.process_events(kb_events, events);
-
-        // If keyboard_state wants to change state (e.g., to Menu), respect that
-        if next_state != StateId::Keyboard {
-            next_state
-        } else {
-            StateId::TextInput
-        }
     }
 
     pub fn handle_controller_input(
@@ -104,7 +98,7 @@ impl TextInputState {
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut Vec<Event>,
         keyboard_state: &mut KeyboardState,
-    ) -> Result<StateId> {
+    ) -> Result<()> {
         let mut handled = false;
         if let Some(input) = input {
             if matches!(input.dpad(), Some(Dpad::Left)) {
@@ -117,21 +111,17 @@ impl TextInputState {
                 handled = true;
             }
             if matches!(input.dpad(), Some(Dpad::Up)) {
-                return Ok(StateId::Keyboard);
+                events.push(Event::ChangeState(StateId::Keyboard));
+                return Ok(());
             }
         }
 
         if !handled {
             let mut kb_events = vec![];
-            let keyboard_next_state =
-                keyboard_state.handle_controller_input(ctx, input, &mut kb_events)?;
-            self.process_events(kb_events, events);
-
-            if keyboard_next_state != StateId::Keyboard {
-                return Ok(keyboard_next_state);
-            }
+            keyboard_state.handle_controller_input(ctx, input, &mut kb_events)?;
+            self.process_events(kb_1));
         }
 
-        Ok(StateId::TextInput)
+        Ok(())
     }
 }
