@@ -52,7 +52,7 @@ impl Ps4Input {
         }
 
         let report_id = report[0];
-        
+
         // Determine the offset where the BasicGetStateData starts
         let state_offset = match report_id {
             0x01 => {
