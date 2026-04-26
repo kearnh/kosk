@@ -4,7 +4,7 @@ use crate::{
     debug::DebugPlugin,
     state::{
         event::Event,
-        keyboard::{Keyboard, KeyboardState},
+        keyboard::KeyboardState,
         menu::MenuState,
         move_window::MoveWindowState,
     },
@@ -91,7 +91,7 @@ impl AppState {
     // Add this new method to reload from config
     pub fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
-        self.kb.kb = Keyboard::new()?;
+        self.kb.layout = crate::state::keyboard::layout::KeyboardLayout::load_from_file(cfg.layout)?;
         self.kb.trigger_threshold = cfg.trigger_threshold;
         self.move_window = MoveWindowState::new(cfg.scale_x, cfg.scale_y);
         Ok(())
