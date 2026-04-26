@@ -2,12 +2,7 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{
-        event::Event,
-        keyboard::KeyboardState,
-        menu::MenuState,
-        move_window::MoveWindowState,
-    },
+    state::{event::Event, keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -91,8 +86,7 @@ impl AppState {
     // Add this new method to reload from config
     pub fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
-        self.kb.layout = crate::state::keyboard::layout::KeyboardLayout::load_from_file(cfg.layout)?;
-        self.kb.trigger_threshold = cfg.trigger_threshold;
+        self.kb.reload_from_config()?;
         self.move_window = MoveWindowState::new(cfg.scale_x, cfg.scale_y);
         Ok(())
     }

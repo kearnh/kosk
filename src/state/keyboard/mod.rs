@@ -1,15 +1,15 @@
+use crate::config;
+use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
     controller::{ControllerInput, Dpad},
     state::{event::Event, keyboard::key::RawKey, StateId},
 };
 use anyhow::Result;
 use egui::{Context, Ui};
-use crate::state::keyboard::layout::KeyboardLayout;
 
 mod key;
 mod layout;
 
-// FIXME why is state spread across this struct and Keyboard?
 pub struct KeyboardState {
     pub layout: KeyboardLayout,
     pub selected: (Option<RawKey>, Option<RawKey>),
@@ -87,7 +87,6 @@ impl KeyboardState {
                 mod_release!();
             }
             RawKey::Paste => {
-                mod_press!();
                 events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
                 events.push(Event::SendKey(
                     enigo::Key::Unicode('v'),
@@ -97,7 +96,6 @@ impl KeyboardState {
                     enigo::Key::Control,
                     enigo::Direction::Release,
                 ));
-                mod_release!();
             }
             _ => return Ok(()),
         }
@@ -132,14 +130,7 @@ impl KeyboardState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
-        if let Some(key) = self.draw_keyboard_ui(
-            ctx,
-            ui,
-            self.shift_state,
-            self.shift_mod,
-            self.ctrl_mod,
-            self.alt_mod,
-        ) {
+        if let Some(key) = self.draw_keyboard_ui(ctx, ui) {
             match key {
                 RawKey::Done => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -249,30 +240,25 @@ impl KeyboardState {
         Ok(())
     }
 
-    fn draw_keyboard_ui(
-        &mut self,
-        ctx: &Context,
-        ui: &mut Ui,
-        shift_state: bool,
-        shift_mod: bool,
-        ctrl_mod: bool,
-        alt_mod: bool,
-    ) -> Option<RawKey> {
+    fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
         let mut pressed_key: Option<RawKey> = None;
 
         // Set semi-transparent button styling
         let style = ui.style_mut();
         style.visuals.widgets.inactive.weak_bg_fill =
             egui::Color32::from_rgba_premultiplied(60, 60, 60, 128);
-        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgba_premultiplied(60, 60, 60, 128);
+        style.visuals.widgets.inactive.bg_fill =
+            egui::Color32::from_rgba_premultiplied(60, 60, 60, 128);
         style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
         style.visuals.widgets.hovered.weak_bg_fill =
             egui::Color32::from_rgba_premultiplied(80, 80, 80, 180);
-        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgba_premultiplied(80, 80, 80, 180);
+        style.visuals.widgets.hovered.bg_fill =
+            egui::Color32::from_rgba_premultiplied(80, 80, 80, 180);
         style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
         style.visuals.widgets.active.weak_bg_fill =
             egui::Color32::from_rgba_premultiplied(100, 100, 100, 200);
-        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgba_premultiplied(100, 100, 100, 200);
+        style.visuals.widgets.active.bg_fill =
+            egui::Color32::from_rgba_premultiplied(100, 100, 100, 200);
         style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
         style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(50, 100, 180, 220);
         style.visuals.selection.stroke.color = egui::Color32::WHITE;
@@ -286,8 +272,12 @@ impl KeyboardState {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-            let left_center = self.layout.get_nearest_key_left((0.0, 0.0), shift_state);
-            let right_center = self.layout.get_nearest_key_right((0.0, 0.0), shift_state);
+            let left_center = self
+                .layout
+                .get_nearest_key_left((0.0, 0.0), self.shift_state);
+            let right_center = self
+                .layout
+                .get_nearest_key_right((0.0, 0.0), self.shift_state);
 
             for (keys, indent, height) in &self.layout {
                 ui.horizontal(|ui| {
@@ -310,33 +300,38 @@ impl KeyboardState {
                         }
 
                         let mut button = egui::Button::new(
-                            egui::RichText::new(key.display(shift_state)).size(self.layout.font_size),
+                            egui::RichText::new(key.display(self.shift_state))
+                                .size(self.layout.font_size),
                         );
 
-                        if key.is_key(shift_state, &RawKey::Shift) && shift_state {
+                        if key.is_key(self.shift_state, &RawKey::Shift) && self.shift_state {
                             button = button.selected(true);
                         } else {
-                            let current_key = key.key(shift_state);
+                            let current_key = key.key(self.shift_state);
                             let sel0 = self.selected.0.as_ref().is_some_and(|s| s == &current_key);
                             let sel1 = self.selected.1.as_ref().is_some_and(|s| s == &current_key);
 
                             if sel0 && sel1 {
                                 // Purple for both
-                                button =
-                                    button.fill(egui::Color32::from_rgb(120, 60, 180)).selected(true);
+                                button = button
+                                    .fill(egui::Color32::from_rgb(120, 60, 180))
+                                    .selected(true);
                             } else if sel0
                                 || (self.selected.0.is_none()
                                     && left_center.as_ref().is_some_and(|c| c == &current_key))
                             {
                                 // Blue for left stick
-                                button =
-                                    button.fill(egui::Color32::from_rgb(50, 100, 180)).selected(true);
+                                button = button
+                                    .fill(egui::Color32::from_rgb(50, 100, 180))
+                                    .selected(true);
                             } else if sel1
                                 || (self.selected.1.is_none()
                                     && right_center.as_ref().is_some_and(|c| c == &current_key))
                             {
                                 // Green for right stick
-                                button = button.fill(egui::Color32::from_rgb(50, 150, 80)).selected(true);
+                                button = button
+                                    .fill(egui::Color32::from_rgb(50, 150, 80))
+                                    .selected(true);
                             }
                         }
 
@@ -348,15 +343,15 @@ impl KeyboardState {
                         }
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                        if key.is_key(shift_state, " ") && (ctrl_mod || alt_mod) {
+                        if key.is_key(self.shift_state, " ") && (self.ctrl_mod || self.alt_mod) {
                             let mut mods = Vec::new();
-                            if ctrl_mod {
+                            if self.ctrl_mod {
                                 mods.push("ctrl");
                             }
-                            if shift_mod {
+                            if self.shift_mod {
                                 mods.push("shift");
                             }
-                            if alt_mod {
+                            if self.alt_mod {
                                 mods.push("alt");
                             }
                             let mod_string = mods.join("+");
@@ -372,7 +367,7 @@ impl KeyboardState {
                         }
 
                         if response.clicked() {
-                            pressed_key = Some(key.key(shift_state));
+                            pressed_key = Some(key.key(self.shift_state));
                         }
                     }
                     if capturing_centres {
@@ -389,5 +384,12 @@ impl KeyboardState {
         }
 
         pressed_key
+    }
+
+    pub(crate) fn reload_from_config(&mut self) -> Result<()> {
+        let cfg = config::get();
+        self.layout = crate::state::keyboard::layout::KeyboardLayout::load_from_file(cfg.layout)?;
+        self.trigger_threshold = cfg.trigger_threshold;
+        Ok(())
     }
 }
