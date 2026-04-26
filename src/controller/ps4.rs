@@ -47,25 +47,59 @@ impl Default for Ps4Input {
 
 impl Ps4Input {
     fn update_from_report(&self, report: &[u8]) -> bool {
-        if report.len() < 10 {
+        if report.is_empty() {
             return false;
         }
 
-        let left_x = report[1] as i32;
-        let left_y = report[2] as i32;
-        let right_x = report[3] as i32;
-        let right_y = report[4] as i32;
+        let report_id = report[0];
+        
+        // Determine the offset where the BasicGetStateData starts
+        let state_offset = match report_id {
+            0x01 => {
+                // Standard report - state data starts at byte 1
+                if report.len() < 10 {
+                    return false;
+                }
+                1
+            }
+            0x11 => {
+                // Enhanced report (Steam mode) - state data starts at byte 3
+                // Report structure: [0x11, flags1, flags2, state_data...]
+                if report.len() < 12 {
+                    return false;
+                }
+                3
+            }
+            _ => {
+                // Unknown report type
+                return false;
+            }
+        };
 
-        // Byte 5: D-pad (bits 0-3), Share(4), L3(5), R3(6), Options(7)
-        // Byte 6: Square(0), Cross(1), Circle(2), Triangle(3), R1(4), L1(5)
-        // Byte 7: R2(0-7), L2(0-7) - actually triggers are analog in bytes 8-9
-        // Actually triggers are analog at bytes 8-9
+        // BasicGetStateData is 9 bytes starting at state_offset
+        if report.len() < state_offset + 9 {
+            return false;
+        }
 
-        // D-pad: bits 0-3 of byte5
+        let left_x = report[state_offset] as i32;
+        let left_y = report[state_offset + 1] as i32;
+        let right_x = report[state_offset + 2] as i32;
+        let right_y = report[state_offset + 3] as i32;
 
+        // Byte 4 of BasicGetStateData: D-pad and face buttons
+        let dpad_byte = report[state_offset + 4];
+        // Byte 5 of BasicGetStateData: shoulder and stick buttons
+        let face_shoulder_byte = report[state_offset + 5];
+        // Byte 6 of BasicGetStateData: system buttons
+        let system_byte = report[state_offset + 6];
+        // Bytes 7-8 of BasicGetStateData: triggers
+        let left_trigger_byte = report[state_offset + 7];
+        let right_trigger_byte = report[state_offset + 8];
+
+        // D-pad: bits 0-3 of byte 4
         let dpad = {
             use Dpad::*;
-            match report[5] {
+            match dpad_byte & 0x0F {
                 0 => Some(Up),
                 1 => Some(UpRight),
                 2 => Some(Right),
@@ -78,29 +112,30 @@ impl Ps4Input {
             }
         };
 
-        // Face buttons
-        let square = (report[5] & 0x10) != 0;
-        let cross = (report[5] & 0x20) != 0;
-        let circle = (report[5] & 0x40) != 0;
-        let triangle = (report[5] & 0x80) != 0;
+        // Face buttons - bits 4-7 of byte 4
+        let square = (dpad_byte & 0x10) != 0;
+        let cross = (dpad_byte & 0x20) != 0;
+        let circle = (dpad_byte & 0x40) != 0;
+        let triangle = (dpad_byte & 0x80) != 0;
 
-        // Shoulder buttons
-        let l1 = (report[6] & 0x01) != 0;
-        let r1 = (report[6] & 0x02) != 0;
+        // Shoulder buttons - bits 0-1 of byte 5
+        let l1 = (face_shoulder_byte & 0x01) != 0;
+        let r1 = (face_shoulder_byte & 0x02) != 0;
 
-        // Stick buttons / triggers
-        let l2 = ((report[6] & 0x04) != 0).then_some(report[8]);
-        let r2 = ((report[6] & 0x08) != 0).then_some(report[9]);
+        // Stick buttons / triggers - bits 2-3 of byte 5
+        let l2 = ((face_shoulder_byte & 0x04) != 0).then_some(left_trigger_byte);
+        let r2 = ((face_shoulder_byte & 0x08) != 0).then_some(right_trigger_byte);
 
-        let l3 = (report[6] & 0x40) != 0;
-        let r3 = (report[6] & 0x80) != 0;
+        // Stick press buttons - bits 6-7 of byte 5
+        let l3 = (face_shoulder_byte & 0x40) != 0;
+        let r3 = (face_shoulder_byte & 0x80) != 0;
 
-        // System buttons
-        let share = (report[6] & 0x10) != 0;
-        let options = (report[6] & 0x20) != 0;
+        // System buttons - bits 4-5 of byte 5
+        let share = (face_shoulder_byte & 0x10) != 0;
+        let options = (face_shoulder_byte & 0x20) != 0;
 
-        // Check for PS button - typically in extended report, but might be in byte7
-        let ps = (report[7] & 0x01) != 0;
+        // PS button - bit 0 of byte 6
+        let ps = (system_byte & 0x01) != 0;
 
         let lx = left_x - STICK_OFFSET;
         let ly = left_y - STICK_OFFSET;
