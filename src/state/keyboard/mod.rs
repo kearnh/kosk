@@ -6,12 +6,14 @@ use crate::{
 };
 use anyhow::Result;
 use egui::{Context, Ui};
+use std::collections::HashMap;
 
 mod key;
 mod layout;
 
 pub struct KeyboardState {
-    pub layout: KeyboardLayout,
+    pub layouts: HashMap<String, KeyboardLayout>,
+    pub current_layout: String,
     pub selected: (Option<RawKey>, Option<RawKey>),
     pub l2_was_pressed: bool,
     pub r2_was_pressed: bool,
@@ -25,10 +27,16 @@ pub struct KeyboardState {
 impl KeyboardState {
     pub fn new() -> Result<Self> {
         let cfg = crate::config::get();
-        let layout = KeyboardLayout::load_from_file(cfg.layout)?;
+
+        let mut layouts = HashMap::new();
+        for (name, path) in &cfg.layouts {
+            let layout = KeyboardLayout::load_from_file(path)?;
+            layouts.insert(name.clone(), layout);
+        }
 
         Ok(Self {
-            layout,
+            layouts,
+            current_layout: "main".to_string(),
             selected: (None, None),
             l2_was_pressed: false,
             r2_was_pressed: false,
@@ -38,6 +46,17 @@ impl KeyboardState {
             ctrl_mod: false,
             alt_mod: false,
         })
+    }
+
+    pub fn switch_layout(&mut self, layout_name: &str) -> Result<()> {
+        if self.layouts.contains_key(layout_name) {
+            self.current_layout = layout_name.to_string();
+            // Reset selection when switching layouts
+            self.selected = (None, None);
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Layout '{}' not found", layout_name))
+        }
     }
 
     pub fn send_key(&mut self, key: &RawKey, events: &mut Vec<Event>) -> Result<()> {
@@ -71,6 +90,10 @@ impl KeyboardState {
             };
         }
         match key {
+            RawKey::SwitchLayout(layout_name) => {
+                self.switch_layout(layout_name)?;
+                return Ok(());
+            }
             RawKey::Key(k) => {
                 mod_press!();
                 if let Some(c) = k.chars().next() {
@@ -100,6 +123,7 @@ impl KeyboardState {
             _ => return Ok(()),
         }
 
+        // Reset modifiers after sending a key
         self.shift_state = false;
         self.shift_mod = false;
         self.ctrl_mod = false;
@@ -141,6 +165,11 @@ impl KeyboardState {
                 RawKey::Menu => {
                     events.push(Event::ChangeState(StateId::Menu));
                 }
+                RawKey::SwitchLayout(layout_name) => {
+                    if let Err(e) = self.switch_layout(&layout_name) {
+                        eprintln!("Failed to switch layout: {}", e);
+                    }
+                }
                 _ => {
                     self.send_key(&key, events).expect("send key");
                 }
@@ -163,12 +192,15 @@ impl KeyboardState {
             }
         };
 
-        let selected_left = self
-            .layout
-            .get_nearest_key_left(input.left_stick(), self.shift_state);
-        let selected_right = self
-            .layout
-            .get_nearest_key_right(input.right_stick(), self.shift_state);
+        let current_layout = self
+            .layouts
+            .get(&self.current_layout)
+            .ok_or_else(|| anyhow::anyhow!("Current layout '{}' not found", self.current_layout))?;
+
+        let selected_left =
+            current_layout.get_nearest_key_left(input.left_stick(), self.shift_state);
+        let selected_right =
+            current_layout.get_nearest_key_right(input.right_stick(), self.shift_state);
 
         self.selected = (selected_left.clone(), selected_right.clone());
 
@@ -183,6 +215,9 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => {
                         events.push(Event::ChangeState(StateId::Menu));
+                    }
+                    Some(RawKey::SwitchLayout(layout_name)) => {
+                        self.switch_layout(&layout_name)?;
                     }
                     Some(key) => {
                         self.send_key(&key, events)?;
@@ -203,6 +238,9 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => {
                         events.push(Event::ChangeState(StateId::Menu));
+                    }
+                    Some(RawKey::SwitchLayout(layout_name)) => {
+                        self.switch_layout(&layout_name)?;
                     }
                     Some(key) => {
                         self.send_key(&key, events).expect("send_key");
@@ -241,6 +279,8 @@ impl KeyboardState {
     }
 
     fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+        let current_layout = self.layouts.get_mut(&self.current_layout)?;
+
         let mut pressed_key: Option<RawKey> = None;
 
         // Set semi-transparent button styling
@@ -263,36 +303,32 @@ impl KeyboardState {
         style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(50, 100, 180, 220);
         style.visuals.selection.stroke.color = egui::Color32::WHITE;
 
-        let pad_x = self.layout.scale_x(self.layout.pad_x);
-        let pad_y = self.layout.scale_y(self.layout.pad_y);
+        let pad_x = current_layout.scale_x(current_layout.pad_x);
+        let pad_y = current_layout.scale_y(current_layout.pad_y);
 
-        let capturing_centres = self.layout.captured_centres.is_none();
+        let capturing_centres = current_layout.captured_centres.is_none();
         let mut captured_data = Vec::new();
 
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-            let left_center = self
-                .layout
-                .get_nearest_key_left((0.0, 0.0), self.shift_state);
-            let right_center = self
-                .layout
-                .get_nearest_key_right((0.0, 0.0), self.shift_state);
+            let left_center = current_layout.get_nearest_key_left((0.0, 0.0), self.shift_state);
+            let right_center = current_layout.get_nearest_key_right((0.0, 0.0), self.shift_state);
 
-            for (keys, indent, height) in &self.layout {
+            for (keys, indent, height) in &*current_layout {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-                    ui.add_space(self.layout.scale_x(indent));
+                    ui.add_space(current_layout.scale_x(indent));
 
-                    let row_height = self.layout.scale_y(height);
+                    let row_height = current_layout.scale_y(height);
 
                     let mut row_centres = Vec::new();
 
                     for key in keys {
                         // Skip rendering for SKIP keys - just add space
                         if key.is_skip() {
-                            ui.add_space(self.layout.scale_x(key.width));
+                            ui.add_space(current_layout.scale_x(key.width));
                             if capturing_centres {
                                 row_centres.push(None);
                             }
@@ -301,7 +337,7 @@ impl KeyboardState {
 
                         let mut button = egui::Button::new(
                             egui::RichText::new(key.display(self.shift_state))
-                                .size(self.layout.font_size),
+                                .size(current_layout.font_size),
                         );
 
                         if key.is_key(self.shift_state, &RawKey::Shift) && self.shift_state {
@@ -335,7 +371,7 @@ impl KeyboardState {
                             }
                         }
 
-                        let size = egui::Vec2::new(self.layout.scale_x(key.width), row_height);
+                        let size = egui::Vec2::new(current_layout.scale_x(key.width), row_height);
                         let response = ui.add_sized(size, button);
 
                         if capturing_centres {
@@ -356,7 +392,7 @@ impl KeyboardState {
                             }
                             let mod_string = mods.join("+");
                             let rect = response.rect;
-                            let font_size = self.layout.font_size * 0.6;
+                            let font_size = current_layout.font_size * 0.6;
                             ui.painter().text(
                                 rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
                                 egui::Align2::LEFT_BOTTOM,
@@ -377,10 +413,10 @@ impl KeyboardState {
             }
         });
 
-        self.layout.draw_debug(ctx, ui);
+        current_layout.draw_debug(ctx, ui);
 
         if capturing_centres {
-            self.layout.update_geometry(captured_data);
+            current_layout.update_geometry(captured_data);
         }
 
         pressed_key
@@ -388,7 +424,15 @@ impl KeyboardState {
 
     pub(crate) fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
-        self.layout = crate::state::keyboard::layout::KeyboardLayout::load_from_file(cfg.layout)?;
+
+        // Reload all layouts
+        let mut new_layouts = HashMap::new();
+        for (name, path) in &cfg.layouts {
+            let layout = KeyboardLayout::load_from_file(path)?;
+            new_layouts.insert(name.clone(), layout);
+        }
+
+        self.layouts = new_layouts;
         self.trigger_threshold = cfg.trigger_threshold;
         Ok(())
     }

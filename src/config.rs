@@ -29,8 +29,9 @@ pub struct Debug {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    /// Path to keyboard layout TOML file
-    pub layout: String,
+    /// Named layouts: map from layout name to file path
+    /// Must contain at least "main" layout
+    pub layouts: std::collections::HashMap<String, String>,
 
     /// Sensitivity/range multiplier for the horizontal stick axis
     #[serde(default = "default_stick_scale_x")]
@@ -89,8 +90,8 @@ fn default_scale_y() -> f32 {
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Load configuration file and return the resolved layout path
-fn load_config() -> Result<PathBuf> {
+/// Load configuration file and return all resolved layout paths
+fn load_config() -> Result<Vec<PathBuf>> {
     let config_path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
@@ -110,17 +111,30 @@ fn load_config() -> Result<PathBuf> {
     let new_config: Config =
         toml::from_str(&config_content).context("Could not parse config TOML")?;
 
-    let layout_path = if PathBuf::from(&new_config.layout).is_absolute() {
-        PathBuf::from(&new_config.layout)
-    } else {
-        config_path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("Config file has no parent directory"))?
-            .join(&new_config.layout)
-    };
+    // Validate that layouts contains "main"
+    if !new_config.layouts.contains_key("main") {
+        bail!("Layouts must contain at least a 'main' layout");
+    }
 
-    if !fs::exists(&layout_path)? {
-        bail!(r#"cannot find layout file "{}""#, layout_path.display());
+    let mut layout_paths = Vec::new();
+    for (name, path) in &new_config.layouts {
+        let layout_path = if PathBuf::from(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            config_path
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Config file has no parent directory"))?
+                .join(path)
+        };
+
+        if !fs::exists(&layout_path)? {
+            bail!(
+                r#"cannot find layout file "{}" for layout "{}""#,
+                layout_path.display(),
+                name
+            );
+        }
+        layout_paths.push(layout_path);
     }
 
     if let Some(instance) = CONFIG_INSTANCE.get() {
@@ -134,13 +148,16 @@ fn load_config() -> Result<PathBuf> {
 
     LAST_LOAD.store(now, Ordering::Relaxed);
 
-    Ok(layout_path)
+    Ok(layout_paths)
 }
 
-/// Start a watcher thread that monitors both config and layout files
-fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()> {
+/// Start a watcher thread that monitors config and all layout files
+fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Result<()> {
     let config_path = std::fs::canonicalize(config_path)?;
-    let layout_path = std::fs::canonicalize(layout_path)?;
+    let layout_paths: Vec<PathBuf> = layout_paths
+        .into_iter()
+        .map(std::fs::canonicalize)
+        .collect::<Result<_, _>>()?;
 
     std::thread::spawn(move || -> Result<()> {
         let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
@@ -151,8 +168,10 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
             eprintln!("Failed to watch config file: {}", e);
         }
 
-        if let Err(e) = watcher.watch(&layout_path, notify::RecursiveMode::NonRecursive) {
-            eprintln!("Failed to watch layout file: {}", e);
+        for path in &layout_paths {
+            if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
+                eprintln!("Failed to watch layout file {}: {}", path.display(), e);
+            }
         }
 
         for res in rx {
@@ -167,19 +186,30 @@ fn start_watcher_thread(config_path: PathBuf, layout_path: PathBuf) -> Result<()
                         .paths
                         .iter()
                         .flat_map(std::fs::canonicalize)
-                        .any(|p| p == config_path || p == layout_path);
+                        .any(|p| p == config_path || layout_paths.contains(&p));
 
                     if should_reload {
                         match load_config() {
-                            Ok(new_layout_path) => {
-                                if new_layout_path != layout_path {
-                                    start_watcher_thread(config_path.clone(), new_layout_path)?;
+                            Ok(new_layout_paths) => {
+                                // Check if layout paths changed
+                                let new_set: std::collections::HashSet<_> =
+                                    new_layout_paths.iter().collect();
+                                let old_set: std::collections::HashSet<_> =
+                                    layout_paths.iter().collect();
+
+                                if new_set != old_set {
+                                    start_watcher_thread(config_path.clone(), new_layout_paths)?;
 
                                     if let Some(f) = ON_CHANGE_CALLBACK.get() {
                                         f()
                                     }
 
                                     break;
+                                } else {
+                                    // Same layout files, just trigger reload
+                                    if let Some(f) = ON_CHANGE_CALLBACK.get() {
+                                        f()
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -209,9 +239,9 @@ pub fn init() -> Result<()> {
         .set(config_path.clone())
         .expect("Config path was already set");
 
-    let initial_layout_path = load_config()?;
+    let initial_layout_paths = load_config()?;
 
-    start_watcher_thread(config_path, initial_layout_path)?;
+    start_watcher_thread(config_path, initial_layout_paths)?;
 
     Ok(())
 }

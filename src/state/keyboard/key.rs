@@ -14,6 +14,7 @@ pub enum RawKey {
     Paste,
     Done,
     Menu,
+    SwitchLayout(String), // New variant for layout switching
 }
 
 impl TryFrom<String> for RawKey {
@@ -35,6 +36,11 @@ impl TryFrom<String> for RawKey {
             "DONE" => return Ok(RawKey::Done),
             "MENU" => return Ok(RawKey::Menu),
             _ => {}
+        }
+
+        // Check for layout switch prefix
+        if let Some(layout_name) = value.strip_prefix("layout:") {
+            return Ok(RawKey::SwitchLayout(layout_name.to_string()));
         }
 
         if let Ok(key) = serde_plain::from_str::<enigo::Key>(&value) {
@@ -77,7 +83,8 @@ impl std::fmt::Display for RawKey {
             RawKey::Alt => write!(f, "Alt"),
             RawKey::Paste => write!(f, "Paste"),
             RawKey::Done => write!(f, "Done"),
-            RawKey::Menu => write!(f, "Done"),
+            RawKey::Menu => write!(f, "Menu"),
+            RawKey::SwitchLayout(name) => write!(f, "layout:{}", name),
         }
     }
 }
@@ -90,6 +97,7 @@ impl ToShifted for RawKey {
     fn to_shifted(&self) -> Self {
         match self {
             RawKey::Key(k) => RawKey::Key(k.to_uppercase()),
+            RawKey::SwitchLayout(name) => RawKey::SwitchLayout(name.clone()),
             _ => self.clone(),
         }
     }

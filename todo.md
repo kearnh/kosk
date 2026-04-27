@@ -1,15 +1,6 @@
 Todo
 ====
 
-Multiple Layouts
-----------------
-
-Add support for multiple layouts. Each is defined independantly in their own
-file. Layouts are named in config file, including the starting layout, which
-must be named "main". Support switching between them, e.g. user presses a button
-to show symbols that are not in the main layout. `RawKey` gets new meta key to
-switch to named layout.
-
 Menu
 ----
 
