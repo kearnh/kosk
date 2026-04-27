@@ -5,6 +5,7 @@ stick_warp = 1.0
 
 [layouts]
 main = "old_steam_controller_kb.toml"
+qwerty = "qwerty.toml"
 # symbols = "symbols.toml"
 # numbers = "numbers.toml"
 

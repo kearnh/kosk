@@ -1,10 +1,10 @@
 # Default QWERTY keyboard layout
-row_indents = [0.0, 36.25, 47.5, 0.0, 125.0]
-button_unit_width = 40.0
-button_unit_height = 40.0
-unit_spacing_x = 2.0
-unit_spacing_y = 2.0
-radius_mult = 1.125
+row_indents = [0.0, 1.0, 1.5, 0.0, 3.4]
+row_heights = [1.0, 1.0, 1.0, 1.0, 1.0]
+pad_x = 0.125
+pad_y = 0.1
+radius_mult = 1.0
+font_size = 24.0
 
 [[keys]]
 key = { normal = "`", shift = "~" }
