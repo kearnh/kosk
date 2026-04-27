@@ -126,7 +126,10 @@ fn load_config() -> Result<Vec<PathBuf>> {
 
     // Validate that start_layout exists in layouts
     if !new_config.layouts.contains_key(&new_config.start_layout) {
-        bail!("Start layout '{}' not found in layouts", new_config.start_layout);
+        bail!(
+            "Start layout '{}' not found in layouts",
+            new_config.start_layout
+        );
     }
 
     let mut layout_paths = Vec::new();
