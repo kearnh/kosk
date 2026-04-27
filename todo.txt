@@ -1,3 +1,0 @@
-- Add a mode which shows a text input box, submitting sends whole text. This is to work around having to do complicated TSF stuff. Future work after this is implemented is to add text predicition/completion.
-- Finish menu: nicer interface, config/options setting in menu, controller navigation in move window
-- Custom controller input mapping instead of hard coded (see code marked allow(unused) in controller/mod.rs as very early start to this)
