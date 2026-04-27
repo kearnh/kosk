@@ -48,17 +48,6 @@ impl KeyboardState {
         })
     }
 
-    pub fn switch_layout(&mut self, layout_name: &str) -> Result<()> {
-        if self.layouts.contains_key(layout_name) {
-            self.current_layout = layout_name.to_string();
-            // Reset selection when switching layouts
-            self.selected = (None, None);
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Layout '{}' not found", layout_name))
-        }
-    }
-
     pub fn send_key(&mut self, key: &RawKey, events: &mut Vec<Event>) -> Result<()> {
         macro_rules! mod_press {
             () => {
@@ -91,7 +80,13 @@ impl KeyboardState {
         }
         match key {
             RawKey::SwitchLayout(layout_name) => {
-                self.switch_layout(layout_name)?;
+                if self.layouts.contains_key(layout_name) {
+                    self.current_layout = layout_name.to_string();
+                    // Reset selection when switching layouts
+                    self.selected = (None, None);
+                } else {
+                    return Err(anyhow::anyhow!("Layout '{}' not found", layout_name));
+                }
                 return Ok(());
             }
             RawKey::Key(k) => {
@@ -165,11 +160,6 @@ impl KeyboardState {
                 RawKey::Menu => {
                     events.push(Event::ChangeState(StateId::Menu));
                 }
-                RawKey::SwitchLayout(layout_name) => {
-                    if let Err(e) = self.switch_layout(&layout_name) {
-                        eprintln!("Failed to switch layout: {}", e);
-                    }
-                }
                 _ => {
                     self.send_key(&key, events).expect("send key");
                 }
@@ -216,9 +206,6 @@ impl KeyboardState {
                     Some(RawKey::Menu) => {
                         events.push(Event::ChangeState(StateId::Menu));
                     }
-                    Some(RawKey::SwitchLayout(layout_name)) => {
-                        self.switch_layout(&layout_name)?;
-                    }
                     Some(key) => {
                         self.send_key(&key, events)?;
                     }
@@ -238,9 +225,6 @@ impl KeyboardState {
                     }
                     Some(RawKey::Menu) => {
                         events.push(Event::ChangeState(StateId::Menu));
-                    }
-                    Some(RawKey::SwitchLayout(layout_name)) => {
-                        self.switch_layout(&layout_name)?;
                     }
                     Some(key) => {
                         self.send_key(&key, events).expect("send_key");
