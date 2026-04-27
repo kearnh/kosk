@@ -3,7 +3,7 @@
 use crate::state::AppState;
 use anyhow::Result;
 use eframe::CreationContext;
-use egui::Rect;
+use egui::Vec2;
 use hidapi::{HidApi, HidDevice};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
@@ -29,7 +29,8 @@ fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
 struct App {
     state: Arc<Mutex<AppState>>,
     window_setup_done: bool,
-    content_rect: Rect,
+    size: Vec2,
+    min_size: Vec2,
 }
 
 impl App {
@@ -73,10 +74,12 @@ impl App {
 
         debug::register(&cc.egui_ctx);
 
+        let cfg = config::get();
         Self {
             state,
             window_setup_done: false,
-            content_rect: Rect::EVERYTHING,
+            size: Vec2::ZERO,
+            min_size: Vec2::ZERO,
         }
     }
 }
@@ -160,17 +163,28 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
         }
 
+        let mut size = Vec2::ZERO;
+
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
             .show(ctx, |ui| {
-                let mut s = self.state.lock().unwrap();
-                s.draw_ui(ctx, ui);
+                let inner = egui::Frame::NONE.show(ui, |ui| {
+                    let mut s = self.state.lock().unwrap();
+                    s.draw_ui(ctx, ui);
+                });
+                size = inner.response.rect.size() + [10.0, 10.0].into();
             });
 
-        let r = ctx.content_rect();
-        if r != self.content_rect {
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(r.max - r.min));
-            self.content_rect = r;
+        // FIXME min_size will change if layout changes?
+        if self.min_size == Vec2::ZERO {
+            self.min_size = size;
+        }
+        size = Vec2 {
+            x: self.min_size.x.max(size.x),
+            y: self.min_size.y.max(size.y),
+        };
+        if size != self.size {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
         }
     }
 }

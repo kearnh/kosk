@@ -160,6 +160,9 @@ impl KeyboardState {
                 RawKey::Menu => {
                     events.push(Event::ChangeState(StateId::Menu));
                 }
+                RawKey::TextInput => {
+                    events.push(Event::ChangeState(StateId::TextInput));
+                }
                 _ => {
                     self.send_key(&key, events).expect("send key");
                 }

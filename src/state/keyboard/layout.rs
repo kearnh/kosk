@@ -438,9 +438,9 @@ impl KeyboardLayout {
         candidate.1
     }
 
-    pub fn draw_debug(&self, ctx: &Context, ui: &mut Ui) {
+    pub fn draw_debug(&self, ctx: &Context, _: &mut Ui) {
         if let Some(debug) = config::get().debug {
-            let painter = ui.painter();
+            let painter = ctx.debug_painter();
 
             if debug.show_stick_cursors {
                 let d_lock = ctx.plugin::<DebugPlugin>();

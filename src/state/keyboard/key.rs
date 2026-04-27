@@ -14,7 +14,8 @@ pub enum RawKey {
     Paste,
     Done,
     Menu,
-    SwitchLayout(String), // New variant for layout switching
+    TextInput,
+    SwitchLayout(String),
 }
 
 impl TryFrom<String> for RawKey {
@@ -35,6 +36,7 @@ impl TryFrom<String> for RawKey {
             "PASTE" => return Ok(RawKey::Paste),
             "DONE" => return Ok(RawKey::Done),
             "MENU" => return Ok(RawKey::Menu),
+            "TEXT-INPUT" => return Ok(RawKey::TextInput),
             _ => {}
         }
 
@@ -84,6 +86,7 @@ impl std::fmt::Display for RawKey {
             RawKey::Paste => write!(f, "Paste"),
             RawKey::Done => write!(f, "Done"),
             RawKey::Menu => write!(f, "Menu"),
+            RawKey::TextInput => write!(f, "TextInput"),
             RawKey::SwitchLayout(name) => write!(f, "layout:{}", name),
         }
     }
