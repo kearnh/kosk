@@ -36,7 +36,7 @@ impl KeyboardState {
 
         Ok(Self {
             layouts,
-            current_layout: "main".to_string(),
+            current_layout: cfg.start_layout.clone(),
             selected: (None, None),
             l2_was_pressed: false,
             r2_was_pressed: false,

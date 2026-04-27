@@ -33,6 +33,10 @@ pub struct Config {
     /// Must contain at least "main" layout
     pub layouts: std::collections::HashMap<String, String>,
 
+    /// Which layout to start with (must exist in layouts)
+    #[serde(default = "default_start_layout")]
+    pub start_layout: String,
+
     /// Sensitivity/range multiplier for the horizontal stick axis
     #[serde(default = "default_stick_scale_x")]
     pub stick_scale_x: f32,
@@ -86,6 +90,10 @@ fn default_scale_y() -> f32 {
     40.0
 }
 
+fn default_start_layout() -> String {
+    "main".to_string()
+}
+
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -114,6 +122,16 @@ fn load_config() -> Result<Vec<PathBuf>> {
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
         bail!("Layouts must contain at least a 'main' layout");
+    }
+
+    // Validate that start_layout exists in layouts
+    if !new_config.layouts.contains_key(&new_config.start_layout) {
+        bail!("Start layout '{}' not found in layouts", new_config.start_layout);
+    }
+
+    // Validate that start_layout exists in layouts
+    if !new_config.layouts.contains_key(&new_config.start_layout) {
+        bail!("Start layout '{}' not found in layouts", new_config.start_layout);
     }
 
     let mut layout_paths = Vec::new();
