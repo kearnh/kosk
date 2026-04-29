@@ -74,7 +74,6 @@ impl App {
 
         debug::register(&cc.egui_ctx);
 
-        let cfg = config::get();
         Self {
             state,
             window_setup_done: false,
