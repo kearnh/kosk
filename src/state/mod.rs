@@ -2,7 +2,10 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{event::Event, keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState},
+    state::{
+        event::Event, keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState,
+        window_pos::WindowPos,
+    },
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -13,6 +16,7 @@ mod keyboard;
 mod menu;
 mod move_window;
 mod text_input;
+pub mod window_pos;
 
 #[derive(PartialEq)]
 pub enum StateId {
@@ -20,14 +24,6 @@ pub enum StateId {
     Keyboard,
     MoveWindow,
     TextInput,
-}
-
-pub enum WindowPos {
-    TopLeft,
-    TopRight,
-    BottomRight,
-    BottomLeft,
-    Absolute(f32, f32),
 }
 
 pub struct AppState {
@@ -56,7 +52,7 @@ impl AppState {
             menu: MenuState::new(),
             move_window: MoveWindowState::new(cfg.scale_x, cfg.scale_y),
             text_input,
-            pos: WindowPos::BottomRight,
+            pos: cfg.window_pos,
             monitor_size,
             events: vec![],
             enigo: Enigo::new(&Default::default())?,
@@ -115,7 +111,7 @@ impl AppState {
                 let (x, y) = self.get_position(ctx.content_rect());
                 let movement = self.move_window.draw_ui(ctx, ui, (x, y), &mut self.events);
                 if let Some(new_pos) = movement {
-                    if let WindowPos::Absolute(mut x, mut y) = new_pos {
+                    let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
                         let (mon_w, mon_h) = self.monitor_size;
 
                         // Clamp X between 0 and (Monitor Width - Window Width)
@@ -123,9 +119,16 @@ impl AppState {
                         // Clamp Y between 0 and (Monitor Height - Window Height)
                         y = y.clamp(0.0, mon_h - ctx.content_rect().height());
 
-                        self.pos = WindowPos::Absolute(x, y);
+                        WindowPos::Absolute(x, y)
                     } else {
-                        self.pos = new_pos;
+                        new_pos
+                    };
+
+                    if self.pos != final_pos {
+                        self.pos = final_pos;
+                        let mut cfg = config::get();
+                        cfg.window_pos = self.pos;
+                        let _ = config::save(cfg);
                     }
                 }
             }

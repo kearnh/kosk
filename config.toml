@@ -1,16 +1,18 @@
+start_layout = "main"
+stick_scale_x = 3.0
+stick_scale_y = 2.5
+stick_warp = 1.0
+trigger_threshold = 40
+transparent = true
 scale_x = 36.0
 scale_y = 40.0
-transparent = true
-stick_warp = 1.0
-start_layout = "main"
+window_pos = [1189.32, 605.34]
 
 [layouts]
-main = "old_steam_controller_kb.toml"
 qwerty = "qwerty.toml"
-# symbols = "symbols.toml"
-# numbers = "numbers.toml"
+main = "old_steam_controller_kb.toml"
 
 [debug]
 show_stick_cursors = false
-show_stick_bounds = false
 show_hitboxes = false
+show_stick_bounds = false

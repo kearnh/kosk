@@ -1,8 +1,9 @@
+use crate::state::window_pos::WindowPos;
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use notify::event::ModifyKind;
 use notify::{Event, EventKind, Watcher};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -15,7 +16,7 @@ pub struct Args {
     pub config_path: String,
 }
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct Debug {
     #[serde(default)]
     pub show_stick_cursors: bool,
@@ -27,7 +28,7 @@ pub struct Debug {
     pub show_stick_bounds: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     /// Named layouts: map from layout name to file path
     /// Must contain at least "main" layout
@@ -60,6 +61,9 @@ pub struct Config {
     #[serde(default)]
     pub debug: Option<Debug>,
 
+    #[serde(default = "default_window_pos")]
+    pub window_pos: WindowPos,
+
     #[serde(default = "default_scale_x")]
     pub scale_x: f32,
     #[serde(default = "default_scale_y")]
@@ -80,6 +84,10 @@ fn default_trigger_threshold() -> u8 {
 }
 fn default_transparent() -> bool {
     true
+}
+
+fn default_window_pos() -> WindowPos {
+    WindowPos::BottomRight
 }
 
 fn default_scale_x() -> f32 {
@@ -268,6 +276,21 @@ pub fn get() -> Config {
         .expect("Config must be initialized before use");
     let config = instance.lock().unwrap();
     config.clone()
+}
+
+pub fn save(new_config: Config) -> Result<()> {
+    let path = CONFIG_PATH
+        .get()
+        .ok_or(anyhow::anyhow!("Config path not set"))?;
+
+    let toml_string = toml::to_string_pretty(&new_config)?;
+    fs::write(path, toml_string)?;
+
+    if let Some(instance) = CONFIG_INSTANCE.get() {
+        let mut config = instance.lock().unwrap();
+        *config = new_config;
+    }
+    Ok(())
 }
 
 type ConfigChangeCallback = Box<dyn Fn() + Send + Sync + 'static>;
