@@ -30,10 +30,15 @@ impl From<f32> for UnscaledPixelUnitY {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct KeyButton {
+    #[serde(default)]
     display: Option<Key<String>>,
     key: Key<RawKey>,
-    pub pos: (usize, usize),
+    #[serde(default = "default_key_width_unit")]
     pub width: UnscaledPixelUnitX,
+}
+
+fn default_key_width_unit() -> UnscaledPixelUnitX {
+    1.0.into()
 }
 
 impl KeyButton {
@@ -61,6 +66,18 @@ impl KeyButton {
     }
 }
 
+fn default_row_height_unit() -> UnscaledPixelUnitY {
+    1.0.into()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct KeyboardRow {
+    pub indent: UnscaledPixelUnitX,
+    #[serde(default = "default_row_height_unit")]
+    pub height: UnscaledPixelUnitY,
+    pub keys: Vec<KeyButton>,
+}
+
 #[derive(Debug, Default, Clone, Deserialize)]
 struct StickBounds {
     left: Vec<Rect>,
@@ -69,7 +86,7 @@ struct StickBounds {
 
 #[derive(Debug, Clone, Deserialize)]
 struct KeyboardLayoutFile {
-    rows: Vec<LayoutRowFile>,
+    rows: Vec<KeyboardRow>,
     #[serde(default = "default_pad_x")]
     pad_x: f32,
     #[serde(default = "default_pad_y")]
@@ -78,31 +95,6 @@ struct KeyboardLayoutFile {
     font_size: f32,
     #[serde(default)]
     stick_bounds: StickBounds,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct LayoutRowFile {
-    indent: f32,
-    #[serde(default = "default_row_height")]
-    height: f32,
-    keys: Vec<KeyEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct KeyEntry {
-    #[serde(default)]
-    display: Option<Key<String>>,
-    key: Key<RawKey>,
-    #[serde(default = "default_key_width")]
-    width: f32,
-}
-
-fn default_row_height() -> f32 {
-    1.0
-}
-
-fn default_key_width() -> f32 {
-    1.0
 }
 
 fn default_pad_x() -> f32 {
@@ -157,9 +149,7 @@ impl HitBox {
 
 #[derive(Debug)]
 pub struct KeyboardLayout {
-    row_indents: Vec<UnscaledPixelUnitX>,
-    row_heights: Vec<UnscaledPixelUnitY>,
-    rows: Vec<Vec<KeyButton>>,
+    pub rows: Vec<KeyboardRow>,
 
     // Layout constants
     pub font_size: f32,
@@ -184,47 +174,33 @@ pub struct KeyboardLayout {
 
 impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
-        let layout: KeyboardLayoutFile = toml::from_str(toml)?;
+        let parsed: KeyboardLayoutFile = toml::from_str(toml)?;
 
-        let mut row_indents = Vec::with_capacity(layout.rows.len());
-        let mut row_heights = Vec::with_capacity(layout.rows.len());
-        let mut rows = Vec::with_capacity(layout.rows.len());
-
-        for (row_idx, row_file) in layout.rows.into_iter().enumerate() {
-            row_indents.push(row_file.indent.into());
-            row_heights.push(row_file.height.into());
-            let mut row_keys = Vec::with_capacity(row_file.keys.len());
-            for (col_idx, entry) in row_file.keys.into_iter().enumerate() {
-                row_keys.push(KeyButton {
-                    display: entry.display,
-                    key: entry.key,
-                    pos: (row_idx, col_idx),
-                    width: entry.width.into(),
-                });
-            }
-            rows.push(row_keys);
-        }
+        let KeyboardLayoutFile {
+            rows,
+            pad_x,
+            pad_y,
+            font_size,
+            stick_bounds,
+        } = parsed;
 
         let cfg = config::get();
 
         let scale: Vec2 = (cfg.scale_x, cfg.scale_y).into();
 
         let layout = KeyboardLayout {
-            row_indents,
-            row_heights,
             rows,
-            font_size: layout.font_size,
+            font_size,
             scale_x: cfg.scale_x,
             scale_y: cfg.scale_y,
-            pad_x: layout.pad_x.into(),
-            pad_y: layout.pad_y.into(),
+            pad_x: pad_x.into(),
+            pad_y: pad_y.into(),
             stick_scale_x: cfg.stick_scale_x,
             stick_scale_y: cfg.stick_scale_y,
             left_stick_center: (0.0, 0.0),
             right_stick_center: (0.0, 0.0),
             key_hit_boxes: Default::default(),
-            left_stick_bounds: layout
-                .stick_bounds
+            left_stick_bounds: stick_bounds
                 .left
                 .into_iter()
                 .map(|r| {
@@ -232,8 +208,7 @@ impl KeyboardLayout {
                         .scale_from_center2(scale)
                 })
                 .collect(),
-            right_stick_bounds: layout
-                .stick_bounds
+            right_stick_bounds: stick_bounds
                 .right
                 .into_iter()
                 .map(|r| {
@@ -261,7 +236,7 @@ impl KeyboardLayout {
 
     pub fn get_key_center(&self, key_name: &str) -> Option<(f32, f32)> {
         for (row_idx, row) in self.rows.iter().enumerate() {
-            for (col_idx, key_button) in row.iter().enumerate() {
+            for (col_idx, key_button) in row.keys.iter().enumerate() {
                 if key_button.key.normal == key_name {
                     if let Some(centres) = &self.captured_centres {
                         let pos = centres[row_idx][col_idx]?;
@@ -283,15 +258,14 @@ impl KeyboardLayout {
 
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut hitboxes_row = Vec::new();
-            if row.is_empty() {
+            if row.keys.is_empty() {
                 key_hit_boxes.push(hitboxes_row);
                 continue;
             }
 
-            let height = self.row_heights[row_idx];
-            let row_height = self.scale_y(height);
+            let row_height = self.scale_y(row.height);
 
-            for (col_idx, key) in row.iter().enumerate() {
+            for (col_idx, key) in row.keys.iter().enumerate() {
                 if let Some(Some(pos)) = centres.get(row_idx).and_then(|r| r.get(col_idx)) {
                     let center_x = pos.x;
                     let center_y = pos.y;
@@ -405,7 +379,7 @@ impl KeyboardLayout {
                 if let Some(h) = h {
                     if let Some(d) = h.contains(x, y) {
                         if d < candidate.0 {
-                            let key_button = &self.rows[row_idx][col_idx];
+                            let key_button = &self.rows[row_idx].keys[col_idx];
                             candidate = (d, Some(key_button.key.get(shifted)));
                         }
                     }
@@ -498,27 +472,15 @@ impl<'a> IntoIterator for &'a KeyboardLayout {
     type Item = (&'a Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY);
 
     type IntoIter = std::iter::Map<
-        std::iter::Zip<
-            std::iter::Zip<
-                std::slice::Iter<'a, Vec<KeyButton>>,
-                std::slice::Iter<'a, UnscaledPixelUnitX>,
-            >,
-            std::slice::Iter<'a, UnscaledPixelUnitY>,
-        >,
-        fn(
-            (
-                (&'a Vec<KeyButton>, &'a UnscaledPixelUnitX),
-                &'a UnscaledPixelUnitY,
-            ),
-        ) -> Self::Item,
+        std::slice::Iter<'a, KeyboardRow>,
+        fn(&'a KeyboardRow) -> Self::Item,
     >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.rows
-            .iter()
-            .zip(self.row_indents.iter())
-            .zip(self.row_heights.iter())
-            .map(|((row, &indent), &height)| (row, indent, height))
+        fn project<'a>(row: &'a KeyboardRow) -> (&'a Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
+            (&row.keys, row.indent, row.height)
+        }
+        self.rows.iter().map(project as fn(_) -> _)
     }
 }
 
