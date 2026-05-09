@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::Result;
 use egui::{Color32, Context, Pos2, Rect, Ui, Vec2};
@@ -69,10 +69,7 @@ struct StickBounds {
 
 #[derive(Debug, Clone, Deserialize)]
 struct KeyboardLayoutFile {
-    keys: Vec<KeyButton>,
-    row_indents: Vec<f32>,
-    #[serde(default)]
-    row_heights: Vec<f32>,
+    rows: Vec<LayoutRowFile>,
     #[serde(default = "default_pad_x")]
     pad_x: f32,
     #[serde(default = "default_pad_y")]
@@ -81,6 +78,31 @@ struct KeyboardLayoutFile {
     font_size: f32,
     #[serde(default)]
     stick_bounds: StickBounds,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LayoutRowFile {
+    indent: f32,
+    #[serde(default = "default_row_height")]
+    height: f32,
+    keys: Vec<KeyEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct KeyEntry {
+    #[serde(default)]
+    display: Option<Key<String>>,
+    key: Key<RawKey>,
+    #[serde(default = "default_key_width")]
+    width: f32,
+}
+
+fn default_row_height() -> f32 {
+    1.0
+}
+
+fn default_key_width() -> f32 {
+    1.0
 }
 
 fn default_pad_x() -> f32 {
@@ -164,77 +186,32 @@ impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
         let layout: KeyboardLayoutFile = toml::from_str(toml)?;
 
-        // Group keys by row
-        let mut row_map: HashMap<usize, Vec<KeyButton>> = HashMap::new();
-        for key in &layout.keys {
-            row_map.entry(key.pos.0).or_default().push(key.clone());
-        }
+        let mut row_indents = Vec::with_capacity(layout.rows.len());
+        let mut row_heights = Vec::with_capacity(layout.rows.len());
+        let mut rows = Vec::with_capacity(layout.rows.len());
 
-        // Find max row number
-        let max_row = layout.keys.iter().map(|k| k.pos.0).max().unwrap_or(0);
-
-        // Check that row_indents length matches number of rows
-        if layout.row_indents.len() != max_row + 1 {
-            anyhow::bail!(
-                "row_indents length ({}) doesn't match number of rows ({})",
-                layout.row_indents.len(),
-                max_row + 1
-            );
-        }
-
-        // Check for duplicate (row, col) pairs (SKIP keys are allowed to duplicate)
-        let mut seen = std::collections::HashSet::new();
-        for key in &layout.keys {
-            if !seen.insert(key.pos) {
-                anyhow::bail!("Duplicate key at row {}, col {}", key.pos.0, key.pos.1);
+        for (row_idx, row_file) in layout.rows.into_iter().enumerate() {
+            row_indents.push(row_file.indent.into());
+            row_heights.push(row_file.height.into());
+            let mut row_keys = Vec::with_capacity(row_file.keys.len());
+            for (col_idx, entry) in row_file.keys.into_iter().enumerate() {
+                row_keys.push(KeyButton {
+                    display: entry.display,
+                    key: entry.key,
+                    pos: (row_idx, col_idx),
+                    width: entry.width.into(),
+                });
             }
+            rows.push(row_keys);
         }
-
-        // Sort by row number and store
-        let mut sorted_rows: Vec<_> = row_map.into_iter().collect();
-        sorted_rows.sort_by_key(|(row_num, _)| *row_num);
-
-        // Process each row: sort by col and insert spacers for gaps
-        let rows = sorted_rows
-            .into_iter()
-            .map(|(_, mut keys)| {
-                // Sort by column
-                keys.sort_by_key(|k| k.pos.1);
-
-                // Insert spacers for gaps
-                let mut result = Vec::new();
-                let mut expected_col = 0;
-
-                for key in keys {
-                    // Insert spacer(s) for gap
-                    while expected_col < key.pos.1 {
-                        result.push(KeyButton {
-                            display: None,
-                            key: Key {
-                                normal: RawKey::Skip,
-                                shift: None,
-                            },
-                            pos: (key.pos.0, expected_col),
-                            width: 1.0.into(),
-                        });
-                        expected_col += 1;
-                    }
-
-                    result.push(key.clone());
-                    expected_col += 1;
-                }
-
-                result
-            })
-            .collect();
 
         let cfg = config::get();
 
         let scale: Vec2 = (cfg.scale_x, cfg.scale_y).into();
 
         let layout = KeyboardLayout {
-            row_indents: layout.row_indents.into_iter().map(Into::into).collect(),
-            row_heights: layout.row_heights.into_iter().map(Into::into).collect(),
+            row_indents,
+            row_heights,
             rows,
             font_size: layout.font_size,
             scale_x: cfg.scale_x,
@@ -311,7 +288,7 @@ impl KeyboardLayout {
                 continue;
             }
 
-            let height = self.row_heights.get(row_idx).copied().unwrap_or(1.0.into());
+            let height = self.row_heights[row_idx];
             let row_height = self.scale_y(height);
 
             for (col_idx, key) in row.iter().enumerate() {
@@ -542,5 +519,20 @@ impl<'a> IntoIterator for &'a KeyboardLayout {
             .zip(self.row_indents.iter())
             .zip(self.row_heights.iter())
             .map(|((row, &indent), &height)| (row, indent, height))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn parses_repo_layout_toml() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        for path in ["qwerty.toml", "old_steam_controller_kb.toml"] {
+            let s = fs::read_to_string(dir.join(path)).unwrap();
+            let _: KeyboardLayoutFile = toml::from_str(&s).unwrap();
+        }
     }
 }
