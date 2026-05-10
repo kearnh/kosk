@@ -29,6 +29,42 @@ pub struct Debug {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TextInputStyle {
+    /// RGBA background color for the text field as `[r, g, b, a]`.
+    #[serde(default = "default_text_input_background_color")]
+    pub background_color: [u8; 4],
+
+    /// RGBA text color for the text field as `[r, g, b, a]`.
+    #[serde(default = "default_text_input_text_color")]
+    pub text_color: [u8; 4],
+
+    #[serde(default = "default_text_input_font_size")]
+    pub font_size: f32,
+}
+
+fn default_text_input_background_color() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+
+fn default_text_input_text_color() -> [u8; 4] {
+    [0, 0, 0, 255]
+}
+
+fn default_text_input_font_size() -> f32 {
+    16.0
+}
+
+impl Default for TextInputStyle {
+    fn default() -> Self {
+        Self {
+            background_color: default_text_input_background_color(),
+            text_color: default_text_input_text_color(),
+            font_size: default_text_input_font_size(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     /// Named layouts: map from layout name to file path
     /// Must contain at least "main" layout
@@ -68,6 +104,9 @@ pub struct Config {
     pub scale_x: f32,
     #[serde(default = "default_scale_y")]
     pub scale_y: f32,
+
+    #[serde(default)]
+    pub text_input: TextInputStyle,
 }
 
 fn default_stick_scale_x() -> f32 {

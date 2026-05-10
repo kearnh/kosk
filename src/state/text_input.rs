@@ -1,9 +1,10 @@
 use crate::{
+    config,
     controller::{ControllerInput, Dpad},
     state::{event::Event, keyboard, StateId},
 };
 use anyhow::Result;
-use egui::{Context, FontId, TextEdit, Ui};
+use egui::{Color32, Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
 
 pub struct TextInputState {
@@ -94,17 +95,29 @@ impl TextInputState {
         }
     }
 
-    pub fn draw_ui(
-        &mut self,
-        ctx: &Context,
-        ui: &mut Ui,
-        events: &mut Vec<Event>,
-    ) {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
+        let ti = &config::get().text_input;
+        let bg = Color32::from_rgba_unmultiplied(
+            ti.background_color[0],
+            ti.background_color[1],
+            ti.background_color[2],
+            ti.background_color[3],
+        );
+        let fg = Color32::from_rgba_unmultiplied(
+            ti.text_color[0],
+            ti.text_color[1],
+            ti.text_color[2],
+            ti.text_color[3],
+        );
+        let font_size = ti.font_size.max(1.0);
+
         ui.vertical(|ui| {
             let mut display_text = self.build_display_string();
             let _ = ui.add(
                 TextEdit::singleline(&mut display_text)
-                    .font(FontId::proportional(16.0))
+                    .background_color(bg)
+                    .text_color(fg)
+                    .font(FontId::proportional(font_size))
                     .desired_width(400.0)
                     .interactive(false),
             );
