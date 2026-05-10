@@ -1,6 +1,10 @@
+use serde::de::{self, Visitor};
 use serde::Deserialize;
+use std::fmt;
 
-#[derive(PartialEq, Eq, Debug, Clone, Deserialize, Hash)]
+use crate::state::actions::get_action;
+
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum RawKey {
     Key(String),
     Enigo(enigo::Key),
@@ -8,6 +12,54 @@ pub enum RawKey {
     Action(String),
     // FIXME we want this to to be an action, but there are special cases depending on it, we need to fix those first
     Shift,
+}
+
+fn raw_key_from_config_str(s: &str) -> RawKey {
+    // Leading `\` forces a literal [`RawKey::Key`] (no keyword / action / enigo parsing).
+    // Use `\\...` when the literal should begin with `\`.
+    if let Some(rest) = s.strip_prefix('\\') {
+        return RawKey::Key(rest.to_owned());
+    }
+    if s.eq_ignore_ascii_case("skip") {
+        return RawKey::Skip;
+    }
+    if s.eq_ignore_ascii_case("shift") {
+        return RawKey::Shift;
+    }
+    if get_action(s).is_some() {
+        return RawKey::Action(s.to_owned());
+    }
+    if let Ok(k) = serde_plain::from_str::<enigo::Key>(s) {
+        return RawKey::Enigo(k);
+    }
+    RawKey::Key(s.to_owned())
+}
+
+impl<'de> Deserialize<'de> for RawKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RawKeyVisitor;
+
+        impl<'de> Visitor<'de> for RawKeyVisitor {
+            type Value = RawKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string key specifier")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(raw_key_from_config_str(value))
+            }
+
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(raw_key_from_config_str(&value))
+            }
+        }
+
+        deserializer.deserialize_any(RawKeyVisitor)
+    }
 }
 
 impl PartialEq<str> for RawKey {
