@@ -38,6 +38,10 @@ pub struct TextInputStyle {
     #[serde(default = "default_text_input_text_color")]
     pub text_color: [u8; 4],
 
+    /// RGBA color for the synthetic caret when the field is not focused.
+    #[serde(default = "default_text_input_cursor_color")]
+    pub cursor_color: [u8; 4],
+
     #[serde(default = "default_text_input_font_size")]
     pub font_size: f32,
 }
@@ -50,8 +54,12 @@ fn default_text_input_text_color() -> [u8; 4] {
     [0, 0, 0, 255]
 }
 
+fn default_text_input_cursor_color() -> [u8; 4] {
+    [0, 0, 0, 255]
+}
+
 fn default_text_input_font_size() -> f32 {
-    16.0
+    22.0
 }
 
 impl Default for TextInputStyle {
@@ -59,6 +67,7 @@ impl Default for TextInputStyle {
         Self {
             background_color: default_text_input_background_color(),
             text_color: default_text_input_text_color(),
+            cursor_color: default_text_input_cursor_color(),
             font_size: default_text_input_font_size(),
         }
     }

@@ -4,6 +4,8 @@ use crate::{
     state::{event::Event, keyboard, StateId},
 };
 use anyhow::Result;
+use egui::text::CCursor;
+use egui::text_selection::text_cursor_state::{char_index_from_byte_index, cursor_rect};
 use egui::{Color32, Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
 
@@ -57,25 +59,6 @@ impl TextInputState {
         }
     }
 
-    fn build_display_string(&self) -> String {
-        let mut display = String::new();
-        let cursor_char = '\u{258f}'; // Left eighth block character
-
-        for (i, ch) in self.text.chars().enumerate() {
-            if i == self.cursor_pos {
-                display.push(cursor_char);
-            }
-            display.push(ch);
-        }
-
-        // If cursor is at the end
-        if self.cursor_pos == self.text.len() {
-            display.push(cursor_char);
-        }
-
-        display
-    }
-
     fn process_events(&mut self, events: Vec<Event>, output_events: &mut Vec<Event>) {
         for event in events {
             match event {
@@ -109,17 +92,38 @@ impl TextInputState {
             ti.text_color[2],
             ti.text_color[3],
         );
+        let cursor_color = Color32::from_rgba_unmultiplied(
+            ti.cursor_color[0],
+            ti.cursor_color[1],
+            ti.cursor_color[2],
+            ti.cursor_color[3],
+        );
         let font_size = ti.font_size.max(1.0);
+        let font_id = FontId::proportional(font_size);
 
         ui.vertical(|ui| {
-            let mut display_text = self.build_display_string();
-            let _ = ui.add(
-                TextEdit::singleline(&mut display_text)
-                    .background_color(bg)
-                    .text_color(fg)
-                    .font(FontId::proportional(font_size))
-                    .desired_width(400.0)
-                    .interactive(false),
+            let output = TextEdit::singleline(&mut self.text)
+                .background_color(bg)
+                .text_color(fg)
+                .font(font_id.clone())
+                .desired_width(400.0)
+                .interactive(false)
+                .show(ui);
+
+            let row_height = ui.fonts_mut(|f| f.row_height(&font_id));
+            let ccursor = CCursor::new(char_index_from_byte_index(
+                self.text.as_str(),
+                self.cursor_pos,
+            ));
+            let primary_cursor_rect = cursor_rect(&output.galley, &ccursor, row_height)
+                .translate(output.galley_pos.to_vec2());
+            let stroke_width = ui.visuals().text_cursor.stroke.width;
+            ui.painter().line_segment(
+                [
+                    primary_cursor_rect.center_top(),
+                    primary_cursor_rect.center_bottom(),
+                ],
+                (stroke_width, cursor_color),
             );
         });
 
