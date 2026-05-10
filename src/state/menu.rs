@@ -4,6 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use egui::{Button, Context, Ui};
+use std::sync::{Mutex, OnceLock};
 
 struct MenuButton {
     text: &'static str,
@@ -83,4 +84,18 @@ impl MenuState {
 
         Ok(())
     }
+}
+
+static MENU: OnceLock<Mutex<MenuState>> = OnceLock::new();
+
+pub fn init() -> Result<()> {
+    let menu = MenuState::new();
+    MENU.set(Mutex::new(menu))
+        .map_err(|_| anyhow::anyhow!("menu state already initialized"))?;
+    Ok(())
+}
+
+pub(crate) fn with_mut<R>(f: impl FnOnce(&mut MenuState) -> R) -> R {
+    let mut guard = MENU.get().expect("menu state not initialized").lock().unwrap();
+    f(&mut guard)
 }

@@ -224,16 +224,11 @@ fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Res
                                 if new_set != old_set {
                                     start_watcher_thread(config_path.clone(), new_layout_paths)?;
 
-                                    if let Some(f) = ON_CHANGE_CALLBACK.get() {
-                                        f()
-                                    }
+                                    notify_config_changed();
 
                                     break;
                                 } else {
-                                    // Same layout files, just trigger reload
-                                    if let Some(f) = ON_CHANGE_CALLBACK.get() {
-                                        f()
-                                    }
+                                    notify_config_changed();
                                 }
                             }
                             Err(e) => {
@@ -293,16 +288,30 @@ pub fn save(new_config: Config) -> Result<()> {
     Ok(())
 }
 
-type ConfigChangeCallback = Box<dyn Fn() + Send + Sync + 'static>;
-static ON_CHANGE_CALLBACK: OnceLock<ConfigChangeCallback> = OnceLock::new();
+type ConfigChangeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+static ON_CHANGE_CALLBACKS: OnceLock<Mutex<Vec<ConfigChangeCallback>>> = OnceLock::new();
 
-// Add a function to set the callback
+fn on_change_callbacks() -> &'static Mutex<Vec<ConfigChangeCallback>> {
+    ON_CHANGE_CALLBACKS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn notify_config_changed() {
+    let callbacks: Vec<ConfigChangeCallback> = {
+        let guard = on_change_callbacks().lock().unwrap();
+        guard.clone()
+    };
+    for f in callbacks {
+        f();
+    }
+}
+
 pub fn on_changed<F>(callback: F) -> Result<()>
 where
     F: Fn() + Send + Sync + 'static,
 {
-    ON_CHANGE_CALLBACK
-        .set(Box::new(callback))
-        .map_err(|_| anyhow::anyhow!("could not set config on_change callback"))?;
+    on_change_callbacks()
+        .lock()
+        .unwrap()
+        .push(Arc::new(callback));
     Ok(())
 }

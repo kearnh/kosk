@@ -236,21 +236,8 @@ fn main() -> Result<()> {
                 Arc::new(Mutex::new(state))
             };
 
-            let state_for_callback = state.clone();
-            let ctx_for_callback = ctx.clone();
             config::on_changed(move || {
-                let state_lock = state_for_callback.clone();
-                let ctx_clone = ctx_for_callback.clone();
-
-                // Spawn a separate thread to avoid deadlocking the notify watcher thread
-                // if the main UI thread is currently holding the AppState lock.
-                std::thread::spawn(move || {
-                    let mut s = state_lock.lock().unwrap();
-                    if let Err(e) = s.reload_from_config() {
-                        eprintln!("Failed to reload keyboard from config: {}", e);
-                    }
-                    ctx_clone.request_repaint();
-                });
+                ctx.request_repaint();
             })?;
 
             let ctx = cc.egui_ctx.clone();

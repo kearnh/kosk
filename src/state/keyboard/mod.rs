@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Ui};
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 mod key;
 mod layout;
@@ -324,7 +325,7 @@ impl KeyboardState {
 
                         let mut button = egui::Button::new(
                             egui::RichText::new(key.display(self.shift_state))
-                                .size(current_layout.font_size),
+                                .size(key.font_size.unwrap_or(current_layout.font_size)),
                         );
 
                         if key.is_key(self.shift_state, &RawKey::Shift) && self.shift_state {
@@ -423,4 +424,31 @@ impl KeyboardState {
         self.trigger_threshold = cfg.trigger_threshold;
         Ok(())
     }
+}
+
+static KEYBOARD: OnceLock<Mutex<KeyboardState>> = OnceLock::new();
+
+pub(crate) fn with_mut<R>(f: impl FnOnce(&mut KeyboardState) -> R) -> R {
+    let mut guard = KEYBOARD
+        .get()
+        .expect("keyboard state not initialized")
+        .lock()
+        .unwrap();
+    f(&mut guard)
+}
+
+pub fn init() -> Result<()> {
+    let kb = KeyboardState::new()?;
+    KEYBOARD
+        .set(Mutex::new(kb))
+        .map_err(|_| anyhow::anyhow!("keyboard state already initialized"))?;
+
+    crate::config::on_changed(|| {
+        let result = with_mut(|k| k.reload_from_config());
+        if let Err(e) = result {
+            eprintln!("Failed to reload keyboard from config: {}", e);
+        }
+    })?;
+
+    Ok(())
 }

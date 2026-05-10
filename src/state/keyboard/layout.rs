@@ -35,6 +35,7 @@ pub struct KeyButton {
     key: Key<RawKey>,
     #[serde(default = "default_key_width_unit")]
     pub width: UnscaledPixelUnitX,
+    pub font_size: Option<f32>,
 }
 
 fn default_key_width_unit() -> UnscaledPixelUnitX {
@@ -471,13 +472,13 @@ impl KeyboardLayout {
 impl<'a> IntoIterator for &'a KeyboardLayout {
     type Item = (&'a Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY);
 
-    type IntoIter = std::iter::Map<
-        std::slice::Iter<'a, KeyboardRow>,
-        fn(&'a KeyboardRow) -> Self::Item,
-    >;
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'a, KeyboardRow>, fn(&'a KeyboardRow) -> Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        fn project<'a>(row: &'a KeyboardRow) -> (&'a Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
+        fn project(
+            row: &KeyboardRow,
+        ) -> (&Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
             (&row.keys, row.indent, row.height)
         }
         self.rows.iter().map(project as fn(_) -> _)

@@ -2,10 +2,7 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{
-        event::Event, keyboard::KeyboardState, menu::MenuState, move_window::MoveWindowState,
-        window_pos::WindowPos,
-    },
+    state::{event::Event, window_pos::WindowPos},
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -28,13 +25,8 @@ pub enum StateId {
 
 pub struct AppState {
     state: StateId,
-    kb: KeyboardState,
-    menu: MenuState,
-    move_window: MoveWindowState,
-    text_input: text_input::TextInputState,
     pos: WindowPos,
     monitor_size: (f32, f32),
-    // reusable events buffer
     events: Vec<Event>,
     enigo: Enigo,
 }
@@ -43,15 +35,13 @@ impl AppState {
     pub fn new(monitor_size: (f32, f32)) -> Result<Self> {
         let cfg = config::get();
 
-        let kb = KeyboardState::new()?;
-        let text_input = text_input::TextInputState::new();
+        keyboard::init()?;
+        move_window::init()?;
+        menu::init()?;
+        text_input::init()?;
 
         Ok(Self {
             state: StateId::Keyboard,
-            kb,
-            menu: MenuState::new(),
-            move_window: MoveWindowState::new(cfg.scale_x, cfg.scale_y),
-            text_input,
             pos: cfg.window_pos,
             monitor_size,
             events: vec![],
@@ -79,14 +69,6 @@ impl AppState {
         }]
     }
 
-    // Add this new method to reload from config
-    pub fn reload_from_config(&mut self) -> Result<()> {
-        let cfg = config::get();
-        self.kb.reload_from_config()?;
-        self.move_window = MoveWindowState::new(cfg.scale_x, cfg.scale_y);
-        Ok(())
-    }
-
     fn process_events(&mut self) {
         for event in self.events.drain(..) {
             match event {
@@ -105,36 +87,42 @@ impl AppState {
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
         match self.state {
-            StateId::Keyboard => self.kb.draw_ui(ctx, ui, &mut self.events),
-            StateId::Menu => self.menu.draw_ui(ctx, ui, &mut self.events),
+            StateId::Keyboard => {
+                keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));
+            }
+            StateId::Menu => {
+                menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
+            }
             StateId::MoveWindow => {
                 let (x, y) = self.get_position(ctx.content_rect());
-                let movement = self.move_window.draw_ui(ctx, ui, (x, y), &mut self.events);
-                if let Some(new_pos) = movement {
-                    let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
-                        let (mon_w, mon_h) = self.monitor_size;
+                move_window::with_mut(|mw| {
+                    let movement = mw.draw_ui(ctx, ui, (x, y), &mut self.events);
+                    if let Some(new_pos) = movement {
+                        let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
+                            let (mon_w, mon_h) = self.monitor_size;
 
-                        // Clamp X between 0 and (Monitor Width - Window Width)
-                        x = x.clamp(0.0, mon_w - ctx.content_rect().width());
-                        // Clamp Y between 0 and (Monitor Height - Window Height)
-                        y = y.clamp(0.0, mon_h - ctx.content_rect().height());
+                            // Clamp X between 0 and (Monitor Width - Window Width)
+                            x = x.clamp(0.0, mon_w - ctx.content_rect().width());
+                            // Clamp Y between 0 and (Monitor Height - Window Height)
+                            y = y.clamp(0.0, mon_h - ctx.content_rect().height());
 
-                        WindowPos::Absolute(x, y)
-                    } else {
-                        new_pos
-                    };
+                            WindowPos::Absolute(x, y)
+                        } else {
+                            new_pos
+                        };
 
-                    if self.pos != final_pos {
-                        self.pos = final_pos;
-                        let mut cfg = config::get();
-                        cfg.window_pos = self.pos;
-                        let _ = config::save(cfg);
+                        if self.pos != final_pos {
+                            self.pos = final_pos;
+                            let mut cfg = config::get();
+                            cfg.window_pos = self.pos;
+                            let _ = config::save(cfg);
+                        }
                     }
-                }
+                });
             }
-            StateId::TextInput => self
-                .text_input
-                .draw_ui(ctx, ui, &mut self.events, &mut self.kb),
+            StateId::TextInput => {
+                text_input::with_mut(|ti| ti.draw_ui(ctx, ui, &mut self.events));
+            }
         }
         self.process_events();
     }
@@ -151,22 +139,18 @@ impl AppState {
         }
 
         match self.state {
-            StateId::Keyboard => self
-                .kb
-                .handle_controller_input(ctx, input, &mut self.events)?,
-            StateId::Menu => self
-                .menu
-                .handle_controller_input(ctx, input, &mut self.events)?,
-            StateId::MoveWindow => {
-                self.move_window
-                    .handle_controller_input(ctx, input, &mut self.events)?
-            }
-            StateId::TextInput => self.text_input.handle_controller_input(
-                ctx,
-                input,
-                &mut self.events,
-                &mut self.kb,
-            )?,
+            StateId::Keyboard => keyboard::with_mut(|kb| {
+                kb.handle_controller_input(ctx, input, &mut self.events)
+            })?,
+            StateId::Menu => menu::with_mut(|m| {
+                m.handle_controller_input(ctx, input, &mut self.events)
+            })?,
+            StateId::MoveWindow => move_window::with_mut(|mw| {
+                mw.handle_controller_input(ctx, input, &mut self.events)
+            })?,
+            StateId::TextInput => text_input::with_mut(|ti| {
+                ti.handle_controller_input(ctx, input, &mut self.events)
+            })?,
         }
         self.process_events();
         Ok(())

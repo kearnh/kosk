@@ -1,9 +1,10 @@
 use crate::{
     controller::{ControllerInput, Dpad},
-    state::{event::Event, keyboard::KeyboardState, StateId},
+    state::{event::Event, keyboard, StateId},
 };
 use anyhow::Result;
-use egui::{Context, TextEdit, Ui};
+use egui::{Context, FontId, TextEdit, Ui};
+use std::sync::{Mutex, OnceLock};
 
 pub struct TextInputState {
     text: String,
@@ -98,20 +99,21 @@ impl TextInputState {
         ctx: &Context,
         ui: &mut Ui,
         events: &mut Vec<Event>,
-        keyboard_state: &mut KeyboardState,
     ) {
-        // Draw text input box
         ui.vertical(|ui| {
             let mut display_text = self.build_display_string();
             let _ = ui.add(
                 TextEdit::singleline(&mut display_text)
+                    .font(FontId::proportional(16.0))
                     .desired_width(400.0)
                     .interactive(false),
             );
         });
 
         let mut kb_events = vec![];
-        keyboard_state.draw_ui(ctx, ui, &mut kb_events);
+        keyboard::with_mut(|keyboard_state| {
+            keyboard_state.draw_ui(ctx, ui, &mut kb_events);
+        });
         self.process_events(kb_events, events);
     }
 
@@ -120,12 +122,10 @@ impl TextInputState {
         ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut Vec<Event>,
-        keyboard_state: &mut KeyboardState,
     ) -> Result<()> {
         let mut handled = false;
         if let Some(input) = input {
             if matches!(input.dpad(), Some(Dpad::Left)) {
-                dbg!();
                 self.move_cursor_left();
                 handled = true;
             }
@@ -141,10 +141,31 @@ impl TextInputState {
 
         if !handled {
             let mut kb_events = vec![];
-            keyboard_state.handle_controller_input(ctx, input, &mut kb_events)?;
+            keyboard::with_mut(|keyboard_state| {
+                keyboard_state.handle_controller_input(ctx, input, &mut kb_events)
+            })?;
             self.process_events(kb_events, events);
         }
 
         Ok(())
     }
+}
+
+static TEXT_INPUT: OnceLock<Mutex<TextInputState>> = OnceLock::new();
+
+pub fn init() -> Result<()> {
+    let t = TextInputState::new();
+    TEXT_INPUT
+        .set(Mutex::new(t))
+        .map_err(|_| anyhow::anyhow!("text input state already initialized"))?;
+    Ok(())
+}
+
+pub(crate) fn with_mut<R>(f: impl FnOnce(&mut TextInputState) -> R) -> R {
+    let mut guard = TEXT_INPUT
+        .get()
+        .expect("text input state not initialized")
+        .lock()
+        .unwrap();
+    f(&mut guard)
 }

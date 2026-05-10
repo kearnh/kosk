@@ -1,9 +1,11 @@
 use crate::{
+    config,
     controller::ControllerInput,
     state::{event::Event, StateId, WindowPos},
 };
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
+use std::sync::{Mutex, OnceLock};
 
 pub struct MoveWindowState {
     scale_x: f32,
@@ -13,6 +15,12 @@ pub struct MoveWindowState {
 impl MoveWindowState {
     pub fn new(scale_x: f32, scale_y: f32) -> Self {
         Self { scale_x, scale_y }
+    }
+
+    pub fn reload_from_config(&mut self) {
+        let cfg = config::get();
+        self.scale_x = cfg.scale_x;
+        self.scale_y = cfg.scale_y;
     }
 
     pub fn draw_ui(
@@ -89,4 +97,29 @@ impl MoveWindowState {
         }
         Ok(())
     }
+}
+
+static MOVE_WINDOW: OnceLock<Mutex<MoveWindowState>> = OnceLock::new();
+
+pub(crate) fn with_mut<R>(f: impl FnOnce(&mut MoveWindowState) -> R) -> R {
+    let mut guard = MOVE_WINDOW
+        .get()
+        .expect("move window state not initialized")
+        .lock()
+        .unwrap();
+    f(&mut guard)
+}
+
+pub fn init() -> Result<()> {
+    let cfg = config::get();
+    let mw = MoveWindowState::new(cfg.scale_x, cfg.scale_y);
+    MOVE_WINDOW
+        .set(Mutex::new(mw))
+        .map_err(|_| anyhow::anyhow!("move window state already initialized"))?;
+
+    crate::config::on_changed(|| {
+        with_mut(|mw| mw.reload_from_config());
+    })?;
+
+    Ok(())
 }
