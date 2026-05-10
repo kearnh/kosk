@@ -1,2 +1,1 @@
-- Don't include comments that describe changes. Comments should describe the code as it is, not as it was (which is irrelevant to someone reading the code)
 - If an item from todo.txt has been resolved because the user explicitly asked for an item in todo.txt to be done, remove the item from todo.txt as part of the change.

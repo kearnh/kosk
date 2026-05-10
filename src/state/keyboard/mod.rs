@@ -1,52 +1,105 @@
 use crate::config;
+use crate::controller::ControllerButton;
+use crate::state::actions::{get_action, Action};
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
-    controller::{ControllerInput, Dpad},
+    controller::ControllerInput,
     state::{event::Event, keyboard::key::RawKey, StateId},
 };
 use anyhow::Result;
 use egui::{Context, Ui};
+use serde::Deserialize;
+use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use strum::VariantNames;
 
 mod key;
 mod layout;
 
+#[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone)]
+pub enum KeyboardAction {
+    SendKeyUnderLeftStick,
+    SendKeyUnderRightStick,
+    SendKey(RawKey),
+    ToggleShift,
+    ToggleCtrl,
+    ToggleAlt,
+    Paste,
+    SwitchState(StateId),
+    SwitchLayout(String),
+    Exit,
+}
+
+impl Action for KeyboardAction {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl TryFrom<&str> for KeyboardAction {
+    type Error = anyhow::Error;
+
+    /// Plain-text actions: unit variants use serde_plain on the canonical name (add variants on the
+    /// enum only). Tuple variants use `<Variant>.<payload>` (split on first `.`); payload parsing
+    /// stays explicit below. serde_plain has no case folding—matching uses [`VariantNames`] first.
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let (head, tail_opt) = match value.split_once('.') {
+            Some((h, t)) => (h, Some(t)),
+            None => (value, None),
+        };
+
+        let variant = KeyboardAction::VARIANTS
+            .iter()
+            .find(|v| head.eq_ignore_ascii_case(**v))
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("unknown keyboard action '{}'", value))?;
+
+        match (variant, tail_opt) {
+            ("SendKey", Some(data)) => Ok(KeyboardAction::SendKey(
+                serde_plain::from_str(data).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
+            )),
+            ("SwitchState", Some(data)) => {
+                let canon = StateId::VARIANTS
+                    .iter()
+                    .find(|v| data.eq_ignore_ascii_case(**v))
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
+                Ok(KeyboardAction::SwitchState(
+                    serde_plain::from_str(canon)
+                        .map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
+                ))
+            }
+            ("SwitchLayout", Some(data)) => Ok(KeyboardAction::SwitchLayout(data.to_owned())),
+            (_, Some(_)) => Err(anyhow::anyhow!(
+                "keyboard action '{}' does not take a '.' payload",
+                variant
+            )),
+            (v, None) => {
+                serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))
+            }
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct KeyboardState {
-    pub layouts: HashMap<String, KeyboardLayout>,
-    pub current_layout: String,
-    pub selected: (Option<RawKey>, Option<RawKey>),
-    pub l2_was_pressed: bool,
-    pub r2_was_pressed: bool,
-    pub trigger_threshold: u8,
-    pub shift_state: bool,
-    pub shift_mod: bool,
-    pub ctrl_mod: bool,
-    pub alt_mod: bool,
+    layouts: HashMap<String, KeyboardLayout>,
+    current_layout: String,
+    selected: (Option<RawKey>, Option<RawKey>),
+    trigger_threshold: u8,
+    shift_state: bool,
+    shift_mod: bool,
+    ctrl_mod: bool,
+    alt_mod: bool,
+    mapping: HashMap<KeyboardAction, ControllerButton>,
 }
 
 impl KeyboardState {
     pub fn new() -> Result<Self> {
-        let cfg = crate::config::get();
-
-        let mut layouts = HashMap::new();
-        for (name, path) in &cfg.layouts {
-            let layout = KeyboardLayout::load_from_file(path)?;
-            layouts.insert(name.clone(), layout);
-        }
-
-        Ok(Self {
-            layouts,
-            current_layout: cfg.start_layout.clone(),
-            selected: (None, None),
-            l2_was_pressed: false,
-            r2_was_pressed: false,
-            trigger_threshold: cfg.trigger_threshold,
-            shift_state: false,
-            shift_mod: false,
-            ctrl_mod: false,
-            alt_mod: false,
-        })
+        let mut state: Self = Default::default();
+        state.reload_from_config()?;
+        Ok(state)
     }
 
     pub fn send_key(&mut self, key: &RawKey, events: &mut Vec<Event>) -> Result<()> {
@@ -80,16 +133,6 @@ impl KeyboardState {
             };
         }
         match key {
-            RawKey::SwitchLayout(layout_name) => {
-                if self.layouts.contains_key(layout_name) {
-                    self.current_layout = layout_name.to_string();
-                    // Reset selection when switching layouts
-                    self.selected = (None, None);
-                } else {
-                    return Err(anyhow::anyhow!("Layout '{}' not found", layout_name));
-                }
-                return Ok(());
-            }
             RawKey::Key(k) => {
                 mod_press!();
                 if let Some(c) = k.chars().next() {
@@ -105,16 +148,13 @@ impl KeyboardState {
                 events.push(Event::SendKey(*k, enigo::Direction::Click));
                 mod_release!();
             }
-            RawKey::Paste => {
-                events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
-                events.push(Event::SendKey(
-                    enigo::Key::Unicode('v'),
-                    enigo::Direction::Click,
-                ));
-                events.push(Event::SendKey(
-                    enigo::Key::Control,
-                    enigo::Direction::Release,
-                ));
+            RawKey::Action(action) => {
+                if let Some(action) = get_action(action) {
+                    if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
+                    {
+                        self.do_action(action, events)?;
+                    }
+                }
             }
             _ => return Ok(()),
         }
@@ -125,6 +165,50 @@ impl KeyboardState {
         self.ctrl_mod = false;
         self.alt_mod = false;
 
+        Ok(())
+    }
+
+    fn do_action(&mut self, action: &KeyboardAction, events: &mut Vec<Event>) -> Result<()> {
+        use KeyboardAction::*;
+        match action {
+            SendKeyUnderLeftStick => {
+                if let (Some(left), None) = &self.selected {
+                    self.send_key(&left.clone(), events)?;
+                }
+            }
+            SendKeyUnderRightStick => {
+                if let (None, Some(right)) = &self.selected {
+                    self.send_key(&right.clone(), events)?;
+                }
+            }
+            SendKey(key) => self.send_key(key, events)?,
+            ToggleShift => self.toggle_shift(),
+            ToggleCtrl => self.toggle_ctrl(),
+            ToggleAlt => self.toggle_alt(),
+            Paste => {
+                events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
+                events.push(Event::SendKey(
+                    enigo::Key::Unicode('v'),
+                    enigo::Direction::Click,
+                ));
+                events.push(Event::SendKey(
+                    enigo::Key::Control,
+                    enigo::Direction::Release,
+                ));
+            }
+            SwitchState(state) => events.push(Event::ChangeState(*state)),
+            SwitchLayout(layout_name) => {
+                if self.layouts.contains_key(layout_name) {
+                    self.current_layout = layout_name.to_string();
+                    // Reset selection when switching layouts
+                    self.selected = (None, None);
+                } else {
+                    return Err(anyhow::anyhow!("Layout '{}' not found", layout_name));
+                }
+                return Ok(());
+            }
+            Exit => events.push(Event::Exit),
+        }
         Ok(())
     }
 
@@ -150,30 +234,12 @@ impl KeyboardState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
-        if let Some(key) = self.draw_keyboard_ui(ctx, ui) {
-            match key {
-                RawKey::Done => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                RawKey::Shift => {
-                    self.toggle_shift();
-                }
-                RawKey::Menu => {
-                    events.push(Event::ChangeState(StateId::Menu));
-                }
-                RawKey::TextInput => {
-                    events.push(Event::ChangeState(StateId::TextInput));
-                }
-                _ => {
-                    self.send_key(&key, events).expect("send key");
-                }
-            }
-        }
+        self.draw_keyboard_ui(ctx, ui)
+            .map(|key| self.send_key(&key, events).expect("send key"));
     }
 
     pub fn handle_controller_input(
         &mut self,
-        ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut Vec<Event>,
     ) -> Result<()> {
@@ -198,69 +264,14 @@ impl KeyboardState {
 
         self.selected = (selected_left.clone(), selected_right.clone());
 
-        {
-            let val = input.trigger_left().unwrap_or(0);
-            let pressed = val > self.trigger_threshold;
-
-            if pressed && !self.l2_was_pressed {
-                match selected_left {
-                    Some(RawKey::Done) => {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    Some(RawKey::Menu) => {
-                        events.push(Event::ChangeState(StateId::Menu));
-                    }
-                    Some(key) => {
-                        self.send_key(&key, events)?;
-                    }
-                    _ => (),
-                }
-            }
-            self.l2_was_pressed = pressed;
-        }
-        {
-            let val = input.trigger_right().unwrap_or(0);
-            let pressed = val > self.trigger_threshold;
-
-            if pressed && !self.r2_was_pressed {
-                match selected_right {
-                    Some(RawKey::Done) => {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    Some(RawKey::Menu) => {
-                        events.push(Event::ChangeState(StateId::Menu));
-                    }
-                    Some(key) => {
-                        self.send_key(&key, events).expect("send_key");
-                    }
-                    _ => (),
-                }
-            }
-            self.r2_was_pressed = pressed;
-        }
-
-        if input.face_bottom() {
-            self.send_key(&RawKey::Key(" ".to_string()), events)?;
-        }
-
-        if input.face_left() {
-            self.send_key(&RawKey::Enigo(enigo::Key::Backspace), events)?;
-        }
-
-        if input.face_top() {
-            self.toggle_shift();
-        }
-
-        if input.stick_left() {
-            self.toggle_ctrl();
-        }
-
-        if input.stick_right() {
-            self.toggle_alt();
-        }
-
-        if matches!(input.dpad(), Some(Dpad::Up)) {
-            events.push(Event::ChangeState(StateId::TextInput));
+        let actions = self
+            .mapping
+            .iter()
+            .filter(|(_, button)| button.query(input.as_ref()))
+            .map(|(action, _)| action.clone())
+            .collect::<Vec<_>>();
+        for action in actions {
+            self.do_action(&action, events)?;
         }
 
         Ok(())
@@ -410,7 +421,7 @@ impl KeyboardState {
         pressed_key
     }
 
-    pub(crate) fn reload_from_config(&mut self) -> Result<()> {
+    fn reload_from_config(&mut self) -> Result<()> {
         let cfg = config::get();
 
         // Reload all layouts
@@ -422,6 +433,19 @@ impl KeyboardState {
 
         self.layouts = new_layouts;
         self.trigger_threshold = cfg.trigger_threshold;
+
+        self.mapping = HashMap::new();
+        if let Some(raw_mapping) = cfg.controller_map.get(&StateId::Keyboard).cloned() {
+            for (action, button) in raw_mapping {
+                if let Some(action) = get_action(&action) {
+                    if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
+                    {
+                        self.mapping.insert(action.clone(), button);
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }

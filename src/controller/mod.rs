@@ -2,7 +2,9 @@ use crate::config;
 
 pub mod ps4;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Dpad {
     Up,
     Down,
@@ -82,8 +84,8 @@ pub trait ControllerInput {
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
 }
 
-#[allow(unused)]
-enum ControllerButton {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ControllerButton {
     Dpad(Dpad),
     FaceBottom,
     FaceRight,
@@ -101,8 +103,7 @@ enum ControllerButton {
 }
 
 impl ControllerButton {
-    #[allow(unused)]
-    fn query(&self, input: Box<dyn ControllerInput>) -> bool {
+    pub(crate) fn query(&self, input: &dyn ControllerInput) -> bool {
         match self {
             ControllerButton::Dpad(dpad) => input.dpad().map(|d| d == *dpad).unwrap_or(false),
             ControllerButton::FaceBottom => input.face_bottom(),
@@ -127,10 +128,3 @@ impl ControllerButton {
         }
     }
 }
-
-#[allow(unused)]
-pub struct ControllerMap {
-    input: Box<dyn ControllerInput>,
-}
-
-impl ControllerMap {}

@@ -4,12 +4,12 @@ stick_scale_y = 2.5
 stick_warp = 1.0
 trigger_threshold = 40
 transparent = true
+window_pos = [2042.0, 1085.0]
 scale_x = 36.0
 scale_y = 40.0
-window_pos = [1189.32, 605.34]
 
 [layouts]
-qwerty = "qwerty.toml"
+# qwerty = "qwerty.toml"
 main = "old_steam_controller_kb.toml"
 
 [debug]

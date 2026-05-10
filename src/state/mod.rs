@@ -7,7 +7,11 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
 use enigo::{Enigo, Keyboard as _};
+use serde::{Deserialize, Serialize};
 
+pub use keyboard::KeyboardAction;
+
+mod actions;
 mod event;
 mod keyboard;
 mod menu;
@@ -15,7 +19,7 @@ mod move_window;
 mod text_input;
 pub mod window_pos;
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash, strum::VariantNames)]
 pub enum StateId {
     Menu,
     Keyboard,
@@ -69,7 +73,7 @@ impl AppState {
         }]
     }
 
-    fn process_events(&mut self) {
+    fn process_events(&mut self, ctx: &Context) {
         for event in self.events.drain(..) {
             match event {
                 Event::SendKey(key, direction) => {
@@ -80,6 +84,9 @@ impl AppState {
                 }
                 Event::ChangeState(state) => {
                     self.state = state;
+                }
+                Event::Exit => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
         }
@@ -124,7 +131,7 @@ impl AppState {
                 text_input::with_mut(|ti| ti.draw_ui(ctx, ui, &mut self.events));
             }
         }
-        self.process_events();
+        self.process_events(ctx);
     }
 
     pub fn handle_controller_input(
@@ -132,27 +139,29 @@ impl AppState {
         ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
     ) -> Result<()> {
+        let cfg = config::get();
+
         if let Some(input) = input {
-            if config::get().debug.is_some() {
+            if cfg.debug.is_some() {
                 ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
             }
         }
 
         match self.state {
-            StateId::Keyboard => keyboard::with_mut(|kb| {
-                kb.handle_controller_input(ctx, input, &mut self.events)
-            })?,
-            StateId::Menu => menu::with_mut(|m| {
-                m.handle_controller_input(ctx, input, &mut self.events)
-            })?,
+            StateId::Keyboard => {
+                keyboard::with_mut(|kb| kb.handle_controller_input(input, &mut self.events))?
+            }
+            StateId::Menu => {
+                menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
+            }
             StateId::MoveWindow => move_window::with_mut(|mw| {
                 mw.handle_controller_input(ctx, input, &mut self.events)
             })?,
-            StateId::TextInput => text_input::with_mut(|ti| {
-                ti.handle_controller_input(ctx, input, &mut self.events)
-            })?,
+            StateId::TextInput => {
+                text_input::with_mut(|ti| ti.handle_controller_input(input, &mut self.events))?
+            }
         }
-        self.process_events();
+        self.process_events(ctx);
         Ok(())
     }
 }

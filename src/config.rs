@@ -1,9 +1,12 @@
+use crate::controller::ControllerButton;
 use crate::state::window_pos::WindowPos;
+use crate::state::StateId;
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use notify::event::ModifyKind;
 use notify::{Event, EventKind, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -116,6 +119,10 @@ pub struct Config {
 
     #[serde(default)]
     pub text_input: TextInputStyle,
+
+    /// Per-app-state mapping from controller buttons to action names (interpreted by each state).
+    #[serde(default)]
+    pub controller_map: HashMap<StateId, HashMap<String, ControllerButton>>,
 }
 
 fn default_stick_scale_x() -> f32 {

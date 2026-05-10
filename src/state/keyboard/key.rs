@@ -1,62 +1,22 @@
-use std::hint::unreachable_unchecked;
-
 use serde::Deserialize;
 
-#[derive(PartialEq, Eq, Debug, Clone, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(PartialEq, Eq, Debug, Clone, Deserialize, Hash)]
 pub enum RawKey {
     Key(String),
     Enigo(enigo::Key),
     Skip,
+    Action(String),
+    // FIXME we want this to to be an action, but there are special cases depending on it, we need to fix those first
     Shift,
-    Ctrl,
-    Alt,
-    Paste,
-    Done,
-    Menu,
-    TextInput,
-    SwitchLayout(String),
-}
-
-impl TryFrom<String> for RawKey {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() == 1 {
-            return Ok(RawKey::Key(value));
-        }
-
-        let upper = value.to_uppercase();
-
-        match upper.as_str() {
-            "SKIP" => return Ok(RawKey::Skip),
-            "SHIFT" => return Ok(RawKey::Shift),
-            "CTRL" => return Ok(RawKey::Ctrl),
-            "ALT" => return Ok(RawKey::Alt),
-            "PASTE" => return Ok(RawKey::Paste),
-            "DONE" => return Ok(RawKey::Done),
-            "MENU" => return Ok(RawKey::Menu),
-            "TEXT-INPUT" => return Ok(RawKey::TextInput),
-            _ => {}
-        }
-
-        // Check for layout switch prefix
-        if let Some(layout_name) = value.strip_prefix("layout:") {
-            return Ok(RawKey::SwitchLayout(layout_name.to_string()));
-        }
-
-        if let Ok(key) = serde_plain::from_str::<enigo::Key>(&value) {
-            return Ok(RawKey::Enigo(key));
-        }
-
-        Err(format!("unknown key '{}'", value))
-    }
 }
 
 impl PartialEq<str> for RawKey {
     fn eq(&self, other: &str) -> bool {
         match self {
             RawKey::Key(k) => k == other,
+            RawKey::Action(a) if other.starts_with("action:") => {
+                a == other.strip_prefix("action:").unwrap()
+            }
             _ => false,
         }
     }
@@ -74,24 +34,6 @@ impl PartialEq<&str> for RawKey {
     }
 }
 
-impl std::fmt::Display for RawKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RawKey::Key(k) => write!(f, "{}", k),
-            RawKey::Enigo(k) => write!(f, "{:?}", k),
-            RawKey::Skip => unsafe { unreachable_unchecked() },
-            RawKey::Shift => write!(f, "Shift"),
-            RawKey::Ctrl => write!(f, "Ctrl"),
-            RawKey::Alt => write!(f, "Alt"),
-            RawKey::Paste => write!(f, "Paste"),
-            RawKey::Done => write!(f, "Done"),
-            RawKey::Menu => write!(f, "Menu"),
-            RawKey::TextInput => write!(f, "TextInput"),
-            RawKey::SwitchLayout(name) => write!(f, "layout:{}", name),
-        }
-    }
-}
-
 pub trait ToShifted {
     fn to_shifted(&self) -> Self;
 }
@@ -100,7 +42,6 @@ impl ToShifted for RawKey {
     fn to_shifted(&self) -> Self {
         match self {
             RawKey::Key(k) => RawKey::Key(k.to_uppercase()),
-            RawKey::SwitchLayout(name) => RawKey::SwitchLayout(name.clone()),
             _ => self.clone(),
         }
     }
@@ -118,7 +59,7 @@ pub struct Key<T> {
     pub shift: Option<T>,
 }
 
-impl<T: ToString + Clone + ToShifted> Key<T> {
+impl<T: Clone + ToShifted> Key<T> {
     pub fn get(&self, shifted: bool) -> T {
         if shifted {
             if let Some(k) = &self.shift {

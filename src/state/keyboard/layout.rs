@@ -47,7 +47,10 @@ impl KeyButton {
         if let Some(d) = &self.display {
             d.get(shifted)
         } else {
-            self.key.get(shifted).to_string()
+            match self.key.get(shifted) {
+                RawKey::Key(key) => key.clone(),
+                _ => format!("?"), // no way to display this, user should define a display for it
+            }
         }
     }
 
@@ -476,9 +479,7 @@ impl<'a> IntoIterator for &'a KeyboardLayout {
         std::iter::Map<std::slice::Iter<'a, KeyboardRow>, fn(&'a KeyboardRow) -> Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        fn project(
-            row: &KeyboardRow,
-        ) -> (&Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
+        fn project(row: &KeyboardRow) -> (&Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
             (&row.keys, row.indent, row.height)
         }
         self.rows.iter().map(project as fn(_) -> _)

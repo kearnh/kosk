@@ -214,3 +214,13 @@ width = 9.1
 key = "Done"
 display = { normal = "Done", shift = "Done" }
 width = 3.3
+
+[[rows]]
+indent = 0.0
+height = 0.5
+
+[[rows.keys]]
+key = "TEXT-INPUT"
+display = { normal = "i", shift = "i" }
+width = 0.5
+font_size = 16.0
