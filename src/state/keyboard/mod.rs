@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use crate::config;
 use crate::controller::ControllerButton;
-use crate::state::actions::{get_action, Action};
+use crate::state::actions::get_action;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
     controller::ControllerInput,
@@ -8,79 +11,12 @@ use crate::{
 };
 use anyhow::Result;
 use egui::{Context, Ui};
-use serde::Deserialize;
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use strum::VariantNames;
 
 mod key;
+mod keyboard_action;
 mod layout;
 
-#[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone)]
-pub enum KeyboardAction {
-    SendKeyUnderLeftStick,
-    SendKeyUnderRightStick,
-    SendKey(RawKey),
-    ToggleShift,
-    ToggleCtrl,
-    ToggleAlt,
-    Paste,
-    SwitchState(StateId),
-    SwitchLayout(String),
-    Exit,
-}
-
-impl Action for KeyboardAction {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl TryFrom<&str> for KeyboardAction {
-    type Error = anyhow::Error;
-
-    /// Plain-text actions: unit variants use serde_plain on the canonical name (add variants on the
-    /// enum only). Tuple variants use `<Variant>.<payload>` (split on first `.`); payload parsing
-    /// stays explicit below. serde_plain has no case folding—matching uses [`VariantNames`] first.
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let (head, tail_opt) = match value.split_once('.') {
-            Some((h, t)) => (h, Some(t)),
-            None => (value, None),
-        };
-
-        let variant = KeyboardAction::VARIANTS
-            .iter()
-            .find(|v| head.eq_ignore_ascii_case(**v))
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("unknown keyboard action '{}'", value))?;
-
-        match (variant, tail_opt) {
-            ("SendKey", Some(data)) => Ok(KeyboardAction::SendKey(
-                serde_plain::from_str(data).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
-            )),
-            ("SwitchState", Some(data)) => {
-                let canon = StateId::VARIANTS
-                    .iter()
-                    .find(|v| data.eq_ignore_ascii_case(**v))
-                    .copied()
-                    .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
-                Ok(KeyboardAction::SwitchState(
-                    serde_plain::from_str(canon)
-                        .map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
-                ))
-            }
-            ("SwitchLayout", Some(data)) => Ok(KeyboardAction::SwitchLayout(data.to_owned())),
-            (_, Some(_)) => Err(anyhow::anyhow!(
-                "keyboard action '{}' does not take a '.' payload",
-                variant
-            )),
-            (v, None) => {
-                serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))
-            }
-        }
-    }
-}
+pub use crate::state::keyboard::keyboard_action::KeyboardAction;
 
 #[derive(Default)]
 pub struct KeyboardState {
@@ -99,6 +35,7 @@ impl KeyboardState {
     pub fn new() -> Result<Self> {
         let mut state: Self = Default::default();
         state.reload_from_config()?;
+        state.current_layout = config::get().start_layout;
         Ok(state)
     }
 
@@ -130,17 +67,21 @@ impl KeyboardState {
                 if self.shift_mod {
                     events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
+
+                // Reset modifiers after sending a key
+                self.shift_state = false;
+                self.shift_mod = false;
+                self.ctrl_mod = false;
+                self.alt_mod = false;
             };
         }
         match key {
-            RawKey::Key(k) => {
+            RawKey::Key(c) => {
                 mod_press!();
-                if let Some(c) = k.chars().next() {
-                    events.push(Event::SendKey(
-                        enigo::Key::Unicode(c),
-                        enigo::Direction::Click,
-                    ));
-                }
+                events.push(Event::SendKey(
+                    enigo::Key::Unicode(*c),
+                    enigo::Direction::Click,
+                ));
                 mod_release!();
             }
             RawKey::Enigo(k) => {
@@ -149,21 +90,13 @@ impl KeyboardState {
                 mod_release!();
             }
             RawKey::Action(action) => {
-                if let Some(action) = get_action(action) {
-                    if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
-                    {
-                        self.do_action(action, events)?;
-                    }
-                }
+                self.do_action(action, events)?;
+            }
+            RawKey::Text(text) => {
+                events.push(Event::SendText(text.to_owned()));
             }
             _ => return Ok(()),
         }
-
-        // Reset modifiers after sending a key
-        self.shift_state = false;
-        self.shift_mod = false;
-        self.ctrl_mod = false;
-        self.alt_mod = false;
 
         Ok(())
     }
@@ -181,7 +114,6 @@ impl KeyboardState {
                     self.send_key(&right.clone(), events)?;
                 }
             }
-            SendKey(key) => self.send_key(key, events)?,
             ToggleShift => self.toggle_shift(),
             ToggleCtrl => self.toggle_ctrl(),
             ToggleAlt => self.toggle_alt(),
@@ -339,7 +271,11 @@ impl KeyboardState {
                                 .size(key.font_size.unwrap_or(current_layout.font_size)),
                         );
 
-                        if key.is_key(self.shift_state, &RawKey::Shift) && self.shift_state {
+                        if key.is_key(
+                            self.shift_state,
+                            &RawKey::Action(KeyboardAction::ToggleShift),
+                        ) && self.shift_state
+                        {
                             button = button.selected(true);
                         } else {
                             let current_key = key.key(self.shift_state);
@@ -378,7 +314,7 @@ impl KeyboardState {
                         }
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                        if key.is_key(self.shift_state, " ") && (self.ctrl_mod || self.alt_mod) {
+                        if key.display_modifiers && (self.ctrl_mod || self.alt_mod) {
                             let mut mods = Vec::new();
                             if self.ctrl_mod {
                                 mods.push("ctrl");
@@ -425,13 +361,12 @@ impl KeyboardState {
         let cfg = config::get();
 
         // Reload all layouts
-        let mut new_layouts = HashMap::new();
+        self.layouts = HashMap::new();
         for (name, path) in &cfg.layouts {
             let layout = KeyboardLayout::load_from_file(path)?;
-            new_layouts.insert(name.clone(), layout);
+            self.layouts.insert(name.clone(), layout);
         }
 
-        self.layouts = new_layouts;
         self.trigger_threshold = cfg.trigger_threshold;
 
         self.mapping = HashMap::new();

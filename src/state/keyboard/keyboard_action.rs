@@ -1,0 +1,66 @@
+use serde::Deserialize;
+use std::any::Any;
+use strum::VariantNames;
+
+use crate::state::{actions::Action, StateId};
+
+#[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone, Debug)]
+pub enum KeyboardAction {
+    SendKeyUnderLeftStick,
+    SendKeyUnderRightStick,
+    ToggleShift,
+    ToggleCtrl,
+    ToggleAlt,
+    Paste,
+    SwitchState(StateId),
+    SwitchLayout(String),
+    Exit,
+}
+
+impl Action for KeyboardAction {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl TryFrom<&str> for KeyboardAction {
+    type Error = anyhow::Error;
+
+    /// Plain-text actions: unit variants use serde_plain on the canonical name (add variants on the
+    /// enum only). Tuple variants use `<Variant>.<payload>` (split on first `.`); payload parsing
+    /// stays explicit below. serde_plain has no case folding—matching uses [`VariantNames`] first.
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let (head, tail_opt) = match value.split_once('.') {
+            Some((h, t)) => (h, Some(t)),
+            None => (value, None),
+        };
+
+        let variant = KeyboardAction::VARIANTS
+            .iter()
+            .find(|v| head.eq_ignore_ascii_case(**v))
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("unknown keyboard action '{}'", value))?;
+
+        match (variant, tail_opt) {
+            ("SwitchState", Some(data)) => {
+                let canon = StateId::VARIANTS
+                    .iter()
+                    .find(|v| data.eq_ignore_ascii_case(**v))
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
+                Ok(KeyboardAction::SwitchState(
+                    serde_plain::from_str(canon)
+                        .map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
+                ))
+            }
+            ("SwitchLayout", Some(data)) => Ok(KeyboardAction::SwitchLayout(data.to_owned())),
+            (_, Some(_)) => Err(anyhow::anyhow!(
+                "keyboard action '{}' does not take a '.' payload",
+                variant
+            )),
+            (v, None) => {
+                serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))
+            }
+        }
+    }
+}

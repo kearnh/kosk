@@ -33,9 +33,20 @@ pub struct KeyButton {
     #[serde(default)]
     display: Option<Key<String>>,
     key: Key<RawKey>,
+
+    #[serde(default = "default_selectable")]
+    selectable: bool,
+
+    #[serde(default)]
+    pub display_modifiers: bool,
+
     #[serde(default = "default_key_width_unit")]
     pub width: UnscaledPixelUnitX,
     pub font_size: Option<f32>,
+}
+
+fn default_selectable() -> bool {
+    true
 }
 
 fn default_key_width_unit() -> UnscaledPixelUnitX {
@@ -48,7 +59,7 @@ impl KeyButton {
             d.get(shifted)
         } else {
             match self.key.get(shifted) {
-                RawKey::Key(key) => key.clone(),
+                RawKey::Key(c) => c.to_string(),
                 _ => format!("?"), // no way to display this, user should define a display for it
             }
         }
@@ -238,10 +249,10 @@ impl KeyboardLayout {
         self.scale_y * val.0
     }
 
-    pub fn get_key_center(&self, key_name: &str) -> Option<(f32, f32)> {
+    pub fn get_key_center(&self, key: &RawKey) -> Option<(f32, f32)> {
         for (row_idx, row) in self.rows.iter().enumerate() {
             for (col_idx, key_button) in row.keys.iter().enumerate() {
-                if key_button.key.normal == key_name {
+                if key_button.key.normal == *key {
                     if let Some(centres) = &self.captured_centres {
                         let pos = centres[row_idx][col_idx]?;
                         return Some((pos.x, pos.y));
@@ -274,10 +285,7 @@ impl KeyboardLayout {
                     let center_x = pos.x;
                     let center_y = pos.y;
 
-                    if key.key.normal != RawKey::Skip
-                        && key.key.normal != RawKey::Shift
-                        && key.key.normal != " "
-                    {
+                    if key.key.normal != RawKey::Skip && key.selectable {
                         let width = self.scale_x(key.width);
                         if width / row_height >= 1.2 {
                             hitboxes_row.push(Some(HitBox::Ellipse {
@@ -311,8 +319,9 @@ impl KeyboardLayout {
     pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
-        self.left_stick_center = self.get_key_center("d").unwrap_or_default();
-        self.right_stick_center = self.get_key_center("k").unwrap_or_default();
+        // FIXME make centers configurable
+        self.left_stick_center = self.get_key_center(&RawKey::Key('d')).unwrap_or_default();
+        self.right_stick_center = self.get_key_center(&RawKey::Key('k')).unwrap_or_default();
     }
 
     pub fn stick_to_cursor_left(&self, stick: (f32, f32)) -> (f32, f32) {

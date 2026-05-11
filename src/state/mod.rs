@@ -9,8 +9,6 @@ use egui::{Context, Rect, Ui};
 use enigo::{Enigo, Keyboard as _};
 use serde::{Deserialize, Serialize};
 
-pub use keyboard::KeyboardAction;
-
 mod actions;
 mod event;
 mod keyboard;

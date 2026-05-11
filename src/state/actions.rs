@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::state::KeyboardAction;
+use crate::state::keyboard::KeyboardAction;
 
 pub trait Action: Any {
     fn as_any(&self) -> &dyn Any;

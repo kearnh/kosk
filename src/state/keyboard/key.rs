@@ -3,36 +3,38 @@ use serde::Deserialize;
 use std::fmt;
 
 use crate::state::actions::get_action;
+use crate::state::keyboard::KeyboardAction;
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum RawKey {
-    Key(String),
+    Key(char),
+    Text(String),
     Enigo(enigo::Key),
     Skip,
-    Action(String),
-    // FIXME we want this to to be an action, but there are special cases depending on it, we need to fix those first
-    Shift,
+    Action(KeyboardAction),
 }
 
 fn raw_key_from_config_str(s: &str) -> RawKey {
     // Leading `\` forces a literal [`RawKey::Key`] (no keyword / action / enigo parsing).
     // Use `\\...` when the literal should begin with `\`.
     if let Some(rest) = s.strip_prefix('\\') {
-        return RawKey::Key(rest.to_owned());
+        return RawKey::Text(rest.to_owned());
     }
     if s.eq_ignore_ascii_case("skip") {
         return RawKey::Skip;
     }
-    if s.eq_ignore_ascii_case("shift") {
-        return RawKey::Shift;
+    if let Some(action) = get_action(s) {
+        if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>() {
+            return RawKey::Action(action.clone());
+        }
     }
-    if get_action(s).is_some() {
-        return RawKey::Action(s.to_owned());
+    if s.len() == 1 {
+        return RawKey::Key(s.chars().next().unwrap());
     }
     if let Ok(k) = serde_plain::from_str::<enigo::Key>(s) {
         return RawKey::Enigo(k);
     }
-    RawKey::Key(s.to_owned())
+    RawKey::Text(s.to_owned())
 }
 
 impl<'de> Deserialize<'de> for RawKey {
@@ -62,30 +64,6 @@ impl<'de> Deserialize<'de> for RawKey {
     }
 }
 
-impl PartialEq<str> for RawKey {
-    fn eq(&self, other: &str) -> bool {
-        match self {
-            RawKey::Key(k) => k == other,
-            RawKey::Action(a) if other.starts_with("action:") => {
-                a == other.strip_prefix("action:").unwrap()
-            }
-            _ => false,
-        }
-    }
-}
-
-impl PartialEq<RawKey> for str {
-    fn eq(&self, other: &RawKey) -> bool {
-        other == self
-    }
-}
-
-impl PartialEq<&str> for RawKey {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
 pub trait ToShifted {
     fn to_shifted(&self) -> Self;
 }
@@ -93,7 +71,7 @@ pub trait ToShifted {
 impl ToShifted for RawKey {
     fn to_shifted(&self) -> Self {
         match self {
-            RawKey::Key(k) => RawKey::Key(k.to_uppercase()),
+            RawKey::Key(c) => RawKey::Key(c.to_uppercase().next().unwrap()),
             _ => self.clone(),
         }
     }
