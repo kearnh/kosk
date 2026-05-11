@@ -28,8 +28,10 @@ fn raw_key_from_config_str(s: &str) -> RawKey {
             return RawKey::Action(action.clone());
         }
     }
-    if s.len() == 1 {
-        return RawKey::Key(s.chars().next().unwrap());
+    // Use Unicode scalar count, not UTF-8 byte length (e.g. "é" is one char but two bytes).
+    let mut it = s.chars();
+    if let (Some(c), None) = (it.next(), it.next()) {
+        return RawKey::Key(c);
     }
     if let Ok(k) = serde_plain::from_str::<enigo::Key>(s) {
         return RawKey::Enigo(k);
@@ -160,5 +162,22 @@ where
         }
 
         deserializer.deserialize_any(KeyVisitor(PhantomData))
+    }
+}
+
+#[cfg(test)]
+mod raw_key_parse_tests {
+    use super::RawKey;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct Wrap {
+        k: RawKey,
+    }
+
+    #[test]
+    fn single_scalar_non_ascii_deserializes_as_key() {
+        let w: Wrap = toml::from_str(r#"k = "é""#).unwrap();
+        assert_eq!(w.k, RawKey::Key('é'));
     }
 }
