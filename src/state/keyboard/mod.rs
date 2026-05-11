@@ -78,10 +78,12 @@ impl KeyboardState {
         match key {
             RawKey::Key(c) => {
                 mod_press!();
-                events.push(Event::SendKey(
-                    enigo::Key::Unicode(*c),
-                    enigo::Direction::Click,
-                ));
+                // FIXME SendKey is not sending uppercase characters, so we use SendText instead. (which uses enigo::text instead of enigo::key)
+                // events.push(Event::SendKey(
+                //     enigo::Key::Unicode(*c),
+                //     enigo::Direction::Click,
+                // ));
+                events.push(Event::SendText(c.to_string()));
                 mod_release!();
             }
             RawKey::Enigo(k) => {
