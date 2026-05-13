@@ -17,6 +17,9 @@ pick a suggestion without typing every character—especially useful with a
 controller.
 
 ### Initial Steps
+
+Done: engine skeleton, tests, and `completion_dev` — see [docs/completion.md](docs/completion.md).
+
 - Find and evaluate crates that support what we need to do out of the box. Does any exist?
 - Research text completion methods, any public papers / write ups?
 - Start with a completion engine first, initially just in its own module. Add a new binary for it to test out independantly from the main osk.

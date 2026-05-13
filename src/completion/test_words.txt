@@ -1,0 +1,7 @@
+hello
+help
+helm
+world
+word
+rust
+crate
