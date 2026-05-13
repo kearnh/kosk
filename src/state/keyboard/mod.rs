@@ -190,8 +190,7 @@ impl KeyboardState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
-        self.draw_keyboard_ui(ctx, ui)
-            .map(|key| self.send_key(&key, events).expect("send key"));
+        if let Some(key) = self.draw_keyboard_ui(ctx, ui) { self.send_key(&key, events).expect("send key") }
     }
 
     pub fn handle_controller_input(

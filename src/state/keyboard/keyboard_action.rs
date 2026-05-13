@@ -37,7 +37,7 @@ impl TryFrom<&str> for KeyboardAction {
 
         let variant = KeyboardAction::VARIANTS
             .iter()
-            .find(|v| head.eq_ignore_ascii_case(**v))
+            .find(|v| head.eq_ignore_ascii_case(v))
             .copied()
             .ok_or_else(|| anyhow::anyhow!("unknown keyboard action '{}'", value))?;
 
@@ -45,7 +45,7 @@ impl TryFrom<&str> for KeyboardAction {
             ("SwitchState", Some(data)) => {
                 let canon = StateId::VARIANTS
                     .iter()
-                    .find(|v| data.eq_ignore_ascii_case(**v))
+                    .find(|v| data.eq_ignore_ascii_case(v))
                     .copied()
                     .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
                 Ok(KeyboardAction::SwitchState(

@@ -60,7 +60,7 @@ impl KeyButton {
         } else {
             match self.key.get(shifted) {
                 RawKey::Key(c) => c.to_string(),
-                _ => format!("?"), // no way to display this, user should define a display for it
+                _ => "?".to_string(), // no way to display this, user should define a display for it
             }
         }
     }
