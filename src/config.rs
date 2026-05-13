@@ -5,7 +5,8 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use notify::event::ModifyKind;
 use notify::{Event, EventKind, Watcher};
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -121,8 +122,58 @@ pub struct Config {
     pub text_input: TextInputStyle,
 
     /// Per-app-state mapping from controller buttons to action names (interpreted by each state).
-    #[serde(default)]
+    ///
+    /// Either an inline table, or a string path to a TOML file whose root is the same map shape
+    /// (relative paths are resolved against the main config file's directory).
+    #[serde(default, deserialize_with = "deserialize_controller_map")]
     pub controller_map: HashMap<StateId, HashMap<String, ControllerButton>>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ControllerMapSource {
+    /// `controller_map = "mappings.toml"`
+    File(String),
+    /// `[controller_map]` / nested tables
+    Inline(HashMap<StateId, HashMap<String, ControllerButton>>),
+}
+
+fn deserialize_controller_map<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<StateId, HashMap<String, ControllerButton>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match ControllerMapSource::deserialize(deserializer)? {
+        ControllerMapSource::Inline(m) => Ok(m),
+        ControllerMapSource::File(rel) => {
+            let config_path = CONFIG_PATH.get().ok_or_else(|| {
+                D::Error::custom(
+                    "controller_map: file reference is not supported in this context (config path unset)",
+                )
+            })?;
+            let path = if PathBuf::from(&rel).is_absolute() {
+                PathBuf::from(rel)
+            } else {
+                config_path
+                    .parent()
+                    .ok_or_else(|| D::Error::custom("config file has no parent directory"))?
+                    .join(&rel)
+            };
+            let content = fs::read_to_string(&path).map_err(|e| {
+                D::Error::custom(format!(
+                    "controller_map: could not read {}: {e}",
+                    path.display()
+                ))
+            })?;
+            toml::from_str(&content).map_err(|e| {
+                D::Error::custom(format!(
+                    "controller_map: could not parse {}: {e}",
+                    path.display()
+                ))
+            })
+        }
+    }
 }
 
 fn default_stick_scale_x() -> f32 {
