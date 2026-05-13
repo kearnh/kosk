@@ -1,5 +1,6 @@
 use crate::controller::ControllerButton;
 use crate::state::StateId;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -26,10 +27,9 @@ struct OpenBatch {
 
 /// Queues outgoing events with optional time-based debouncing by [`EventSource`].
 ///
-/// Duplicate **sources** within the initial window are dropped (after the first
-/// commit for that source, further same-source commits use the shorter repeat
-/// interval). [`EventSource::None`](EventSource::None) is never debounced and does
-/// not refresh timing.
+/// Each source has its own timeline: alternating sources (e.g. both triggers held)
+/// cannot bypass the debounce window for either. [`EventSource::None`](EventSource::None)
+/// is never debounced and does not refresh timing.
 ///
 /// Batches started with [`start_batch`](Self::start_batch) carry a single source
 /// used when the outermost batch is committed; nested batches merge event lists only.
@@ -37,9 +37,11 @@ pub struct EventQueue {
     pending: Vec<(Event, EventSource)>,
     debounce_initial: Option<Duration>,
     debounce_repeat: Option<Duration>,
-    /// `true` after at least one repeat of the same [`last_commit`](Self) source.
-    repeat_armed: bool,
-    last_commit: Option<(EventSource, Instant)>,
+    /// Last accepted commit instant and repeat-armed flag, per [`EventSource`].
+    /// `repeat_armed` is cleared when the gap since the last commit exceeds
+    /// [`burst_idle_reset`](Self::burst_idle_reset) so a long pause behaves like a
+    /// new first press (initial delay applies again before the next repeat stream).
+    last_commit: HashMap<EventSource, (Instant, bool)>,
     batch_stack: Vec<OpenBatch>,
 }
 
@@ -58,8 +60,7 @@ impl EventQueue {
             } else {
                 Some(Duration::from_millis(repeat_ms))
             },
-            repeat_armed: false,
-            last_commit: None,
+            last_commit: HashMap::new(),
             batch_stack: Vec::new(),
         }
     }
@@ -85,8 +86,7 @@ impl EventQueue {
             pending: Vec::new(),
             debounce_initial: None,
             debounce_repeat: None,
-            repeat_armed: false,
-            last_commit: None,
+            last_commit: HashMap::new(),
             batch_stack: Vec::new(),
         }
     }
@@ -174,14 +174,11 @@ impl EventQueue {
             return true;
         };
         let repeat = self.debounce_repeat.unwrap_or(initial);
-        let Some((last_src, t)) = &self.last_commit else {
+        let Some((t, repeat_armed)) = self.last_commit.get(source) else {
             return true;
         };
-        if last_src != source {
-            return true;
-        }
         let elapsed = t.elapsed();
-        if self.repeat_armed {
+        if *repeat_armed {
             elapsed >= repeat
         } else {
             elapsed >= initial
@@ -192,9 +189,24 @@ impl EventQueue {
         if matches!(source, EventSource::None) {
             return;
         }
+        let Some(initial) = self.debounce_initial else {
+            return;
+        };
+        let repeat = self.debounce_repeat.unwrap_or(initial);
         let now = Instant::now();
-        let same_as_last = self.last_commit.as_ref().is_some_and(|(s, _)| s == &source);
-        self.repeat_armed = same_as_last;
-        self.last_commit = Some((source, now));
+        // If gap since last accept is longer than repeat, we are not in a rapid-repeat chain.
+        // Before repeat is armed, allow first→second within initial + one repeat slot.
+        let repeat_armed = self
+            .last_commit
+            .get(&source)
+            .is_some_and(|(t_old, armed_old)| {
+                let e = now.duration_since(*t_old);
+                if *armed_old {
+                    e <= repeat
+                } else {
+                    e <= initial.saturating_add(repeat)
+                }
+            });
+        self.last_commit.insert(source, (now, repeat_armed));
     }
 }
