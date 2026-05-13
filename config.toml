@@ -7,7 +7,7 @@ window_pos = [2042.0, 1085.0]
 scale_x = 36.0
 scale_y = 40.0
 # Ms before first repeat of the same event unit; 0 disables debouncing
-event_debounce_ms = 400
+event_debounce_ms = 200
 # Ms between further repeats (key-repeat); 0 uses event_debounce_ms each time
 event_debounce_repeat_ms = 55
 

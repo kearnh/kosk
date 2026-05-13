@@ -46,7 +46,7 @@ impl AppState {
             state: StateId::Keyboard,
             pos: cfg.window_pos,
             monitor_size,
-            events: EventQueue::new(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms),
+            events: EventQueue::new(),
             enigo: Enigo::new(&Default::default())?,
         })
     }

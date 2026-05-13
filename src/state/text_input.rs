@@ -12,6 +12,7 @@ use std::sync::{Mutex, OnceLock};
 pub struct TextInputState {
     text: String,
     cursor_pos: usize,
+    kb_events: EventQueue,
 }
 
 impl TextInputState {
@@ -19,6 +20,7 @@ impl TextInputState {
         Self {
             text: String::new(),
             cursor_pos: 0,
+            kb_events: EventQueue::new(),
         }
     }
 
@@ -49,39 +51,39 @@ impl TextInputState {
         }
     }
 
-    fn submit_text(&mut self, events: &mut EventQueue) {
+    fn submit_text(&mut self, events: &mut EventQueue, source: &EventSource) {
+        events.start_batch(source);
         if !self.text.is_empty() {
-            let n = EventSource::None;
-            events.start_batch(&n);
-            let _ = events.push(Event::SendText(self.text.to_string()), &n);
+            let _ = events.push(Event::SendText(self.text.to_string()), source);
             let _ = events.push(
                 Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
-                &n,
+                source,
             );
-            let _ = events.push(Event::ChangeState(StateId::Keyboard), &n);
-            let _ = events.end_batch();
             self.text.clear();
             self.cursor_pos = 0;
         }
+        let _ = events.push(Event::ChangeState(StateId::Keyboard), source);
+        let _ = events.end_batch();
     }
 
-    fn process_events(
-        &mut self,
-        events: Vec<(Event, EventSource)>,
-        output_events: &mut EventQueue,
-    ) {
-        for (event, src) in events {
+    fn process_events(&mut self, events: &mut EventQueue) {
+        for (event, src) in self.kb_events.drain_pending() {
             match event {
                 Event::SendKey(enigo::Key::Unicode(ch), enigo::Direction::Click) => {
                     self.insert_char(ch);
                 }
                 Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click) => self.backspace(),
                 Event::SendKey(enigo::Key::Return, enigo::Direction::Click) => {
-                    self.submit_text(output_events)
+                    self.submit_text(events, &src)
                 }
                 Event::SendKey(_, _) => {}
+                Event::SendText(text) => {
+                    for ch in text.chars() {
+                        self.insert_char(ch);
+                    }
+                }
                 _ => {
-                    let _ = output_events.push(event, &src);
+                    let _ = events.push(event, &src);
                 }
             }
         }
@@ -136,11 +138,10 @@ impl TextInputState {
             );
         });
 
-        let mut kb_events = EventQueue::passthrough();
         keyboard::with_mut(|keyboard_state| {
-            keyboard_state.draw_ui(ctx, ui, &mut kb_events);
+            keyboard_state.draw_ui(ctx, ui, &mut self.kb_events);
         });
-        self.process_events(kb_events.drain_pending(), events);
+        self.process_events(events);
     }
 
     pub fn handle_controller_input(
@@ -168,11 +169,10 @@ impl TextInputState {
         }
 
         if !handled {
-            let mut kb_events = EventQueue::passthrough();
             keyboard::with_mut(|keyboard_state| {
-                keyboard_state.handle_controller_input(input, &mut kb_events)
+                keyboard_state.handle_controller_input(input, &mut self.kb_events)
             })?;
-            self.process_events(kb_events.drain_pending(), events);
+            self.process_events(events);
         }
 
         Ok(())

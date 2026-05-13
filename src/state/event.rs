@@ -1,3 +1,4 @@
+use crate::config;
 use crate::controller::ControllerButton;
 use crate::state::StateId;
 use std::collections::HashMap;
@@ -5,8 +6,6 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EventSource {
-    /// Not used for debounce comparison: always queued, does not update last-commit timing.
-    None,
     MouseClick,
     /// Physical controller binding that produced this commit (per-button debounce bucket).
     Controller(ControllerButton),
@@ -48,7 +47,10 @@ pub struct EventQueue {
 impl EventQueue {
     /// `initial_ms == 0` disables debouncing (same as [`passthrough`](Self)).
     /// `repeat_ms == 0` uses the initial interval for every repeat step.
-    pub fn new(initial_ms: u64, repeat_ms: u64) -> Self {
+    pub fn new() -> Self {
+        let cfg = config::get();
+        let initial_ms = cfg.event_debounce_ms;
+        let repeat_ms = cfg.event_debounce_repeat_ms;
         if initial_ms == 0 {
             return Self::passthrough();
         }
@@ -167,9 +169,6 @@ impl EventQueue {
     }
 
     fn source_debounce_allows(&self, source: &EventSource) -> bool {
-        if matches!(source, EventSource::None) {
-            return true;
-        }
         let Some(initial) = self.debounce_initial else {
             return true;
         };
@@ -186,9 +185,6 @@ impl EventQueue {
     }
 
     fn record_source_accepted(&mut self, source: EventSource) {
-        if matches!(source, EventSource::None) {
-            return;
-        }
         let Some(initial) = self.debounce_initial else {
             return;
         };
