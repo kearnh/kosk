@@ -114,11 +114,17 @@ pub struct Config {
     #[serde(default = "default_scale_y")]
     pub scale_y: f32,
 
-    /// Minimum milliseconds between identical outgoing event units (a single
-    /// [`Event`](crate::state::event::Event) or a completed batch). Use `0` to
-    /// disable debouncing.
+    /// Milliseconds before the first repeat of the same outgoing event unit (a
+    /// single [`Event`](crate::state::event::Event) or a completed batch). Use
+    /// `0` to disable debouncing entirely.
     #[serde(default = "default_event_debounce_ms")]
     pub event_debounce_ms: u64,
+
+    /// Milliseconds between further repeats of the same unit after the first
+    /// repeat has fired (key-repeat style). Ignored when `event_debounce_ms` is
+    /// `0`. Use `0` here to use `event_debounce_ms` for every repeat step.
+    #[serde(default = "default_event_debounce_repeat_ms")]
+    pub event_debounce_repeat_ms: u64,
 
     #[serde(default)]
     pub text_input: TextInputStyle,
@@ -204,7 +210,11 @@ fn default_scale_y() -> f32 {
 }
 
 fn default_event_debounce_ms() -> u64 {
-    200
+    400
+}
+
+fn default_event_debounce_repeat_ms() -> u64 {
+    55
 }
 
 fn default_start_layout() -> String {

@@ -11,35 +11,67 @@ pub enum Event {
 
 /// Queues outgoing events with optional time-based debouncing of repeated
 /// identical units (single events or batches from [`EventQueue::end_batch`]).
+///
+/// When the same unit arrives again: first wait [`debounce_initial`](Self) since
+/// the last accepted unit; after one repeat has been accepted, further repeats
+/// use the shorter [`debounce_repeat`](Self) interval (key-repeat style).
 pub struct EventQueue {
     pending: Vec<Event>,
-    debounce: Option<Duration>,
+    debounce_initial: Option<Duration>,
+    debounce_repeat: Option<Duration>,
+    /// `true` after at least one repeat of the current [`last_unit`](Self) sequence
+    /// has been accepted (so the next duplicate uses the repeat interval).
+    repeat_armed: bool,
     last_unit: Option<(Vec<Event>, Instant)>,
     batch_stack: Vec<Vec<Event>>,
 }
 
 impl EventQueue {
-    pub fn new(debounce: Option<Duration>) -> Self {
+    /// `initial_ms == 0` disables debouncing (same as [`passthrough`](Self)).
+    /// `repeat_ms == 0` uses the initial interval for every repeat step.
+    pub fn new(initial_ms: u64, repeat_ms: u64) -> Self {
+        if initial_ms == 0 {
+            return Self::passthrough();
+        }
         Self {
             pending: Vec::new(),
-            debounce,
+            debounce_initial: Some(Duration::from_millis(initial_ms)),
+            debounce_repeat: if repeat_ms == 0 {
+                None
+            } else {
+                Some(Duration::from_millis(repeat_ms))
+            },
+            repeat_armed: false,
             last_unit: None,
             batch_stack: Vec::new(),
         }
     }
 
-    /// `0` disables debouncing (same as [`passthrough`](Self::passthrough)).
-    pub fn set_debounce_ms(&mut self, ms: u64) {
-        self.debounce = if ms == 0 {
-            None
+    /// `initial_ms == 0` disables debouncing.
+    pub fn set_debounce_ms(&mut self, initial_ms: u64, repeat_ms: u64) {
+        if initial_ms == 0 {
+            self.debounce_initial = None;
+            self.debounce_repeat = None;
         } else {
-            Some(Duration::from_millis(ms))
-        };
+            self.debounce_initial = Some(Duration::from_millis(initial_ms));
+            self.debounce_repeat = if repeat_ms == 0 {
+                None
+            } else {
+                Some(Duration::from_millis(repeat_ms))
+            };
+        }
     }
 
     /// No debouncing; every [`push`](Self::push) and batch is accepted.
     pub fn passthrough() -> Self {
-        Self::new(None)
+        Self {
+            pending: Vec::new(),
+            debounce_initial: None,
+            debounce_repeat: None,
+            repeat_armed: false,
+            last_unit: None,
+            batch_stack: Vec::new(),
+        }
     }
 
     pub fn start_batch(&mut self) {
@@ -65,11 +97,11 @@ impl EventQueue {
             parent.extend(done);
             return true;
         }
-        if !self.should_accept_unit(&done) {
+        if !self.unit_debounce_allows(&done) {
             return false;
         }
         self.pending.extend(done.iter().cloned());
-        self.last_unit = Some((done, Instant::now()));
+        self.record_unit_accepted(&done);
         true
     }
 
@@ -82,11 +114,11 @@ impl EventQueue {
             return true;
         }
         let unit = vec![event.clone()];
-        if !self.should_accept_unit(&unit) {
+        if !self.unit_debounce_allows(&unit) {
             return false;
         }
         self.pending.push(event);
-        self.last_unit = Some((unit, Instant::now()));
+        self.record_unit_accepted(&unit);
         true
     }
 
@@ -113,16 +145,32 @@ impl EventQueue {
         }
     }
 
-    fn should_accept_unit(&self, unit: &[Event]) -> bool {
-        let Some(window) = self.debounce else {
+    fn unit_debounce_allows(&self, unit: &[Event]) -> bool {
+        let Some(initial) = self.debounce_initial else {
             return true;
         };
+        let repeat = self.debounce_repeat.unwrap_or(initial);
         let Some((last, t)) = &self.last_unit else {
             return true;
         };
         if last.as_slice() != unit {
             return true;
         }
-        t.elapsed() >= window
+        let elapsed = t.elapsed();
+        if self.repeat_armed {
+            elapsed >= repeat
+        } else {
+            elapsed >= initial
+        }
+    }
+
+    fn record_unit_accepted(&mut self, unit: &[Event]) {
+        let now = Instant::now();
+        let same_as_last = self
+            .last_unit
+            .as_ref()
+            .is_some_and(|(l, _)| l.as_slice() == unit);
+        self.repeat_armed = same_as_last;
+        self.last_unit = Some((unit.to_vec(), now));
     }
 }

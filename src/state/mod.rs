@@ -8,7 +8,6 @@ use anyhow::Result;
 use egui::{Context, Rect, Ui};
 use enigo::{Enigo, Keyboard as _};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 mod actions;
 mod event;
@@ -43,16 +42,11 @@ impl AppState {
         menu::init()?;
         text_input::init()?;
 
-        let debounce_ms = cfg.event_debounce_ms;
         Ok(Self {
             state: StateId::Keyboard,
             pos: cfg.window_pos,
             monitor_size,
-            events: EventQueue::new(if debounce_ms == 0 {
-                None
-            } else {
-                Some(Duration::from_millis(debounce_ms))
-            }),
+            events: EventQueue::new(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms),
             enigo: Enigo::new(&Default::default())?,
         })
     }
@@ -97,7 +91,9 @@ impl AppState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
-        self.events.set_debounce_ms(config::get().event_debounce_ms);
+        let cfg = config::get();
+        self.events
+            .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
         match self.state {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));
@@ -146,7 +142,8 @@ impl AppState {
     ) -> Result<()> {
         let cfg = config::get();
 
-        self.events.set_debounce_ms(cfg.event_debounce_ms);
+        self.events
+            .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
 
         if let Some(input) = input {
             if cfg.debug.is_some() {
