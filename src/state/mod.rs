@@ -2,11 +2,7 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{
-        event::Event,
-        event::EventQueue,
-        window_pos::WindowPos,
-    },
+    state::{event::Event, event::EventQueue, window_pos::WindowPos},
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -162,11 +158,9 @@ impl AppState {
             StateId::Menu => {
                 menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
             }
-            StateId::MoveWindow => {
-                move_window::with_mut(|mw| {
-                    mw.handle_controller_input(ctx, input, &mut self.events)
-                })?
-            }
+            StateId::MoveWindow => move_window::with_mut(|mw| {
+                mw.handle_controller_input(ctx, input, &mut self.events)
+            })?,
             StateId::TextInput => {
                 text_input::with_mut(|ti| ti.handle_controller_input(input, &mut self.events))?
             }

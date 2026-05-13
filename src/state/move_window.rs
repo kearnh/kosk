@@ -69,10 +69,7 @@ impl MoveWindowState {
                 });
 
             if ui.button("Back").clicked() {
-                let _ = events.push(
-                    Event::ChangeState(StateId::Menu),
-                    &EventSource::MouseClick,
-                );
+                let _ = events.push(Event::ChangeState(StateId::Menu), &EventSource::MouseClick);
             }
         });
 

@@ -105,7 +105,11 @@ impl EventQueue {
     /// `false` if that batch was dropped by debouncing. Returns `true` if there was
     /// no open batch, the batch was empty, or the batch was committed.
     pub fn end_batch(&mut self) -> bool {
-        let Some(OpenBatch { source, events: done }) = self.batch_stack.pop() else {
+        let Some(OpenBatch {
+            source,
+            events: done,
+        }) = self.batch_stack.pop()
+        else {
             debug_assert!(false, "EventQueue::end_batch without matching start_batch");
             return true;
         };
@@ -189,10 +193,7 @@ impl EventQueue {
             return;
         }
         let now = Instant::now();
-        let same_as_last = self
-            .last_commit
-            .as_ref()
-            .is_some_and(|(s, _)| s == &source);
+        let same_as_last = self.last_commit.as_ref().is_some_and(|(s, _)| s == &source);
         self.repeat_armed = same_as_last;
         self.last_commit = Some((source, now));
     }

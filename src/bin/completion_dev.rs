@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use kosk::completion::{
-    split_at_cursor, CompletionContext, CompletionEngine, DictionaryEngine,
-};
+use kosk::completion::{split_at_cursor, CompletionContext, CompletionEngine, DictionaryEngine};
 
 #[derive(Parser, Debug)]
 #[command(name = "completion_dev")]

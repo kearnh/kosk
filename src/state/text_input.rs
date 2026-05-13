@@ -1,13 +1,7 @@
 use crate::{
     config,
     controller::{ControllerButton, ControllerInput, Dpad},
-    state::{
-        event::Event,
-        event::EventQueue,
-        event::EventSource,
-        keyboard,
-        StateId,
-    },
+    state::{event::Event, event::EventQueue, event::EventSource, keyboard, StateId},
 };
 use anyhow::Result;
 use egui::text::CCursor;

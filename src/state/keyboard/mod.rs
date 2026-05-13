@@ -64,12 +64,18 @@ impl KeyboardState {
                     );
                 }
                 if self.alt_mod {
-                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press), source);
+                    events.push(
+                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Press),
+                        source,
+                    );
                 }
                 // FIXME SendKey is not sending uppercase characters, so we use SendText instead. (which uses enigo::text instead of enigo::key)
                 events.push(Event::SendText(c.to_string()), source);
                 if self.alt_mod {
-                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release), source);
+                    events.push(
+                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Release),
+                        source,
+                    );
                 }
                 if self.ctrl_mod {
                     events.push(
@@ -105,11 +111,17 @@ impl KeyboardState {
                     );
                 }
                 if self.alt_mod {
-                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press), source);
+                    events.push(
+                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Press),
+                        source,
+                    );
                 }
                 events.push(Event::SendKey(*k, enigo::Direction::Click), source);
                 if self.alt_mod {
-                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release), source);
+                    events.push(
+                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Release),
+                        source,
+                    );
                 }
                 if self.ctrl_mod {
                     events.push(
