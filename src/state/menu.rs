@@ -1,6 +1,6 @@
 use crate::{
-    controller::{ControllerInput, Dpad},
-    state::{event::Event, event::EventQueue, StateId},
+    controller::{ControllerButton, ControllerInput, Dpad},
+    state::{event::Event, event::EventQueue, event::EventSource, StateId},
 };
 use anyhow::Result;
 use egui::{Button, Context, Ui};
@@ -45,7 +45,7 @@ impl MenuState {
         for b in self.buttons.iter() {
             if self.btn(ui, b.text, &mut n).clicked() {
                 if let Some(id) = (b.callback)() {
-                    events.push(Event::ChangeState(id));
+                    let _ = events.push(Event::ChangeState(id), &EventSource::MouseClick);
                 }
             }
         }
@@ -71,13 +71,19 @@ impl MenuState {
             (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
 
         if input.face_right() {
-            events.push(Event::ChangeState(StateId::Keyboard));
+            let _ = events.push(
+                Event::ChangeState(StateId::Keyboard),
+                &EventSource::Controller(ControllerButton::FaceRight),
+            );
             return Ok(());
         }
 
         if input.face_bottom() {
             if let Some(id) = (self.buttons[self.selected].callback)() {
-                events.push(Event::ChangeState(id));
+                let _ = events.push(
+                    Event::ChangeState(id),
+                    &EventSource::Controller(ControllerButton::FaceBottom),
+                );
             }
             return Ok(());
         }

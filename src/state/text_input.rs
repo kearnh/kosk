@@ -1,7 +1,13 @@
 use crate::{
     config,
-    controller::{ControllerInput, Dpad},
-    state::{event::Event, event::EventQueue, keyboard, StateId},
+    controller::{ControllerButton, ControllerInput, Dpad},
+    state::{
+        event::Event,
+        event::EventQueue,
+        event::EventSource,
+        keyboard,
+        StateId,
+    },
 };
 use anyhow::Result;
 use egui::text::CCursor;
@@ -51,16 +57,26 @@ impl TextInputState {
 
     fn submit_text(&mut self, events: &mut EventQueue) {
         if !self.text.is_empty() {
-            events.push(Event::SendText(self.text.to_string()));
-            events.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
-            events.push(Event::ChangeState(StateId::Keyboard));
+            let n = EventSource::None;
+            events.start_batch(&n);
+            let _ = events.push(Event::SendText(self.text.to_string()), &n);
+            let _ = events.push(
+                Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
+                &n,
+            );
+            let _ = events.push(Event::ChangeState(StateId::Keyboard), &n);
+            let _ = events.end_batch();
             self.text.clear();
             self.cursor_pos = 0;
         }
     }
 
-    fn process_events(&mut self, events: Vec<Event>, output_events: &mut EventQueue) {
-        for event in events {
+    fn process_events(
+        &mut self,
+        events: Vec<(Event, EventSource)>,
+        output_events: &mut EventQueue,
+    ) {
+        for (event, src) in events {
             match event {
                 Event::SendKey(enigo::Key::Unicode(ch), enigo::Direction::Click) => {
                     self.insert_char(ch);
@@ -71,7 +87,7 @@ impl TextInputState {
                 }
                 Event::SendKey(_, _) => {}
                 _ => {
-                    let _ = output_events.push(event);
+                    let _ = output_events.push(event, &src);
                 }
             }
         }
@@ -149,7 +165,10 @@ impl TextInputState {
                 handled = true;
             }
             if matches!(input.dpad(), Some(Dpad::Up)) {
-                let _ = events.push(Event::ChangeState(StateId::Keyboard));
+                let _ = events.push(
+                    Event::ChangeState(StateId::Keyboard),
+                    &EventSource::Controller(ControllerButton::Dpad(Dpad::Up)),
+                );
                 return Ok(());
             }
         }

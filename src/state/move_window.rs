@@ -1,7 +1,7 @@
 use crate::{
     config,
-    controller::ControllerInput,
-    state::{event::Event, event::EventQueue, StateId, WindowPos},
+    controller::{ControllerButton, ControllerInput},
+    state::{event::Event, event::EventQueue, event::EventSource, StateId, WindowPos},
 };
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
@@ -69,7 +69,10 @@ impl MoveWindowState {
                 });
 
             if ui.button("Back").clicked() {
-                events.push(Event::ChangeState(StateId::Menu));
+                let _ = events.push(
+                    Event::ChangeState(StateId::Menu),
+                    &EventSource::MouseClick,
+                );
             }
         });
 
@@ -84,7 +87,10 @@ impl MoveWindowState {
     ) -> Result<()> {
         if let Some(input) = input {
             if input.face_right() {
-                events.push(Event::ChangeState(StateId::Menu));
+                let _ = events.push(
+                    Event::ChangeState(StateId::Menu),
+                    &EventSource::Controller(ControllerButton::FaceRight),
+                );
             }
         }
         Ok(())
