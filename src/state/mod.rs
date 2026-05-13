@@ -2,7 +2,7 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{event::Event, window_pos::WindowPos},
+    state::{event::Event, event::EventQueue, window_pos::WindowPos},
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -29,7 +29,7 @@ pub struct AppState {
     state: StateId,
     pos: WindowPos,
     monitor_size: (f32, f32),
-    events: Vec<Event>,
+    events: EventQueue,
     enigo: Enigo,
 }
 
@@ -46,7 +46,7 @@ impl AppState {
             state: StateId::Keyboard,
             pos: cfg.window_pos,
             monitor_size,
-            events: vec![],
+            events: EventQueue::with_default_debounce(),
             enigo: Enigo::new(&Default::default())?,
         })
     }
@@ -72,7 +72,7 @@ impl AppState {
     }
 
     fn process_events(&mut self, ctx: &Context) {
-        for event in self.events.drain(..) {
+        for event in self.events.drain_pending() {
             match event {
                 Event::SendKey(key, direction) => {
                     let _ = self.enigo.key(key, direction);

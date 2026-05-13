@@ -1,7 +1,7 @@
 use crate::{
     config,
     controller::{ControllerInput, Dpad},
-    state::{event::Event, keyboard, StateId},
+    state::{event::Event, event::EventQueue, keyboard, StateId},
 };
 use anyhow::Result;
 use egui::text::CCursor;
@@ -49,7 +49,7 @@ impl TextInputState {
         }
     }
 
-    fn submit_text(&mut self, events: &mut Vec<Event>) {
+    fn submit_text(&mut self, events: &mut EventQueue) {
         if !self.text.is_empty() {
             events.push(Event::SendText(self.text.to_string()));
             events.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
@@ -59,7 +59,7 @@ impl TextInputState {
         }
     }
 
-    fn process_events(&mut self, events: Vec<Event>, output_events: &mut Vec<Event>) {
+    fn process_events(&mut self, events: Vec<Event>, output_events: &mut EventQueue) {
         for event in events {
             match event {
                 Event::SendKey(enigo::Key::Unicode(ch), enigo::Direction::Click) => {
@@ -71,13 +71,13 @@ impl TextInputState {
                 }
                 Event::SendKey(_, _) => {}
                 _ => {
-                    output_events.push(event);
+                    let _ = output_events.push(event);
                 }
             }
         }
     }
 
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         let ti = &config::get().text_input;
         let bg = Color32::from_rgba_unmultiplied(
             ti.background_color[0],
@@ -126,17 +126,17 @@ impl TextInputState {
             );
         });
 
-        let mut kb_events = vec![];
+        let mut kb_events = EventQueue::passthrough();
         keyboard::with_mut(|keyboard_state| {
             keyboard_state.draw_ui(ctx, ui, &mut kb_events);
         });
-        self.process_events(kb_events, events);
+        self.process_events(kb_events.drain_pending(), events);
     }
 
     pub fn handle_controller_input(
         &mut self,
         input: &Option<Box<dyn ControllerInput>>,
-        events: &mut Vec<Event>,
+        events: &mut EventQueue,
     ) -> Result<()> {
         let mut handled = false;
         if let Some(input) = input {
@@ -149,17 +149,17 @@ impl TextInputState {
                 handled = true;
             }
             if matches!(input.dpad(), Some(Dpad::Up)) {
-                events.push(Event::ChangeState(StateId::Keyboard));
+                let _ = events.push(Event::ChangeState(StateId::Keyboard));
                 return Ok(());
             }
         }
 
         if !handled {
-            let mut kb_events = vec![];
+            let mut kb_events = EventQueue::passthrough();
             keyboard::with_mut(|keyboard_state| {
                 keyboard_state.handle_controller_input(input, &mut kb_events)
             })?;
-            self.process_events(kb_events, events);
+            self.process_events(kb_events.drain_pending(), events);
         }
 
         Ok(())

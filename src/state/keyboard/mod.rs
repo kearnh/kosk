@@ -7,7 +7,11 @@ use crate::state::actions::get_action;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
     controller::ControllerInput,
-    state::{event::Event, keyboard::key::RawKey, StateId},
+    state::{
+        event::{Event, EventQueue},
+        keyboard::key::RawKey,
+        StateId,
+    },
 };
 use anyhow::Result;
 use egui::{Context, Ui};
@@ -23,7 +27,6 @@ pub struct KeyboardState {
     layouts: HashMap<String, KeyboardLayout>,
     current_layout: String,
     selected: (Option<RawKey>, Option<RawKey>),
-    trigger_threshold: u8,
     shift_state: bool,
     shift_mod: bool,
     ctrl_mod: bool,
@@ -39,9 +42,10 @@ impl KeyboardState {
         Ok(state)
     }
 
-    pub fn send_key(&mut self, key: &RawKey, events: &mut Vec<Event>) -> Result<()> {
-        macro_rules! mod_press {
-            () => {
+    pub fn send_key(&mut self, key: &RawKey, events: &mut EventQueue) -> Result<()> {
+        match key {
+            RawKey::Key(c) => {
+                events.start_batch();
                 if self.shift_mod {
                     events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
@@ -51,10 +55,8 @@ impl KeyboardState {
                 if self.alt_mod {
                     events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press));
                 }
-            };
-        }
-        macro_rules! mod_release {
-            () => {
+                // FIXME SendKey is not sending uppercase characters, so we use SendText instead. (which uses enigo::text instead of enigo::key)
+                events.push(Event::SendText(c.to_string()));
                 if self.alt_mod {
                     events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release));
                 }
@@ -67,29 +69,43 @@ impl KeyboardState {
                 if self.shift_mod {
                     events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
-
-                // Reset modifiers after sending a key
-                self.shift_state = false;
-                self.shift_mod = false;
-                self.ctrl_mod = false;
-                self.alt_mod = false;
-            };
-        }
-        match key {
-            RawKey::Key(c) => {
-                mod_press!();
-                // FIXME SendKey is not sending uppercase characters, so we use SendText instead. (which uses enigo::text instead of enigo::key)
-                // events.push(Event::SendKey(
-                //     enigo::Key::Unicode(*c),
-                //     enigo::Direction::Click,
-                // ));
-                events.push(Event::SendText(c.to_string()));
-                mod_release!();
+                if events.end_batch() {
+                    self.shift_state = false;
+                    self.shift_mod = false;
+                    self.ctrl_mod = false;
+                    self.alt_mod = false;
+                }
             }
             RawKey::Enigo(k) => {
-                mod_press!();
+                events.start_batch();
+                if self.shift_mod {
+                    events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
+                }
+                if self.ctrl_mod {
+                    events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
+                }
+                if self.alt_mod {
+                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press));
+                }
                 events.push(Event::SendKey(*k, enigo::Direction::Click));
-                mod_release!();
+                if self.alt_mod {
+                    events.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release));
+                }
+                if self.ctrl_mod {
+                    events.push(Event::SendKey(
+                        enigo::Key::Control,
+                        enigo::Direction::Release,
+                    ));
+                }
+                if self.shift_mod {
+                    events.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
+                }
+                if events.end_batch() {
+                    self.shift_state = false;
+                    self.shift_mod = false;
+                    self.ctrl_mod = false;
+                    self.alt_mod = false;
+                }
             }
             RawKey::Action(action) => {
                 self.do_action(action, events)?;
@@ -103,16 +119,16 @@ impl KeyboardState {
         Ok(())
     }
 
-    fn do_action(&mut self, action: &KeyboardAction, events: &mut Vec<Event>) -> Result<()> {
+    fn do_action(&mut self, action: &KeyboardAction, events: &mut EventQueue) -> Result<()> {
         use KeyboardAction::*;
         match action {
             SendKeyUnderLeftStick => {
-                if let (Some(left), None) = &self.selected {
+                if let (Some(left), _) = &self.selected {
                     self.send_key(&left.clone(), events)?;
                 }
             }
             SendKeyUnderRightStick => {
-                if let (None, Some(right)) = &self.selected {
+                if let (_, Some(right)) = &self.selected {
                     self.send_key(&right.clone(), events)?;
                 }
             }
@@ -120,17 +136,21 @@ impl KeyboardState {
             ToggleCtrl => self.toggle_ctrl(),
             ToggleAlt => self.toggle_alt(),
             Paste => {
-                events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
-                events.push(Event::SendKey(
+                events.start_batch();
+                let _ = events.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
+                let _ = events.push(Event::SendKey(
                     enigo::Key::Unicode('v'),
                     enigo::Direction::Click,
                 ));
-                events.push(Event::SendKey(
+                let _ = events.push(Event::SendKey(
                     enigo::Key::Control,
                     enigo::Direction::Release,
                 ));
+                let _ = events.end_batch();
             }
-            SwitchState(state) => events.push(Event::ChangeState(*state)),
+            SwitchState(state) => {
+                let _ = events.push(Event::ChangeState(*state));
+            }
             SwitchLayout(layout_name) => {
                 if self.layouts.contains_key(layout_name) {
                     self.current_layout = layout_name.to_string();
@@ -141,7 +161,9 @@ impl KeyboardState {
                 }
                 return Ok(());
             }
-            Exit => events.push(Event::Exit),
+            Exit => {
+                let _ = events.push(Event::Exit);
+            }
         }
         Ok(())
     }
@@ -167,7 +189,7 @@ impl KeyboardState {
         self.alt_mod = !self.alt_mod;
     }
 
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         self.draw_keyboard_ui(ctx, ui)
             .map(|key| self.send_key(&key, events).expect("send key"));
     }
@@ -175,7 +197,7 @@ impl KeyboardState {
     pub fn handle_controller_input(
         &mut self,
         input: &Option<Box<dyn ControllerInput>>,
-        events: &mut Vec<Event>,
+        events: &mut EventQueue,
     ) -> Result<()> {
         let input = match input {
             Some(input) => input,
@@ -368,8 +390,6 @@ impl KeyboardState {
             let layout = KeyboardLayout::load_from_file(path)?;
             self.layouts.insert(name.clone(), layout);
         }
-
-        self.trigger_threshold = cfg.trigger_threshold;
 
         self.mapping = HashMap::new();
         if let Some(raw_mapping) = cfg.controller_map.get(&StateId::Keyboard).cloned() {

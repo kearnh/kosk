@@ -1,6 +1,6 @@
 use crate::{
     controller::{ControllerInput, Dpad},
-    state::{event::Event, StateId},
+    state::{event::Event, event::EventQueue, StateId},
 };
 use anyhow::Result;
 use egui::{Button, Context, Ui};
@@ -39,7 +39,7 @@ impl MenuState {
         clicked
     }
 
-    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui, events: &mut Vec<Event>) {
+    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui, events: &mut EventQueue) {
         let mut n = 0;
 
         for b in self.buttons.iter() {
@@ -55,7 +55,7 @@ impl MenuState {
         &mut self,
         _: &Context,
         input: &Option<Box<dyn ControllerInput>>,
-        events: &mut Vec<Event>,
+        events: &mut EventQueue,
     ) -> Result<()> {
         let input = match input {
             Some(input) => input,

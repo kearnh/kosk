@@ -1,7 +1,7 @@
 use crate::{
     config,
     controller::ControllerInput,
-    state::{event::Event, StateId, WindowPos},
+    state::{event::Event, event::EventQueue, StateId, WindowPos},
 };
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
@@ -19,7 +19,7 @@ impl MoveWindowState {
         _ctx: &Context,
         ui: &mut Ui,
         current_coords: (f32, f32),
-        events: &mut Vec<Event>,
+        events: &mut EventQueue,
     ) -> Option<WindowPos> {
         let cfg = config::get();
         let mut movement: Option<WindowPos> = None;
@@ -80,7 +80,7 @@ impl MoveWindowState {
         &mut self,
         _ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
-        events: &mut Vec<Event>,
+        events: &mut EventQueue,
     ) -> Result<()> {
         if let Some(input) = input {
             if input.face_right() {
