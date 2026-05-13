@@ -3,10 +3,11 @@
 # Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
 
 [Keyboard]
-"keyboard.sendKeyUnderLeftStick" = { triggerLeft = { threshold = 40 } }
-"keyboard.sendKeyUnderRightStick" = { triggerRight = { threshold = 40 } }
-"keyboard.toggleShift" = "faceTop"
-"keyboard.toggleCtrl" = "stickLeft"
-"keyboard.toggleAlt" = "stickRight"
-"keyboard.switchState.menu" = "options"
-"keyboard.switchState.textInput" = "faceRight"
+"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
+"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"faceTop" = "toggleShift"
+"stickLeft" = "toggleCtrl"
+"stickRight" = "toggleAlt"
+"options" = "switchState.menu"
+"faceRight" = "switchState.textInput"
+"faceLeft" = "backspace"

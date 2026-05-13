@@ -134,7 +134,7 @@ pub struct Config {
     /// Either an inline table, or a string path to a TOML file whose root is the same map shape
     /// (relative paths are resolved against the main config file's directory).
     #[serde(default, deserialize_with = "deserialize_controller_map")]
-    pub controller_map: HashMap<StateId, HashMap<String, ControllerButton>>,
+    pub controller_map: HashMap<StateId, HashMap<ControllerButton, String>>,
 }
 
 #[derive(Deserialize)]
@@ -143,12 +143,12 @@ enum ControllerMapSource {
     /// `controller_map = "mappings.toml"`
     File(String),
     /// `[controller_map]` / nested tables
-    Inline(HashMap<StateId, HashMap<String, ControllerButton>>),
+    Inline(HashMap<StateId, HashMap<ControllerButton, String>>),
 }
 
 fn deserialize_controller_map<'de, D>(
     deserializer: D,
-) -> Result<HashMap<StateId, HashMap<String, ControllerButton>>, D::Error>
+) -> Result<HashMap<StateId, HashMap<ControllerButton, String>>, D::Error>
 where
     D: Deserializer<'de>,
 {

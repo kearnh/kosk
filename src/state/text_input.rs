@@ -1,6 +1,6 @@
 use crate::{
     config,
-    controller::{ControllerButton, ControllerInput, Dpad},
+    controller::{ControllerButton, ControllerInput},
     state::{event::Event, event::EventQueue, event::EventSource, keyboard, StateId},
 };
 use anyhow::Result;
@@ -151,18 +151,18 @@ impl TextInputState {
     ) -> Result<()> {
         let mut handled = false;
         if let Some(input) = input {
-            if matches!(input.dpad(), Some(Dpad::Left)) {
+            if input.dpad_left() {
                 self.move_cursor_left();
                 handled = true;
             }
-            if matches!(input.dpad(), Some(Dpad::Right)) {
+            if input.dpad_right() {
                 self.move_cursor_right();
                 handled = true;
             }
-            if matches!(input.dpad(), Some(Dpad::Up)) {
+            if input.dpad_up() {
                 let _ = events.push(
                     Event::ChangeState(StateId::Keyboard),
-                    &EventSource::Controller(ControllerButton::Dpad(Dpad::Up)),
+                    &EventSource::Controller(ControllerButton::DpadUp),
                 );
                 return Ok(());
             }

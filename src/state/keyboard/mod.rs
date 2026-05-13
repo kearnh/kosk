@@ -31,7 +31,7 @@ pub struct KeyboardState {
     shift_mod: bool,
     ctrl_mod: bool,
     alt_mod: bool,
-    mapping: HashMap<KeyboardAction, ControllerButton>,
+    mapping: HashMap<ControllerButton, KeyboardAction>,
 }
 
 impl KeyboardState {
@@ -162,6 +162,12 @@ impl KeyboardState {
     ) -> Result<()> {
         use KeyboardAction::*;
         match action {
+            Backspace => {
+                let _ = events.push(
+                    Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
+                    source,
+                );
+            }
             SendKeyUnderLeftStick => {
                 if let (Some(left), _) = &self.selected {
                     self.send_key(&left.clone(), events, source)?;
@@ -268,10 +274,10 @@ impl KeyboardState {
         let actions: Vec<_> = self
             .mapping
             .iter()
-            .filter(|(_, button)| button.query(input.as_ref()))
-            .map(|(action, button)| (action.clone(), button.clone()))
+            .filter(|(button, _)| button.query(input.as_ref()))
+            .map(|(button, action)| (button.clone(), action.clone()))
             .collect();
-        for (action, button) in actions {
+        for (button, action) in actions {
             let src = EventSource::Controller(button);
             self.do_action(&action, events, &src)?;
         }
@@ -439,11 +445,11 @@ impl KeyboardState {
 
         self.mapping = HashMap::new();
         if let Some(raw_mapping) = cfg.controller_map.get(&StateId::Keyboard).cloned() {
-            for (action, button) in raw_mapping {
-                if let Some(action) = get_action(&action) {
+            for (button, action) in raw_mapping {
+                if let Some(action) = get_action(&format!("keyboard.{}", action)) {
                     if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
                     {
-                        self.mapping.insert(action.clone(), button);
+                        self.mapping.insert(button, action.clone());
                     }
                 }
             }

@@ -3,7 +3,7 @@ use hidapi::HidDevice;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use crate::controller::{ControllerInput, Dpad};
+use crate::controller::ControllerInput;
 
 const STICK_OFFSET: i32 = 128;
 const STICK_THRESHOLD: i32 = 10;
@@ -17,7 +17,10 @@ const DEBOUNCE_REPEAT: Duration = Duration::from_millis(50);
 pub struct Ps4InputData {
     left: (i32, i32),
     right: (i32, i32),
-    dpad: Option<Dpad>,
+    dpad_up: bool,
+    dpad_down: bool,
+    dpad_left: bool,
+    dpad_right: bool,
     cross: bool,
     circle: bool,
     triangle: bool,
@@ -97,20 +100,14 @@ impl Ps4Input {
         let left_trigger_byte = report[state_offset + 7];
         let right_trigger_byte = report[state_offset + 8];
 
-        // D-pad: bits 0-3 of byte 4
-        let dpad = {
-            use Dpad::*;
-            match dpad_byte & 0x0F {
-                0 => Some(Up),
-                1 => Some(UpRight),
-                2 => Some(Right),
-                3 => Some(DownRight),
-                4 => Some(Down),
-                5 => Some(DownLeft),
-                6 => Some(Left),
-                7 => Some(UpLeft),
-                _ => None,
-            }
+        // D-pad: bits 0-3 of byte 4. Diagonals (1/3/5/7) report no direction so the rest of
+        // the app only ever sees a single cardinal direction at a time.
+        let (dpad_up, dpad_right, dpad_down, dpad_left) = match dpad_byte & 0x0F {
+            0 => (true, false, false, false),
+            2 => (false, true, false, false),
+            4 => (false, false, true, false),
+            6 => (false, false, false, true),
+            _ => (false, false, false, false),
         };
 
         // Face buttons - bits 4-7 of byte 4
@@ -148,7 +145,8 @@ impl Ps4Input {
             || rx.abs() > STICK_THRESHOLD
             || ry.abs() > STICK_THRESHOLD;
 
-        let is_active = dpad.is_some()
+        let dpad_active = dpad_up || dpad_down || dpad_left || dpad_right;
+        let is_active = dpad_active
             || sticks_active
             || cross
             || circle
@@ -168,7 +166,10 @@ impl Ps4Input {
         *data = Ps4InputData {
             left: (lx, ly),
             right: (rx, ry),
-            dpad,
+            dpad_up,
+            dpad_down,
+            dpad_left,
+            dpad_right,
             cross,
             circle,
             triangle,
@@ -269,8 +270,14 @@ impl DebounceState {
         data.ps = debounce_allow(&mut self.ps, data.ps);
 
         // Triggers (l2/r2) are analog and not debounced.
-        if !debounce_allow(&mut self.dpad, data.dpad.is_some()) {
-            data.dpad = None;
+        // The four dpad directions share one debounce slot so direction changes don't
+        // bypass the initial-delay window.
+        let dpad_pressed = data.dpad_up || data.dpad_down || data.dpad_left || data.dpad_right;
+        if !debounce_allow(&mut self.dpad, dpad_pressed) {
+            data.dpad_up = false;
+            data.dpad_down = false;
+            data.dpad_left = false;
+            data.dpad_right = false;
         }
     }
 }
@@ -312,7 +319,10 @@ impl Iterator for Ps4Device {
                     let mut data = self.input.read();
                     self.debounce.filter(&mut data);
                     // Only treat the frame as active if anything survived debouncing.
-                    let still_active = data.dpad.is_some()
+                    let still_active = data.dpad_up
+                        || data.dpad_down
+                        || data.dpad_left
+                        || data.dpad_right
                         || data.cross
                         || data.circle
                         || data.triangle
@@ -352,8 +362,17 @@ impl ControllerInput for Ps4InputData {
     fn right_stick_raw(&self) -> (f32, f32) {
         (self.right.0 as f32 / 128.0, self.right.1 as f32 / 128.0)
     }
-    fn dpad(&self) -> Option<Dpad> {
-        self.dpad.clone()
+    fn dpad_up(&self) -> bool {
+        self.dpad_up
+    }
+    fn dpad_down(&self) -> bool {
+        self.dpad_down
+    }
+    fn dpad_left(&self) -> bool {
+        self.dpad_left
+    }
+    fn dpad_right(&self) -> bool {
+        self.dpad_right
     }
     fn face_bottom(&self) -> bool {
         self.cross

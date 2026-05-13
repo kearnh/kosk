@@ -1,39 +1,11 @@
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
+use std::str::FromStr;
 
 use crate::config;
 
 pub mod ps4;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Dpad {
-    Up,
-    Down,
-    Left,
-    Right,
-    UpRight,
-    UpLeft,
-    DownRight,
-    DownLeft,
-}
-
-impl std::fmt::Display for Dpad {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Dpad::Up => "↑",
-            Dpad::UpRight => "↗",
-            Dpad::Right => "→",
-            Dpad::DownRight => "↘",
-            Dpad::Down => "↓",
-            Dpad::DownLeft => "↙",
-            Dpad::Left => "←",
-            Dpad::UpLeft => "↖",
-        };
-        write!(f, "{}", s)
-    }
-}
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
     if warp > 0.0 {
@@ -69,7 +41,10 @@ pub trait ControllerInput: Debug {
         warp(self.right_stick_raw(), config::get().stick_warp)
     }
 
-    fn dpad(&self) -> Option<Dpad>;
+    fn dpad_up(&self) -> bool;
+    fn dpad_down(&self) -> bool;
+    fn dpad_left(&self) -> bool;
+    fn dpad_right(&self) -> bool;
     fn face_bottom(&self) -> bool;
     fn face_right(&self) -> bool;
     fn face_top(&self) -> bool;
@@ -87,10 +62,19 @@ pub trait ControllerInput: Debug {
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// A controller binding spec.
+///
+/// Serialized as a single string so it can be used as a TOML table key. The format is
+/// `<variantName>` for unit variants (e.g. `faceTop`, `stickLeft`, `dpadUp`) and
+/// `<variantName>,<key>=<value>[,<key>=<value>...]` for variants carrying data
+/// (e.g. `triggerLeft,threshold=40`). Names are matched case-insensitively and `-` / `_`
+/// are ignored, so `stick-left`, `stick_left`, and `stickLeft` all parse to the same value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ControllerButton {
-    Dpad(Dpad),
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
     FaceBottom,
     FaceRight,
     FaceLeft,
@@ -109,7 +93,10 @@ pub enum ControllerButton {
 impl ControllerButton {
     pub(crate) fn query(&self, input: &dyn ControllerInput) -> bool {
         match self {
-            ControllerButton::Dpad(dpad) => input.dpad().map(|d| d == *dpad).unwrap_or(false),
+            ControllerButton::DpadUp => input.dpad_up(),
+            ControllerButton::DpadDown => input.dpad_down(),
+            ControllerButton::DpadLeft => input.dpad_left(),
+            ControllerButton::DpadRight => input.dpad_right(),
             ControllerButton::FaceBottom => input.face_bottom(),
             ControllerButton::FaceRight => input.face_right(),
             ControllerButton::FaceLeft => input.face_left(),
@@ -130,5 +117,244 @@ impl ControllerButton {
             ControllerButton::Share => input.btn_share(),
             ControllerButton::System => input.btn_system(),
         }
+    }
+}
+
+/// Lower-case the input and strip `-` / `_` so `stick-left`, `stick_left`, and
+/// `stickLeft` all normalize to the same identifier.
+fn normalize_ident(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '-' || c == '_' {
+            continue;
+        }
+        out.extend(c.to_lowercase());
+    }
+    out
+}
+
+/// Split `"k=v"` into `(k, v)` with whitespace trimmed; returns `None` if there is no `=`.
+fn split_kv(arg: &str) -> Option<(&str, &str)> {
+    arg.split_once('=').map(|(k, v)| (k.trim(), v.trim()))
+}
+
+fn parse_threshold(name: &str, args: &[&str]) -> Result<u8, String> {
+    let mut threshold = 40; // default threshold
+    for arg in args {
+        let (k, v) = split_kv(arg).ok_or_else(|| {
+            format!(
+                "'{}' argument must be 'threshold=<0-255>', got '{}'",
+                name, arg
+            )
+        })?;
+        match normalize_ident(k).as_str() {
+            "threshold" => {
+                threshold = v
+                    .parse::<u8>()
+                    .map_err(|e| format!("'{}': invalid threshold value '{}': {}", name, v, e))?;
+            }
+            _ => return Err(format!("'{}': unknown argument '{}'", name, k)),
+        }
+    }
+    Ok(threshold)
+}
+
+fn no_args(name: &str, args: &[&str]) -> Result<(), String> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "controller button '{}' does not take arguments (got {:?})",
+            name, args
+        ))
+    }
+}
+
+impl FromStr for ControllerButton {
+    type Err = String;
+
+    fn from_str(spec: &str) -> Result<Self, Self::Err> {
+        let trimmed = spec.trim();
+        let (head, args) = match trimmed.split_once(',') {
+            Some((h, rest)) => {
+                let args: Vec<&str> = rest
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                (h.trim(), args)
+            }
+            None => (trimmed, Vec::new()),
+        };
+
+        match normalize_ident(head).as_str() {
+            "dpadup" => no_args("dpadUp", &args).map(|_| ControllerButton::DpadUp),
+            "dpaddown" => no_args("dpadDown", &args).map(|_| ControllerButton::DpadDown),
+            "dpadleft" => no_args("dpadLeft", &args).map(|_| ControllerButton::DpadLeft),
+            "dpadright" => no_args("dpadRight", &args).map(|_| ControllerButton::DpadRight),
+            "facebottom" => no_args("faceBottom", &args).map(|_| ControllerButton::FaceBottom),
+            "faceright" => no_args("faceRight", &args).map(|_| ControllerButton::FaceRight),
+            "faceleft" => no_args("faceLeft", &args).map(|_| ControllerButton::FaceLeft),
+            "facetop" => no_args("faceTop", &args).map(|_| ControllerButton::FaceTop),
+            "shoulderleft" => {
+                no_args("shoulderLeft", &args).map(|_| ControllerButton::ShoulderLeft)
+            }
+            "shoulderright" => {
+                no_args("shoulderRight", &args).map(|_| ControllerButton::ShoulderRight)
+            }
+            "stickleft" => no_args("stickLeft", &args).map(|_| ControllerButton::StickLeft),
+            "stickright" => no_args("stickRight", &args).map(|_| ControllerButton::StickRight),
+            "options" => no_args("options", &args).map(|_| ControllerButton::Options),
+            "share" => no_args("share", &args).map(|_| ControllerButton::Share),
+            "system" => no_args("system", &args).map(|_| ControllerButton::System),
+            "triggerleft" => parse_threshold("triggerLeft", &args)
+                .map(|threshold| ControllerButton::TriggerLeft { threshold }),
+            "triggerright" => parse_threshold("triggerRight", &args)
+                .map(|threshold| ControllerButton::TriggerRight { threshold }),
+            _ => Err(format!("unknown controller button '{}'", spec)),
+        }
+    }
+}
+
+impl fmt::Display for ControllerButton {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ControllerButton::DpadUp => f.write_str("dpadUp"),
+            ControllerButton::DpadDown => f.write_str("dpadDown"),
+            ControllerButton::DpadLeft => f.write_str("dpadLeft"),
+            ControllerButton::DpadRight => f.write_str("dpadRight"),
+            ControllerButton::FaceBottom => f.write_str("faceBottom"),
+            ControllerButton::FaceRight => f.write_str("faceRight"),
+            ControllerButton::FaceLeft => f.write_str("faceLeft"),
+            ControllerButton::FaceTop => f.write_str("faceTop"),
+            ControllerButton::ShoulderLeft => f.write_str("shoulderLeft"),
+            ControllerButton::ShoulderRight => f.write_str("shoulderRight"),
+            ControllerButton::StickLeft => f.write_str("stickLeft"),
+            ControllerButton::StickRight => f.write_str("stickRight"),
+            ControllerButton::TriggerLeft { threshold } => {
+                write!(f, "triggerLeft,threshold={}", threshold)
+            }
+            ControllerButton::TriggerRight { threshold } => {
+                write!(f, "triggerRight,threshold={}", threshold)
+            }
+            ControllerButton::Options => f.write_str("options"),
+            ControllerButton::Share => f.write_str("share"),
+            ControllerButton::System => f.write_str("system"),
+        }
+    }
+}
+
+impl Serialize for ControllerButton {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for ControllerButton {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ButtonVisitor;
+        impl de::Visitor<'_> for ButtonVisitor {
+            type Value = ControllerButton;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "a controller button spec like \"faceTop\" or \"triggerLeft,threshold=40\"",
+                )
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                ControllerButton::from_str(v).map_err(de::Error::custom)
+            }
+        }
+        deserializer.deserialize_str(ButtonVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn parse(s: &str) -> ControllerButton {
+        ControllerButton::from_str(s).expect("parse")
+    }
+
+    #[test]
+    fn parses_unit_variants_case_and_kebab_insensitive() {
+        assert_eq!(parse("faceTop"), ControllerButton::FaceTop);
+        assert_eq!(parse("face-top"), ControllerButton::FaceTop);
+        assert_eq!(parse("FACE_TOP"), ControllerButton::FaceTop);
+        assert_eq!(parse("stickLeft"), ControllerButton::StickLeft);
+        assert_eq!(parse("options"), ControllerButton::Options);
+    }
+
+    #[test]
+    fn parses_trigger_with_named_threshold() {
+        assert_eq!(
+            parse("triggerLeft,threshold=40"),
+            ControllerButton::TriggerLeft { threshold: 40 }
+        );
+        assert_eq!(
+            parse("triggerRight, threshold = 200"),
+            ControllerButton::TriggerRight { threshold: 200 }
+        );
+    }
+
+    #[test]
+    fn parses_dpad_unit_variants() {
+        assert_eq!(parse("dpadUp"), ControllerButton::DpadUp);
+        assert_eq!(parse("dpad-down"), ControllerButton::DpadDown);
+        assert_eq!(parse("DPAD_LEFT"), ControllerButton::DpadLeft);
+        assert_eq!(parse("dpadright"), ControllerButton::DpadRight);
+    }
+
+    #[test]
+    fn round_trips_through_display() {
+        let cases = [
+            ControllerButton::FaceTop,
+            ControllerButton::StickLeft,
+            ControllerButton::TriggerLeft { threshold: 40 },
+            ControllerButton::DpadUp,
+            ControllerButton::DpadRight,
+        ];
+        for c in cases {
+            assert_eq!(parse(&c.to_string()), c);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_and_extra_args() {
+        assert!(ControllerButton::from_str("nope").is_err());
+        assert!(ControllerButton::from_str("faceTop,oops=1").is_err());
+        assert!(ControllerButton::from_str("triggerLeft").is_err());
+        assert!(ControllerButton::from_str("triggerLeft,threshold=999").is_err());
+    }
+
+    #[test]
+    fn deserializes_full_mappings_toml() {
+        let toml_src = r#"
+[Keyboard]
+"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
+"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"faceTop" = "toggleShift"
+"stickLeft" = "toggleCtrl"
+"stickRight" = "toggleAlt"
+"options" = "switchState.menu"
+"faceRight" = "switchState.textInput"
+"faceLeft" = "backspace"
+"#;
+        let map: HashMap<String, HashMap<ControllerButton, String>> =
+            toml::from_str(toml_src).expect("parse mappings");
+        let kb = map.get("Keyboard").expect("keyboard section");
+        assert_eq!(
+            kb.get(&ControllerButton::TriggerLeft { threshold: 40 }),
+            Some(&"sendKeyUnderLeftStick".to_string())
+        );
+        assert_eq!(
+            kb.get(&ControllerButton::FaceTop),
+            Some(&"toggleShift".to_string())
+        );
+        assert_eq!(
+            kb.get(&ControllerButton::Options),
+            Some(&"switchState.menu".to_string())
+        );
     }
 }

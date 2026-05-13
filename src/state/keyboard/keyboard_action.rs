@@ -8,6 +8,7 @@ use crate::state::{actions::Action, StateId};
 pub enum KeyboardAction {
     SendKeyUnderLeftStick,
     SendKeyUnderRightStick,
+    Backspace,
     ToggleShift,
     ToggleCtrl,
     ToggleAlt,

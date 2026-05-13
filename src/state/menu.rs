@@ -1,5 +1,5 @@
 use crate::{
-    controller::{ControllerButton, ControllerInput, Dpad},
+    controller::{ControllerButton, ControllerInput},
     state::{event::Event, event::EventQueue, event::EventSource, StateId},
 };
 use anyhow::Result;
@@ -62,10 +62,12 @@ impl MenuState {
             None => return Ok(()),
         };
 
-        let n = match input.dpad() {
-            Some(Dpad::Up) => -1,
-            Some(Dpad::Down) => 1,
-            _ => 0,
+        let n = if input.dpad_up() {
+            -1
+        } else if input.dpad_down() {
+            1
+        } else {
+            0
         };
         self.selected =
             (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
