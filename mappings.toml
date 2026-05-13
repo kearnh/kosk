@@ -1,0 +1,12 @@
+# Controller bindings for keyboard state (paths are relative to the main config file).
+# Action names use the same `keyboard.*` strings as layout keys in `old_steam_controller_kb.toml`.
+# Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
+
+[Keyboard]
+"keyboard.sendKeyUnderLeftStick" = { triggerLeft = { threshold = 40 } }
+"keyboard.sendKeyUnderRightStick" = { triggerRight = { threshold = 40 } }
+"keyboard.toggleShift" = "faceTop"
+"keyboard.toggleCtrl" = "stickLeft"
+"keyboard.toggleAlt" = "stickRight"
+"keyboard.switchState.menu" = "options"
+"keyboard.switchState.textInput" = "faceRight"

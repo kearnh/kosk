@@ -33,6 +33,7 @@ pub struct Ps4InputData {
     ps: bool,
 }
 
+#[derive(Debug)]
 struct Ps4Input {
     data: RwLock<Ps4InputData>,
 }

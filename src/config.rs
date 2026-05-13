@@ -99,10 +99,6 @@ pub struct Config {
     #[serde(default = "default_stick_warp")]
     pub stick_warp: f32,
 
-    /// Trigger threshold for key press (0-255)
-    #[serde(default = "default_trigger_threshold")]
-    pub trigger_threshold: u8,
-
     /// Whether the window should be transparent
     #[serde(default = "default_transparent")]
     pub transparent: bool,
@@ -184,9 +180,6 @@ fn default_stick_scale_y() -> f32 {
 }
 fn default_stick_warp() -> f32 {
     1.0
-}
-fn default_trigger_threshold() -> u8 {
-    40
 }
 fn default_transparent() -> bool {
     true

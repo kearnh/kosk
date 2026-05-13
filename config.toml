@@ -2,11 +2,12 @@ start_layout = "main"
 stick_scale_x = 3.0
 stick_scale_y = 2.5
 stick_warp = 1.0
-trigger_threshold = 40
 transparent = true
 window_pos = [2042.0, 1085.0]
 scale_x = 36.0
 scale_y = 40.0
+
+controller_map = "mappings.toml"
 
 [layouts]
 # qwerty = "qwerty.toml"

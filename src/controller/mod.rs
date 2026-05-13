@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::config;
 
 pub mod ps4;
@@ -5,6 +7,7 @@ pub mod ps4;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Dpad {
     Up,
     Down,
@@ -54,7 +57,7 @@ fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
 }
 
 #[allow(unused)]
-pub trait ControllerInput {
+pub trait ControllerInput: Debug {
     fn left_stick_raw(&self) -> (f32, f32);
     fn right_stick_raw(&self) -> (f32, f32);
 
@@ -85,6 +88,7 @@ pub trait ControllerInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ControllerButton {
     Dpad(Dpad),
     FaceBottom,
