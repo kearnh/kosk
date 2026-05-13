@@ -114,6 +114,12 @@ pub struct Config {
     #[serde(default = "default_scale_y")]
     pub scale_y: f32,
 
+    /// Minimum milliseconds between identical outgoing event units (a single
+    /// [`Event`](crate::state::event::Event) or a completed batch). Use `0` to
+    /// disable debouncing.
+    #[serde(default = "default_event_debounce_ms")]
+    pub event_debounce_ms: u64,
+
     #[serde(default)]
     pub text_input: TextInputStyle,
 
@@ -195,6 +201,10 @@ fn default_scale_x() -> f32 {
 
 fn default_scale_y() -> f32 {
     40.0
+}
+
+fn default_event_debounce_ms() -> u64 {
+    200
 }
 
 fn default_start_layout() -> String {

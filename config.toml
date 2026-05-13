@@ -6,6 +6,8 @@ transparent = true
 window_pos = [2042.0, 1085.0]
 scale_x = 36.0
 scale_y = 40.0
+# Minimum ms between identical outgoing event units; 0 disables debouncing
+event_debounce_ms = 200
 
 controller_map = "mappings.toml"
 

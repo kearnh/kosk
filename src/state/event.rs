@@ -28,8 +28,13 @@ impl EventQueue {
         }
     }
 
-    pub fn with_default_debounce() -> Self {
-        Self::new(Some(Duration::from_millis(50)))
+    /// `0` disables debouncing (same as [`passthrough`](Self::passthrough)).
+    pub fn set_debounce_ms(&mut self, ms: u64) {
+        self.debounce = if ms == 0 {
+            None
+        } else {
+            Some(Duration::from_millis(ms))
+        };
     }
 
     /// No debouncing; every [`push`](Self::push) and batch is accepted.
