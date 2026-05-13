@@ -200,7 +200,9 @@ impl EventQueue {
             .last_commit
             .get(&source)
             .is_some_and(|(t_old, armed_old)| {
-                let e = now.duration_since(*t_old);
+                let e = now
+                    .duration_since(*t_old)
+                    .saturating_sub(Duration::from_millis(40));
                 if *armed_old {
                     e <= repeat
                 } else {
