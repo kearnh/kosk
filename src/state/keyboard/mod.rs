@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::config;
 use crate::controller::ControllerButton;
@@ -32,6 +33,9 @@ pub struct KeyboardState {
     ctrl_mod: bool,
     alt_mod: bool,
     mapping: HashMap<ControllerButton, KeyboardAction>,
+    last_left_stick_action: Option<Instant>,
+    last_right_stick_action: Option<Instant>,
+    stick_select_lock_ms: Duration,
 }
 
 impl KeyboardState {
@@ -170,11 +174,13 @@ impl KeyboardState {
             }
             SendKeyUnderLeftStick => {
                 if let (Some(left), _) = &self.selected {
+                    self.last_left_stick_action = Some(Instant::now());
                     self.send_key(&left.clone(), events, source)?;
                 }
             }
             SendKeyUnderRightStick => {
                 if let (_, Some(right)) = &self.selected {
+                    self.last_right_stick_action = Some(Instant::now());
                     self.send_key(&right.clone(), events, source)?;
                 }
             }
@@ -269,7 +275,20 @@ impl KeyboardState {
         let selected_right =
             current_layout.get_nearest_key_right(input.right_stick(), self.shift_state);
 
-        self.selected = (selected_left.clone(), selected_right.clone());
+        if self
+            .last_left_stick_action
+            .is_none_or(|t| t.elapsed() > self.stick_select_lock_ms)
+        {
+            self.selected.0 = selected_left.clone();
+            self.last_left_stick_action = None;
+        }
+        if self
+            .last_right_stick_action
+            .is_none_or(|t| t.elapsed() > self.stick_select_lock_ms)
+        {
+            self.selected.1 = selected_right.clone();
+            self.last_right_stick_action = None;
+        }
 
         let actions: Vec<_> = self
             .mapping
@@ -454,6 +473,8 @@ impl KeyboardState {
                 }
             }
         }
+
+        self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
 
         Ok(())
     }

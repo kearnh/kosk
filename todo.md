@@ -47,3 +47,8 @@ Done: engine skeleton, tests, and `completion_dev` — see [docs/completion.md](
 - **State:** keep suggestion state on `TextInputState` (or a small submodule):
   `Vec<String>`, `selected_index`, last `prefix` used to
   avoid redundant work.
+
+Bugs
+----
+
+- Debounce no 100% right. Easy to send triple key when intending to only send 2.

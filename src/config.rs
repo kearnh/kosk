@@ -135,6 +135,10 @@ pub struct Config {
     /// (relative paths are resolved against the main config file's directory).
     #[serde(default, deserialize_with = "deserialize_controller_map")]
     pub controller_map: HashMap<StateId, HashMap<ControllerButton, String>>,
+
+    /// Milliseconds for the stick selection to be locked after key under stick is pressed.
+    #[serde(default = "default_stick_select_lock_ms")]
+    pub stick_select_lock_ms: u64,
 }
 
 #[derive(Deserialize)]
@@ -219,6 +223,10 @@ fn default_event_debounce_repeat_ms() -> u64 {
 
 fn default_start_layout() -> String {
     "main".to_string()
+}
+
+fn default_stick_select_lock_ms() -> u64 {
+    100
 }
 
 // Static variables for config management

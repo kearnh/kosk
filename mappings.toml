@@ -4,6 +4,7 @@
 
 [Keyboard]
 "triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
+"faceBottom" = "sendKeyUnderLeftStick"
 "triggerRight,threshold=40" = "sendKeyUnderRightStick"
 "faceTop" = "toggleShift"
 "stickLeft" = "toggleCtrl"
