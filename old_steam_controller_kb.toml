@@ -127,6 +127,7 @@ key = "f"
 
 [[rows.keys]]
 key = "g"
+width = 1.4
 
 [[rows.keys]]
 key = "Skip"
@@ -134,11 +135,10 @@ width = 0.25
 
 [[rows.keys]]
 key = "h"
-width = 1.4
+width = 1.5
 
 [[rows.keys]]
 key = "j"
-width = 1.5
 
 [[rows.keys]]
 key = "k"
@@ -173,6 +173,7 @@ key = "c"
 
 [[rows.keys]]
 key = "v"
+width = 1.2
 
 [[rows.keys]]
 key = "Skip"
