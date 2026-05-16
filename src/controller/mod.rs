@@ -61,9 +61,6 @@ pub trait ControllerInput: Debug {
     fn btn_system(&self) -> bool;
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
-
-    /// Hardware-held buttons before repeat debouncing (before repeat debounce on PS4).
-    fn physical(&self) -> &dyn ControllerInput;
 }
 
 /// A controller binding spec.
@@ -95,10 +92,6 @@ pub enum ControllerButton {
 }
 
 impl ControllerButton {
-    pub(crate) fn query_physical(&self, input: &dyn ControllerInput) -> bool {
-        self.query(input.physical())
-    }
-
     pub(crate) fn query(&self, input: &dyn ControllerInput) -> bool {
         match self {
             ControllerButton::DpadUp => input.dpad_up(),

@@ -196,7 +196,7 @@ key = { normal = "?", shift = "/" }
 key = { normal = ".", shift = ">" }
 
 [[rows.keys]]
-key = "Shift"
+key = "toggleShift"
 display = { normal = "⇧", shift = "⇧" }
 
 [[rows]]

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::any::Any;
 use strum::VariantNames;
 
-use crate::state::{actions::Action, StateId};
+use crate::state::{actions::Action, actions::TriggerMode, StateId};
 
 #[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone, Debug)]
 pub enum TextInputAction {
@@ -14,6 +14,15 @@ pub enum TextInputAction {
 impl Action for TextInputAction {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn trigger_mode(&self) -> TriggerMode {
+        match self {
+            TextInputAction::MoveCursorLeft | TextInputAction::MoveCursorRight => {
+                TriggerMode::WhileHeld
+            }
+            TextInputAction::SwitchState(_) => TriggerMode::Edge,
+        }
     }
 }
 

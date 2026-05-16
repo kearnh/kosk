@@ -9,8 +9,18 @@ use crate::state::move_window_action::MoveWindowAction;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 
+/// How a controller mapping should fire while its button is held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerMode {
+    /// Once per press (fires on transition to down).
+    Edge,
+    /// Every evaluation tick while physically held (repeat actions use [`EventQueue`] debounce).
+    WhileHeld,
+}
+
 pub trait Action: Any {
     fn as_any(&self) -> &dyn Any;
+    fn trigger_mode(&self) -> TriggerMode;
 }
 
 pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {

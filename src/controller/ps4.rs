@@ -1,41 +1,42 @@
 use anyhow::Result;
 use hidapi::HidDevice;
 use std::sync::RwLock;
-use std::time::{Duration, Instant};
 
 use crate::controller::ControllerInput;
 
 const STICK_OFFSET: i32 = 128;
 const STICK_THRESHOLD: i32 = 10;
-/// How long to wait after the very first press before firing again.
-const DEBOUNCE_INITIAL: Duration = Duration::from_millis(400);
-/// Repeat interval once the initial delay has elapsed.
-const DEBOUNCE_REPEAT: Duration = Duration::from_millis(50);
 
-/// Digital button and trigger state from the controller (face, shoulders, d-pad, etc.).
+#[allow(unused)]
 #[derive(Default, Clone, Debug)]
-pub struct Ps4PhysicalState {
-    pub dpad_up: bool,
-    pub dpad_down: bool,
-    pub dpad_left: bool,
-    pub dpad_right: bool,
-    pub cross: bool,
-    pub circle: bool,
-    pub triangle: bool,
-    pub square: bool,
-    pub l1: bool,
-    pub r1: bool,
-    pub l3: bool,
-    pub r3: bool,
-    pub l2: Option<u8>,
-    pub r2: Option<u8>,
-    pub options: bool,
-    pub share: bool,
-    pub ps: bool,
+pub struct Ps4InputData {
+    left: (i32, i32),
+    right: (i32, i32),
+    dpad_up: bool,
+    dpad_down: bool,
+    dpad_left: bool,
+    dpad_right: bool,
+    cross: bool,
+    circle: bool,
+    triangle: bool,
+    square: bool,
+    l1: bool,
+    r1: bool,
+    l3: bool,
+    r3: bool,
+    l2: Option<u8>,
+    r2: Option<u8>,
+    options: bool,
+    share: bool,
+    ps: bool,
 }
 
-impl Ps4PhysicalState {
-    pub fn any_digital(&self) -> bool {
+impl Ps4InputData {
+    fn sticks_active(&self) -> bool {
+        self.left != (0, 0) || self.right != (0, 0)
+    }
+
+    fn any_digital(&self) -> bool {
         self.dpad_up
             || self.dpad_down
             || self.dpad_left
@@ -53,90 +54,6 @@ impl Ps4PhysicalState {
             || self.ps
             || self.l2.is_some()
             || self.r2.is_some()
-    }
-}
-
-impl ControllerInput for Ps4PhysicalState {
-    fn left_stick_raw(&self) -> (f32, f32) {
-        (0.0, 0.0)
-    }
-    fn right_stick_raw(&self) -> (f32, f32) {
-        (0.0, 0.0)
-    }
-    fn dpad_up(&self) -> bool {
-        self.dpad_up
-    }
-    fn dpad_down(&self) -> bool {
-        self.dpad_down
-    }
-    fn dpad_left(&self) -> bool {
-        self.dpad_left
-    }
-    fn dpad_right(&self) -> bool {
-        self.dpad_right
-    }
-    fn face_bottom(&self) -> bool {
-        self.cross
-    }
-    fn face_right(&self) -> bool {
-        self.circle
-    }
-    fn face_top(&self) -> bool {
-        self.triangle
-    }
-    fn face_left(&self) -> bool {
-        self.square
-    }
-    fn shoulder_left(&self) -> bool {
-        self.l1
-    }
-    fn shoulder_right(&self) -> bool {
-        self.r1
-    }
-    fn stick_left(&self) -> bool {
-        self.l3
-    }
-    fn stick_right(&self) -> bool {
-        self.r3
-    }
-    fn trigger_left(&self) -> Option<u8> {
-        self.l2
-    }
-    fn trigger_right(&self) -> Option<u8> {
-        self.r2
-    }
-    fn btn_options(&self) -> bool {
-        self.options
-    }
-    fn btn_share(&self) -> bool {
-        self.share
-    }
-    fn btn_system(&self) -> bool {
-        self.ps
-    }
-    fn physical(&self) -> &dyn ControllerInput {
-        self
-    }
-
-    fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
-        Box::new(self.clone())
-    }
-}
-
-#[allow(unused)]
-#[derive(Default, Clone, Debug)]
-pub struct Ps4InputData {
-    left: (i32, i32),
-    right: (i32, i32),
-    /// Raw HID button state (before repeat debouncing).
-    physical: Ps4PhysicalState,
-    /// Repeat-debounced button state exposed via [`ControllerInput`].
-    debounced: Ps4PhysicalState,
-}
-
-impl Ps4InputData {
-    fn sticks_active(&self) -> bool {
-        self.left != (0, 0) || self.right != (0, 0)
     }
 }
 
@@ -266,30 +183,26 @@ impl Ps4Input {
             || share
             || ps;
 
-        let physical = Ps4PhysicalState {
-            dpad_up,
-            dpad_down,
-            dpad_left,
-            dpad_right,
-            cross,
-            circle,
-            triangle,
-            square,
-            l1,
-            r1,
-            l2,
-            r2,
-            l3,
-            r3,
-            options,
-            share,
-            ps,
-        };
-
         let mut data = self.data.write().unwrap();
         data.left = (lx, ly);
         data.right = (rx, ry);
-        data.physical = physical;
+        data.dpad_up = dpad_up;
+        data.dpad_down = dpad_down;
+        data.dpad_left = dpad_left;
+        data.dpad_right = dpad_right;
+        data.cross = cross;
+        data.circle = circle;
+        data.triangle = triangle;
+        data.square = square;
+        data.l1 = l1;
+        data.r1 = r1;
+        data.l2 = l2;
+        data.r2 = r2;
+        data.l3 = l3;
+        data.r3 = r3;
+        data.options = options;
+        data.share = share;
+        data.ps = ps;
 
         is_active
     }
@@ -299,111 +212,10 @@ impl Ps4Input {
     }
 }
 
-/// Per-button state machine for initial-delay + repeat-rate debouncing.
-#[derive(Default)]
-enum ButtonState {
-    /// Button is not held.
-    #[default]
-    Idle,
-    /// Button was just pressed; waiting out the initial delay before repeating.
-    InitialDelay { since: Instant },
-    /// Initial delay elapsed; firing repeatedly at DEBOUNCE_REPEAT interval.
-    Repeating { last: Instant },
-}
-
-/// Advance the state machine for one poll tick.
-/// Returns `true` when the press should be forwarded to the caller.
-fn debounce_allow(slot: &mut ButtonState, pressed: bool) -> bool {
-    if !pressed {
-        *slot = ButtonState::Idle;
-        return false;
-    }
-    let now = Instant::now();
-    match slot {
-        // First press — fire immediately and start the initial delay.
-        ButtonState::Idle => {
-            *slot = ButtonState::InitialDelay { since: now };
-            true
-        }
-        // Still within the initial hold delay — suppress.
-        ButtonState::InitialDelay { since } if now.duration_since(*since) < DEBOUNCE_INITIAL => {
-            false
-        }
-        // Initial delay elapsed — switch to repeat mode and fire.
-        ButtonState::InitialDelay { .. } => {
-            *slot = ButtonState::Repeating { last: now };
-            true
-        }
-        // Repeating, but repeat interval not yet elapsed — suppress.
-        ButtonState::Repeating { last } if now.duration_since(*last) < DEBOUNCE_REPEAT => false,
-        // Repeat interval elapsed — fire and update timestamp.
-        ButtonState::Repeating { last } => {
-            *last = now;
-            true
-        }
-    }
-}
-
-/// Holds per-button debounce state for every digital input.
-#[derive(Default)]
-struct DebounceState {
-    cross: ButtonState,
-    circle: ButtonState,
-    triangle: ButtonState,
-    square: ButtonState,
-    l1: ButtonState,
-    r1: ButtonState,
-    l3: ButtonState,
-    r3: ButtonState,
-    options: ButtonState,
-    share: ButtonState,
-    ps: ButtonState,
-    dpad: ButtonState,
-}
-
-impl DebounceState {
-    fn filter(&mut self, data: &mut Ps4InputData) {
-        let p = &data.physical;
-        let d = &mut data.debounced;
-
-        d.cross = debounce_allow(&mut self.cross, p.cross);
-        d.circle = debounce_allow(&mut self.circle, p.circle);
-        d.triangle = debounce_allow(&mut self.triangle, p.triangle);
-        d.square = debounce_allow(&mut self.square, p.square);
-        d.l1 = debounce_allow(&mut self.l1, p.l1);
-        d.r1 = debounce_allow(&mut self.r1, p.r1);
-        d.l3 = debounce_allow(&mut self.l3, p.l3);
-        d.r3 = debounce_allow(&mut self.r3, p.r3);
-        d.options = debounce_allow(&mut self.options, p.options);
-        d.share = debounce_allow(&mut self.share, p.share);
-        d.ps = debounce_allow(&mut self.ps, p.ps);
-
-        // Triggers (l2/r2) are analog and not debounced.
-        d.l2 = p.l2;
-        d.r2 = p.r2;
-
-        // The four dpad directions share one debounce slot so direction changes don't
-        // bypass the initial-delay window.
-        let dpad_pressed = p.dpad_up || p.dpad_down || p.dpad_left || p.dpad_right;
-        if debounce_allow(&mut self.dpad, dpad_pressed) {
-            d.dpad_up = p.dpad_up;
-            d.dpad_down = p.dpad_down;
-            d.dpad_left = p.dpad_left;
-            d.dpad_right = p.dpad_right;
-        } else {
-            d.dpad_up = false;
-            d.dpad_down = false;
-            d.dpad_left = false;
-            d.dpad_right = false;
-        }
-    }
-}
-
 pub struct Ps4Device {
     input: Ps4Input,
     device: HidDevice,
     was_active: bool,
-    debounce: DebounceState,
 }
 
 impl Ps4Device {
@@ -412,7 +224,6 @@ impl Ps4Device {
             input: Default::default(),
             device,
             was_active: false,
-            debounce: Default::default(),
         }
     }
 
@@ -433,13 +244,8 @@ impl Iterator for Ps4Device {
         loop {
             match self.poll() {
                 Ok(_) => {
-                    let mut data = self.input.read();
-                    self.debounce.filter(&mut data);
-                    // Stay active while anything is physically held, even if repeat debounce
-                    // suppresses the debounced button flags (needed for chord leaders).
-                    let still_active = data.physical.any_digital()
-                        || data.debounced.any_digital()
-                        || data.sticks_active();
+                    let data = self.input.read();
+                    let still_active = data.any_digital() || data.sticks_active();
                     if still_active {
                         self.was_active = true;
                         return Some(Some(Box::new(data)));
@@ -465,59 +271,55 @@ impl ControllerInput for Ps4InputData {
         (self.right.0 as f32 / 128.0, self.right.1 as f32 / 128.0)
     }
     fn dpad_up(&self) -> bool {
-        self.debounced.dpad_up()
+        self.dpad_up
     }
     fn dpad_down(&self) -> bool {
-        self.debounced.dpad_down()
+        self.dpad_down
     }
     fn dpad_left(&self) -> bool {
-        self.debounced.dpad_left()
+        self.dpad_left
     }
     fn dpad_right(&self) -> bool {
-        self.debounced.dpad_right()
+        self.dpad_right
     }
     fn face_bottom(&self) -> bool {
-        self.debounced.face_bottom()
+        self.cross
     }
     fn face_right(&self) -> bool {
-        self.debounced.face_right()
+        self.circle
     }
     fn face_top(&self) -> bool {
-        self.debounced.face_top()
+        self.triangle
     }
     fn face_left(&self) -> bool {
-        self.debounced.face_left()
+        self.square
     }
     fn shoulder_left(&self) -> bool {
-        self.debounced.shoulder_left()
+        self.l1
     }
     fn shoulder_right(&self) -> bool {
-        self.debounced.shoulder_right()
+        self.r1
     }
     fn stick_left(&self) -> bool {
-        self.debounced.stick_left()
+        self.l3
     }
     fn stick_right(&self) -> bool {
-        self.debounced.stick_right()
+        self.r3
     }
     fn trigger_left(&self) -> Option<u8> {
-        self.debounced.trigger_left()
+        self.l2
     }
     fn trigger_right(&self) -> Option<u8> {
-        self.debounced.trigger_right()
+        self.r2
     }
     fn btn_options(&self) -> bool {
-        self.debounced.btn_options()
+        self.options
     }
     fn btn_share(&self) -> bool {
-        self.debounced.btn_share()
+        self.share
     }
     fn btn_system(&self) -> bool {
-        self.debounced.btn_system()
-    }
-
-    fn physical(&self) -> &dyn ControllerInput {
-        &self.physical
+        self.ps
     }
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {

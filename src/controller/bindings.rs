@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
+use crate::state::actions::{Action, TriggerMode};
 
 struct ChordEntry<A> {
     leader: ControllerButton,
@@ -18,7 +19,7 @@ pub struct BindingEngine<A> {
     suppress_single: HashSet<ControllerButton>,
     /// Chords already fired while both members are still held.
     chords_fired: HashSet<(ControllerButton, ControllerButton)>,
-    /// Leaders currently held on hardware (pre-debounce), for chord completion.
+    /// Leaders currently held, for chord completion.
     leaders_active: HashSet<ControllerButton>,
 }
 
@@ -36,7 +37,7 @@ impl<A> Default for BindingEngine<A> {
     }
 }
 
-impl<A: Clone> BindingEngine<A> {
+impl<A: Action + Clone> BindingEngine<A> {
     pub fn try_from_raw(raw: HashMap<ControllerBinding, A>) -> Result<Self, String> {
         let mut singles = HashMap::new();
         let mut chords = Vec::new();
@@ -109,7 +110,7 @@ impl<A: Clone> BindingEngine<A> {
         }
 
         for chord in &self.chords {
-            if chord.leader.query_physical(input) {
+            if chord.leader.query(input) {
                 self.leaders_active.insert(chord.leader.clone());
             } else {
                 self.leaders_active.remove(&chord.leader);
@@ -117,7 +118,7 @@ impl<A: Clone> BindingEngine<A> {
         }
 
         self.chords_fired.retain(|(leader, follower)| {
-            leader.query_physical(input) && follower.query_physical(input)
+            leader.query(input) && follower.query(input)
         });
 
         let mut fired = Vec::new();
@@ -143,7 +144,14 @@ impl<A: Clone> BindingEngine<A> {
         }
 
         for (button, action) in &self.singles {
-            if held.contains(button) && !self.suppress_single.contains(button) {
+            if self.suppress_single.contains(button) {
+                continue;
+            }
+            let should_fire = match action.trigger_mode() {
+                TriggerMode::Edge => newly_down.contains(button),
+                TriggerMode::WhileHeld => held.contains(button),
+            };
+            if should_fire {
                 fired.push((ControllerBinding::Single(button.clone()), action.clone()));
             }
         }
@@ -165,12 +173,30 @@ impl<A: Clone> BindingEngine<A> {
 mod tests {
     use super::*;
     use crate::controller::ControllerButton;
+    use crate::state::actions::{Action, TriggerMode};
+    use std::any::Any;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum TestAction {
         Chord,
         SingleFaceTop,
+        RepeatFaceBottom,
         SingleOptions,
+    }
+
+    impl Action for TestAction {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn trigger_mode(&self) -> TriggerMode {
+            match self {
+                TestAction::RepeatFaceBottom => TriggerMode::WhileHeld,
+                TestAction::Chord | TestAction::SingleFaceTop | TestAction::SingleOptions => {
+                    TriggerMode::Edge
+                }
+            }
+        }
     }
 
     fn engine() -> BindingEngine<TestAction> {
@@ -254,94 +280,8 @@ mod tests {
         fn btn_system(&self) -> bool {
             false
         }
-        fn physical(&self) -> &dyn ControllerInput {
-            self
-        }
-
         fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
             Box::new(self.clone())
-        }
-    }
-
-    #[derive(Debug)]
-    struct MockInput {
-        debounced: ButtonSetInput,
-        physical: ButtonSetInput,
-    }
-
-    impl ControllerInput for MockInput {
-        fn left_stick_raw(&self) -> (f32, f32) {
-            self.debounced.left_stick_raw()
-        }
-        fn right_stick_raw(&self) -> (f32, f32) {
-            self.debounced.right_stick_raw()
-        }
-        fn dpad_up(&self) -> bool {
-            self.debounced.dpad_up()
-        }
-        fn dpad_down(&self) -> bool {
-            self.debounced.dpad_down()
-        }
-        fn dpad_left(&self) -> bool {
-            self.debounced.dpad_left()
-        }
-        fn dpad_right(&self) -> bool {
-            self.debounced.dpad_right()
-        }
-        fn face_bottom(&self) -> bool {
-            self.debounced.face_bottom()
-        }
-        fn face_right(&self) -> bool {
-            self.debounced.face_right()
-        }
-        fn face_top(&self) -> bool {
-            self.debounced.face_top()
-        }
-        fn face_left(&self) -> bool {
-            self.debounced.face_left()
-        }
-        fn shoulder_left(&self) -> bool {
-            self.debounced.shoulder_left()
-        }
-        fn shoulder_right(&self) -> bool {
-            self.debounced.shoulder_right()
-        }
-        fn stick_left(&self) -> bool {
-            self.debounced.stick_left()
-        }
-        fn stick_right(&self) -> bool {
-            self.debounced.stick_right()
-        }
-        fn trigger_left(&self) -> Option<u8> {
-            self.debounced.trigger_left()
-        }
-        fn trigger_right(&self) -> Option<u8> {
-            self.debounced.trigger_right()
-        }
-        fn btn_options(&self) -> bool {
-            self.debounced.btn_options()
-        }
-        fn btn_share(&self) -> bool {
-            self.debounced.btn_share()
-        }
-        fn btn_system(&self) -> bool {
-            self.debounced.btn_system()
-        }
-        fn physical(&self) -> &dyn ControllerInput {
-            &self.physical
-        }
-        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
-            unimplemented!()
-        }
-    }
-
-    fn mock_input(
-        debounced: HashSet<ControllerButton>,
-        physical: HashSet<ControllerButton>,
-    ) -> MockInput {
-        MockInput {
-            debounced: ButtonSetInput(debounced),
-            physical: ButtonSetInput(physical),
         }
     }
 
@@ -350,7 +290,12 @@ mod tests {
         prev: &HashSet<ControllerButton>,
         now: &HashSet<ControllerButton>,
     ) -> Vec<TestAction> {
-        step_with_physical(engine, prev, now, now.clone())
+        engine.prev_held = prev.clone();
+        engine
+            .evaluate(Some(&ButtonSetInput(now.clone())))
+            .into_iter()
+            .map(|(_, a)| a)
+            .collect()
     }
 
     #[test]
@@ -393,35 +338,35 @@ mod tests {
     }
 
     #[test]
-    fn leader_active_during_debounce_gap_still_completes_chord() {
-        let mut e = engine();
+    fn while_held_fires_every_tick() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::FaceBottom),
+            TestAction::RepeatFaceBottom,
+        );
+        let mut e = BindingEngine::try_from_raw(raw).unwrap();
         let empty = held(&[]);
-        let options_only = held(&[ControllerButton::Options]);
-        let both = held(&[ControllerButton::Options, ControllerButton::FaceTop]);
-
-        assert!(step(&mut e, &empty, &options_only).is_empty());
-        // Simulate repeat debounce suppressing options while still physically held.
-        let gap_held = held(&[]);
-        let mut physical = options_only.clone();
-        assert!(step_with_physical(&mut e, &options_only, &gap_held, physical.clone()).is_empty());
-        physical = both.clone();
-        let fired = step_with_physical(&mut e, &gap_held, &both, physical);
-        assert_eq!(fired, vec![TestAction::Chord]);
+        let held_bottom = held(&[ControllerButton::FaceBottom]);
+        assert_eq!(
+            step(&mut e, &empty, &held_bottom),
+            vec![TestAction::RepeatFaceBottom]
+        );
+        assert_eq!(
+            step(&mut e, &held_bottom, &held_bottom),
+            vec![TestAction::RepeatFaceBottom]
+        );
     }
 
-    fn step_with_physical(
-        engine: &mut BindingEngine<TestAction>,
-        prev: &HashSet<ControllerButton>,
-        now: &HashSet<ControllerButton>,
-        physical: HashSet<ControllerButton>,
-    ) -> Vec<TestAction> {
-        engine.prev_held = prev.clone();
-        let mock = mock_input(now.clone(), physical);
-        engine
-            .evaluate(Some(&mock))
-            .into_iter()
-            .map(|(_, a)| a)
-            .collect()
+    #[test]
+    fn edge_single_fires_once_per_hold() {
+        let mut e = engine();
+        let empty = held(&[]);
+        let face_only = held(&[ControllerButton::FaceTop]);
+        assert_eq!(
+            step(&mut e, &empty, &face_only),
+            vec![TestAction::SingleFaceTop]
+        );
+        assert!(step(&mut e, &face_only, &face_only).is_empty());
     }
 
     #[test]
