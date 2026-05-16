@@ -3,21 +3,78 @@ stick_scale_x = 3.0
 stick_scale_y = 2.5
 stick_warp = 1.0
 transparent = true
-window_pos = [2042.0, 1085.0]
+window_pos = [
+    2042.0,
+    1062.0,
+]
 scale_x = 36.0
 scale_y = 40.0
-# Ms before first repeat of the same event unit; 0 disables debouncing
-event_debounce_ms = 200
-# Ms between further repeats (key-repeat); 0 uses event_debounce_ms each time
+event_debounce_ms = 300
 event_debounce_repeat_ms = 55
-
-controller_map = "mappings.toml"
+stick_select_lock_ms = 100
 
 [layouts]
-# qwerty = "qwerty.toml"
 main = "old_steam_controller_kb.toml"
 
 [debug]
 show_stick_cursors = false
 show_hitboxes = false
 show_stick_bounds = false
+
+[text_input]
+background_color = [
+    255,
+    255,
+    255,
+    255,
+]
+text_color = [
+    0,
+    0,
+    0,
+    255,
+]
+cursor_color = [
+    0,
+    0,
+    0,
+    255,
+]
+font_size = 22.0
+
+[controller_map.TextInput]
+dpadUp = "switchState.keyboard"
+dpadLeft = "moveCursorLeft"
+dpadRight = "moveCursorRight"
+
+[controller_map.MoveWindow]
+faceBottom = "snapBottomRight"
+dpadRight = "nudgeRight"
+options = "snapTopRight"
+faceLeft = "snapBottomLeft"
+dpadLeft = "nudgeLeft"
+faceRight = "switchState.menu"
+dpadUp = "nudgeUp"
+faceTop = "snapTopLeft"
+dpadDown = "nudgeDown"
+
+[controller_map.Menu]
+faceRight = "switchState.keyboard"
+dpadDown = "selectDown"
+dpadUp = "selectUp"
+faceBottom = "activate"
+
+[controller_map.Keyboard]
+dpadLeft = "sendKey.left"
+"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+faceLeft = "sendKey.backspace"
+dpadUp = "sendKey.up"
+dpadDown = "sendKey.down"
+faceTop = "toggleShift"
+"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
+stickLeft = "toggleCtrl"
+"options + faceTop" = "switchState.menu"
+faceBottom = "sendKey.space"
+stickRight = "toggleAlt"
+dpadRight = "sendKey.right"
+"options + faceRight" = "switchState.textInput"
