@@ -1,5 +1,5 @@
 use crate::{
-    controller::{ControllerButton, ControllerInput},
+    controller::{ControllerBinding, ControllerButton, ControllerInput},
     state::{event::Event, event::EventQueue, event::EventSource, StateId},
 };
 use anyhow::Result;
@@ -75,7 +75,7 @@ impl MenuState {
         if input.face_right() {
             let _ = events.push(
                 Event::ChangeState(StateId::Keyboard),
-                &EventSource::Controller(ControllerButton::FaceRight),
+                &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceRight)),
             );
             return Ok(());
         }
@@ -84,7 +84,7 @@ impl MenuState {
             if let Some(id) = (self.buttons[self.selected].callback)() {
                 let _ = events.push(
                     Event::ChangeState(id),
-                    &EventSource::Controller(ControllerButton::FaceBottom),
+                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceBottom)),
                 );
             }
             return Ok(());

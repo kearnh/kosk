@@ -3,7 +3,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::config;
-use crate::controller::ControllerButton;
+use crate::controller::bindings::BindingEngine;
 use crate::state::actions::get_action;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
@@ -32,7 +32,7 @@ pub struct KeyboardState {
     shift_mod: bool,
     ctrl_mod: bool,
     alt_mod: bool,
-    mapping: HashMap<ControllerButton, KeyboardAction>,
+    bindings: BindingEngine<KeyboardAction>,
     last_left_stick_action: Option<Instant>,
     last_right_stick_action: Option<Instant>,
     stick_select_lock_ms: Duration,
@@ -261,6 +261,7 @@ impl KeyboardState {
             None => {
                 // end of inputs, reset
                 self.selected = (None, None);
+                self.bindings.evaluate(None);
                 return Ok(());
             }
         };
@@ -290,14 +291,8 @@ impl KeyboardState {
             self.last_right_stick_action = None;
         }
 
-        let actions: Vec<_> = self
-            .mapping
-            .iter()
-            .filter(|(button, _)| button.query(input.as_ref()))
-            .map(|(button, action)| (button.clone(), action.clone()))
-            .collect();
-        for (button, action) in actions {
-            let src = EventSource::Controller(button);
+        for (binding, action) in self.bindings.evaluate(Some(input.as_ref())) {
+            let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }
 
@@ -462,17 +457,19 @@ impl KeyboardState {
             self.layouts.insert(name.clone(), layout);
         }
 
-        self.mapping = HashMap::new();
+        let mut raw_bindings = HashMap::new();
         if let Some(raw_mapping) = cfg.controller_map.get(&StateId::Keyboard).cloned() {
-            for (button, action) in raw_mapping {
-                if let Some(action) = get_action(&format!("keyboard.{}", action)) {
+            for (binding, action_name) in raw_mapping {
+                if let Some(action) = get_action(&format!("keyboard.{}", action_name)) {
                     if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
                     {
-                        self.mapping.insert(button, action.clone());
+                        raw_bindings.insert(binding, action.clone());
                     }
                 }
             }
         }
+        self.bindings = BindingEngine::try_from_raw(raw_bindings)
+            .map_err(|e| anyhow::anyhow!("keyboard controller_map: {e}"))?;
 
         self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
 

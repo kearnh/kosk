@@ -1,5 +1,5 @@
 use crate::config;
-use crate::controller::ControllerButton;
+use crate::controller::ControllerBinding;
 use crate::state::StateId;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 pub enum EventSource {
     MouseClick,
     /// Physical controller binding that produced this commit (per-button debounce bucket).
-    Controller(ControllerButton),
+    Controller(ControllerBinding),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

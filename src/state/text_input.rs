@@ -1,6 +1,6 @@
 use crate::{
     config,
-    controller::{ControllerButton, ControllerInput},
+    controller::{ControllerBinding, ControllerButton, ControllerInput},
     state::{event::Event, event::EventQueue, event::EventSource, keyboard, StateId},
 };
 use anyhow::Result;
@@ -162,7 +162,7 @@ impl TextInputState {
             if input.dpad_up() {
                 let _ = events.push(
                     Event::ChangeState(StateId::Keyboard),
-                    &EventSource::Controller(ControllerButton::DpadUp),
+                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::DpadUp)),
                 );
                 return Ok(());
             }

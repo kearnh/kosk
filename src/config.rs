@@ -1,4 +1,4 @@
-use crate::controller::ControllerButton;
+use crate::controller::ControllerBinding;
 use crate::state::window_pos::WindowPos;
 use crate::state::StateId;
 use anyhow::{bail, Context, Result};
@@ -134,7 +134,7 @@ pub struct Config {
     /// Either an inline table, or a string path to a TOML file whose root is the same map shape
     /// (relative paths are resolved against the main config file's directory).
     #[serde(default, deserialize_with = "deserialize_controller_map")]
-    pub controller_map: HashMap<StateId, HashMap<ControllerButton, String>>,
+    pub controller_map: HashMap<StateId, HashMap<ControllerBinding, String>>,
 
     /// Milliseconds for the stick selection to be locked after key under stick is pressed.
     #[serde(default = "default_stick_select_lock_ms")]
@@ -147,12 +147,12 @@ enum ControllerMapSource {
     /// `controller_map = "mappings.toml"`
     File(String),
     /// `[controller_map]` / nested tables
-    Inline(HashMap<StateId, HashMap<ControllerButton, String>>),
+    Inline(HashMap<StateId, HashMap<ControllerBinding, String>>),
 }
 
 fn deserialize_controller_map<'de, D>(
     deserializer: D,
-) -> Result<HashMap<StateId, HashMap<ControllerButton, String>>, D::Error>
+) -> Result<HashMap<StateId, HashMap<ControllerBinding, String>>, D::Error>
 where
     D: Deserializer<'de>,
 {

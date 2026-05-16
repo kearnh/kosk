@@ -1,6 +1,6 @@
 use crate::{
     config,
-    controller::{ControllerButton, ControllerInput},
+    controller::{ControllerBinding, ControllerButton, ControllerInput},
     state::{event::Event, event::EventQueue, event::EventSource, StateId, WindowPos},
 };
 use anyhow::Result;
@@ -86,7 +86,7 @@ impl MoveWindowState {
             if input.face_right() {
                 let _ = events.push(
                     Event::ChangeState(StateId::Menu),
-                    &EventSource::Controller(ControllerButton::FaceRight),
+                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceRight)),
                 );
             }
         }

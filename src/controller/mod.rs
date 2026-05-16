@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use crate::config;
 
+pub mod bindings;
 pub mod ps4;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -60,6 +61,9 @@ pub trait ControllerInput: Debug {
     fn btn_system(&self) -> bool;
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
+
+    /// Hardware-held buttons before repeat debouncing (before repeat debounce on PS4).
+    fn physical(&self) -> &dyn ControllerInput;
 }
 
 /// A controller binding spec.
@@ -91,6 +95,10 @@ pub enum ControllerButton {
 }
 
 impl ControllerButton {
+    pub(crate) fn query_physical(&self, input: &dyn ControllerInput) -> bool {
+        self.query(input.physical())
+    }
+
     pub(crate) fn query(&self, input: &dyn ControllerInput) -> bool {
         match self {
             ControllerButton::DpadUp => input.dpad_up(),
@@ -250,6 +258,89 @@ impl Serialize for ControllerButton {
     }
 }
 
+/// A controller map key: one button or a two-button chord (`leader + follower`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ControllerBinding {
+    Single(ControllerButton),
+    Chord {
+        leader: ControllerButton,
+        follower: ControllerButton,
+    },
+}
+
+impl From<ControllerButton> for ControllerBinding {
+    fn from(button: ControllerButton) -> Self {
+        ControllerBinding::Single(button)
+    }
+}
+
+impl FromStr for ControllerBinding {
+    type Err = String;
+
+    fn from_str(spec: &str) -> Result<Self, Self::Err> {
+        let trimmed = spec.trim();
+        if !trimmed.contains('+') {
+            return ControllerButton::from_str(trimmed).map(ControllerBinding::Single);
+        }
+        let parts: Vec<&str> = trimmed
+            .split('+')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if parts.len() != 2 {
+            return Err(format!(
+                "chord must have exactly two buttons separated by '+', got {} segment(s) in '{}'",
+                parts.len(),
+                spec
+            ));
+        }
+        let leader = ControllerButton::from_str(parts[0])?;
+        let follower = ControllerButton::from_str(parts[1])?;
+        if leader == follower {
+            return Err(format!(
+                "chord leader and follower must differ in '{}'",
+                spec
+            ));
+        }
+        Ok(ControllerBinding::Chord { leader, follower })
+    }
+}
+
+impl fmt::Display for ControllerBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ControllerBinding::Single(b) => fmt::Display::fmt(b, f),
+            ControllerBinding::Chord { leader, follower } => {
+                write!(f, "{} + {}", leader, follower)
+            }
+        }
+    }
+}
+
+impl Serialize for ControllerBinding {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for ControllerBinding {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct BindingVisitor;
+        impl de::Visitor<'_> for BindingVisitor {
+            type Value = ControllerBinding;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "a controller binding like \"faceTop\" or \"options + faceTop\"",
+                )
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                ControllerBinding::from_str(v).map_err(de::Error::custom)
+            }
+        }
+        deserializer.deserialize_str(BindingVisitor)
+    }
+}
+
 impl<'de> Deserialize<'de> for ControllerButton {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct ButtonVisitor;
@@ -324,8 +415,47 @@ mod tests {
     fn rejects_unknown_and_extra_args() {
         assert!(ControllerButton::from_str("nope").is_err());
         assert!(ControllerButton::from_str("faceTop,oops=1").is_err());
-        assert!(ControllerButton::from_str("triggerLeft").is_err());
+        assert_eq!(
+            ControllerButton::from_str("triggerLeft").unwrap(),
+            ControllerButton::TriggerLeft { threshold: 40 }
+        );
         assert!(ControllerButton::from_str("triggerLeft,threshold=999").is_err());
+    }
+
+    fn parse_binding(s: &str) -> ControllerBinding {
+        ControllerBinding::from_str(s).expect("parse binding")
+    }
+
+    #[test]
+    fn parses_two_button_chords() {
+        assert_eq!(
+            parse_binding("options + faceTop"),
+            ControllerBinding::Chord {
+                leader: ControllerButton::Options,
+                follower: ControllerButton::FaceTop,
+            }
+        );
+        assert_eq!(
+            parse_binding("face-top + OPTIONS"),
+            ControllerBinding::Chord {
+                leader: ControllerButton::FaceTop,
+                follower: ControllerButton::Options,
+            }
+        );
+        assert_eq!(
+            parse_binding("triggerLeft,threshold=40 + options"),
+            ControllerBinding::Chord {
+                leader: ControllerButton::TriggerLeft { threshold: 40 },
+                follower: ControllerButton::Options,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_chords() {
+        assert!(ControllerBinding::from_str("faceTop").is_ok());
+        assert!(ControllerBinding::from_str("a + b + c").is_err());
+        assert!(ControllerBinding::from_str("faceTop + faceTop").is_err());
     }
 
     #[test]
@@ -334,26 +464,31 @@ mod tests {
 [Keyboard]
 "triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
 "triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"options + faceTop" = "switchState.menu"
 "faceTop" = "toggleShift"
 "stickLeft" = "toggleCtrl"
 "stickRight" = "toggleAlt"
-"options" = "switchState.menu"
 "faceRight" = "switchState.textInput"
 "faceLeft" = "backspace"
 "#;
-        let map: HashMap<String, HashMap<ControllerButton, String>> =
+        let map: HashMap<String, HashMap<ControllerBinding, String>> =
             toml::from_str(toml_src).expect("parse mappings");
         let kb = map.get("Keyboard").expect("keyboard section");
         assert_eq!(
-            kb.get(&ControllerButton::TriggerLeft { threshold: 40 }),
+            kb.get(&ControllerBinding::Single(ControllerButton::TriggerLeft {
+                threshold: 40
+            })),
             Some(&"sendKeyUnderLeftStick".to_string())
         );
         assert_eq!(
-            kb.get(&ControllerButton::FaceTop),
+            kb.get(&ControllerBinding::Single(ControllerButton::FaceTop)),
             Some(&"toggleShift".to_string())
         );
         assert_eq!(
-            kb.get(&ControllerButton::Options),
+            kb.get(&ControllerBinding::Chord {
+                leader: ControllerButton::Options,
+                follower: ControllerButton::FaceTop,
+            }),
             Some(&"switchState.menu".to_string())
         );
     }
