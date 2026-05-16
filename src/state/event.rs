@@ -1,6 +1,6 @@
 use crate::config;
 use crate::controller::ControllerBinding;
-use crate::state::StateId;
+use crate::state::{StateId, WindowPos};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -11,11 +11,12 @@ pub enum EventSource {
     Controller(ControllerBinding),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     SendKey(enigo::Key, enigo::Direction),
     SendText(String),
     ChangeState(StateId),
+    MoveWindow(WindowPos),
     Exit,
 }
 

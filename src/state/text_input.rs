@@ -1,7 +1,12 @@
 use crate::{
     config,
-    controller::{ControllerBinding, ControllerButton, ControllerInput},
-    state::{event::Event, event::EventQueue, event::EventSource, keyboard, StateId},
+    controller::ControllerInput,
+    state::{
+        actions::load_bindings,
+        event::{Event, EventQueue, EventSource},
+        keyboard,
+        StateId,
+    },
 };
 use anyhow::Result;
 use egui::text::CCursor;
@@ -9,19 +14,25 @@ use egui::text_selection::text_cursor_state::{char_index_from_byte_index, cursor
 use egui::{Color32, Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
 
+use crate::controller::bindings::BindingEngine;
+
+use crate::state::text_input_action::TextInputAction;
+
 pub struct TextInputState {
     text: String,
     cursor_pos: usize,
     kb_events: EventQueue,
+    bindings: BindingEngine<TextInputAction>,
 }
 
 impl TextInputState {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             text: String::new(),
             cursor_pos: 0,
             kb_events: EventQueue::new(),
-        }
+            bindings: load_bindings(StateId::TextInput)?,
+        })
     }
 
     fn insert_char(&mut self, ch: char) {
@@ -89,6 +100,23 @@ impl TextInputState {
         }
     }
 
+    fn do_action(
+        &mut self,
+        action: &TextInputAction,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) -> Result<()> {
+        use TextInputAction::*;
+        match action {
+            MoveCursorLeft => self.move_cursor_left(),
+            MoveCursorRight => self.move_cursor_right(),
+            SwitchState(state) => {
+                let _ = events.push(Event::ChangeState(*state), source);
+            }
+        }
+        Ok(())
+    }
+
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         let ti = &config::get().text_input;
         let bg = Color32::from_rgba_unmultiplied(
@@ -149,26 +177,19 @@ impl TextInputState {
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let mut handled = false;
-        if let Some(input) = input {
-            if input.dpad_left() {
-                self.move_cursor_left();
-                handled = true;
-            }
-            if input.dpad_right() {
-                self.move_cursor_right();
-                handled = true;
-            }
-            if input.dpad_up() {
-                let _ = events.push(
-                    Event::ChangeState(StateId::Keyboard),
-                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::DpadUp)),
-                );
-                return Ok(());
-            }
+        if input.is_none() {
+            self.bindings.evaluate(None);
         }
 
-        if !handled {
+        let fired = self
+            .bindings
+            .evaluate(input.as_ref().map(|b| b.as_ref()));
+        for (binding, action) in &fired {
+            let src = EventSource::Controller(binding.clone());
+            self.do_action(action, events, &src)?;
+        }
+
+        if fired.is_empty() {
             keyboard::with_mut(|keyboard_state| {
                 keyboard_state.handle_controller_input(input, &mut self.kb_events)
             })?;
@@ -177,15 +198,28 @@ impl TextInputState {
 
         Ok(())
     }
+
+    fn reload_from_config(&mut self) -> Result<()> {
+        self.bindings = load_bindings(StateId::TextInput)?;
+        Ok(())
+    }
 }
 
 static TEXT_INPUT: OnceLock<Mutex<TextInputState>> = OnceLock::new();
 
 pub fn init() -> Result<()> {
-    let t = TextInputState::new();
+    let t = TextInputState::new()?;
     TEXT_INPUT
         .set(Mutex::new(t))
         .map_err(|_| anyhow::anyhow!("text input state already initialized"))?;
+
+    crate::config::on_changed(|| {
+        let result = with_mut(|ti| ti.reload_from_config());
+        if let Err(e) = result {
+            eprintln!("Failed to reload text input from config: {}", e);
+        }
+    })?;
+
     Ok(())
 }
 

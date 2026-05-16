@@ -13,8 +13,11 @@ mod actions;
 mod event;
 mod keyboard;
 mod menu;
+mod menu_action;
 mod move_window;
+mod move_window_action;
 mod text_input;
+mod text_input_action;
 pub mod window_pos;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash, strum::VariantNames)]
@@ -82,6 +85,23 @@ impl AppState {
                 }
                 Event::ChangeState(state) => {
                     self.state = state;
+                }
+                Event::MoveWindow(new_pos) => {
+                    let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
+                        let (mon_w, mon_h) = self.monitor_size;
+                        let rect = ctx.content_rect();
+                        x = x.clamp(0.0, mon_w - rect.width());
+                        y = y.clamp(0.0, mon_h - rect.height());
+                        WindowPos::Absolute(x, y)
+                    } else {
+                        new_pos
+                    };
+                    if self.pos != final_pos {
+                        self.pos = final_pos;
+                        let mut cfg = config::get();
+                        cfg.window_pos = self.pos;
+                        let _ = config::save(cfg);
+                    }
                 }
                 Event::Exit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -158,9 +178,12 @@ impl AppState {
             StateId::Menu => {
                 menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
             }
-            StateId::MoveWindow => move_window::with_mut(|mw| {
-                mw.handle_controller_input(ctx, input, &mut self.events)
-            })?,
+            StateId::MoveWindow => {
+                let (x, y) = self.get_position(ctx.content_rect());
+                move_window::with_mut(|mw| {
+                    mw.handle_controller_input(ctx, input, (x, y), &mut self.events)
+                })?
+            }
             StateId::TextInput => {
                 text_input::with_mut(|ti| ti.handle_controller_input(input, &mut self.events))?
             }
