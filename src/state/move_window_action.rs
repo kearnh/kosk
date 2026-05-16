@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::any::Any;
 use strum::VariantNames;
 
-use crate::state::{actions::Action, StateId};
+use crate::state::{actions::Action, actions::TriggerMode, StateId};
 
 #[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone, Debug)]
 pub enum MoveWindowAction {
@@ -20,6 +20,20 @@ pub enum MoveWindowAction {
 impl Action for MoveWindowAction {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn trigger_mode(&self) -> TriggerMode {
+        match self {
+            MoveWindowAction::NudgeUp
+            | MoveWindowAction::NudgeDown
+            | MoveWindowAction::NudgeLeft
+            | MoveWindowAction::NudgeRight => TriggerMode::WhileHeld,
+            MoveWindowAction::SnapTopLeft
+            | MoveWindowAction::SnapTopRight
+            | MoveWindowAction::SnapBottomLeft
+            | MoveWindowAction::SnapBottomRight
+            | MoveWindowAction::SwitchState(_) => TriggerMode::Edge,
+        }
     }
 }
 

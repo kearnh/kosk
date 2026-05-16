@@ -9,7 +9,7 @@ use egui::{Context, Rect, Ui};
 use enigo::{Enigo, Keyboard as _};
 use serde::{Deserialize, Serialize};
 
-mod actions;
+pub mod actions;
 mod event;
 mod keyboard;
 mod menu;

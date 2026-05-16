@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::any::Any;
 use strum::VariantNames;
 
-use crate::state::{actions::Action, StateId};
+use crate::state::{actions::Action, actions::TriggerMode, StateId};
 
 #[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone, Debug)]
 pub enum KeyboardAction {
@@ -22,6 +22,17 @@ pub enum KeyboardAction {
 impl Action for KeyboardAction {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn trigger_mode(&self) -> TriggerMode {
+        use KeyboardAction::*;
+        match self {
+            SendKeyUnderLeftStick | SendKeyUnderRightStick | SendKey(_) | SendEnigoKey(_) => {
+                TriggerMode::WhileHeld
+            }
+            ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
+            | Exit => TriggerMode::Edge,
+        }
     }
 }
 
