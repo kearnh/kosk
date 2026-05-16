@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::config;
 use crate::controller::bindings::BindingEngine;
-use crate::state::actions::get_action;
+use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
     controller::ControllerInput,
@@ -457,19 +457,7 @@ impl KeyboardState {
             self.layouts.insert(name.clone(), layout);
         }
 
-        let mut raw_bindings = HashMap::new();
-        if let Some(raw_mapping) = cfg.controller_map.get(&StateId::Keyboard).cloned() {
-            for (binding, action_name) in raw_mapping {
-                if let Some(action) = get_action(&format!("keyboard.{}", action_name)) {
-                    if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
-                    {
-                        raw_bindings.insert(binding, action.clone());
-                    }
-                }
-            }
-        }
-        self.bindings = BindingEngine::try_from_raw(raw_bindings)
-            .map_err(|e| anyhow::anyhow!("keyboard controller_map: {e}"))?;
+        self.bindings = load_bindings(StateId::Keyboard)?;
 
         self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
 

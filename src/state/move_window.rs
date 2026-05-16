@@ -1,17 +1,31 @@
 use crate::{
     config,
-    controller::{ControllerBinding, ControllerButton, ControllerInput},
-    state::{event::Event, event::EventQueue, event::EventSource, StateId, WindowPos},
+    controller::ControllerInput,
+    state::{
+        actions::load_bindings,
+        event::{Event, EventQueue, EventSource},
+        StateId, WindowPos,
+    },
 };
 use anyhow::Result;
 use egui::{Button, Context, Label, Ui};
 use std::sync::{Mutex, OnceLock};
 
-pub struct MoveWindowState;
+use crate::controller::bindings::BindingEngine;
+
+use crate::state::move_window_action::MoveWindowAction;
+
+const NUDGE: f32 = 100.0;
+
+pub struct MoveWindowState {
+    bindings: BindingEngine<MoveWindowAction>,
+}
 
 impl MoveWindowState {
-    pub fn new() -> Self {
-        Self
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            bindings: load_bindings(StateId::MoveWindow)?,
+        })
     }
 
     pub fn draw_ui(
@@ -33,34 +47,31 @@ impl MoveWindowState {
                 .show(ui, |ui| {
                     let size = [1.5 * cfg.scale_x, 1.5 * cfg.scale_y];
 
-                    // Row 1
                     if ui.add_sized(size, Button::new("\u{25f0}")).clicked() {
                         movement = Some(WindowPos::TopLeft);
                     }
                     if ui.add_sized(size, Button::new("↑")).clicked() {
-                        movement = Some(WindowPos::Absolute(x, y - 100.0));
+                        movement = Some(WindowPos::Absolute(x, y - NUDGE));
                     }
                     if ui.add_sized(size, Button::new("\u{25f3}")).clicked() {
                         movement = Some(WindowPos::TopRight);
                     }
                     ui.end_row();
 
-                    // Row 2
                     if ui.add_sized(size, Button::new("←")).clicked() {
-                        movement = Some(WindowPos::Absolute(x - 100.0, y));
+                        movement = Some(WindowPos::Absolute(x - NUDGE, y));
                     }
                     ui.add_sized(size, Label::new(""));
                     if ui.add_sized(size, Button::new("→")).clicked() {
-                        movement = Some(WindowPos::Absolute(x + 100.0, y));
+                        movement = Some(WindowPos::Absolute(x + NUDGE, y));
                     }
                     ui.end_row();
 
-                    // Row 3
                     if ui.add_sized(size, Button::new("\u{25f1}")).clicked() {
                         movement = Some(WindowPos::BottomLeft);
                     }
                     if ui.add_sized(size, Button::new("↓")).clicked() {
-                        movement = Some(WindowPos::Absolute(x, y + 100.0));
+                        movement = Some(WindowPos::Absolute(x, y + NUDGE));
                     }
                     if ui.add_sized(size, Button::new("\u{25f2}")).clicked() {
                         movement = Some(WindowPos::BottomRight);
@@ -76,20 +87,68 @@ impl MoveWindowState {
         movement
     }
 
+    fn do_action(
+        &self,
+        action: &MoveWindowAction,
+        coords: (f32, f32),
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) -> Result<()> {
+        use MoveWindowAction::*;
+        let (x, y) = coords;
+        match action {
+            SnapTopLeft => {
+                let _ = events.push(Event::MoveWindow(WindowPos::TopLeft), source);
+            }
+            SnapTopRight => {
+                let _ = events.push(Event::MoveWindow(WindowPos::TopRight), source);
+            }
+            SnapBottomLeft => {
+                let _ = events.push(Event::MoveWindow(WindowPos::BottomLeft), source);
+            }
+            SnapBottomRight => {
+                let _ = events.push(Event::MoveWindow(WindowPos::BottomRight), source);
+            }
+            NudgeUp => {
+                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y - NUDGE)), source);
+            }
+            NudgeDown => {
+                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y + NUDGE)), source);
+            }
+            NudgeLeft => {
+                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x - NUDGE, y)), source);
+            }
+            NudgeRight => {
+                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x + NUDGE, y)), source);
+            }
+            SwitchState(state) => {
+                let _ = events.push(Event::ChangeState(*state), source);
+            }
+        }
+        Ok(())
+    }
+
     pub fn handle_controller_input(
         &mut self,
         _ctx: &Context,
         input: &Option<Box<dyn ControllerInput>>,
+        coords: (f32, f32),
         events: &mut EventQueue,
     ) -> Result<()> {
-        if let Some(input) = input {
-            if input.face_right() {
-                let _ = events.push(
-                    Event::ChangeState(StateId::Menu),
-                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceRight)),
-                );
-            }
+        if input.is_none() {
+            self.bindings.evaluate(None);
         }
+
+        for (binding, action) in self.bindings.evaluate(input.as_ref().map(|b| b.as_ref())) {
+            let src = EventSource::Controller(binding);
+            self.do_action(&action, coords, events, &src)?;
+        }
+
+        Ok(())
+    }
+
+    fn reload_from_config(&mut self) -> Result<()> {
+        self.bindings = load_bindings(StateId::MoveWindow)?;
         Ok(())
     }
 }
@@ -107,7 +166,15 @@ pub(crate) fn with_mut<R>(f: impl FnOnce(&mut MoveWindowState) -> R) -> R {
 
 pub fn init() -> Result<()> {
     MOVE_WINDOW
-        .set(Mutex::new(MoveWindowState::new()))
+        .set(Mutex::new(MoveWindowState::new()?))
         .map_err(|_| anyhow::anyhow!("move window state already initialized"))?;
+
+    crate::config::on_changed(|| {
+        let result = with_mut(|mw| mw.reload_from_config());
+        if let Err(e) = result {
+            eprintln!("Failed to reload move window from config: {}", e);
+        }
+    })?;
+
     Ok(())
 }

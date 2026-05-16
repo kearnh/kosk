@@ -1,10 +1,18 @@
 use crate::{
-    controller::{ControllerBinding, ControllerButton, ControllerInput},
-    state::{event::Event, event::EventQueue, event::EventSource, StateId},
+    controller::ControllerInput,
+    state::{
+        actions::load_bindings,
+        event::{Event, EventQueue, EventSource},
+        StateId,
+    },
 };
+
 use anyhow::Result;
 use egui::{Button, Context, Ui};
 use std::sync::{Mutex, OnceLock};
+
+use crate::controller::bindings::BindingEngine;
+use crate::state::menu_action::MenuAction;
 
 struct MenuButton {
     text: &'static str,
@@ -14,11 +22,12 @@ struct MenuButton {
 pub struct MenuState {
     buttons: Vec<MenuButton>,
     selected: usize,
+    bindings: BindingEngine<MenuAction>,
 }
 
 impl MenuState {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        let state = Self {
             buttons: vec![
                 MenuButton {
                     text: "Move",
@@ -30,7 +39,9 @@ impl MenuState {
                 },
             ],
             selected: 0,
-        }
+            bindings: load_bindings(StateId::Menu)?,
+        };
+        Ok(state)
     }
 
     fn btn(&self, ui: &mut Ui, text: &str, n: &mut usize) -> egui::Response {
@@ -51,45 +62,54 @@ impl MenuState {
         }
     }
 
+    fn do_action(
+        &mut self,
+        action: &MenuAction,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) -> Result<()> {
+        use MenuAction::*;
+        match action {
+            SelectUp => {
+                self.selected = (self.selected as isize - 1)
+                    .rem_euclid(self.buttons.len() as isize) as usize;
+            }
+            SelectDown => {
+                self.selected = (self.selected as isize + 1)
+                    .rem_euclid(self.buttons.len() as isize) as usize;
+            }
+            Activate => {
+                if let Some(id) = (self.buttons[self.selected].callback)() {
+                    let _ = events.push(Event::ChangeState(id), source);
+                }
+            }
+            SwitchState(state) => {
+                let _ = events.push(Event::ChangeState(*state), source);
+            }
+        }
+        Ok(())
+    }
+
     pub fn handle_controller_input(
         &mut self,
         _: &Context,
         input: &Option<Box<dyn ControllerInput>>,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let input = match input {
-            Some(input) => input,
-            None => return Ok(()),
-        };
-
-        let n = if input.dpad_up() {
-            -1
-        } else if input.dpad_down() {
-            1
-        } else {
-            0
-        };
-        self.selected =
-            (self.selected as isize + n).rem_euclid(self.buttons.len() as isize) as usize;
-
-        if input.face_right() {
-            let _ = events.push(
-                Event::ChangeState(StateId::Keyboard),
-                &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceRight)),
-            );
-            return Ok(());
+        if input.is_none() {
+            self.bindings.evaluate(None);
         }
 
-        if input.face_bottom() {
-            if let Some(id) = (self.buttons[self.selected].callback)() {
-                let _ = events.push(
-                    Event::ChangeState(id),
-                    &EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceBottom)),
-                );
-            }
-            return Ok(());
+        for (binding, action) in self.bindings.evaluate(input.as_ref().map(|b| b.as_ref())) {
+            let src = EventSource::Controller(binding);
+            self.do_action(&action, events, &src)?;
         }
 
+        Ok(())
+    }
+
+    fn reload_from_config(&mut self) -> Result<()> {
+        self.bindings = load_bindings(StateId::Menu)?;
         Ok(())
     }
 }
@@ -97,9 +117,17 @@ impl MenuState {
 static MENU: OnceLock<Mutex<MenuState>> = OnceLock::new();
 
 pub fn init() -> Result<()> {
-    let menu = MenuState::new();
+    let menu = MenuState::new()?;
     MENU.set(Mutex::new(menu))
         .map_err(|_| anyhow::anyhow!("menu state already initialized"))?;
+
+    crate::config::on_changed(|| {
+        let result = with_mut(|m| m.reload_from_config());
+        if let Err(e) = result {
+            eprintln!("Failed to reload menu from config: {}", e);
+        }
+    })?;
+
     Ok(())
 }
 

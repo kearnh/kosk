@@ -1,5 +1,5 @@
-# Controller bindings for keyboard state (paths are relative to the main config file).
-# Action names use the same `keyboard.*` strings as layout keys in `old_steam_controller_kb.toml`.
+# Controller bindings per app state (paths are relative to the main config file).
+# Action names match each state's action enum (same strings as keyboard layout keys).
 # Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
 # Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
 # also have a standalone mapping in this table; the follower may.
@@ -18,3 +18,25 @@
 "dpadRight" = "sendKey.right"
 "dpadUp" = "sendKey.up"
 "dpadDown" = "sendKey.down"
+
+[Menu]
+"dpadUp" = "selectUp"
+"dpadDown" = "selectDown"
+"faceBottom" = "activate"
+"faceRight" = "switchState.keyboard"
+
+[TextInput]
+"dpadLeft" = "moveCursorLeft"
+"dpadRight" = "moveCursorRight"
+"dpadUp" = "switchState.keyboard"
+
+[MoveWindow]
+"faceRight" = "switchState.menu"
+"dpadUp" = "nudgeUp"
+"dpadDown" = "nudgeDown"
+"dpadLeft" = "nudgeLeft"
+"dpadRight" = "nudgeRight"
+"faceTop" = "snapTopLeft"
+"faceLeft" = "snapBottomLeft"
+"faceBottom" = "snapBottomRight"
+"options" = "snapTopRight"

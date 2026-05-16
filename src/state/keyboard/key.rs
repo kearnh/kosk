@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::state::actions::get_action;
 use crate::state::keyboard::KeyboardAction;
+use crate::state::StateId;
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum RawKey {
@@ -23,7 +24,7 @@ fn raw_key_from_config_str(s: &str) -> RawKey {
     if s.eq_ignore_ascii_case("skip") {
         return RawKey::Skip;
     }
-    if let Some(action) = get_action(s) {
+    if let Some(action) = get_action(StateId::Keyboard, s) {
         if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>() {
             return RawKey::Action(action.clone());
         }
