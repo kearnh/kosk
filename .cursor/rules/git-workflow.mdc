@@ -1,0 +1,38 @@
+---
+description: Create topic branches before implementation work; never commit on master
+alwaysApply: true
+---
+
+# Git workflow (kosk)
+
+Before making **any** code changes for a new feature, bug fix, refactor, or chore:
+
+1. Run `git status` and `git branch --show-current`.
+2. If already on a topic branch for this task, stay on it.
+3. Otherwise:
+   - If the working tree is dirty, ask how to proceed (stash, commit, or discard) before branching.
+   - Update `master` and branch from it:
+     `git fetch origin; git checkout master; git pull; git checkout -b <name>`
+   - Pick `<name>` from the task (kebab-case, ≤50 chars). Do not ask unless the slug is ambiguous.
+
+## Branch naming
+
+| Prefix | Use |
+|--------|-----|
+| `feat/` | New behavior |
+| `fix/` | Bug fixes |
+| `refactor/` | Behavior-preserving restructuring |
+| `chore/` | Tooling, deps, CI, hooks |
+
+Examples: `feat/stick-selection-lock`, `fix/keyboard-key-widths`.
+
+Align the slug with commit scope when possible (commits here use `feat:`, `fix:`, etc.).
+
+## Do not branch
+
+- Read-only work: questions, explanations, code review without edits.
+- User says to stay on the current branch or work on `master`.
+
+## After branching
+
+Tell the user the branch name, then implement. Never commit directly on `master`; use a topic branch and open a PR when ready.
