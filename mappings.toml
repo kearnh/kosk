@@ -6,11 +6,15 @@
 
 [Keyboard]
 "triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
-"faceBottom" = "sendKeyUnderLeftStick"
 "triggerRight,threshold=40" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
+"options + faceRight" = "switchState.textInput"
 "faceTop" = "toggleShift"
+"faceBottom" = "sendKey.space"
+"faceLeft" = "sendKey.backspace"
 "stickLeft" = "toggleCtrl"
 "stickRight" = "toggleAlt"
-"faceRight" = "switchState.textInput"
-"faceLeft" = "backspace"
+"dpadLeft" = "sendKey.left"
+"dpadRight" = "sendKey.right"
+"dpadUp" = "sendKey.up"
+"dpadDown" = "sendKey.down"

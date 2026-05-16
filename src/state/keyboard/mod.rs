@@ -166,12 +166,6 @@ impl KeyboardState {
     ) -> Result<()> {
         use KeyboardAction::*;
         match action {
-            Backspace => {
-                let _ = events.push(
-                    Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
-                    source,
-                );
-            }
             SendKeyUnderLeftStick => {
                 if let (Some(left), _) = &self.selected {
                     self.last_left_stick_action = Some(Instant::now());
@@ -183,6 +177,12 @@ impl KeyboardState {
                     self.last_right_stick_action = Some(Instant::now());
                     self.send_key(&right.clone(), events, source)?;
                 }
+            }
+            SendKey(key) => {
+                self.send_key(&RawKey::Key(*key), events, source)?;
+            }
+            SendEnigoKey(key) => {
+                self.send_key(&RawKey::Enigo(*key), events, source)?;
             }
             ToggleShift => self.toggle_shift(),
             ToggleCtrl => self.toggle_ctrl(),

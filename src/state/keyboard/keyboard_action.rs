@@ -8,7 +8,8 @@ use crate::state::{actions::Action, StateId};
 pub enum KeyboardAction {
     SendKeyUnderLeftStick,
     SendKeyUnderRightStick,
-    Backspace,
+    SendKey(char),
+    SendEnigoKey(enigo::Key),
     ToggleShift,
     ToggleCtrl,
     ToggleAlt,
@@ -43,6 +44,24 @@ impl TryFrom<&str> for KeyboardAction {
             .ok_or_else(|| anyhow::anyhow!("unknown keyboard action '{}'", value))?;
 
         match (variant, tail_opt) {
+            ("SendKey", Some(data)) => {
+                if data.chars().count() == 1 {
+                    Ok(KeyboardAction::SendKey(data.chars().next().unwrap()))
+                } else {
+                    match data.to_lowercase().as_str() {
+                        "space" => Ok(KeyboardAction::SendKey(' ')),
+                        "enter" => Ok(KeyboardAction::SendKey('\n')),
+                        "tab" => Ok(KeyboardAction::SendKey('\t')),
+                        "backspace" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::Backspace)),
+                        "delete" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::Delete)),
+                        "left" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::LeftArrow)),
+                        "right" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::RightArrow)),
+                        "up" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::UpArrow)),
+                        "down" => Ok(KeyboardAction::SendEnigoKey(enigo::Key::DownArrow)),
+                        _ => Err(anyhow::anyhow!("unknown key '{}'", data)),
+                    }
+                }
+            }
             ("SwitchState", Some(data)) => {
                 let canon = StateId::VARIANTS
                     .iter()
