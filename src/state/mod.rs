@@ -2,7 +2,11 @@ use crate::{
     config,
     controller::ControllerInput,
     debug::DebugPlugin,
-    state::{event::Event, event::EventQueue, window_pos::WindowPos},
+    state::{
+        event::Event,
+        event::EventQueue,
+        window_pos::{resolve_position, WindowPos},
+    },
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
@@ -54,24 +58,34 @@ impl AppState {
         })
     }
 
-    pub fn get_position(&self, content_rect: Rect) -> (f32, f32) {
-        if let WindowPos::Absolute(x, y) = self.pos {
-            return (x, y);
+    pub fn set_monitor_size(&mut self, monitor_size: (f32, f32)) {
+        self.monitor_size = monitor_size;
+    }
+
+    fn window_size_from(content_rect: Rect) -> (f32, f32) {
+        (content_rect.width(), content_rect.height())
+    }
+
+    fn clamp_absolute_pos(&self, pos: WindowPos, content_rect: Rect) -> WindowPos {
+        let (resolved, _) =
+            resolve_position(pos, Self::window_size_from(content_rect), self.monitor_size);
+        resolved
+    }
+
+    /// Resolve the configured position for the current monitor and window size.
+    ///
+    /// If an absolute position had to be clamped (e.g. after display scaling changed),
+    /// the corrected value is persisted to config.
+    pub fn get_position(&mut self, content_rect: Rect) -> (f32, f32) {
+        let window_size = Self::window_size_from(content_rect);
+        let (resolved, coords) = resolve_position(self.pos, window_size, self.monitor_size);
+        if matches!(self.pos, WindowPos::Absolute(..)) && resolved != self.pos {
+            self.pos = resolved;
+            let mut cfg = config::get();
+            cfg.window_pos = self.pos;
+            let _ = config::save(cfg);
         }
-        let (w, h) = content_rect.max.into();
-        let (size_x, size_y) = self.monitor_size;
-        [
-            (0.0, 0.0),
-            (size_x - w, 0.0),
-            (size_x - w, size_y - h),
-            (0.0, size_y - h),
-        ][match self.pos {
-            WindowPos::TopLeft => 0,
-            WindowPos::TopRight => 1,
-            WindowPos::BottomRight => 2,
-            WindowPos::BottomLeft => 3,
-            WindowPos::Absolute(..) => unreachable!(),
-        }]
+        coords
     }
 
     fn process_events(&mut self, ctx: &Context) {
@@ -87,15 +101,7 @@ impl AppState {
                     self.state = state;
                 }
                 Event::MoveWindow(new_pos) => {
-                    let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
-                        let (mon_w, mon_h) = self.monitor_size;
-                        let rect = ctx.content_rect();
-                        x = x.clamp(0.0, mon_w - rect.width());
-                        y = y.clamp(0.0, mon_h - rect.height());
-                        WindowPos::Absolute(x, y)
-                    } else {
-                        new_pos
-                    };
+                    let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
                     if self.pos != final_pos {
                         self.pos = final_pos;
                         let mut cfg = config::get();
@@ -126,18 +132,7 @@ impl AppState {
                 move_window::with_mut(|mw| {
                     let movement = mw.draw_ui(ctx, ui, (x, y), &mut self.events);
                     if let Some(new_pos) = movement {
-                        let final_pos = if let WindowPos::Absolute(mut x, mut y) = new_pos {
-                            let (mon_w, mon_h) = self.monitor_size;
-
-                            // Clamp X between 0 and (Monitor Width - Window Width)
-                            x = x.clamp(0.0, mon_w - ctx.content_rect().width());
-                            // Clamp Y between 0 and (Monitor Height - Window Height)
-                            y = y.clamp(0.0, mon_h - ctx.content_rect().height());
-
-                            WindowPos::Absolute(x, y)
-                        } else {
-                            new_pos
-                        };
+                        let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
 
                         if self.pos != final_pos {
                             self.pos = final_pos;

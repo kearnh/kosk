@@ -157,7 +157,13 @@ impl eframe::App for App {
         }
 
         {
-            let s = self.state.lock().unwrap();
+            let monitor_size = ctx.input(|i| {
+                i.viewport()
+                    .monitor_size
+                    .unwrap_or_else(|| egui::Vec2::new(1920.0, 1080.0))
+            });
+            let mut s = self.state.lock().unwrap();
+            s.set_monitor_size((monitor_size.x, monitor_size.y));
             let pos = s.get_position(ctx.content_rect());
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
         }
