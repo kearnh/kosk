@@ -322,9 +322,7 @@ impl<'de> Deserialize<'de> for ControllerBinding {
         impl de::Visitor<'_> for BindingVisitor {
             type Value = ControllerBinding;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str(
-                    "a controller binding like \"faceTop\" or \"options + faceTop\"",
-                )
+                f.write_str("a controller binding like \"faceTop\" or \"options + faceTop\"")
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 ControllerBinding::from_str(v).map_err(de::Error::custom)

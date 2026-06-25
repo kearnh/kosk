@@ -92,10 +92,7 @@ impl<A: Action + Clone> BindingEngine<A> {
         self.leaders_active.clear();
     }
 
-    pub fn evaluate(
-        &mut self,
-        input: Option<&dyn ControllerInput>,
-    ) -> Vec<(ControllerBinding, A)> {
+    pub fn evaluate(&mut self, input: Option<&dyn ControllerInput>) -> Vec<(ControllerBinding, A)> {
         let Some(input) = input else {
             self.reset();
             return Vec::new();
@@ -117,9 +114,8 @@ impl<A: Action + Clone> BindingEngine<A> {
             }
         }
 
-        self.chords_fired.retain(|(leader, follower)| {
-            leader.query(input) && follower.query(input)
-        });
+        self.chords_fired
+            .retain(|(leader, follower)| leader.query(input) && follower.query(input));
 
         let mut fired = Vec::new();
 
@@ -128,9 +124,7 @@ impl<A: Action + Clone> BindingEngine<A> {
             if self.chords_fired.contains(&key) {
                 continue;
             }
-            if newly_down.contains(&chord.follower)
-                && self.leaders_active.contains(&chord.leader)
-            {
+            if newly_down.contains(&chord.follower) && self.leaders_active.contains(&chord.leader) {
                 fired.push((
                     ControllerBinding::Chord {
                         leader: chord.leader.clone(),

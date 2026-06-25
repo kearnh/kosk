@@ -71,12 +71,12 @@ impl MenuState {
         use MenuAction::*;
         match action {
             SelectUp => {
-                self.selected = (self.selected as isize - 1)
-                    .rem_euclid(self.buttons.len() as isize) as usize;
+                self.selected =
+                    (self.selected as isize - 1).rem_euclid(self.buttons.len() as isize) as usize;
             }
             SelectDown => {
-                self.selected = (self.selected as isize + 1)
-                    .rem_euclid(self.buttons.len() as isize) as usize;
+                self.selected =
+                    (self.selected as isize + 1).rem_euclid(self.buttons.len() as isize) as usize;
             }
             Activate => {
                 if let Some(id) = (self.buttons[self.selected].callback)() {

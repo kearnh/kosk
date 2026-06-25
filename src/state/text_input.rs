@@ -4,8 +4,7 @@ use crate::{
     state::{
         actions::load_bindings,
         event::{Event, EventQueue, EventSource},
-        keyboard,
-        StateId,
+        keyboard, StateId,
     },
 };
 use anyhow::Result;
@@ -181,9 +180,7 @@ impl TextInputState {
             self.bindings.evaluate(None);
         }
 
-        let fired = self
-            .bindings
-            .evaluate(input.as_ref().map(|b| b.as_ref()));
+        let fired = self.bindings.evaluate(input.as_ref().map(|b| b.as_ref()));
         for (binding, action) in &fired {
             let src = EventSource::Controller(binding.clone());
             self.do_action(action, events, &src)?;

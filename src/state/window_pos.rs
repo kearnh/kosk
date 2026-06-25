@@ -147,10 +147,8 @@ mod tests {
         let monitor_100 = (1920.0, 1080.0);
         let monitor_150 = (1280.0, 720.0);
 
-        let (_, at_100) =
-            resolve_position(WindowPos::BottomRight, window, monitor_100);
-        let (_, at_150) =
-            resolve_position(WindowPos::BottomRight, window, monitor_150);
+        let (_, at_100) = resolve_position(WindowPos::BottomRight, window, monitor_100);
+        let (_, at_150) = resolve_position(WindowPos::BottomRight, window, monitor_150);
 
         assert_eq!(at_100, (1400.0, 830.0));
         assert_eq!(at_150, (760.0, 470.0));
