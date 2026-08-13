@@ -4,43 +4,30 @@ stick_scale_y = 2.5
 stick_warp = 1.0
 preferred_controller = ["sc2"]
 transparent = true
-window_pos = [
-    1801.134033203125,
-    904.5670166015625,
-]
+window_pos = [1801.134033203125, 904.5670166015625]
 scale_x = 30.0
 scale_y = 32.0
 event_debounce_ms = 300
 event_debounce_repeat_ms = 55
 stick_select_lock_ms = 100
 
+[sc2]
+pad_origin_stretch = 0.3
+pad_origin_stretch_max_gain = 1.5
+pad_origin_settle_ms = 20
+
 [layouts]
 main = "old_steam_controller_kb.toml"
 
 [debug]
-show_stick_cursors = false
+show_stick_cursors = true
 show_hitboxes = false
 show_stick_bounds = false
 
 [text_input]
-background_color = [
-    255,
-    255,
-    255,
-    255,
-]
-text_color = [
-    0,
-    0,
-    0,
-    255,
-]
-cursor_color = [
-    0,
-    0,
-    0,
-    255,
-]
+background_color = [255, 255, 255, 255]
+text_color = [0, 0, 0, 255]
+cursor_color = [0, 0, 0, 255]
 font_size = 22.0
 
 [controller_map.Keyboard]

@@ -4,13 +4,14 @@ use std::str::FromStr;
 use crate::config;
 
 pub mod bindings;
+pub mod pad_origin;
 pub mod ps4;
 pub mod sc2;
 
 use hidapi::HidApi;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
+pub(crate) fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
     if warp > 0.0 {
         let u2 = x * x;
         let v2 = y * y;
@@ -36,6 +37,8 @@ pub trait ControllerInput: Debug {
     fn left_stick_raw(&self) -> (f32, f32);
     fn right_stick_raw(&self) -> (f32, f32);
 
+    /// Stick used by the keyboard. Default is circle-to-square `stick_warp`.
+    /// SC2 OSK mapping overrides this to apply pad-origin stretch first.
     // FIXME can we cache stick_warp somehow so we don't have to constantly lock config mutex?
     fn left_stick(&self) -> (f32, f32) {
         warp(self.left_stick_raw(), config::get().stick_warp)
@@ -398,7 +401,10 @@ pub fn resolve_controller_order(preferred: &[ControllerKind]) -> Vec<ControllerK
 
 pub enum ConnectedController {
     Ps4(ps4::Ps4Device),
-    Sc2(sc2::Sc2Device),
+    Sc2 {
+        device: sc2::Sc2Device,
+        pads: pad_origin::PadOriginMapper,
+    },
 }
 
 impl Iterator for ConnectedController {
@@ -407,7 +413,13 @@ impl Iterator for ConnectedController {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             ConnectedController::Ps4(device) => device.next(),
-            ConnectedController::Sc2(device) => device.next(),
+            ConnectedController::Sc2 { device, pads } => match device.next()? {
+                None => {
+                    pads.reset();
+                    Some(None)
+                }
+                Some(_) => Some(Some(Box::new(pads.map(device.last_state())))),
+            },
         }
     }
 }
@@ -420,7 +432,10 @@ pub fn find_device() -> Option<ConnectedController> {
         match kind {
             ControllerKind::Sc2 => {
                 if let Some(device) = sc2::open(&hid) {
-                    return Some(ConnectedController::Sc2(device));
+                    return Some(ConnectedController::Sc2 {
+                        device,
+                        pads: pad_origin::PadOriginMapper::default(),
+                    });
                 }
             }
             ControllerKind::Ps4 => {

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use hidapi::HidApi;
+use kosk::controller::pad_origin::PadOriginMapper;
 use kosk::controller::sc2;
 use kosk::controller::ControllerInput;
 
@@ -90,10 +91,16 @@ fn monitor(dump_raw: bool, config: Option<PathBuf>) -> Result<()> {
 
     println!("opened SC2; lizard-off sent. Ctrl+C to quit.");
     let mut last = String::new();
+    let mut pads = PadOriginMapper::default();
     loop {
         match device.next() {
             Some(Some(input)) => {
-                let line = format_line(input.as_ref(), device.last_state(), with_warp);
+                let line = if with_warp {
+                    let mapped = pads.map(device.last_state());
+                    format_line(&mapped, device.last_state(), true)
+                } else {
+                    format_line(input.as_ref(), device.last_state(), false)
+                };
                 if line != last {
                     println!("{line}");
                     last = line;
@@ -108,7 +115,7 @@ fn monitor(dump_raw: bool, config: Option<PathBuf>) -> Result<()> {
                     }
                 }
             }
-            Some(None) => {}
+            Some(None) => pads.reset(),
             None => break,
         }
     }

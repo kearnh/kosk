@@ -144,6 +144,37 @@ pub struct Config {
     /// Milliseconds for the stick selection to be locked after key under stick is pressed.
     #[serde(default = "default_stick_select_lock_ms")]
     pub stick_select_lock_ms: u64,
+
+    /// Steam Controller 2 pad mapping. Omitted → absolute pads (same as today).
+    #[serde(default)]
+    pub sc2: Sc2Config,
+}
+
+/// SC2-only pad origin stretch. Does not affect DualShock 4 sticks.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Sc2Config {
+    /// Blend toward remaining-range stretch from first-touch origin.
+    /// `0` = absolute pad (current behavior), `1` = full short-edge stretch.
+    #[serde(default = "default_pad_origin_stretch")]
+    pub pad_origin_stretch: f32,
+
+    /// Cap on per-axis short-edge gain (`1` = no extra gain).
+    #[serde(default = "default_pad_origin_stretch_max_gain")]
+    pub pad_origin_stretch_max_gain: f32,
+
+    /// Wait this long after touch-down before capturing origin (skip contact spike).
+    #[serde(default = "default_pad_origin_settle_ms")]
+    pub pad_origin_settle_ms: u64,
+}
+
+impl Default for Sc2Config {
+    fn default() -> Self {
+        Self {
+            pad_origin_stretch: default_pad_origin_stretch(),
+            pad_origin_stretch_max_gain: default_pad_origin_stretch_max_gain(),
+            pad_origin_settle_ms: default_pad_origin_settle_ms(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -232,6 +263,26 @@ fn default_start_layout() -> String {
 
 fn default_stick_select_lock_ms() -> u64 {
     100
+}
+
+fn default_pad_origin_stretch() -> f32 {
+    0.0
+}
+
+fn default_pad_origin_stretch_max_gain() -> f32 {
+    1.5
+}
+
+fn default_pad_origin_settle_ms() -> u64 {
+    20
+}
+
+/// SC2 settings, or defaults when config is not initialized (`sc2_test` without `--config`).
+pub fn sc2() -> Sc2Config {
+    CONFIG_INSTANCE
+        .get()
+        .map(|instance| instance.lock().unwrap().sc2.clone())
+        .unwrap_or_default()
 }
 
 // Static variables for config management
