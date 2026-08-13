@@ -28,6 +28,8 @@ const BTN_X: u32 = 0x0000_0004;
 const BTN_Y: u32 = 0x0000_0008;
 const BTN_R3: u32 = 0x0000_0020;
 const BTN_VIEW: u32 = 0x0000_0040;
+const BTN_R4: u32 = 0x0000_0080;
+const BTN_R5: u32 = 0x0000_0100;
 const BTN_RB: u32 = 0x0000_0200;
 const BTN_DPAD_DOWN: u32 = 0x0000_0400;
 const BTN_DPAD_RIGHT: u32 = 0x0000_0800;
@@ -36,6 +38,8 @@ const BTN_DPAD_UP: u32 = 0x0000_2000;
 const BTN_MENU: u32 = 0x0000_4000;
 const BTN_L3: u32 = 0x0000_8000;
 const BTN_STEAM: u32 = 0x0001_0000;
+const BTN_L4: u32 = 0x0002_0000;
+const BTN_L5: u32 = 0x0004_0000;
 const BTN_LB: u32 = 0x0008_0000;
 const BTN_RPAD_TOUCH: u32 = 0x0020_0000;
 const BTN_RPAD_CLICK: u32 = 0x0040_0000;
@@ -424,6 +428,18 @@ impl ControllerInput for Sc2State {
     fn pad_right(&self) -> bool {
         self.bit(BTN_RPAD_CLICK)
     }
+    fn l4(&self) -> bool {
+        self.bit(BTN_L4)
+    }
+    fn l5(&self) -> bool {
+        self.bit(BTN_L5)
+    }
+    fn r4(&self) -> bool {
+        self.bit(BTN_R4)
+    }
+    fn r5(&self) -> bool {
+        self.bit(BTN_R5)
+    }
     fn is_engaged(&self) -> bool {
         self.left_pad_touch()
             || self.right_pad_touch()
@@ -446,6 +462,10 @@ impl ControllerInput for Sc2State {
             || self.btn_system()
             || self.pad_left()
             || self.pad_right()
+            || self.l4()
+            || self.l5()
+            || self.r4()
+            || self.r5()
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
@@ -485,6 +505,13 @@ mod tests {
         assert!((x - 1.0).abs() < 0.001);
         assert!(y.abs() < 0.001);
         assert!(s.trigger_left().is_some());
+        assert!(!s.l4());
+        put_u32(&mut r, 2, BTN_L4 | BTN_R5);
+        let paddles = parse_input_report(&r).expect("parse paddles");
+        assert!(paddles.l4());
+        assert!(!paddles.l5());
+        assert!(!paddles.r4());
+        assert!(paddles.r5());
     }
 
     #[test]

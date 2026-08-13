@@ -189,6 +189,18 @@ fn format_line(input: &dyn ControllerInput, state: &sc2::Sc2State, with_warp: bo
     if input.pad_right() {
         btns.push("padRight");
     }
+    if input.l4() {
+        btns.push("l4");
+    }
+    if input.l5() {
+        btns.push("l5");
+    }
+    if input.r4() {
+        btns.push("r4");
+    }
+    if input.r5() {
+        btns.push("r5");
+    }
     if !btns.is_empty() {
         let _ = write!(s, " [{}]", btns.join(" "));
     }

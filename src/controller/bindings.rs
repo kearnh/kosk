@@ -280,6 +280,18 @@ mod tests {
         fn pad_right(&self) -> bool {
             self.0.contains(&ControllerButton::PadRight)
         }
+        fn l4(&self) -> bool {
+            self.0.contains(&ControllerButton::L4)
+        }
+        fn l5(&self) -> bool {
+            self.0.contains(&ControllerButton::L5)
+        }
+        fn r4(&self) -> bool {
+            self.0.contains(&ControllerButton::R4)
+        }
+        fn r5(&self) -> bool {
+            self.0.contains(&ControllerButton::R5)
+        }
         fn is_engaged(&self) -> bool {
             !self.0.is_empty()
         }

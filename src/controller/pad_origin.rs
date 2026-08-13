@@ -210,6 +210,18 @@ impl ControllerInput for MappedSc2Input {
     fn pad_right(&self) -> bool {
         self.inner.pad_right()
     }
+    fn l4(&self) -> bool {
+        self.inner.l4()
+    }
+    fn l5(&self) -> bool {
+        self.inner.l5()
+    }
+    fn r4(&self) -> bool {
+        self.inner.r4()
+    }
+    fn r5(&self) -> bool {
+        self.inner.r5()
+    }
     fn is_engaged(&self) -> bool {
         self.inner.is_engaged()
     }

@@ -70,6 +70,19 @@ pub trait ControllerInput: Debug {
     fn pad_right(&self) -> bool {
         false
     }
+    /// SC2 left paddles; default off (DualShock 4 has none).
+    fn l4(&self) -> bool {
+        false
+    }
+    fn l5(&self) -> bool {
+        false
+    }
+    fn r4(&self) -> bool {
+        false
+    }
+    fn r5(&self) -> bool {
+        false
+    }
 
     /// Whether this snapshot should reach the app (vs being swallowed as idle).
     fn is_engaged(&self) -> bool;
@@ -105,6 +118,10 @@ pub enum ControllerButton {
     System,
     PadLeft,
     PadRight,
+    L4,
+    L5,
+    R4,
+    R5,
 }
 
 impl ControllerButton {
@@ -129,6 +146,10 @@ impl ControllerButton {
             ControllerButton::System => input.btn_system(),
             ControllerButton::PadLeft => input.pad_left(),
             ControllerButton::PadRight => input.pad_right(),
+            ControllerButton::L4 => input.l4(),
+            ControllerButton::L5 => input.l5(),
+            ControllerButton::R4 => input.r4(),
+            ControllerButton::R5 => input.r5(),
         }
     }
 }
@@ -201,6 +222,10 @@ impl FromStr for ControllerButton {
             "system" => no_args("system", &args).map(|_| ControllerButton::System),
             "padleft" => no_args("padLeft", &args).map(|_| ControllerButton::PadLeft),
             "padright" => no_args("padRight", &args).map(|_| ControllerButton::PadRight),
+            "l4" => no_args("l4", &args).map(|_| ControllerButton::L4),
+            "l5" => no_args("l5", &args).map(|_| ControllerButton::L5),
+            "r4" => no_args("r4", &args).map(|_| ControllerButton::R4),
+            "r5" => no_args("r5", &args).map(|_| ControllerButton::R5),
             "triggerleft" => no_args("triggerLeft", &args).map(|_| ControllerButton::TriggerLeft),
             "triggerright" => {
                 no_args("triggerRight", &args).map(|_| ControllerButton::TriggerRight)
@@ -232,6 +257,10 @@ impl fmt::Display for ControllerButton {
             ControllerButton::System => f.write_str("system"),
             ControllerButton::PadLeft => f.write_str("padLeft"),
             ControllerButton::PadRight => f.write_str("padRight"),
+            ControllerButton::L4 => f.write_str("l4"),
+            ControllerButton::L5 => f.write_str("l5"),
+            ControllerButton::R4 => f.write_str("r4"),
+            ControllerButton::R5 => f.write_str("r5"),
         }
     }
 }
@@ -556,6 +585,22 @@ mod tests {
         assert_eq!(
             parse(&ControllerButton::PadRight.to_string()),
             ControllerButton::PadRight
+        );
+    }
+
+    #[test]
+    fn parses_paddle_buttons() {
+        assert_eq!(parse("l4"), ControllerButton::L4);
+        assert_eq!(parse("L5"), ControllerButton::L5);
+        assert_eq!(parse("r4"), ControllerButton::R4);
+        assert_eq!(parse("R5"), ControllerButton::R5);
+        assert_eq!(
+            parse(&ControllerButton::L4.to_string()),
+            ControllerButton::L4
+        );
+        assert_eq!(
+            parse(&ControllerButton::R5.to_string()),
+            ControllerButton::R5
         );
     }
 
