@@ -99,6 +99,11 @@ pub struct Config {
     #[serde(default = "default_stick_warp")]
     pub stick_warp: f32,
 
+    /// Try these controller families first. Omitted families are appended in
+    /// built-in default order (`sc2`, then `ps4`). Empty / omitted → that default.
+    #[serde(default)]
+    pub preferred_controller: Vec<crate::controller::ControllerKind>,
+
     /// Whether the window should be transparent
     #[serde(default = "default_transparent")]
     pub transparent: bool,
@@ -379,8 +384,11 @@ fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Res
 
 pub fn init() -> Result<()> {
     let args = Args::parse();
-    let config_path = PathBuf::from(&args.config_path);
+    init_from_path(PathBuf::from(&args.config_path))
+}
 
+/// Load config from `config_path` without parsing process args (for auxiliary binaries).
+pub fn init_from_path(config_path: PathBuf) -> Result<()> {
     CONFIG_PATH
         .set(config_path.clone())
         .expect("Config path was already set");

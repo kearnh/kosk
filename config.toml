@@ -2,6 +2,7 @@ start_layout = "main"
 stick_scale_x = 3.0
 stick_scale_y = 2.5
 stick_warp = 1.0
+preferred_controller = ["sc2"]
 transparent = true
 window_pos = [
     1801.134033203125,

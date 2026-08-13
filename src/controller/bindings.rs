@@ -274,6 +274,15 @@ mod tests {
         fn btn_system(&self) -> bool {
             false
         }
+        fn pad_left(&self) -> bool {
+            self.0.contains(&ControllerButton::PadLeft)
+        }
+        fn pad_right(&self) -> bool {
+            self.0.contains(&ControllerButton::PadRight)
+        }
+        fn is_engaged(&self) -> bool {
+            !self.0.is_empty()
+        }
         fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
             Box::new(self.clone())
         }

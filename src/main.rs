@@ -1,30 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use crate::state::AppState;
 use anyhow::Result;
 use eframe::CreationContext;
 use egui::Vec2;
-use hidapi::{HidApi, HidDevice};
+use kosk::config;
+use kosk::controller;
+use kosk::debug;
+use kosk::state::AppState;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
-
-mod config;
-mod controller;
-mod debug;
-mod state;
-
-const PS4_VID: u16 = 0x054c;
-const PS4_PID: u16 = 0x09cc;
-fn find_device(hid: &HidApi, (vid, pid): (u16, u16)) -> Option<HidDevice> {
-    for device in hid.device_list() {
-        if device.vendor_id() == vid && device.product_id() == pid {
-            if let Ok(dev) = device.open_device(hid) {
-                return Some(dev);
-            }
-        }
-    }
-    None
-}
 
 struct App {
     state: Arc<Mutex<AppState>>,
@@ -250,24 +234,19 @@ fn main() -> Result<()> {
             let state_clone = state.clone();
             std::thread::spawn(move || -> Result<()> {
                 loop {
-                    let device = loop {
-                        let hid = HidApi::new()?;
-                        match find_device(&hid, (PS4_VID, PS4_PID)) {
-                            Some(device) => break device,
-                            None => {
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                                continue;
+                    match controller::find_device() {
+                        Some(device) => {
+                            for input in device {
+                                let mut s = state_clone.lock().unwrap();
+                                if let Err(e) = s.handle_controller_input(&ctx, &input) {
+                                    eprintln!("warn: error from controller input handler: {}", e);
+                                };
+                                ctx.request_repaint();
                             }
                         }
-                    };
-
-                    let ps4 = controller::ps4::Ps4Device::new(device);
-                    for input in ps4 {
-                        let mut s = state_clone.lock().unwrap();
-                        if let Err(e) = s.handle_controller_input(&ctx, &input) {
-                            eprintln!("warn: error from controller input handler: {}", e);
-                        };
-                        ctx.request_repaint();
+                        None => {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                        }
                     }
                 }
             });

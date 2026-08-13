@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 default-run = "kosk"
 
+[[bin]]
+name = "sc2_test"
+path = "src/bin/sc2_test.rs"
+
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }

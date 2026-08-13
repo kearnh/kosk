@@ -1,9 +1,11 @@
 use anyhow::Result;
-use hidapi::HidDevice;
+use hidapi::{HidApi, HidDevice};
 use std::sync::RwLock;
 
 use crate::controller::ControllerInput;
 
+const PS4_VID: u16 = 0x054c;
+const PS4_PID: u16 = 0x09cc;
 const STICK_OFFSET: i32 = 128;
 const STICK_THRESHOLD: i32 = 10;
 
@@ -227,6 +229,17 @@ impl Ps4Device {
         }
     }
 
+    pub fn open(hid: &HidApi) -> Option<Self> {
+        for device in hid.device_list() {
+            if device.vendor_id() == PS4_VID && device.product_id() == PS4_PID {
+                if let Ok(dev) = device.open_device(hid) {
+                    return Some(Self::new(dev));
+                }
+            }
+        }
+        None
+    }
+
     fn poll(&self) -> Result<bool> {
         let mut report = [0u8; 64];
         let mut active = false;
@@ -245,8 +258,7 @@ impl Iterator for Ps4Device {
             match self.poll() {
                 Ok(_) => {
                     let data = self.input.read();
-                    let still_active = data.any_digital() || data.sticks_active();
-                    if still_active {
+                    if data.is_engaged() {
                         self.was_active = true;
                         return Some(Some(Box::new(data)));
                     }
@@ -320,6 +332,10 @@ impl ControllerInput for Ps4InputData {
     }
     fn btn_system(&self) -> bool {
         self.ps
+    }
+
+    fn is_engaged(&self) -> bool {
+        self.any_digital() || self.sticks_active()
     }
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {

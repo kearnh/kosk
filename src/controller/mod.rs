@@ -5,7 +5,9 @@ use crate::config;
 
 pub mod bindings;
 pub mod ps4;
+pub mod sc2;
 
+use hidapi::HidApi;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
@@ -59,6 +61,15 @@ pub trait ControllerInput: Debug {
     fn btn_options(&self) -> bool;
     fn btn_share(&self) -> bool;
     fn btn_system(&self) -> bool;
+    fn pad_left(&self) -> bool {
+        false
+    }
+    fn pad_right(&self) -> bool {
+        false
+    }
+
+    /// Whether this snapshot should reach the app (vs being swallowed as idle).
+    fn is_engaged(&self) -> bool;
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
 }
@@ -89,6 +100,8 @@ pub enum ControllerButton {
     Options,
     Share,
     System,
+    PadLeft,
+    PadRight,
 }
 
 impl ControllerButton {
@@ -117,6 +130,8 @@ impl ControllerButton {
             ControllerButton::Options => input.btn_options(),
             ControllerButton::Share => input.btn_share(),
             ControllerButton::System => input.btn_system(),
+            ControllerButton::PadLeft => input.pad_left(),
+            ControllerButton::PadRight => input.pad_right(),
         }
     }
 }
@@ -208,6 +223,8 @@ impl FromStr for ControllerButton {
             "options" => no_args("options", &args).map(|_| ControllerButton::Options),
             "share" => no_args("share", &args).map(|_| ControllerButton::Share),
             "system" => no_args("system", &args).map(|_| ControllerButton::System),
+            "padleft" => no_args("padLeft", &args).map(|_| ControllerButton::PadLeft),
+            "padright" => no_args("padRight", &args).map(|_| ControllerButton::PadRight),
             "triggerleft" => parse_threshold("triggerLeft", &args)
                 .map(|threshold| ControllerButton::TriggerLeft { threshold }),
             "triggerright" => parse_threshold("triggerRight", &args)
@@ -241,6 +258,8 @@ impl fmt::Display for ControllerButton {
             ControllerButton::Options => f.write_str("options"),
             ControllerButton::Share => f.write_str("share"),
             ControllerButton::System => f.write_str("system"),
+            ControllerButton::PadLeft => f.write_str("padLeft"),
+            ControllerButton::PadRight => f.write_str("padRight"),
         }
     }
 }
@@ -348,6 +367,70 @@ impl<'de> Deserialize<'de> for ControllerButton {
         }
         deserializer.deserialize_str(ButtonVisitor)
     }
+}
+
+/// Controller family for discovery / `preferred_controller` config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ControllerKind {
+    Sc2,
+    Ps4,
+}
+
+/// Built-in try order. New families are appended here.
+pub const DEFAULT_CONTROLLER_ORDER: &[ControllerKind] = &[ControllerKind::Sc2, ControllerKind::Ps4];
+
+/// User-specified names first (deduped); omitted families follow `DEFAULT_CONTROLLER_ORDER`.
+pub fn resolve_controller_order(preferred: &[ControllerKind]) -> Vec<ControllerKind> {
+    let mut out = Vec::new();
+    for kind in preferred {
+        if !out.contains(kind) {
+            out.push(*kind);
+        }
+    }
+    for kind in DEFAULT_CONTROLLER_ORDER {
+        if !out.contains(kind) {
+            out.push(*kind);
+        }
+    }
+    out
+}
+
+pub enum ConnectedController {
+    Ps4(ps4::Ps4Device),
+    Sc2(sc2::Sc2Device),
+}
+
+impl Iterator for ConnectedController {
+    type Item = Option<Box<dyn ControllerInput>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            ConnectedController::Ps4(device) => device.next(),
+            ConnectedController::Sc2(device) => device.next(),
+        }
+    }
+}
+
+/// Enumerate HID, try families in resolved `preferred_controller` order, return the first open.
+pub fn find_device() -> Option<ConnectedController> {
+    let hid = HidApi::new().ok()?;
+    let order = resolve_controller_order(&config::get().preferred_controller);
+    for kind in order {
+        match kind {
+            ControllerKind::Sc2 => {
+                if let Some(device) = sc2::open(&hid) {
+                    return Some(ConnectedController::Sc2(device));
+                }
+            }
+            ControllerKind::Ps4 => {
+                if let Some(device) = ps4::Ps4Device::open(&hid) {
+                    return Some(ConnectedController::Ps4(device));
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -482,5 +565,48 @@ mod tests {
             }),
             Some(&"switchState.menu".to_string())
         );
+    }
+
+    #[test]
+    fn parses_pad_click_buttons() {
+        assert_eq!(parse("padLeft"), ControllerButton::PadLeft);
+        assert_eq!(parse("pad-right"), ControllerButton::PadRight);
+        assert_eq!(
+            parse(&ControllerButton::PadLeft.to_string()),
+            ControllerButton::PadLeft
+        );
+        assert_eq!(
+            parse(&ControllerButton::PadRight.to_string()),
+            ControllerButton::PadRight
+        );
+    }
+
+    #[test]
+    fn preferred_controller_fill_in() {
+        assert_eq!(
+            resolve_controller_order(&[]),
+            vec![ControllerKind::Sc2, ControllerKind::Ps4]
+        );
+        assert_eq!(
+            resolve_controller_order(&[ControllerKind::Ps4]),
+            vec![ControllerKind::Ps4, ControllerKind::Sc2]
+        );
+        assert_eq!(
+            resolve_controller_order(&[ControllerKind::Sc2]),
+            vec![ControllerKind::Sc2, ControllerKind::Ps4]
+        );
+        assert_eq!(
+            resolve_controller_order(&[ControllerKind::Ps4, ControllerKind::Sc2]),
+            vec![ControllerKind::Ps4, ControllerKind::Sc2]
+        );
+        assert_eq!(
+            resolve_controller_order(&[ControllerKind::Ps4, ControllerKind::Ps4]),
+            vec![ControllerKind::Ps4, ControllerKind::Sc2]
+        );
+    }
+
+    #[test]
+    fn preferred_controller_unknown_name_errors() {
+        assert!(toml::from_str::<Vec<ControllerKind>>(r#"["xbox"]"#).is_err());
     }
 }

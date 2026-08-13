@@ -7,6 +7,8 @@
 [Keyboard]
 "triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
 "triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"padLeft" = "sendKeyUnderLeftStick"
+"padRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
 "options + faceRight" = "switchState.textInput"
 "faceTop" = "toggleShift"
