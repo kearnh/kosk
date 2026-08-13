@@ -114,26 +114,22 @@ pub fn pad_as_stick(pad_x: i16, pad_y: i16, touching: bool) -> (f32, f32) {
     )
 }
 
-fn haptic_on_us(intensity: HapticIntensity) -> Option<u16> {
+/// Firmware `0x82` command + gain (dB). 1 = tick, 2 = click.
+fn haptic_command(intensity: HapticIntensity) -> Option<(u8, i8)> {
     match intensity {
         HapticIntensity::None => None,
-        HapticIntensity::Low => Some(2_000),
-        HapticIntensity::Medium => Some(8_000),
-        HapticIntensity::High => Some(20_000),
+        HapticIntensity::Low => Some((HAPTIC_CMD_TICK, 0)),
+        HapticIntensity::Medium => Some((HAPTIC_CMD_CLICK, 0)),
+        HapticIntensity::High => Some((HAPTIC_CMD_CLICK, 6)),
     }
 }
 
-/// One-shot pad tick (`0x81` pulse). Best-effort; write errors are ignored.
-fn haptic_pulse(device: &HidDevice, side: u8, intensity: HapticIntensity) {
-    let Some(on_us) = haptic_on_us(intensity) else {
+/// One-shot pad click (`0x82`). Best-effort; write errors are ignored.
+fn haptic_click(device: &HidDevice, side: u8, intensity: HapticIntensity) {
+    let Some((command, gain_db)) = haptic_command(intensity) else {
         return;
     };
-    let mut buf = [0u8; 64];
-    buf[0] = ID_OUT_HAPTIC_PULSE;
-    buf[1] = side;
-    buf[2..4].copy_from_slice(&on_us.to_le_bytes());
-    buf[4..6].copy_from_slice(&0u16.to_le_bytes());
-    buf[6..8].copy_from_slice(&1u16.to_le_bytes());
+    let buf = [ID_OUT_HAPTIC_COMMAND, side, command, gain_db as u8];
     let _ = device.write(&buf);
 }
 
@@ -265,9 +261,12 @@ pub fn open(hid: &HidApi) -> Option<Sc2Device> {
     None
 }
 
-const ID_OUT_HAPTIC_PULSE: u8 = 0x81;
-const HAPTIC_SIDE_LEFT: u8 = 0x01;
-const HAPTIC_SIDE_RIGHT: u8 = 0x02;
+const ID_OUT_HAPTIC_COMMAND: u8 = 0x82;
+const HAPTIC_CMD_TICK: u8 = 1;
+const HAPTIC_CMD_CLICK: u8 = 2;
+/// `0x82` side: 0 = left trackpad, 1 = right, 2 = both.
+const HAPTIC_SIDE_TP_LEFT: u8 = 0;
+const HAPTIC_SIDE_TP_RIGHT: u8 = 1;
 
 pub struct Sc2Device {
     device: HidDevice,
@@ -313,11 +312,11 @@ impl Sc2Device {
         let cfg = crate::config::sc2();
         let left = self.state.pad_left();
         let right = self.state.pad_right();
-        if left && !self.prev_pad_left_click {
-            haptic_pulse(&self.device, HAPTIC_SIDE_LEFT, cfg.touchpad_left_haptic);
+        if left != self.prev_pad_left_click {
+            haptic_click(&self.device, HAPTIC_SIDE_TP_LEFT, cfg.touchpad_left_haptic);
         }
-        if right && !self.prev_pad_right_click {
-            haptic_pulse(&self.device, HAPTIC_SIDE_RIGHT, cfg.touchpad_right_haptic);
+        if right != self.prev_pad_right_click {
+            haptic_click(&self.device, HAPTIC_SIDE_TP_RIGHT, cfg.touchpad_right_haptic);
         }
         self.prev_pad_left_click = left;
         self.prev_pad_right_click = right;
@@ -562,7 +561,7 @@ mod tests {
         assert!(scale_trigger(0, false, 40).is_none());
         assert!(scale_trigger(0, true, 40).is_some());
         assert!(scale_trigger(16383, false, 40).is_some());
-        assert!(haptic_on_us(HapticIntensity::None).is_none());
-        assert!(haptic_on_us(HapticIntensity::Medium).is_some());
+        assert!(haptic_command(HapticIntensity::None).is_none());
+        assert_eq!(haptic_command(HapticIntensity::Medium), Some((HAPTIC_CMD_CLICK, 0)));
     }
 }
