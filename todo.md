@@ -52,3 +52,9 @@ Bugs
 ----
 
 - Debounce no 100% right. Easy to send triple key when intending to only send 2.
+- `config::save` dumps the whole `config.toml` via `toml::to_string_pretty`
+  whenever window position is persisted. `controller_map = "mappings.toml"` is
+  loaded into a HashMap and the path is forgotten, so save rewrites inline
+  `[controller_map.*]` tables and later mapping edits (e.g. pad click) never
+  apply. The watcher also does not watch `mappings.toml`. Save should keep the
+  file reference (or only patch `window_pos`).

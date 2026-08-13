@@ -10,6 +10,7 @@ scale_y = 32.0
 event_debounce_ms = 300
 event_debounce_repeat_ms = 55
 stick_select_lock_ms = 100
+controller_map = "mappings.toml"
 
 [sc2]
 pad_origin_stretch = 0.3
@@ -29,40 +30,3 @@ background_color = [255, 255, 255, 255]
 text_color = [0, 0, 0, 255]
 cursor_color = [0, 0, 0, 255]
 font_size = 22.0
-
-[controller_map.Keyboard]
-dpadRight = "sendKey.right"
-stickRight = "toggleAlt"
-"options + faceRight" = "switchState.textInput"
-dpadUp = "sendKey.up"
-stickLeft = "toggleCtrl"
-"options + faceTop" = "switchState.menu"
-faceTop = "toggleShift"
-dpadLeft = "sendKey.left"
-"triggerRight,threshold=40" = "sendKeyUnderRightStick"
-dpadDown = "sendKey.down"
-faceLeft = "sendKey.backspace"
-faceBottom = "sendKey.space"
-"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
-
-[controller_map.Menu]
-faceRight = "switchState.keyboard"
-dpadUp = "selectUp"
-faceBottom = "activate"
-dpadDown = "selectDown"
-
-[controller_map.TextInput]
-dpadUp = "switchState.keyboard"
-dpadRight = "moveCursorRight"
-dpadLeft = "moveCursorLeft"
-
-[controller_map.MoveWindow]
-faceTop = "snapTopLeft"
-options = "snapTopRight"
-dpadDown = "nudgeDown"
-dpadLeft = "nudgeLeft"
-dpadRight = "nudgeRight"
-faceLeft = "snapBottomLeft"
-dpadUp = "nudgeUp"
-faceBottom = "snapBottomRight"
-faceRight = "switchState.menu"
