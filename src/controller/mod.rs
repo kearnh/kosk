@@ -79,11 +79,11 @@ pub trait ControllerInput: Debug {
 
 /// A controller binding spec.
 ///
-/// Serialized as a single string so it can be used as a TOML table key. The format is
-/// `<variantName>` for unit variants (e.g. `faceTop`, `stickLeft`, `dpadUp`) and
-/// `<variantName>,<key>=<value>[,<key>=<value>...]` for variants carrying data
-/// (e.g. `triggerLeft,threshold=40`). Names are matched case-insensitively and `-` / `_`
-/// are ignored, so `stick-left`, `stick_left`, and `stickLeft` all parse to the same value.
+/// Serialized as a single string so it can be used as a TOML table key
+/// (e.g. `faceTop`, `stickLeft`, `triggerLeft`). Names are matched
+/// case-insensitively and `-` / `_` are ignored, so `stick-left`, `stick_left`,
+/// and `stickLeft` all parse to the same value. Device feel (trigger threshold,
+/// pad haptics) lives in `[ps4]` / `[sc2]`, not in this key.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ControllerButton {
     DpadUp,
@@ -98,8 +98,8 @@ pub enum ControllerButton {
     ShoulderRight,
     StickLeft,
     StickRight,
-    TriggerLeft { threshold: u8 },
-    TriggerRight { threshold: u8 },
+    TriggerLeft,
+    TriggerRight,
     Options,
     Share,
     System,
@@ -122,14 +122,8 @@ impl ControllerButton {
             ControllerButton::ShoulderRight => input.shoulder_right(),
             ControllerButton::StickLeft => input.stick_left(),
             ControllerButton::StickRight => input.stick_right(),
-            ControllerButton::TriggerLeft { threshold } => input
-                .trigger_left()
-                .map(|t| t >= *threshold)
-                .unwrap_or(false),
-            ControllerButton::TriggerRight { threshold } => input
-                .trigger_right()
-                .map(|t| t >= *threshold)
-                .unwrap_or(false),
+            ControllerButton::TriggerLeft => input.trigger_left().is_some(),
+            ControllerButton::TriggerRight => input.trigger_right().is_some(),
             ControllerButton::Options => input.btn_options(),
             ControllerButton::Share => input.btn_share(),
             ControllerButton::System => input.btn_system(),
@@ -152,35 +146,14 @@ fn normalize_ident(s: &str) -> String {
     out
 }
 
-/// Split `"k=v"` into `(k, v)` with whitespace trimmed; returns `None` if there is no `=`.
-fn split_kv(arg: &str) -> Option<(&str, &str)> {
-    arg.split_once('=').map(|(k, v)| (k.trim(), v.trim()))
-}
-
-fn parse_threshold(name: &str, args: &[&str]) -> Result<u8, String> {
-    let mut threshold = 40; // default threshold
-    for arg in args {
-        let (k, v) = split_kv(arg).ok_or_else(|| {
-            format!(
-                "'{}' argument must be 'threshold=<0-255>', got '{}'",
-                name, arg
-            )
-        })?;
-        match normalize_ident(k).as_str() {
-            "threshold" => {
-                threshold = v
-                    .parse::<u8>()
-                    .map_err(|e| format!("'{}': invalid threshold value '{}': {}", name, v, e))?;
-            }
-            _ => return Err(format!("'{}': unknown argument '{}'", name, k)),
-        }
-    }
-    Ok(threshold)
-}
-
 fn no_args(name: &str, args: &[&str]) -> Result<(), String> {
     if args.is_empty() {
         Ok(())
+    } else if name == "triggerLeft" || name == "triggerRight" {
+        Err(format!(
+            "'{}' does not take arguments (got {:?}); set trigger_left_threshold / trigger_right_threshold in [ps4] or [sc2]",
+            name, args
+        ))
     } else {
         Err(format!(
             "controller button '{}' does not take arguments (got {:?})",
@@ -228,10 +201,10 @@ impl FromStr for ControllerButton {
             "system" => no_args("system", &args).map(|_| ControllerButton::System),
             "padleft" => no_args("padLeft", &args).map(|_| ControllerButton::PadLeft),
             "padright" => no_args("padRight", &args).map(|_| ControllerButton::PadRight),
-            "triggerleft" => parse_threshold("triggerLeft", &args)
-                .map(|threshold| ControllerButton::TriggerLeft { threshold }),
-            "triggerright" => parse_threshold("triggerRight", &args)
-                .map(|threshold| ControllerButton::TriggerRight { threshold }),
+            "triggerleft" => no_args("triggerLeft", &args).map(|_| ControllerButton::TriggerLeft),
+            "triggerright" => {
+                no_args("triggerRight", &args).map(|_| ControllerButton::TriggerRight)
+            }
             _ => Err(format!("unknown controller button '{}'", spec)),
         }
     }
@@ -252,12 +225,8 @@ impl fmt::Display for ControllerButton {
             ControllerButton::ShoulderRight => f.write_str("shoulderRight"),
             ControllerButton::StickLeft => f.write_str("stickLeft"),
             ControllerButton::StickRight => f.write_str("stickRight"),
-            ControllerButton::TriggerLeft { threshold } => {
-                write!(f, "triggerLeft,threshold={}", threshold)
-            }
-            ControllerButton::TriggerRight { threshold } => {
-                write!(f, "triggerRight,threshold={}", threshold)
-            }
+            ControllerButton::TriggerLeft => f.write_str("triggerLeft"),
+            ControllerButton::TriggerRight => f.write_str("triggerRight"),
             ControllerButton::Options => f.write_str("options"),
             ControllerButton::Share => f.write_str("share"),
             ControllerButton::System => f.write_str("system"),
@@ -360,9 +329,7 @@ impl<'de> Deserialize<'de> for ControllerButton {
         impl de::Visitor<'_> for ButtonVisitor {
             type Value = ControllerButton;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str(
-                    "a controller button spec like \"faceTop\" or \"triggerLeft,threshold=40\"",
-                )
+                f.write_str("a controller button spec like \"faceTop\" or \"triggerLeft\"")
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 ControllerButton::from_str(v).map_err(de::Error::custom)
@@ -467,14 +434,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_trigger_with_named_threshold() {
-        assert_eq!(
-            parse("triggerLeft,threshold=40"),
-            ControllerButton::TriggerLeft { threshold: 40 }
-        );
-        assert_eq!(
-            parse("triggerRight, threshold = 200"),
-            ControllerButton::TriggerRight { threshold: 200 }
+    fn parses_trigger_as_unit() {
+        assert_eq!(parse("triggerLeft"), ControllerButton::TriggerLeft);
+        assert_eq!(parse("trigger-right"), ControllerButton::TriggerRight);
+        let err = ControllerButton::from_str("triggerLeft,threshold=40").unwrap_err();
+        assert!(
+            err.contains("[ps4]") && err.contains("[sc2]"),
+            "expected pointer to device config, got {err}"
         );
     }
 
@@ -491,7 +457,7 @@ mod tests {
         let cases = [
             ControllerButton::FaceTop,
             ControllerButton::StickLeft,
-            ControllerButton::TriggerLeft { threshold: 40 },
+            ControllerButton::TriggerLeft,
             ControllerButton::DpadUp,
             ControllerButton::DpadRight,
         ];
@@ -506,9 +472,8 @@ mod tests {
         assert!(ControllerButton::from_str("faceTop,oops=1").is_err());
         assert_eq!(
             ControllerButton::from_str("triggerLeft").unwrap(),
-            ControllerButton::TriggerLeft { threshold: 40 }
+            ControllerButton::TriggerLeft
         );
-        assert!(ControllerButton::from_str("triggerLeft,threshold=999").is_err());
     }
 
     fn parse_binding(s: &str) -> ControllerBinding {
@@ -532,9 +497,9 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_binding("triggerLeft,threshold=40 + options"),
+            parse_binding("triggerLeft + options"),
             ControllerBinding::Chord {
-                leader: ControllerButton::TriggerLeft { threshold: 40 },
+                leader: ControllerButton::TriggerLeft,
                 follower: ControllerButton::Options,
             }
         );
@@ -551,8 +516,8 @@ mod tests {
     fn deserializes_full_mappings_toml() {
         let toml_src = r#"
 [Keyboard]
-"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
-"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"triggerLeft" = "sendKeyUnderLeftStick"
+"triggerRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
 "faceTop" = "toggleShift"
 "stickLeft" = "toggleCtrl"
@@ -564,9 +529,7 @@ mod tests {
             toml::from_str(toml_src).expect("parse mappings");
         let kb = map.get("Keyboard").expect("keyboard section");
         assert_eq!(
-            kb.get(&ControllerBinding::Single(ControllerButton::TriggerLeft {
-                threshold: 40
-            })),
+            kb.get(&ControllerBinding::Single(ControllerButton::TriggerLeft)),
             Some(&"sendKeyUnderLeftStick".to_string())
         );
         assert_eq!(

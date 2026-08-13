@@ -145,12 +145,16 @@ pub struct Config {
     #[serde(default = "default_stick_select_lock_ms")]
     pub stick_select_lock_ms: u64,
 
-    /// Steam Controller 2 pad mapping. Omitted → absolute pads (same as today).
+    /// Steam Controller 2 pad mapping and feel. Omitted → defaults.
     #[serde(default)]
     pub sc2: Sc2Config,
+
+    /// DualShock 4 feel. Omitted → defaults.
+    #[serde(default)]
+    pub ps4: Ps4Config,
 }
 
-/// SC2-only pad origin stretch. Does not affect DualShock 4 sticks.
+/// SC2-only pad mapping and feel. Does not affect DualShock 4.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Sc2Config {
     /// Blend toward remaining-range stretch from first-touch origin.
@@ -165,6 +169,18 @@ pub struct Sc2Config {
     /// Wait this long after touch-down before capturing origin (skip contact spike).
     #[serde(default = "default_pad_origin_settle_ms")]
     pub pad_origin_settle_ms: u64,
+
+    #[serde(default = "default_trigger_threshold")]
+    pub trigger_left_threshold: u8,
+
+    #[serde(default = "default_trigger_threshold")]
+    pub trigger_right_threshold: u8,
+
+    #[serde(default)]
+    pub touchpad_left_haptic: HapticIntensity,
+
+    #[serde(default)]
+    pub touchpad_right_haptic: HapticIntensity,
 }
 
 impl Default for Sc2Config {
@@ -173,8 +189,41 @@ impl Default for Sc2Config {
             pad_origin_stretch: default_pad_origin_stretch(),
             pad_origin_stretch_max_gain: default_pad_origin_stretch_max_gain(),
             pad_origin_settle_ms: default_pad_origin_settle_ms(),
+            trigger_left_threshold: default_trigger_threshold(),
+            trigger_right_threshold: default_trigger_threshold(),
+            touchpad_left_haptic: HapticIntensity::default(),
+            touchpad_right_haptic: HapticIntensity::default(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Ps4Config {
+    #[serde(default = "default_trigger_threshold")]
+    pub trigger_left_threshold: u8,
+
+    #[serde(default = "default_trigger_threshold")]
+    pub trigger_right_threshold: u8,
+}
+
+impl Default for Ps4Config {
+    fn default() -> Self {
+        Self {
+            trigger_left_threshold: default_trigger_threshold(),
+            trigger_right_threshold: default_trigger_threshold(),
+        }
+    }
+}
+
+/// Pad haptic tick strength. `none` skips the HID pulse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HapticIntensity {
+    #[default]
+    None,
+    Low,
+    Medium,
+    High,
 }
 
 #[derive(Deserialize)]
@@ -277,11 +326,23 @@ fn default_pad_origin_settle_ms() -> u64 {
     20
 }
 
+fn default_trigger_threshold() -> u8 {
+    40
+}
+
 /// SC2 settings, or defaults when config is not initialized (`sc2_test` without `--config`).
 pub fn sc2() -> Sc2Config {
     CONFIG_INSTANCE
         .get()
         .map(|instance| instance.lock().unwrap().sc2.clone())
+        .unwrap_or_default()
+}
+
+/// DualShock 4 settings, or defaults when config is not initialized.
+pub fn ps4() -> Ps4Config {
+    CONFIG_INSTANCE
+        .get()
+        .map(|instance| instance.lock().unwrap().ps4.clone())
         .unwrap_or_default()
 }
 

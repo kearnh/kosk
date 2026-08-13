@@ -3,10 +3,11 @@
 # Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
 # Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
 # also have a standalone mapping in this table; the follower may.
+# Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.
 
 [Keyboard]
-"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
-"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"triggerLeft" = "sendKeyUnderLeftStick"
+"triggerRight" = "sendKeyUnderRightStick"
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"

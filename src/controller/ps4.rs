@@ -319,10 +319,12 @@ impl ControllerInput for Ps4InputData {
         self.r3
     }
     fn trigger_left(&self) -> Option<u8> {
-        self.l2
+        let threshold = crate::config::ps4().trigger_left_threshold;
+        self.l2.filter(|&t| t >= threshold)
     }
     fn trigger_right(&self) -> Option<u8> {
-        self.r2
+        let threshold = crate::config::ps4().trigger_right_threshold;
+        self.r2.filter(|&t| t >= threshold)
     }
     fn btn_options(&self) -> bool {
         self.options

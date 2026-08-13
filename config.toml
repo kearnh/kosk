@@ -16,6 +16,14 @@ controller_map = "mappings.toml"
 pad_origin_stretch = 0.3
 pad_origin_stretch_max_gain = 1.5
 pad_origin_settle_ms = 20
+trigger_left_threshold = 40
+trigger_right_threshold = 40
+touchpad_left_haptic = "medium"
+touchpad_right_haptic = "medium"
+
+[ps4]
+trigger_left_threshold = 40
+trigger_right_threshold = 40
 
 [layouts]
 main = "old_steam_controller_kb.toml"

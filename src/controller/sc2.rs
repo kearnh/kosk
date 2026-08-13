@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
+use crate::config::HapticIntensity;
 use crate::controller::ControllerInput;
 
 const VALVE_VID: u16 = 0x28de;
@@ -43,7 +44,6 @@ const BTN_LPAD_TOUCH: u32 = 0x0200_0000;
 const BTN_LPAD_CLICK: u32 = 0x0400_0000;
 const BTN_LTRIG_CLICK: u32 = 0x0800_0000;
 
-const TRIGGER_ANALOG_GATE: i16 = 3276; // ~10% of 32767
 const LIZARD_REFRESH: Duration = Duration::from_secs(3);
 const READ_TIMEOUT_MS: i32 = 50;
 const SLOT_PEEK_MS: i32 = 200;
@@ -110,12 +110,36 @@ pub fn pad_as_stick(pad_x: i16, pad_y: i16, touching: bool) -> (f32, f32) {
     )
 }
 
-fn scale_trigger(v: i16, click: bool) -> Option<u8> {
-    let v = v.max(0);
-    if !click && v < TRIGGER_ANALOG_GATE {
-        return None;
+fn haptic_on_us(intensity: HapticIntensity) -> Option<u16> {
+    match intensity {
+        HapticIntensity::None => None,
+        HapticIntensity::Low => Some(2_000),
+        HapticIntensity::Medium => Some(8_000),
+        HapticIntensity::High => Some(20_000),
     }
-    Some(((v as u32 * 255) / 32767).min(255) as u8)
+}
+
+/// One-shot pad tick (`0x81` pulse). Best-effort; write errors are ignored.
+fn haptic_pulse(device: &HidDevice, side: u8, intensity: HapticIntensity) {
+    let Some(on_us) = haptic_on_us(intensity) else {
+        return;
+    };
+    let mut buf = [0u8; 64];
+    buf[0] = ID_OUT_HAPTIC_PULSE;
+    buf[1] = side;
+    buf[2..4].copy_from_slice(&on_us.to_le_bytes());
+    buf[4..6].copy_from_slice(&0u16.to_le_bytes());
+    buf[6..8].copy_from_slice(&1u16.to_le_bytes());
+    let _ = device.write(&buf);
+}
+
+fn scale_trigger(v: i16, click: bool, threshold: u8) -> Option<u8> {
+    let analog = ((v.max(0) as u32 * 255) / 32767).min(255) as u8;
+    if click || analog >= threshold {
+        Some(analog)
+    } else {
+        None
+    }
 }
 
 fn i16_at(data: &[u8], off: usize) -> Option<i16> {
@@ -237,6 +261,10 @@ pub fn open(hid: &HidApi) -> Option<Sc2Device> {
     None
 }
 
+const ID_OUT_HAPTIC_PULSE: u8 = 0x81;
+const HAPTIC_SIDE_LEFT: u8 = 0x01;
+const HAPTIC_SIDE_RIGHT: u8 = 0x02;
+
 pub struct Sc2Device {
     device: HidDevice,
     state: Sc2State,
@@ -244,6 +272,8 @@ pub struct Sc2Device {
     was_engaged: bool,
     last_lizard: Instant,
     last_report: Option<Vec<u8>>,
+    prev_pad_left_click: bool,
+    prev_pad_right_click: bool,
 }
 
 impl Sc2Device {
@@ -255,6 +285,8 @@ impl Sc2Device {
             was_engaged: false,
             last_lizard: Instant::now(),
             last_report: None,
+            prev_pad_left_click: false,
+            prev_pad_right_click: false,
         }
     }
 
@@ -272,6 +304,20 @@ impl Sc2Device {
             self.last_lizard = Instant::now();
         }
     }
+
+    fn maybe_pad_haptic(&mut self) {
+        let cfg = crate::config::sc2();
+        let left = self.state.pad_left();
+        let right = self.state.pad_right();
+        if left && !self.prev_pad_left_click {
+            haptic_pulse(&self.device, HAPTIC_SIDE_LEFT, cfg.touchpad_left_haptic);
+        }
+        if right && !self.prev_pad_right_click {
+            haptic_pulse(&self.device, HAPTIC_SIDE_RIGHT, cfg.touchpad_right_haptic);
+        }
+        self.prev_pad_left_click = left;
+        self.prev_pad_right_click = right;
+    }
 }
 
 impl Iterator for Sc2Device {
@@ -288,6 +334,7 @@ impl Iterator for Sc2Device {
                         self.last_report = Some(report.to_vec());
                         self.state = state;
                         self.has_state = true;
+                        self.maybe_pad_haptic();
                     } else if !self.has_state {
                         continue;
                     }
@@ -349,10 +396,18 @@ impl ControllerInput for Sc2State {
         self.bit(BTN_R3)
     }
     fn trigger_left(&self) -> Option<u8> {
-        scale_trigger(self.trigger_left, self.bit(BTN_LTRIG_CLICK))
+        scale_trigger(
+            self.trigger_left,
+            self.bit(BTN_LTRIG_CLICK),
+            crate::config::sc2().trigger_left_threshold,
+        )
     }
     fn trigger_right(&self) -> Option<u8> {
-        scale_trigger(self.trigger_right, self.bit(BTN_RTRIG_CLICK))
+        scale_trigger(
+            self.trigger_right,
+            self.bit(BTN_RTRIG_CLICK),
+            crate::config::sc2().trigger_right_threshold,
+        )
     }
     fn btn_options(&self) -> bool {
         self.bit(BTN_MENU)
@@ -473,5 +528,14 @@ mod tests {
         let (x, y) = pad_as_stick(32767, 32767, true);
         assert!((x - 1.0).abs() < 0.001);
         assert!((y + 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn scale_trigger_uses_threshold_or_click() {
+        assert!(scale_trigger(0, false, 40).is_none());
+        assert!(scale_trigger(0, true, 40).is_some());
+        assert!(scale_trigger(16383, false, 40).is_some());
+        assert!(haptic_on_us(HapticIntensity::None).is_none());
+        assert!(haptic_on_us(HapticIntensity::Medium).is_some());
     }
 }
