@@ -17,6 +17,8 @@ pub enum Event {
     SendText(String),
     ChangeState(StateId),
     MoveWindow(WindowPos),
+    FlipWindowLeftRight,
+    FlipWindowAboveBelow,
     Exit,
 }
 

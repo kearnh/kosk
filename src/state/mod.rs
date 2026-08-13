@@ -5,7 +5,7 @@ use crate::{
     state::{
         event::Event,
         event::EventQueue,
-        window_pos::{resolve_position, WindowPos},
+        window_pos::{capture_pointer_snapshot, resolve_position, PointerSnapshot, WindowPos},
     },
 };
 use anyhow::Result;
@@ -36,6 +36,7 @@ pub struct AppState {
     state: StateId,
     pos: WindowPos,
     monitor_size: (f32, f32),
+    pointer_snapshot: Option<PointerSnapshot>,
     events: EventQueue,
     enigo: Enigo,
 }
@@ -53,6 +54,7 @@ impl AppState {
             state: StateId::Keyboard,
             pos: cfg.window_pos,
             monitor_size,
+            pointer_snapshot: None,
             events: EventQueue::new(),
             enigo: Enigo::new(&Default::default())?,
         })
@@ -75,9 +77,18 @@ impl AppState {
     /// Resolve the configured position for the current monitor and window size.
     ///
     /// If an absolute position had to be clamped (e.g. after display scaling changed),
-    /// the corrected value is persisted to config.
-    pub fn get_position(&mut self, content_rect: Rect) -> (f32, f32) {
+    /// the corrected value is persisted to config. `MousePointer` is snapped once
+    /// at launch and not written back as coordinates.
+    pub fn get_position(&mut self, content_rect: Rect, pixels_per_point: f32) -> (f32, f32) {
         let window_size = Self::window_size_from(content_rect);
+        if self.pos == WindowPos::MousePointer {
+            if self.pointer_snapshot.is_none() {
+                self.pointer_snapshot = capture_pointer_snapshot();
+            }
+            if let Some(snap) = &mut self.pointer_snapshot {
+                return snap.coords_points(window_size, pixels_per_point);
+            }
+        }
         let (resolved, coords) = resolve_position(self.pos, window_size, self.monitor_size);
         if matches!(self.pos, WindowPos::Absolute(..)) && resolved != self.pos {
             self.pos = resolved;
@@ -86,6 +97,25 @@ impl AppState {
             let _ = config::save(cfg);
         }
         coords
+    }
+
+    fn flip_pointer(&mut self, ctx: &Context, vertical: bool) {
+        if self.pos != WindowPos::MousePointer {
+            return;
+        }
+        if self.pointer_snapshot.is_none() {
+            self.pointer_snapshot = capture_pointer_snapshot();
+        }
+        let Some(snap) = self.pointer_snapshot.as_mut() else {
+            return;
+        };
+        let window_size = Self::window_size_from(ctx.content_rect());
+        let ppp = ctx.pixels_per_point();
+        if vertical {
+            snap.flip_vertical(window_size, ppp);
+        } else {
+            snap.flip_horizontal(window_size, ppp);
+        }
     }
 
     fn process_events(&mut self, ctx: &Context) {
@@ -109,6 +139,12 @@ impl AppState {
                         let _ = config::save(cfg);
                     }
                 }
+                Event::FlipWindowLeftRight => {
+                    self.flip_pointer(ctx, false);
+                }
+                Event::FlipWindowAboveBelow => {
+                    self.flip_pointer(ctx, true);
+                }
                 Event::Exit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -128,7 +164,7 @@ impl AppState {
                 menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::MoveWindow => {
-                let (x, y) = self.get_position(ctx.content_rect());
+                let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
                 move_window::with_mut(|mw| {
                     let movement = mw.draw_ui(ctx, ui, (x, y), &mut self.events);
                     if let Some(new_pos) = movement {
@@ -174,7 +210,7 @@ impl AppState {
                 menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
             }
             StateId::MoveWindow => {
-                let (x, y) = self.get_position(ctx.content_rect());
+                let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
                 move_window::with_mut(|mw| {
                     mw.handle_controller_input(ctx, input, (x, y), &mut self.events)
                 })?

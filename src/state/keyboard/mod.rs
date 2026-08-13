@@ -216,6 +216,12 @@ impl KeyboardState {
                 }
                 return Ok(());
             }
+            FlipWindowLeftRight => {
+                let _ = events.push(Event::FlipWindowLeftRight, source);
+            }
+            FlipWindowAboveBelow => {
+                let _ = events.push(Event::FlipWindowAboveBelow, source);
+            }
             Exit => {
                 let _ = events.push(Event::Exit, source);
             }

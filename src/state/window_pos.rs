@@ -1,22 +1,239 @@
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-/// Clamp window top-left coordinates so the full window stays within the monitor.
+const POINTER_GAP: f32 = 12.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+enum PointerH {
+    #[default]
+    Right,
+    Left,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+enum PointerV {
+    /// Top of the window aligned with the cursor (default "beside").
+    #[default]
+    Align,
+    Above,
+    Below,
+}
+
+/// Horizontal and vertical sides are independent so a left/right flip
+/// keeps above/below, and vice versa.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+struct PointerPlacement {
+    horizontal: PointerH,
+    vertical: PointerV,
+}
+
+/// Cursor and work-area at launch, in physical pixels (virtual screen).
+#[derive(Clone, Copy, Debug)]
+pub struct PointerSnapshot {
+    cursor_px: (i32, i32),
+    work_px: (i32, i32, i32, i32),
+    placement: Option<PointerPlacement>,
+}
+
+impl PointerSnapshot {
+    fn geom(&self, window_size: (f32, f32), pixels_per_point: f32) -> PointerGeom {
+        let ppp = pixels_per_point.max(0.1);
+        let pt = |v: i32| v as f32 / ppp;
+        let (l, t, r, b) = self.work_px;
+        PointerGeom {
+            cursor: (pt(self.cursor_px.0), pt(self.cursor_px.1)),
+            window: window_size,
+            origin: (pt(l), pt(t)),
+            size: (pt(r - l), pt(b - t)),
+        }
+    }
+
+    fn ensure_placement(&mut self, geom: PointerGeom) -> PointerPlacement {
+        *self
+            .placement
+            .get_or_insert_with(|| choose_default_placement(geom))
+    }
+
+    /// Place the window next to the captured pointer, in egui points.
+    pub fn coords_points(&mut self, window_size: (f32, f32), pixels_per_point: f32) -> (f32, f32) {
+        let geom = self.geom(window_size, pixels_per_point);
+        let placement = self.ensure_placement(geom);
+        place_near_pointer(geom, placement)
+    }
+
+    pub fn flip_horizontal(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
+        let geom = self.geom(window_size, pixels_per_point);
+        let current = self.ensure_placement(geom);
+        self.placement = Some(flip_horizontal(current, geom));
+    }
+
+    pub fn flip_vertical(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
+        let geom = self.geom(window_size, pixels_per_point);
+        let current = self.ensure_placement(geom);
+        self.placement = Some(flip_vertical(current, geom));
+    }
+}
+
+/// Snapshot the pointer and the work area of the monitor that contains it.
+pub fn capture_pointer_snapshot() -> Option<PointerSnapshot> {
+    #[cfg(windows)]
+    {
+        capture_pointer_snapshot_win()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+#[cfg(windows)]
+fn capture_pointer_snapshot_win() -> Option<PointerSnapshot> {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    unsafe {
+        let mut pt = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut pt) == 0 {
+            return None;
+        }
+        let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if monitor == 0 {
+            return None;
+        }
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            rcMonitor: RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            rcWork: RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            dwFlags: 0,
+        };
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return None;
+        }
+        let work = info.rcWork;
+        Some(PointerSnapshot {
+            cursor_px: (pt.x, pt.y),
+            work_px: (work.left, work.top, work.right, work.bottom),
+            placement: None,
+        })
+    }
+}
+
+/// Clamp window top-left so the full window stays inside a work rect at the origin.
 pub fn clamp_coords(
     coords: (f32, f32),
     window_size: (f32, f32),
     monitor_size: (f32, f32),
 ) -> (f32, f32) {
+    clamp_to_rect(coords, window_size, (0.0, 0.0), monitor_size)
+}
+
+fn clamp_to_rect(
+    coords: (f32, f32),
+    window_size: (f32, f32),
+    origin: (f32, f32),
+    size: (f32, f32),
+) -> (f32, f32) {
     let (win_w, win_h) = window_size;
-    let (mon_w, mon_h) = monitor_size;
-    let max_x = (mon_w - win_w).max(0.0);
-    let max_y = (mon_h - win_h).max(0.0);
-    (coords.0.clamp(0.0, max_x), coords.1.clamp(0.0, max_y))
+    let max_x = origin.0 + (size.0 - win_w).max(0.0);
+    let max_y = origin.1 + (size.1 - win_h).max(0.0);
+    (
+        coords.0.clamp(origin.0, max_x),
+        coords.1.clamp(origin.1, max_y),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct PointerGeom {
+    cursor: (f32, f32),
+    window: (f32, f32),
+    origin: (f32, f32),
+    size: (f32, f32),
+}
+
+fn fits_right(geom: PointerGeom) -> bool {
+    let (cx, _) = geom.cursor;
+    (geom.origin.0 + geom.size.0) - cx >= geom.window.0 + POINTER_GAP
+}
+
+fn fits_below(geom: PointerGeom) -> bool {
+    let (_, cy) = geom.cursor;
+    (geom.origin.1 + geom.size.1) - cy >= geom.window.1 + POINTER_GAP
+}
+
+fn choose_default_placement(geom: PointerGeom) -> PointerPlacement {
+    PointerPlacement {
+        horizontal: if fits_right(geom) {
+            PointerH::Right
+        } else {
+            PointerH::Left
+        },
+        vertical: PointerV::Align,
+    }
+}
+
+fn flip_horizontal(current: PointerPlacement, _geom: PointerGeom) -> PointerPlacement {
+    PointerPlacement {
+        horizontal: match current.horizontal {
+            PointerH::Right => PointerH::Left,
+            PointerH::Left => PointerH::Right,
+        },
+        vertical: current.vertical,
+    }
+}
+
+fn flip_vertical(current: PointerPlacement, geom: PointerGeom) -> PointerPlacement {
+    let vertical = match current.vertical {
+        PointerV::Align => {
+            if fits_below(geom) {
+                PointerV::Below
+            } else {
+                PointerV::Above
+            }
+        }
+        PointerV::Below => PointerV::Above,
+        PointerV::Above => PointerV::Below,
+    };
+    PointerPlacement {
+        horizontal: current.horizontal,
+        vertical,
+    }
+}
+
+/// Sit beside the pointer. Horizontal and vertical offsets are independent.
+/// Result is clamped to the work area.
+fn place_near_pointer(geom: PointerGeom, placement: PointerPlacement) -> (f32, f32) {
+    let (cx, cy) = geom.cursor;
+    let (ww, wh) = geom.window;
+    let gap = POINTER_GAP;
+    let x = match placement.horizontal {
+        PointerH::Right => cx + gap,
+        PointerH::Left => cx - gap - ww,
+    };
+    let y = match placement.vertical {
+        PointerV::Align => cy,
+        PointerV::Below => cy + gap,
+        PointerV::Above => cy - gap - wh,
+    };
+    clamp_to_rect((x, y), geom.window, geom.origin, geom.size)
 }
 
 /// Resolve a saved position to on-screen coordinates for the current monitor and window size.
 ///
 /// Corner presets are recomputed each time so they stay anchored after display scaling changes.
 /// Absolute coordinates are clamped when they no longer fit (e.g. after a DPI change).
+/// `MousePointer` is resolved by [`AppState`] from a pointer snapshot, not here.
 pub fn resolve_position(
     pos: WindowPos,
     window_size: (f32, f32),
@@ -41,6 +258,7 @@ pub fn resolve_position(
         WindowPos::TopRight => ((max_x, 0.0), pos),
         WindowPos::BottomRight => ((max_x, max_y), pos),
         WindowPos::BottomLeft => ((0.0, max_y), pos),
+        WindowPos::MousePointer => ((max_x, max_y), pos),
     };
 
     let coords = clamp_coords(coords, window_size, monitor_size);
@@ -53,6 +271,7 @@ pub enum WindowPos {
     TopRight,
     BottomRight,
     BottomLeft,
+    MousePointer,
     Absolute(f32, f32),
 }
 
@@ -66,6 +285,7 @@ impl Serialize for WindowPos {
             WindowPos::TopRight => serializer.serialize_str("top right"),
             WindowPos::BottomRight => serializer.serialize_str("bottom right"),
             WindowPos::BottomLeft => serializer.serialize_str("bottom left"),
+            WindowPos::MousePointer => serializer.serialize_str("mouse pointer"),
             WindowPos::Absolute(x, y) => (x, y).serialize(serializer),
         }
     }
@@ -82,21 +302,30 @@ impl<'de> Deserialize<'de> for WindowPos {
             type Value = WindowPos;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string ('top left', 'top right', 'bottom right', 'bottom left') or an [x, y] array")
+                formatter.write_str(
+                    "a string ('top left', 'top right', 'bottom right', 'bottom left', 'mouse pointer') or an [x, y] array",
+                )
             }
 
             fn visit_str<E>(self, value: &str) -> Result<WindowPos, E>
             where
                 E: de::Error,
             {
-                match value.to_lowercase().as_str() {
-                    "top left" => Ok(WindowPos::TopLeft),
-                    "top right" => Ok(WindowPos::TopRight),
-                    "bottom right" => Ok(WindowPos::BottomRight),
-                    "bottom left" => Ok(WindowPos::BottomLeft),
+                match value.to_lowercase().replace(' ', "").as_str() {
+                    "topleft" => Ok(WindowPos::TopLeft),
+                    "topright" => Ok(WindowPos::TopRight),
+                    "bottomright" => Ok(WindowPos::BottomRight),
+                    "bottomleft" => Ok(WindowPos::BottomLeft),
+                    "mousepointer" => Ok(WindowPos::MousePointer),
                     _ => Err(de::Error::unknown_variant(
                         value,
-                        &["top left", "top right", "bottom right", "bottom left"],
+                        &[
+                            "top left",
+                            "top right",
+                            "bottom right",
+                            "bottom left",
+                            "mouse pointer",
+                        ],
                     )),
                 }
             }
@@ -164,5 +393,91 @@ mod tests {
 
         assert_eq!(coords, (760.0, 470.0));
         assert_eq!(resolved, WindowPos::Absolute(760.0, 470.0));
+    }
+
+    #[test]
+    fn parses_mouse_pointer() {
+        #[derive(Deserialize)]
+        struct Cfg {
+            window_pos: WindowPos,
+        }
+        let cfg: Cfg = toml::from_str("window_pos = \"MousePointer\"").unwrap();
+        assert_eq!(cfg.window_pos, WindowPos::MousePointer);
+        let cfg: Cfg = toml::from_str("window_pos = \"mouse pointer\"").unwrap();
+        assert_eq!(cfg.window_pos, WindowPos::MousePointer);
+    }
+
+    fn geom(cursor: (f32, f32), window: (f32, f32), work: (f32, f32)) -> PointerGeom {
+        PointerGeom {
+            cursor,
+            window,
+            origin: (0.0, 0.0),
+            size: work,
+        }
+    }
+
+    #[test]
+    fn pointer_prefers_right_of_cursor() {
+        let window = (400.0, 200.0);
+        let work = (1920.0, 1080.0);
+        let cursor = (200.0, 100.0);
+        let g = geom(cursor, window, work);
+        let place = choose_default_placement(g);
+        assert_eq!(place.horizontal, PointerH::Right);
+        assert_eq!(place.vertical, PointerV::Align);
+        let pos = place_near_pointer(g, place);
+        assert!((pos.0 - (cursor.0 + POINTER_GAP)).abs() < 0.1, "{pos:?}");
+        assert!((pos.1 - cursor.1).abs() < 0.1, "{pos:?}");
+    }
+
+    #[test]
+    fn pointer_falls_back_left_when_no_right_room() {
+        let window = (400.0, 200.0);
+        let work = (1920.0, 1080.0);
+        let cursor = (1900.0, 100.0);
+        let g = geom(cursor, window, work);
+        let place = choose_default_placement(g);
+        assert_eq!(place.horizontal, PointerH::Left);
+        let pos = place_near_pointer(g, place);
+        assert!(pos.0 + window.0 <= cursor.0, "{pos:?}");
+    }
+
+    #[test]
+    fn flip_horizontal_keeps_vertical() {
+        let g = geom((200.0, 100.0), (400.0, 200.0), (1920.0, 1080.0));
+        let beside_right = choose_default_placement(g);
+        let below_right = flip_vertical(beside_right, g);
+        assert_eq!(below_right.vertical, PointerV::Below);
+        assert_eq!(below_right.horizontal, PointerH::Right);
+
+        let below_left = flip_horizontal(below_right, g);
+        assert_eq!(below_left.horizontal, PointerH::Left);
+        assert_eq!(below_left.vertical, PointerV::Below);
+
+        let below_right_again = flip_horizontal(below_left, g);
+        assert_eq!(below_right_again, below_right);
+    }
+
+    #[test]
+    fn flip_vertical_from_side_goes_below_if_room() {
+        let g = geom((200.0, 100.0), (400.0, 200.0), (1920.0, 1080.0));
+        let start = choose_default_placement(g);
+        let below = flip_vertical(start, g);
+        assert_eq!(below.vertical, PointerV::Below);
+        assert_eq!(below.horizontal, PointerH::Right);
+        let above = flip_vertical(below, g);
+        assert_eq!(above.vertical, PointerV::Above);
+        assert_eq!(above.horizontal, PointerH::Right);
+    }
+
+    #[test]
+    fn pointer_stays_inside_work_area() {
+        let window = (520.0, 250.0);
+        let work = (800.0, 600.0);
+        let g = geom((10.0, 10.0), window, work);
+        let pos = place_near_pointer(g, choose_default_placement(g));
+        assert!(pos.0 >= 0.0 && pos.1 >= 0.0);
+        assert!(pos.0 + window.0 <= work.0 + 0.1);
+        assert!(pos.1 + window.1 <= work.1 + 0.1);
     }
 }

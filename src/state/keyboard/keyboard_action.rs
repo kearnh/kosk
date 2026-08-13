@@ -16,6 +16,8 @@ pub enum KeyboardAction {
     Paste,
     SwitchState(StateId),
     SwitchLayout(String),
+    FlipWindowLeftRight,
+    FlipWindowAboveBelow,
     Exit,
 }
 
@@ -31,7 +33,7 @@ impl Action for KeyboardAction {
                 TriggerMode::WhileHeld
             }
             ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
-            | Exit => TriggerMode::Edge,
+            | FlipWindowLeftRight | FlipWindowAboveBelow | Exit => TriggerMode::Edge,
         }
     }
 }

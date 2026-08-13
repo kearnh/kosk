@@ -1,7 +1,8 @@
 # Controller bindings per app state (paths are relative to the main config file).
 # Action names match each state's action enum (same strings as keyboard layout keys).
 # Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
-# SC2 paddles: l4, l5, r4, r5 (unmapped by default). DualShock 4 has none.
+# SC2 paddles: l4/r4 flip the OSK around the pointer (left/right, above/below);
+# l5, r5 as below. DualShock 4 has none.
 # Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
 # also have a standalone mapping in this table; the follower may.
 # Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.
@@ -18,6 +19,8 @@
 "faceLeft" = "sendKey.backspace"
 "l5" = "sendKey.backspace"
 "r5" = "sendKey.space"
+"l4" = "flipWindowLeftRight"
+"r4" = "flipWindowAboveBelow"
 "stickLeft" = "toggleCtrl"
 "stickRight" = "toggleAlt"
 "dpadLeft" = "sendKey.left"
@@ -46,3 +49,5 @@
 "faceLeft" = "snapBottomLeft"
 "faceBottom" = "snapBottomRight"
 "options" = "snapTopRight"
+"l4" = "flipWindowLeftRight"
+"r4" = "flipWindowAboveBelow"

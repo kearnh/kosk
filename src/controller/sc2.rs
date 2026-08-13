@@ -316,7 +316,11 @@ impl Sc2Device {
             haptic_click(&self.device, HAPTIC_SIDE_TP_LEFT, cfg.touchpad_left_haptic);
         }
         if right != self.prev_pad_right_click {
-            haptic_click(&self.device, HAPTIC_SIDE_TP_RIGHT, cfg.touchpad_right_haptic);
+            haptic_click(
+                &self.device,
+                HAPTIC_SIDE_TP_RIGHT,
+                cfg.touchpad_right_haptic,
+            );
         }
         self.prev_pad_left_click = left;
         self.prev_pad_right_click = right;
@@ -562,6 +566,9 @@ mod tests {
         assert!(scale_trigger(0, true, 40).is_some());
         assert!(scale_trigger(16383, false, 40).is_some());
         assert!(haptic_command(HapticIntensity::None).is_none());
-        assert_eq!(haptic_command(HapticIntensity::Medium), Some((HAPTIC_CMD_CLICK, 0)));
+        assert_eq!(
+            haptic_command(HapticIntensity::Medium),
+            Some((HAPTIC_CMD_CLICK, 0))
+        );
     }
 }

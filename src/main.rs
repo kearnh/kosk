@@ -148,7 +148,7 @@ impl eframe::App for App {
             });
             let mut s = self.state.lock().unwrap();
             s.set_monitor_size((monitor_size.x, monitor_size.y));
-            let pos = s.get_position(ctx.content_rect());
+            let pos = s.get_position(ctx.content_rect(), ctx.pixels_per_point());
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
         }
 

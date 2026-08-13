@@ -109,6 +109,12 @@ impl MoveWindowState {
             SnapBottomRight => {
                 let _ = events.push(Event::MoveWindow(WindowPos::BottomRight), source);
             }
+            FlipWindowLeftRight => {
+                let _ = events.push(Event::FlipWindowLeftRight, source);
+            }
+            FlipWindowAboveBelow => {
+                let _ = events.push(Event::FlipWindowAboveBelow, source);
+            }
             NudgeUp => {
                 let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y - NUDGE)), source);
             }
