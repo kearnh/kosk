@@ -4,8 +4,8 @@ stick_scale_y = 2.5
 stick_warp = 1.0
 transparent = true
 window_pos = [
-    1186.6666259765625,
-    681.34375,
+    1801.134033203125,
+    904.5670166015625,
 ]
 scale_x = 30.0
 scale_y = 32.0
@@ -42,39 +42,39 @@ cursor_color = [
 ]
 font_size = 22.0
 
-[controller_map.MoveWindow]
-faceRight = "switchState.menu"
-options = "snapTopRight"
-dpadDown = "nudgeDown"
-faceLeft = "snapBottomLeft"
-dpadUp = "nudgeUp"
-faceBottom = "snapBottomRight"
-dpadRight = "nudgeRight"
-faceTop = "snapTopLeft"
-dpadLeft = "nudgeLeft"
-
 [controller_map.Keyboard]
-dpadUp = "sendKey.up"
-dpadDown = "sendKey.down"
-faceTop = "toggleShift"
-"options + faceTop" = "switchState.menu"
 dpadRight = "sendKey.right"
-"options + faceRight" = "switchState.textInput"
 stickRight = "toggleAlt"
-faceLeft = "sendKey.backspace"
-"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
-faceBottom = "sendKey.space"
-"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+"options + faceRight" = "switchState.textInput"
+dpadUp = "sendKey.up"
 stickLeft = "toggleCtrl"
+"options + faceTop" = "switchState.menu"
+faceTop = "toggleShift"
 dpadLeft = "sendKey.left"
+"triggerRight,threshold=40" = "sendKeyUnderRightStick"
+dpadDown = "sendKey.down"
+faceLeft = "sendKey.backspace"
+faceBottom = "sendKey.space"
+"triggerLeft,threshold=40" = "sendKeyUnderLeftStick"
 
 [controller_map.Menu]
 faceRight = "switchState.keyboard"
-dpadDown = "selectDown"
 dpadUp = "selectUp"
 faceBottom = "activate"
+dpadDown = "selectDown"
 
 [controller_map.TextInput]
-dpadRight = "moveCursorRight"
 dpadUp = "switchState.keyboard"
+dpadRight = "moveCursorRight"
 dpadLeft = "moveCursorLeft"
+
+[controller_map.MoveWindow]
+faceTop = "snapTopLeft"
+options = "snapTopRight"
+dpadDown = "nudgeDown"
+dpadLeft = "nudgeLeft"
+dpadRight = "nudgeRight"
+faceLeft = "snapBottomLeft"
+dpadUp = "nudgeUp"
+faceBottom = "snapBottomRight"
+faceRight = "switchState.menu"
