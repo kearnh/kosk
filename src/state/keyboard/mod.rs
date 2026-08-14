@@ -73,8 +73,17 @@ impl KeyboardState {
                         source,
                     );
                 }
-                // FIXME SendKey is not sending uppercase characters, so we use SendText instead. (which uses enigo::text instead of enigo::key)
-                events.push(Event::SendText(c.to_string()), source);
+                // `enigo::text` (SendText) injects Unicode and ignores held modifiers, so
+                // Ctrl/Alt/Shift chords never reach the app. Virtual-key click does combine.
+                // Without mods, SendText is required: SendKey does not emit uppercase letters.
+                if self.ctrl_mod || self.alt_mod || self.shift_mod {
+                    events.push(
+                        Event::SendKey(enigo::Key::Unicode(*c), enigo::Direction::Click),
+                        source,
+                    );
+                } else {
+                    events.push(Event::SendText(c.to_string()), source);
+                }
                 if self.alt_mod {
                     events.push(
                         Event::SendKey(enigo::Key::Alt, enigo::Direction::Release),
@@ -497,3 +506,63 @@ pub fn init() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod send_key_tests {
+    use super::*;
+    use crate::state::event::{Event, EventQueue, EventSource};
+
+    fn drain_char(kb: &mut KeyboardState, c: char) -> Vec<Event> {
+        let mut events = EventQueue::passthrough();
+        let src = EventSource::MouseClick;
+        kb.send_key(&RawKey::Key(c), &mut events, &src).unwrap();
+        events
+            .drain_pending()
+            .into_iter()
+            .map(|(e, _)| e)
+            .collect()
+    }
+
+    #[test]
+    fn letter_without_mods_uses_send_text() {
+        let mut kb = KeyboardState::default();
+        assert_eq!(drain_char(&mut kb, 'c'), vec![Event::SendText("c".into())]);
+    }
+
+    #[test]
+    fn ctrl_letter_sends_control_and_virtual_key() {
+        let mut kb = KeyboardState {
+            ctrl_mod: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            drain_char(&mut kb, 'c'),
+            vec![
+                Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
+                Event::SendKey(enigo::Key::Unicode('c'), enigo::Direction::Click),
+                Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
+            ]
+        );
+        assert!(!kb.ctrl_mod);
+    }
+
+    #[test]
+    fn ctrl_shift_letter_sends_modifiers_and_virtual_key() {
+        let mut kb = KeyboardState {
+            ctrl_mod: true,
+            shift_mod: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            drain_char(&mut kb, 'c'),
+            vec![
+                Event::SendKey(enigo::Key::Shift, enigo::Direction::Press),
+                Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
+                Event::SendKey(enigo::Key::Unicode('c'), enigo::Direction::Click),
+                Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
+                Event::SendKey(enigo::Key::Shift, enigo::Direction::Release),
+            ]
+        );
+    }
+}
+
