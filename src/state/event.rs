@@ -2,7 +2,7 @@ use crate::config;
 use crate::controller::record as input_record;
 use crate::controller::ControllerBinding;
 use crate::state::{StateId, WindowPos};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -39,11 +39,21 @@ struct OpenBatch {
     events: Vec<Event>,
 }
 
+struct SourceState {
+    last: Instant,
+    repeat_armed: bool,
+    /// Binding went up since [`SourceState::last`]. Next accept is a new press, not a hold.
+    released: bool,
+}
+
 /// Queues outgoing events with optional time-based debouncing by [`EventSource`].
 ///
 /// Each source has its own timeline: alternating sources (e.g. both triggers held)
-/// cannot bypass the debounce window for either. [`EventSource::None`](EventSource::None)
-/// is never debounced and does not refresh timing.
+/// cannot bypass the debounce window for either.
+///
+/// Repeat arms only while the same controller binding stays down. A release clears
+/// the armed flag so a second tap (double letters) uses the initial delay again
+/// instead of the short repeat interval.
 ///
 /// Batches started with [`start_batch`](Self::start_batch) carry a single source
 /// used when the outermost batch is committed; nested batches merge event lists only.
@@ -51,12 +61,13 @@ pub struct EventQueue {
     pending: Vec<(Event, EventSource)>,
     debounce_initial: Option<Duration>,
     debounce_repeat: Option<Duration>,
-    /// Last accepted commit instant and repeat-armed flag, per [`EventSource`].
-    /// `repeat_armed` is cleared when the gap since the last commit exceeds
-    /// [`burst_idle_reset`](Self::burst_idle_reset) so a long pause behaves like a
-    /// new first press (initial delay applies again before the next repeat stream).
-    last_commit: HashMap<EventSource, (Instant, bool)>,
+    last_commit: HashMap<EventSource, SourceState>,
     batch_stack: Vec<OpenBatch>,
+    /// Controller sources that [`push`](Self::push)/[`end_batch`](Self::end_batch)
+    /// this evaluation tick (including debounce drops). Used to detect release.
+    held_this_tick: HashSet<EventSource>,
+    #[cfg(test)]
+    test_now: Option<Instant>,
 }
 
 impl EventQueue {
@@ -69,16 +80,26 @@ impl EventQueue {
         if initial_ms == 0 {
             return Self::passthrough();
         }
-        Self {
-            pending: Vec::new(),
-            debounce_initial: Some(Duration::from_millis(initial_ms)),
-            debounce_repeat: if repeat_ms == 0 {
+        Self::with_debounce(
+            Some(Duration::from_millis(initial_ms)),
+            if repeat_ms == 0 {
                 None
             } else {
                 Some(Duration::from_millis(repeat_ms))
             },
+        )
+    }
+
+    fn with_debounce(initial: Option<Duration>, repeat: Option<Duration>) -> Self {
+        Self {
+            pending: Vec::new(),
+            debounce_initial: initial,
+            debounce_repeat: repeat,
             last_commit: HashMap::new(),
             batch_stack: Vec::new(),
+            held_this_tick: HashSet::new(),
+            #[cfg(test)]
+            test_now: None,
         }
     }
 
@@ -99,13 +120,7 @@ impl EventQueue {
 
     /// No debouncing; every [`push`](Self::push) and batch is accepted.
     pub fn passthrough() -> Self {
-        Self {
-            pending: Vec::new(),
-            debounce_initial: None,
-            debounce_repeat: None,
-            last_commit: HashMap::new(),
-            batch_stack: Vec::new(),
-        }
+        Self::with_debounce(None, None)
     }
 
     pub fn start_batch(&mut self, source: &EventSource) {
@@ -137,6 +152,7 @@ impl EventQueue {
             parent.events.extend(done);
             return true;
         }
+        self.touch(&source);
         if !self.source_debounce_allows(&source) {
             self.trace_debounce(false, &source);
             return false;
@@ -155,6 +171,7 @@ impl EventQueue {
             b.events.push(event);
             return true;
         }
+        self.touch(source);
         if !self.source_debounce_allows(source) {
             self.trace_debounce(false, source);
             return false;
@@ -165,12 +182,42 @@ impl EventQueue {
         true
     }
 
+    /// Call once per controller evaluation after bindings have run.
+    ///
+    /// Any controller source that did not [`push`](Self::push) or [`end_batch`](Self::end_batch)
+    /// this tick (including dropped repeats) is treated as released, so the next
+    /// accept is a new first press rather than key-repeat.
+    pub fn end_controller_tick(&mut self) {
+        for (source, state) in self.last_commit.iter_mut() {
+            if matches!(source, EventSource::Controller(_)) && !self.held_this_tick.contains(source)
+            {
+                state.released = true;
+                state.repeat_armed = false;
+            }
+        }
+        self.held_this_tick.clear();
+    }
+
     /// Takes queued events for processing. Open batches are merged into `pending`
     /// first so no events are stranded and [`batch_stack`](Self) is always empty
     /// afterward (expected to already be empty between frames).
     pub fn drain_pending(&mut self) -> Vec<(Event, EventSource)> {
         self.flush_open_batches_into_pending();
         std::mem::take(&mut self.pending)
+    }
+
+    fn touch(&mut self, source: &EventSource) {
+        if matches!(source, EventSource::Controller(_)) {
+            self.held_this_tick.insert(source.clone());
+        }
+    }
+
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        if let Some(t) = self.test_now {
+            return t;
+        }
+        Instant::now()
     }
 
     fn flush_open_batches_into_pending(&mut self) {
@@ -192,11 +239,11 @@ impl EventQueue {
             return true;
         };
         let repeat = self.debounce_repeat.unwrap_or(initial);
-        let Some((t, repeat_armed)) = self.last_commit.get(source) else {
+        let Some(state) = self.last_commit.get(source) else {
             return true;
         };
-        let elapsed = t.elapsed();
-        if *repeat_armed {
+        let elapsed = self.now().duration_since(state.last);
+        if state.repeat_armed {
             elapsed >= repeat
         } else {
             elapsed >= initial
@@ -208,30 +255,171 @@ impl EventQueue {
             return;
         };
         let repeat = self.debounce_repeat.unwrap_or(initial);
-        let now = Instant::now();
-        // If gap since last accept is longer than repeat, we are not in a rapid-repeat chain.
-        // Before repeat is armed, allow first→second within initial + one repeat slot.
-        let repeat_armed = self
-            .last_commit
-            .get(&source)
-            .is_some_and(|(t_old, armed_old)| {
+        let now = self.now();
+        let prev = self.last_commit.get(&source);
+        let released = prev.is_some_and(|s| s.released);
+        // Hold-repeat: arm only if the binding never went up since the last accept
+        // and the gap still looks like a continuous stream.
+        let repeat_armed = if released {
+            false
+        } else {
+            prev.is_some_and(|s| {
                 let e = now
-                    .duration_since(*t_old)
+                    .duration_since(s.last)
                     .saturating_sub(Duration::from_millis(40));
-                if *armed_old {
+                if s.repeat_armed {
                     e <= repeat
                 } else {
                     e <= initial.saturating_add(repeat)
                 }
-            });
-        self.last_commit.insert(source, (now, repeat_armed));
+            })
+        };
+        // Mouse is edge-triggered; never start a hold-repeat chain from clicks.
+        // A controller accept means the binding is down, so clear `released`.
+        let is_mouse = matches!(source, EventSource::MouseClick);
+        self.last_commit.insert(
+            source,
+            SourceState {
+                last: now,
+                repeat_armed,
+                released: is_mouse,
+            },
+        );
     }
 
     fn trace_debounce(&self, accept: bool, source: &EventSource) {
         let (elapsed_us, armed) = match self.last_commit.get(source) {
-            Some((t, armed)) => (t.elapsed().as_micros() as u64, *armed),
+            Some(state) => (
+                self.now().duration_since(state.last).as_micros() as u64,
+                state.repeat_armed,
+            ),
             None => (0, false),
         };
         input_record::session().tap_debounce(accept, &source.to_string(), elapsed_us, armed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::controller::{ControllerBinding, ControllerButton};
+
+    fn pad_right() -> EventSource {
+        EventSource::Controller(ControllerBinding::Single(ControllerButton::PadRight))
+    }
+
+    fn queue() -> EventQueue {
+        let mut q = EventQueue::passthrough();
+        q.set_debounce_ms(300, 55);
+        q.test_now = Some(Instant::now());
+        q
+    }
+
+    fn advance(q: &mut EventQueue, ms: u64) {
+        let now = q.now() + Duration::from_millis(ms);
+        q.test_now = Some(now);
+    }
+
+    fn commit_letter(q: &mut EventQueue, src: &EventSource) -> bool {
+        q.start_batch(src);
+        q.push(Event::SendText("l".into()), src);
+        q.end_batch()
+    }
+
+    fn accepted_texts(q: &mut EventQueue) -> Vec<String> {
+        q.drain_pending()
+            .into_iter()
+            .filter_map(|(e, _)| match e {
+                Event::SendText(s) => Some(s),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn hold_arms_repeat_after_initial_delay() {
+        let mut q = queue();
+        let src = pad_right();
+
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+
+        advance(&mut q, 300);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+
+        advance(&mut q, 55);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+    }
+
+    #[test]
+    fn release_then_second_tap_does_not_arm_repeat() {
+        let mut q = queue();
+        let src = pad_right();
+
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+
+        // Button up (no commit this tick).
+        q.end_controller_tick();
+
+        advance(&mut q, 301);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+
+        // Still held, but this is a new press: 55ms is inside the initial window.
+        advance(&mut q, 55);
+        assert!(!commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert!(accepted_texts(&mut q).is_empty());
+
+        advance(&mut q, 245);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+
+        // Holding the second press now arms like a normal first hold.
+        advance(&mut q, 55);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_texts(&mut q), ["l"]);
+    }
+
+    #[test]
+    fn hello_ll_two_taps_are_two_letters() {
+        let mut q = queue();
+        let src = pad_right();
+
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        q.end_controller_tick();
+
+        advance(&mut q, 301);
+        assert!(commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        // Short second click (~117ms), then release — must not emit extras.
+        advance(&mut q, 55);
+        assert!(!commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        advance(&mut q, 55);
+        assert!(!commit_letter(&mut q, &src));
+        q.end_controller_tick();
+        q.end_controller_tick();
+
+        let letters: Vec<_> = q
+            .drain_pending()
+            .into_iter()
+            .filter_map(|(e, _)| match e {
+                Event::SendText(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(letters, ["l", "l"]);
     }
 }

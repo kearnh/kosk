@@ -190,6 +190,9 @@ impl TextInputState {
             keyboard::with_mut(|keyboard_state| {
                 keyboard_state.handle_controller_input(input, &mut self.kb_events)
             })?;
+        }
+        self.kb_events.end_controller_tick();
+        if fired.is_empty() {
             self.process_events(events);
         }
 

@@ -230,6 +230,7 @@ impl AppState {
                 text_input::with_mut(|ti| ti.handle_controller_input(input, &mut self.events))?
             }
         }
+        self.events.end_controller_tick();
         self.process_events(ctx);
         Ok(())
     }
