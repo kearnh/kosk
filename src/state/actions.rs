@@ -44,12 +44,9 @@ pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {
     }
 }
 
-pub fn load_bindings<A: Clone + 'static>(
+pub fn load_bindings<A: Action + Clone + 'static>(
     state_id: StateId,
-) -> Result<BindingEngine<A>, anyhow::Error>
-where
-    A: Action,
-{
+) -> Result<BindingEngine<A>, anyhow::Error> {
     let cfg = config::get();
     let mut raw_bindings = HashMap::new();
     if let Some(raw_mapping) = cfg.controller_map.get(&state_id).cloned() {

@@ -6,6 +6,8 @@ use crate::config;
 pub mod bindings;
 pub mod pad_origin;
 pub mod ps4;
+pub mod record;
+pub mod replay;
 pub mod sc2;
 
 use hidapi::HidApi;
@@ -374,6 +376,7 @@ impl<'de> Deserialize<'de> for ControllerButton {
 pub enum ControllerKind {
     Sc2,
     Ps4,
+    Replay,
 }
 
 /// Built-in try order. New families are appended here.
@@ -401,6 +404,7 @@ pub enum ConnectedController {
         device: sc2::Sc2Device,
         pads: pad_origin::PadOriginMapper,
     },
+    Replay(replay::ReplayDevice),
 }
 
 impl Iterator for ConnectedController {
@@ -416,16 +420,44 @@ impl Iterator for ConnectedController {
                 }
                 Some(_) => Some(Some(Box::new(pads.map(device.last_state())))),
             },
+            ConnectedController::Replay(device) => device.next(),
+        }
+    }
+}
+
+impl ConnectedController {
+    pub fn is_replay(&self) -> bool {
+        matches!(self, ConnectedController::Replay(_))
+    }
+
+    pub fn replay_header(&self) -> Option<&record::TapeHeader> {
+        match self {
+            ConnectedController::Replay(d) => Some(d.header()),
+            _ => None,
         }
     }
 }
 
 /// Enumerate HID, try families in resolved `preferred_controller` order, return the first open.
 pub fn find_device() -> Option<ConnectedController> {
+    let preferred = config::get().preferred_controller.clone();
+    if preferred.first() == Some(&ControllerKind::Replay) {
+        record::session().set_replay(true);
+        return match replay::ReplayDevice::open() {
+            Ok(device) => Some(ConnectedController::Replay(device)),
+            Err(e) => {
+                eprintln!("replay: {e:#}");
+                None
+            }
+        };
+    }
+    record::session().set_replay(false);
+
     let hid = HidApi::new().ok()?;
-    let order = resolve_controller_order(&config::get().preferred_controller);
+    let order = resolve_controller_order(&preferred);
     for kind in order {
         match kind {
+            ControllerKind::Replay => {}
             ControllerKind::Sc2 => {
                 if let Some(device) = sc2::open(&hid) {
                     return Some(ConnectedController::Sc2 {
@@ -631,5 +663,23 @@ mod tests {
     #[test]
     fn preferred_controller_unknown_name_errors() {
         assert!(toml::from_str::<Vec<ControllerKind>>(r#"["xbox"]"#).is_err());
+    }
+
+    #[test]
+    fn preferred_controller_replay_name() {
+        #[derive(Deserialize)]
+        struct P {
+            preferred_controller: Vec<ControllerKind>,
+        }
+        let parsed: P = toml::from_str(r#"preferred_controller = ["replay"]"#).unwrap();
+        assert_eq!(parsed.preferred_controller, vec![ControllerKind::Replay]);
+        assert_eq!(
+            resolve_controller_order(&[ControllerKind::Replay]),
+            vec![
+                ControllerKind::Replay,
+                ControllerKind::Sc2,
+                ControllerKind::Ps4
+            ]
+        );
     }
 }

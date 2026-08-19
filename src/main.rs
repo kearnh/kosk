@@ -236,19 +236,39 @@ fn main() -> Result<()> {
                 loop {
                     match controller::find_device() {
                         Some(device) => {
+                            let is_replay = device.is_replay();
+                            if let Some(header) = device.replay_header() {
+                                let header = header.clone();
+                                let mut s = state_clone.lock().unwrap();
+                                if let Err(e) = s.apply_replay_header(&header) {
+                                    eprintln!("replay: failed to install layouts: {e:#}");
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                    break;
+                                }
+                            }
                             for input in device {
+                                controller::record::session().tap_input(&input);
                                 let mut s = state_clone.lock().unwrap();
                                 if let Err(e) = s.handle_controller_input(&ctx, &input) {
                                     eprintln!("warn: error from controller input handler: {}", e);
                                 };
                                 ctx.request_repaint();
                             }
+                            if is_replay {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                break;
+                            }
                         }
                         None => {
+                            if config::preferred_is_replay() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                break;
+                            }
                             std::thread::sleep(std::time::Duration::from_millis(500));
                         }
                     }
                 }
+                Ok(())
             });
             Ok(Box::new(App::new(cc, state)))
         }),

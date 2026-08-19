@@ -226,3 +226,9 @@ key = "switchState.textInput"
 display = { normal = "i", shift = "i" }
 width = 0.5
 font_size = 16.0
+
+[[rows.keys]]
+key = "toggleRecord"
+display = { normal = "rec", shift = "rec" }
+width = 0.5
+font_size = 16.0

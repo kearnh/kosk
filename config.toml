@@ -11,6 +11,7 @@ event_debounce_ms = 300
 event_debounce_repeat_ms = 55
 stick_select_lock_ms = 100
 controller_map = "mappings.toml"
+record_file = "captures/kosk-%.krec"
 
 [sc2]
 pad_origin_stretch = 0.3
@@ -24,6 +25,9 @@ touchpad_right_haptic = "low"
 [ps4]
 trigger_left_threshold = 40
 trigger_right_threshold = 40
+
+[replay]
+file = "captures/kosk-000.krec"
 
 [layouts]
 main = "old_steam_controller_kb.toml"

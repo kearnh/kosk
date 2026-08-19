@@ -185,10 +185,30 @@ pub struct KeyboardLayout {
     pub right_stick_bounds: Vec<Rect>,
 
     pub captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
+
+    /// Original TOML, for input-tape headers.
+    source: String,
 }
 
 impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
+        let cfg = config::get();
+        Self::load_with_scales(
+            toml,
+            cfg.scale_x,
+            cfg.scale_y,
+            cfg.stick_scale_x,
+            cfg.stick_scale_y,
+        )
+    }
+
+    pub(crate) fn load_with_scales(
+        toml: &str,
+        scale_x: f32,
+        scale_y: f32,
+        stick_scale_x: f32,
+        stick_scale_y: f32,
+    ) -> Result<Self> {
         let parsed: KeyboardLayoutFile = toml::from_str(toml)?;
 
         let KeyboardLayoutFile {
@@ -199,19 +219,17 @@ impl KeyboardLayout {
             stick_bounds,
         } = parsed;
 
-        let cfg = config::get();
-
-        let scale: Vec2 = (cfg.scale_x, cfg.scale_y).into();
+        let scale: Vec2 = (scale_x, scale_y).into();
 
         let layout = KeyboardLayout {
             rows,
             font_size,
-            scale_x: cfg.scale_x,
-            scale_y: cfg.scale_y,
+            scale_x,
+            scale_y,
             pad_x: pad_x.into(),
             pad_y: pad_y.into(),
-            stick_scale_x: cfg.stick_scale_x,
-            stick_scale_y: cfg.stick_scale_y,
+            stick_scale_x,
+            stick_scale_y,
             left_stick_center: (0.0, 0.0),
             right_stick_center: (0.0, 0.0),
             key_hit_boxes: Default::default(),
@@ -232,6 +250,7 @@ impl KeyboardLayout {
                 })
                 .collect(),
             captured_centres: None,
+            source: toml.to_owned(),
         };
 
         Ok(layout)
@@ -239,6 +258,10 @@ impl KeyboardLayout {
 
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         Self::load(&fs::read_to_string(path)?)
+    }
+
+    pub(crate) fn source(&self) -> &str {
+        &self.source
     }
 
     pub fn scale_x(&self, val: UnscaledPixelUnitX) -> f32 {

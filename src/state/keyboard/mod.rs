@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 
 use crate::config;
 use crate::controller::bindings::BindingEngine;
+use crate::controller::record as input_record;
+use crate::controller::record::{MappingScales, TapeHeader};
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
@@ -220,6 +222,7 @@ impl KeyboardState {
                     self.current_layout = layout_name.to_string();
                     // Reset selection when switching layouts
                     self.selected = (None, None);
+                    input_record::session().tap_layout(layout_name);
                 } else {
                     return Err(anyhow::anyhow!("Layout '{}' not found", layout_name));
                 }
@@ -234,7 +237,65 @@ impl KeyboardState {
             Exit => {
                 let _ = events.push(Event::Exit, source);
             }
+            ToggleRecord => {
+                let _ = events.push(Event::ToggleRecord, source);
+            }
         }
+        Ok(())
+    }
+
+    pub(crate) fn tape_header(&self) -> TapeHeader {
+        let cfg = config::get();
+        let mut layouts: Vec<(String, String)> = self
+            .layouts
+            .iter()
+            .map(|(name, layout)| (name.clone(), layout.source().to_owned()))
+            .collect();
+        layouts.sort_by(|a, b| a.0.cmp(&b.0));
+        TapeHeader {
+            current_layout: self.current_layout.clone(),
+            scales: MappingScales {
+                scale_x: cfg.scale_x,
+                scale_y: cfg.scale_y,
+                stick_scale_x: cfg.stick_scale_x,
+                stick_scale_y: cfg.stick_scale_y,
+            },
+            layouts,
+        }
+    }
+
+    pub(crate) fn install_recorded_layouts(&mut self, header: &TapeHeader) -> Result<()> {
+        let mut map = HashMap::new();
+        for (name, toml) in &header.layouts {
+            map.insert(
+                name.clone(),
+                KeyboardLayout::load_with_scales(
+                    toml,
+                    header.scales.scale_x,
+                    header.scales.scale_y,
+                    header.scales.stick_scale_x,
+                    header.scales.stick_scale_y,
+                )?,
+            );
+        }
+        if !map.contains_key(&header.current_layout) {
+            return Err(anyhow::anyhow!(
+                "recorded current_layout '{}' is not in the tape header",
+                header.current_layout
+            ));
+        }
+        self.layouts = map;
+        self.current_layout = header.current_layout.clone();
+        self.selected = (None, None);
+        Ok(())
+    }
+
+    pub(crate) fn set_current_layout(&mut self, name: &str) -> Result<()> {
+        if !self.layouts.contains_key(name) {
+            return Err(anyhow::anyhow!("Layout '{}' not found", name));
+        }
+        self.current_layout = name.to_string();
+        self.selected = (None, None);
         Ok(())
     }
 
@@ -516,11 +577,7 @@ mod send_key_tests {
         let mut events = EventQueue::passthrough();
         let src = EventSource::MouseClick;
         kb.send_key(&RawKey::Key(c), &mut events, &src).unwrap();
-        events
-            .drain_pending()
-            .into_iter()
-            .map(|(e, _)| e)
-            .collect()
+        events.drain_pending().into_iter().map(|(e, _)| e).collect()
     }
 
     #[test]
@@ -565,4 +622,3 @@ mod send_key_tests {
         );
     }
 }
-

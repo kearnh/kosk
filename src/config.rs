@@ -152,6 +152,14 @@ pub struct Config {
     /// DualShock 4 feel. Omitted → defaults.
     #[serde(default)]
     pub ps4: Ps4Config,
+
+    /// Template for `toggleRecord` captures. Must contain exactly one `%` (3-digit index).
+    #[serde(default)]
+    pub record_file: Option<String>,
+
+    /// Replay device. `[replay].file` is required when `preferred_controller` starts with `replay`.
+    #[serde(default)]
+    pub replay: ReplayConfig,
 }
 
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
@@ -213,6 +221,13 @@ impl Default for Ps4Config {
             trigger_right_threshold: default_trigger_threshold(),
         }
     }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+pub struct ReplayConfig {
+    /// Path to a `.krec` tape. Relative paths are against the config file directory.
+    #[serde(default)]
+    pub file: Option<String>,
 }
 
 /// Pad haptic tick strength. `none` skips the HID pulse.
@@ -405,6 +420,29 @@ fn load_config() -> Result<Vec<PathBuf>> {
         layout_paths.push(layout_path);
     }
 
+    if let Some(template) = &new_config.record_file {
+        crate::controller::record::validate_record_template(template).context("record_file")?;
+    }
+
+    if new_config.preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay) {
+        let rel = new_config.replay.file.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "[replay].file is required when preferred_controller starts with replay"
+            )
+        })?;
+        let replay_path = if PathBuf::from(rel).is_absolute() {
+            PathBuf::from(rel)
+        } else {
+            config_path
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Config file has no parent directory"))?
+                .join(rel)
+        };
+        if !replay_path.exists() {
+            bail!("replay file not found: {}", replay_path.display());
+        }
+    }
+
     if let Some(instance) = CONFIG_INSTANCE.get() {
         let mut config = instance.lock().unwrap();
         *config = new_config;
@@ -507,9 +545,23 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
 
     let initial_layout_paths = load_config()?;
 
-    start_watcher_thread(config_path, initial_layout_paths)?;
+    let skip_watcher =
+        get().preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay);
+    if !skip_watcher {
+        start_watcher_thread(config_path, initial_layout_paths)?;
+    }
 
     Ok(())
+}
+
+pub fn config_dir() -> Option<PathBuf> {
+    CONFIG_PATH
+        .get()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+pub fn preferred_is_replay() -> bool {
+    get().preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay)
 }
 
 pub fn get() -> Config {

@@ -1,7 +1,9 @@
 use crate::config;
+use crate::controller::record as input_record;
 use crate::controller::ControllerBinding;
 use crate::state::{StateId, WindowPos};
 use std::collections::HashMap;
+use std::fmt;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -9,6 +11,15 @@ pub enum EventSource {
     MouseClick,
     /// Physical controller binding that produced this commit (per-button debounce bucket).
     Controller(ControllerBinding),
+}
+
+impl fmt::Display for EventSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EventSource::MouseClick => f.write_str("mouse"),
+            EventSource::Controller(b) => fmt::Display::fmt(b, f),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +31,7 @@ pub enum Event {
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
     Exit,
+    ToggleRecord,
 }
 
 struct OpenBatch {
@@ -126,8 +138,10 @@ impl EventQueue {
             return true;
         }
         if !self.source_debounce_allows(&source) {
+            self.trace_debounce(false, &source);
             return false;
         }
+        self.trace_debounce(true, &source);
         self.pending
             .extend(done.into_iter().map(|e| (e, source.clone())));
         self.record_source_accepted(source);
@@ -142,8 +156,10 @@ impl EventQueue {
             return true;
         }
         if !self.source_debounce_allows(source) {
+            self.trace_debounce(false, source);
             return false;
         }
+        self.trace_debounce(true, source);
         self.pending.push((event, source.clone()));
         self.record_source_accepted(source.clone());
         true
@@ -209,5 +225,13 @@ impl EventQueue {
                 }
             });
         self.last_commit.insert(source, (now, repeat_armed));
+    }
+
+    fn trace_debounce(&self, accept: bool, source: &EventSource) {
+        let (elapsed_us, armed) = match self.last_commit.get(source) {
+            Some((t, armed)) => (t.elapsed().as_micros() as u64, *armed),
+            None => (0, false),
+        };
+        input_record::session().tap_debounce(accept, &source.to_string(), elapsed_us, armed);
     }
 }

@@ -1,5 +1,6 @@
 use crate::{
     config,
+    controller::record as input_record,
     controller::ControllerInput,
     debug::DebugPlugin,
     state::{
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod actions;
 mod event;
-mod keyboard;
+pub(crate) mod keyboard;
 mod menu;
 mod menu_action;
 mod move_window;
@@ -148,6 +149,11 @@ impl AppState {
                 Event::Exit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
+                Event::ToggleRecord => {
+                    if let Err(e) = toggle_recording() {
+                        eprintln!("toggleRecord: {e:#}");
+                    }
+                }
             }
         }
     }
@@ -222,4 +228,36 @@ impl AppState {
         self.process_events(ctx);
         Ok(())
     }
+
+    pub fn apply_replay_header(
+        &mut self,
+        header: &crate::controller::record::TapeHeader,
+    ) -> Result<()> {
+        keyboard::with_mut(|kb| kb.install_recorded_layouts(header))
+    }
+}
+
+fn toggle_recording() -> Result<()> {
+    let session = input_record::session();
+    if session.is_replay() {
+        eprintln!("toggleRecord: ignored on replay controller");
+        return Ok(());
+    }
+    if session.is_recording() {
+        session.stop();
+        eprintln!("recording stopped");
+        return Ok(());
+    }
+    let cfg = config::get();
+    let template = cfg
+        .record_file
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("record_file is not set in config"))?;
+    input_record::validate_record_template(template)?;
+    let resolved = input_record::resolve_against_config_dir(template)?;
+    let path = input_record::next_record_path(&resolved)?;
+    let header = keyboard::with_mut(|kb| kb.tape_header());
+    session.start(path.clone(), header)?;
+    eprintln!("recording {}", path.display());
+    Ok(())
 }

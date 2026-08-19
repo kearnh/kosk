@@ -19,6 +19,7 @@ pub enum KeyboardAction {
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
     Exit,
+    ToggleRecord,
 }
 
 impl Action for KeyboardAction {
@@ -33,7 +34,7 @@ impl Action for KeyboardAction {
                 TriggerMode::WhileHeld
             }
             ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
-            | FlipWindowLeftRight | FlipWindowAboveBelow | Exit => TriggerMode::Edge,
+            | FlipWindowLeftRight | FlipWindowAboveBelow | Exit | ToggleRecord => TriggerMode::Edge,
         }
     }
 }
@@ -95,5 +96,22 @@ impl TryFrom<&str> for KeyboardAction {
                 serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_toggle_record() {
+        assert_eq!(
+            KeyboardAction::try_from("toggleRecord").unwrap(),
+            KeyboardAction::ToggleRecord
+        );
+        assert_eq!(
+            KeyboardAction::try_from("ToggleRecord").unwrap(),
+            KeyboardAction::ToggleRecord
+        );
     }
 }
