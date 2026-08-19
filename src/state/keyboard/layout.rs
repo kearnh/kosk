@@ -1,13 +1,16 @@
+use std::fmt;
 use std::{fs, path::Path};
 
 use anyhow::Result;
 use egui::{Color32, Context, Pos2, Rect, Ui, Vec2};
+use serde::de::{self, SeqAccess, Visitor};
 use serde::Deserialize;
 
 use crate::{
     config,
     debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
+    state::keyboard::when::{DisplayContext, WhenExpr},
 };
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -28,10 +31,78 @@ impl From<f32> for UnscaledPixelUnitY {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RgbaColor(Color32);
+
+impl From<RgbaColor> for Color32 {
+    fn from(c: RgbaColor) -> Self {
+        c.0
+    }
+}
+
+impl<'de> Deserialize<'de> for RgbaColor {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ColorVisitor;
+
+        impl<'de> Visitor<'de> for ColorVisitor {
+            type Value = RgbaColor;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an [r, g, b] or [r, g, b, a] array of 0-255")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let r: u8 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let g: u8 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let b: u8 = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let a: u8 = seq.next_element()?.unwrap_or(255);
+                if seq.next_element::<u8>()?.is_some() {
+                    return Err(de::Error::invalid_length(5, &self));
+                }
+                Ok(RgbaColor(Color32::from_rgba_unmultiplied(r, g, b, a)))
+            }
+        }
+
+        deserializer.deserialize_seq(ColorVisitor)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DisplayRule {
+    text: String,
+    #[serde(default)]
+    when: Option<WhenExpr>,
+    #[serde(default, alias = "button_colour")]
+    button_color: Option<RgbaColor>,
+    #[serde(default, alias = "text_colour")]
+    text_color: Option<RgbaColor>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum KeyDisplay {
+    Constant(String),
+    Rules(Vec<DisplayRule>),
+    Shifted(Key<String>),
+}
+
+#[derive(Debug, Clone)]
+pub struct KeyAppearance {
+    pub text: String,
+    pub button_color: Option<Color32>,
+    pub text_color: Option<Color32>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct KeyButton {
     #[serde(default)]
-    display: Option<Key<String>>,
+    display: Option<KeyDisplay>,
     key: Key<RawKey>,
 
     #[serde(default = "default_selectable")]
@@ -54,13 +125,45 @@ fn default_key_width_unit() -> UnscaledPixelUnitX {
 }
 
 impl KeyButton {
-    pub fn display(&self, shifted: bool) -> String {
-        if let Some(d) = &self.display {
-            d.get(shifted)
-        } else {
-            match self.key.get(shifted) {
-                RawKey::Key(c) => c.to_string(),
-                _ => "?".to_string(), // no way to display this, user should define a display for it
+    fn fallback_text(&self, shifted: bool) -> String {
+        match self.key.get(shifted) {
+            RawKey::Key(c) => c.to_string(),
+            _ => "?".to_string(), // no way to display this, user should define a display for it
+        }
+    }
+
+    pub fn appearance(&self, ctx: &DisplayContext) -> KeyAppearance {
+        match &self.display {
+            None => KeyAppearance {
+                text: self.fallback_text(ctx.shift),
+                button_color: None,
+                text_color: None,
+            },
+            Some(KeyDisplay::Constant(s)) => KeyAppearance {
+                text: s.clone(),
+                button_color: None,
+                text_color: None,
+            },
+            Some(KeyDisplay::Shifted(d)) => KeyAppearance {
+                text: d.get(ctx.shift),
+                button_color: None,
+                text_color: None,
+            },
+            Some(KeyDisplay::Rules(rules)) => {
+                for rule in rules {
+                    if rule.when.as_ref().map_or(true, |w| w.eval(ctx)) {
+                        return KeyAppearance {
+                            text: rule.text.clone(),
+                            button_color: rule.button_color.map(Into::into),
+                            text_color: rule.text_color.map(Into::into),
+                        };
+                    }
+                }
+                KeyAppearance {
+                    text: self.fallback_text(ctx.shift),
+                    button_color: None,
+                    text_color: None,
+                }
             }
         }
     }
@@ -530,5 +633,115 @@ mod tests {
             let s = fs::read_to_string(dir.join(path)).unwrap();
             let _: KeyboardLayoutFile = toml::from_str(&s).unwrap();
         }
+    }
+
+    #[test]
+    fn display_string_shifted_and_rules() {
+        let constant: KeyButton = toml::from_str(
+            r#"
+            key = "exit"
+            display = "Done"
+            "#,
+        )
+        .unwrap();
+        let shifted: KeyButton = toml::from_str(
+            r#"
+            key = { normal = "1", shift = "!" }
+            display = { normal = "one", shift = "bang" }
+            "#,
+        )
+        .unwrap();
+        let rules: KeyButton = toml::from_str(
+            r#"
+            key = "toggleRecord"
+            display = [
+                { text = "stop", when = "recording", button_color = [220, 40, 40, 255], text_color = [255, 255, 255] },
+                { text = "rec" },
+            ]
+            "#,
+        )
+        .unwrap();
+
+        let off = DisplayContext::default();
+        let on = DisplayContext {
+            recording: true,
+            ..DisplayContext::default()
+        };
+        let shifted_on = DisplayContext {
+            shift: true,
+            ..DisplayContext::default()
+        };
+
+        assert_eq!(constant.appearance(&off).text, "Done");
+        assert_eq!(shifted.appearance(&off).text, "one");
+        assert_eq!(shifted.appearance(&shifted_on).text, "bang");
+        assert_eq!(rules.appearance(&off).text, "rec");
+        let stop = rules.appearance(&on);
+        assert_eq!(stop.text, "stop");
+        assert_eq!(
+            stop.button_color,
+            Some(Color32::from_rgba_unmultiplied(220, 40, 40, 255))
+        );
+        assert_eq!(
+            stop.text_color,
+            Some(Color32::from_rgba_unmultiplied(255, 255, 255, 255))
+        );
+    }
+
+    #[test]
+    fn display_colour_aliases_and_first_match() {
+        let key: KeyButton = toml::from_str(
+            r#"
+            key = "a"
+            display = [
+                { text = "A", when = "shift && recording", button_colour = [1, 2, 3], text_colour = [4, 5, 6, 7] },
+                { text = "rec", when = "recording" },
+                { text = "a" },
+            ]
+            "#,
+        )
+        .unwrap();
+
+        let rec = DisplayContext {
+            recording: true,
+            ..DisplayContext::default()
+        };
+        let both = DisplayContext {
+            shift: true,
+            recording: true,
+            ..DisplayContext::default()
+        };
+
+        assert_eq!(key.appearance(&DisplayContext::default()).text, "a");
+        assert_eq!(key.appearance(&rec).text, "rec");
+        let a = key.appearance(&both);
+        assert_eq!(a.text, "A");
+        assert_eq!(
+            a.button_color,
+            Some(Color32::from_rgba_unmultiplied(1, 2, 3, 255))
+        );
+        assert_eq!(
+            a.text_color,
+            Some(Color32::from_rgba_unmultiplied(4, 5, 6, 7))
+        );
+    }
+
+    #[test]
+    fn display_rules_fallback_when_none_match() {
+        let key: KeyButton = toml::from_str(
+            r#"
+            key = "q"
+            display = [
+                { text = "stop", when = "recording" },
+            ]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(key.appearance(&DisplayContext::default()).text, "q");
+        let shifted = DisplayContext {
+            shift: true,
+            ..DisplayContext::default()
+        };
+        assert_eq!(key.appearance(&shifted).text, "Q");
     }
 }

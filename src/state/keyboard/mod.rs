@@ -22,6 +22,7 @@ use egui::{Context, Ui};
 mod key;
 mod keyboard_action;
 mod layout;
+mod when;
 
 pub use crate::state::keyboard::keyboard_action::KeyboardAction;
 
@@ -378,6 +379,15 @@ impl KeyboardState {
     }
 
     fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+        let session = input_record::session();
+        let display_ctx = when::DisplayContext {
+            shift: self.shift_state,
+            recording: session.is_recording(),
+            replay: session.is_replay(),
+            ctrl: self.ctrl_mod,
+            alt: self.alt_mod,
+        };
+
         let current_layout = self.layouts.get_mut(&self.current_layout)?;
 
         let mut pressed_key: Option<RawKey> = None;
@@ -434,12 +444,17 @@ impl KeyboardState {
                             continue;
                         }
 
-                        let mut button = egui::Button::new(
-                            egui::RichText::new(key.display(self.shift_state))
-                                .size(key.font_size.unwrap_or(current_layout.font_size)),
-                        );
+                        let appearance = key.appearance(&display_ctx);
+                        let mut label = egui::RichText::new(appearance.text)
+                            .size(key.font_size.unwrap_or(current_layout.font_size));
+                        if let Some(c) = appearance.text_color {
+                            label = label.color(c);
+                        }
+                        let mut button = egui::Button::new(label);
 
-                        if key.is_key(
+                        if let Some(fill) = appearance.button_color {
+                            button = button.fill(fill);
+                        } else if key.is_key(
                             self.shift_state,
                             &RawKey::Action(KeyboardAction::ToggleShift),
                         ) && self.shift_state

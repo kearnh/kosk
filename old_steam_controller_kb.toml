@@ -58,7 +58,7 @@ key = { normal = "-", shift = "_" }
 
 [[rows.keys]]
 key = "Backspace"
-display = { normal = "⌫", shift = "⌫" }
+display = "⌫"
 
 [[rows]]
 indent = 0.0
@@ -110,7 +110,7 @@ height = 1.1
 
 [[rows.keys]]
 key = "switchState.menu"
-display = { normal = "⠿", shift = "⠿" }
+display = "⠿"
 width = 0.8
 
 [[rows.keys]]
@@ -148,7 +148,7 @@ key = "l"
 
 [[rows.keys]]
 key = "Return"
-display = { normal = "⏎", shift = "⏎" }
+display = "⏎"
 width = 1.8
 
 [[rows]]
@@ -157,7 +157,7 @@ height = 1.3
 
 [[rows.keys]]
 key = "toggleShift"
-display = { normal = "⇧", shift = "⇧" }
+display = "⇧"
 
 [[rows.keys]]
 key = { normal = ",", shift = "<" }
@@ -197,7 +197,7 @@ key = { normal = ".", shift = ">" }
 
 [[rows.keys]]
 key = "toggleShift"
-display = { normal = "⇧", shift = "⇧" }
+display = "⇧"
 
 [[rows]]
 indent = 0.0
@@ -205,30 +205,43 @@ height = 1.0
 
 [[rows.keys]]
 key = "Tab"
-display = { normal = "⇥", shift = "⇥" }
+display = "⇥"
 
 [[rows.keys]]
 key = " "
 width = 9.1
 display_modifiers = true
 
-[[rows.keys]]
-key = "exit"
-display = { normal = "Done", shift = "Done" }
-width = 3.3
+# [[rows.keys]]
+# key = "exit"
+# display = "Done"
+# width = 3.3
 
 [[rows]]
 indent = 0.0
-height = 0.5
+height = 0.8
 
 [[rows.keys]]
 key = "switchState.textInput"
-display = { normal = "i", shift = "i" }
+display = "i"
 width = 0.5
 font_size = 16.0
 
 [[rows.keys]]
 key = "toggleRecord"
-display = { normal = "rec", shift = "rec" }
+display = [
+    { text = "■", when = "recording", button_color = [
+        220,
+        40,
+        40,
+        255,
+    ], text_color = [
+        255,
+        255,
+        255,
+        255,
+    ] },
+    { text = "●" },
+]
 width = 0.5
-font_size = 16.0
+font_size = 14.0
