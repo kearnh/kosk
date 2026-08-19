@@ -7,9 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 
 use crate::config;
-use crate::controller::record::{
-    parse_tape, resolve_against_config_dir, InputSnapshot, RecordEvent, Tape, TapeHeader,
-};
+use crate::controller::record::{parse_tape, InputSnapshot, RecordEvent, Tape, TapeHeader};
 use crate::controller::{ControllerButton, ControllerInput};
 
 #[derive(Debug, Clone)]
@@ -122,12 +120,7 @@ pub struct ReplayDevice {
 
 impl ReplayDevice {
     pub fn open() -> Result<Self> {
-        let rel = config::get()
-            .replay
-            .file
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("[replay].file is not set"))?;
-        let path = resolve_against_config_dir(&rel)?;
+        let path = config::replay_tape_path()?;
         let file = File::open(&path).with_context(|| format!("open replay {}", path.display()))?;
         let tape = parse_tape(file).with_context(|| format!("parse {}", path.display()))?;
         Ok(Self::from_tape(tape, true))

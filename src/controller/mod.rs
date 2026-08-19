@@ -441,7 +441,7 @@ impl ConnectedController {
 /// Enumerate HID, try families in resolved `preferred_controller` order, return the first open.
 pub fn find_device() -> Option<ConnectedController> {
     let preferred = config::get().preferred_controller.clone();
-    if preferred.first() == Some(&ControllerKind::Replay) {
+    if config::preferred_is_replay() {
         record::session().set_replay(true);
         return match replay::ReplayDevice::open() {
             Ok(device) => Some(ConnectedController::Replay(device)),

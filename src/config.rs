@@ -18,6 +18,10 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 pub struct Args {
     /// Path to the configuration TOML file
     pub config_path: String,
+
+    /// Play this recording instead of the configured controller (`[replay]` / preferred_controller).
+    #[arg(long, value_name = "FILE")]
+    pub replay: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -364,6 +368,7 @@ pub fn ps4() -> Ps4Config {
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Load configuration file and return all resolved layout paths
 fn load_config() -> Result<Vec<PathBuf>> {
@@ -424,7 +429,9 @@ fn load_config() -> Result<Vec<PathBuf>> {
         crate::controller::record::validate_record_template(template).context("record_file")?;
     }
 
-    if new_config.preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay) {
+    if new_config.preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay)
+        && cli_replay_file().is_none()
+    {
         let rel = new_config.replay.file.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "[replay].file is required when preferred_controller starts with replay"
@@ -534,6 +541,14 @@ fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Res
 
 pub fn init() -> Result<()> {
     let args = Args::parse();
+    if let Some(ref path) = args.replay {
+        if !path.exists() {
+            bail!("replay file not found: {}", path.display());
+        }
+    }
+    CLI_REPLAY
+        .set(args.replay.clone())
+        .expect("CLI replay was already set");
     init_from_path(PathBuf::from(&args.config_path))
 }
 
@@ -545,8 +560,7 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
 
     let initial_layout_paths = load_config()?;
 
-    let skip_watcher =
-        get().preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay);
+    let skip_watcher = preferred_is_replay();
     if !skip_watcher {
         start_watcher_thread(config_path, initial_layout_paths)?;
     }
@@ -560,8 +574,27 @@ pub fn config_dir() -> Option<PathBuf> {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
 }
 
+pub fn cli_replay_file() -> Option<PathBuf> {
+    CLI_REPLAY.get().and_then(|p| p.clone())
+}
+
 pub fn preferred_is_replay() -> bool {
+    if cli_replay_file().is_some() {
+        return true;
+    }
     get().preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay)
+}
+
+/// Path of the tape to play: `--replay` as given, otherwise `[replay].file` relative to the config dir.
+pub fn replay_tape_path() -> Result<PathBuf> {
+    if let Some(path) = cli_replay_file() {
+        return Ok(path);
+    }
+    let rel = get()
+        .replay
+        .file
+        .ok_or_else(|| anyhow::anyhow!("[replay].file is not set"))?;
+    crate::controller::record::resolve_against_config_dir(&rel)
 }
 
 pub fn get() -> Config {
@@ -613,4 +646,28 @@ where
         .unwrap()
         .push(Arc::new(callback));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn parse_replay_flag() {
+        let args =
+            Args::try_parse_from(["kosk", "config.toml", "--replay", "captures/kosk-000.krec"])
+                .unwrap();
+        assert_eq!(args.config_path, "config.toml");
+        assert_eq!(
+            args.replay.as_deref(),
+            Some(Path::new("captures/kosk-000.krec"))
+        );
+    }
+
+    #[test]
+    fn parse_without_replay_flag() {
+        let args = Args::try_parse_from(["kosk", "config.toml"]).unwrap();
+        assert!(args.replay.is_none());
+    }
 }
