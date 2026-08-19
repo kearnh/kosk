@@ -22,6 +22,10 @@ pub struct Args {
     /// Play this recording instead of the configured controller (`[replay]` / preferred_controller).
     #[arg(long, value_name = "FILE")]
     pub replay: Option<PathBuf>,
+
+    /// Log outgoing keys/text to FILE instead of injecting them (`-` = stdout).
+    #[arg(long, value_name = "FILE")]
+    pub keys_log: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -164,6 +168,10 @@ pub struct Config {
     /// Replay device. `[replay].file` is required when `preferred_controller` starts with `replay`.
     #[serde(default)]
     pub replay: ReplayConfig,
+
+    /// Where to send outgoing keys/text. Omitted → Enigo injection.
+    #[serde(default)]
+    pub key_sink: KeySinkConfig,
 }
 
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
@@ -232,6 +240,17 @@ pub struct ReplayConfig {
     /// Path to a `.krec` tape. Relative paths are against the config file directory.
     #[serde(default)]
     pub file: Option<String>,
+}
+
+/// Destination for `SendKey` / `SendText`. Internally tagged on `type`.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum KeySinkConfig {
+    #[default]
+    Enigo,
+    Log {
+        file: String,
+    },
 }
 
 /// Pad haptic tick strength. `none` skips the HID pulse.
@@ -369,6 +388,7 @@ pub fn ps4() -> Ps4Config {
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Load configuration file and return all resolved layout paths
 fn load_config() -> Result<Vec<PathBuf>> {
@@ -549,6 +569,9 @@ pub fn init() -> Result<()> {
     CLI_REPLAY
         .set(args.replay.clone())
         .expect("CLI replay was already set");
+    CLI_KEYS_LOG
+        .set(args.keys_log.clone())
+        .expect("CLI keys-log was already set");
     init_from_path(PathBuf::from(&args.config_path))
 }
 
@@ -576,6 +599,10 @@ pub fn config_dir() -> Option<PathBuf> {
 
 pub fn cli_replay_file() -> Option<PathBuf> {
     CLI_REPLAY.get().and_then(|p| p.clone())
+}
+
+pub fn cli_keys_log() -> Option<PathBuf> {
+    CLI_KEYS_LOG.get().and_then(|p| p.clone())
 }
 
 pub fn preferred_is_replay() -> bool {
@@ -669,5 +696,45 @@ mod tests {
     fn parse_without_replay_flag() {
         let args = Args::try_parse_from(["kosk", "config.toml"]).unwrap();
         assert!(args.replay.is_none());
+        assert!(args.keys_log.is_none());
+    }
+
+    #[test]
+    fn parse_keys_log_flag() {
+        let args = Args::try_parse_from(["kosk", "config.toml", "--keys-log", "captures/keys.log"])
+            .unwrap();
+        assert_eq!(
+            args.keys_log.as_deref(),
+            Some(Path::new("captures/keys.log"))
+        );
+    }
+
+    #[test]
+    fn parse_keys_log_stdout() {
+        let args = Args::try_parse_from(["kosk", "config.toml", "--keys-log", "-"]).unwrap();
+        assert_eq!(args.keys_log.as_deref(), Some(Path::new("-")));
+    }
+
+    #[test]
+    fn parse_key_sink_enigo() {
+        let sink: KeySinkConfig = toml::from_str("type = \"enigo\"\n").unwrap();
+        assert_eq!(sink, KeySinkConfig::Enigo);
+    }
+
+    #[test]
+    fn parse_key_sink_log() {
+        let sink: KeySinkConfig = toml::from_str(
+            r#"
+            type = "log"
+            file = "captures/keys.log"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            sink,
+            KeySinkConfig::Log {
+                file: "captures/keys.log".into()
+            }
+        );
     }
 }

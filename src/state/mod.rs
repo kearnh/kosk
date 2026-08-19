@@ -6,16 +6,17 @@ use crate::{
     state::{
         event::Event,
         event::EventQueue,
+        key_sink::{open_key_sink, KeySink},
         window_pos::{capture_pointer_snapshot, resolve_position, PointerSnapshot, WindowPos},
     },
 };
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
-use enigo::{Enigo, Keyboard as _};
 use serde::{Deserialize, Serialize};
 
 pub mod actions;
 mod event;
+pub(crate) mod key_sink;
 pub(crate) mod keyboard;
 mod menu;
 mod menu_action;
@@ -39,7 +40,7 @@ pub struct AppState {
     monitor_size: (f32, f32),
     pointer_snapshot: Option<PointerSnapshot>,
     events: EventQueue,
-    enigo: Enigo,
+    key_sink: Box<dyn KeySink>,
 }
 
 impl AppState {
@@ -57,7 +58,7 @@ impl AppState {
             monitor_size,
             pointer_snapshot: None,
             events: EventQueue::new(),
-            enigo: Enigo::new(&Default::default())?,
+            key_sink: open_key_sink()?,
         })
     }
 
@@ -123,10 +124,14 @@ impl AppState {
         for (event, _) in self.events.drain_pending() {
             match event {
                 Event::SendKey(key, direction) => {
-                    let _ = self.enigo.key(key, direction);
+                    if let Err(e) = self.key_sink.key(key, direction) {
+                        eprintln!("key sink: {e:#}");
+                    }
                 }
                 Event::SendText(text) => {
-                    let _ = self.enigo.text(&text);
+                    if let Err(e) = self.key_sink.text(&text) {
+                        eprintln!("key sink: {e:#}");
+                    }
                 }
                 Event::ChangeState(state) => {
                     self.state = state;

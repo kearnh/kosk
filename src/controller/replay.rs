@@ -1,6 +1,7 @@
 //! Virtual controller that plays a kosk input tape in real time.
 
 use std::fs::File;
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,22 @@ use anyhow::{Context, Result};
 use crate::config;
 use crate::controller::record::{parse_tape, InputSnapshot, RecordEvent, Tape, TapeHeader};
 use crate::controller::{ControllerButton, ControllerInput};
+
+/// Wall clock of playback start, shared so a keys log uses the same `t_us` epoch as the tape.
+static PLAYBACK_ORIGIN: Mutex<Option<Instant>> = Mutex::new(None);
+
+pub fn playback_origin() -> Option<Instant> {
+    *PLAYBACK_ORIGIN.lock().expect("playback origin lock")
+}
+
+pub fn set_playback_origin(origin: Instant) {
+    *PLAYBACK_ORIGIN.lock().expect("playback origin lock") = Some(origin);
+}
+
+#[cfg(test)]
+pub fn clear_playback_origin() {
+    *PLAYBACK_ORIGIN.lock().expect("playback origin lock") = None;
+}
 
 #[derive(Debug, Clone)]
 pub struct ReplayInput(pub InputSnapshot);
@@ -167,6 +184,7 @@ impl ReplayDevice {
         };
         if self.realtime {
             let origin = *self.origin.get_or_insert_with(Instant::now);
+            set_playback_origin(origin);
             let target = origin + Duration::from_micros(t_us);
             if let Some(wait) = target.checked_duration_since(Instant::now()) {
                 thread::sleep(wait);
