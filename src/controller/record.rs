@@ -15,6 +15,7 @@ use crate::config;
 use crate::controller::{ControllerButton, ControllerInput};
 
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
+pub const CURRENT_TAPE_VERSION: u32 = 1;
 
 const BUTTON_ORDER: [ControllerButton; 23] = [
     ControllerButton::DpadUp,
@@ -52,8 +53,12 @@ pub struct MappingScales {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TapeHeader {
+    /// Missing `version` line in the file is 0.
+    pub version: u32,
     pub current_layout: String,
     pub scales: MappingScales,
+    /// Recorded config TOML (version >= 1). Blacklisted keys already stripped.
+    pub config_toml: Option<String>,
     /// `(name, toml source)` sorted by name when encoded.
     pub layouts: Vec<(String, String)>,
 }
@@ -217,9 +222,40 @@ fn parse_trigger(s: &str) -> Result<Option<u8>> {
     Ok(Some(s.parse().with_context(|| format!("trigger '{s}'"))?))
 }
 
+fn write_len_prefixed_blob(
+    out: &mut Vec<u8>,
+    kind: &str,
+    extra: Option<&str>,
+    blob: &str,
+) -> Result<()> {
+    match extra {
+        Some(extra) => writeln!(out, "{kind} {extra} {}", blob.len())?,
+        None => writeln!(out, "{kind} {}", blob.len())?,
+    }
+    out.extend_from_slice(blob.as_bytes());
+    out.push(b'\n');
+    Ok(())
+}
+
 pub fn encode_header(header: &TapeHeader) -> Result<Vec<u8>> {
+    if header.version > CURRENT_TAPE_VERSION {
+        bail!(
+            "cannot write recording version {} (max {CURRENT_TAPE_VERSION})",
+            header.version
+        );
+    }
+    if header.version == 0 && header.config_toml.is_some() {
+        bail!("version 0 recordings must not include a config blob");
+    }
+    if header.version >= 1 && header.config_toml.is_none() {
+        bail!("version {} recording is missing config", header.version);
+    }
+
     let mut out = Vec::new();
     writeln!(out, "{TAPE_MAGIC}")?;
+    if header.version != 0 {
+        writeln!(out, "version {}", header.version)?;
+    }
     writeln!(out, "current_layout {}", header.current_layout)?;
     writeln!(
         out,
@@ -229,15 +265,16 @@ pub fn encode_header(header: &TapeHeader) -> Result<Vec<u8>> {
         header.scales.stick_scale_x,
         header.scales.stick_scale_y
     )?;
+    if let Some(toml) = &header.config_toml {
+        write_len_prefixed_blob(&mut out, "config", None, toml)?;
+    }
     let mut layouts = header.layouts.clone();
     layouts.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, toml) in &layouts {
         if name.split_whitespace().count() != 1 {
             bail!("layout name must be a single token, got {name:?}");
         }
-        writeln!(out, "layout {name} {}", toml.len())?;
-        out.extend_from_slice(toml.as_bytes());
-        out.push(b'\n');
+        write_len_prefixed_blob(&mut out, "layout", Some(name), toml)?;
     }
     Ok(out)
 }
@@ -353,6 +390,24 @@ fn parse_event_line(line: &str) -> Result<RecordEvent> {
     })
 }
 
+fn read_len_prefixed_blob(reader: &mut impl Read, nbytes: usize) -> Result<String> {
+    let mut buf = vec![0u8; nbytes];
+    reader
+        .read_exact(&mut buf)
+        .context("length-prefixed blob")?;
+    let toml = String::from_utf8(buf).context("blob utf-8")?;
+    let mut sep = [0u8; 1];
+    reader.read_exact(&mut sep).context("blob separator")?;
+    if sep[0] != b'\n' && sep[0] != b'\r' {
+        bail!("expected newline after blob");
+    }
+    if sep[0] == b'\r' {
+        let mut n2 = [0u8; 1];
+        reader.read_exact(&mut n2)?;
+    }
+    Ok(toml)
+}
+
 pub fn parse_tape(reader: impl Read) -> Result<Tape> {
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -366,11 +421,29 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
 
     line.clear();
     reader.read_line(&mut line)?;
-    let current_layout = line
-        .trim()
-        .strip_prefix("current_layout ")
-        .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
-        .to_string();
+    let trimmed = line.trim();
+    let (version, current_layout) = if let Some(vs) = trimmed.strip_prefix("version ") {
+        let version: u32 = vs
+            .parse()
+            .with_context(|| format!("recording version '{vs}'"))?;
+        if version > CURRENT_TAPE_VERSION {
+            bail!("unsupported recording version {version} (max {CURRENT_TAPE_VERSION})");
+        }
+        line.clear();
+        reader.read_line(&mut line)?;
+        let current_layout = line
+            .trim()
+            .strip_prefix("current_layout ")
+            .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
+            .to_string();
+        (version, current_layout)
+    } else {
+        let current_layout = trimmed
+            .strip_prefix("current_layout ")
+            .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
+            .to_string();
+        (0, current_layout)
+    };
 
     line.clear();
     reader.read_line(&mut line)?;
@@ -399,6 +472,7 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
     };
 
     let mut layouts = Vec::new();
+    let mut config_toml = None;
     loop {
         line.clear();
         let n = reader.read_line(&mut line)?;
@@ -409,25 +483,28 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         if trimmed.is_empty() {
             continue;
         }
+        if let Some(len_s) = trimmed.strip_prefix("config ") {
+            if version == 0 {
+                bail!("version 0 recordings must not include a config blob");
+            }
+            if config_toml.is_some() {
+                bail!("duplicate config blob");
+            }
+            let nbytes: usize = len_s.parse().context("config byte length")?;
+            config_toml = Some(read_len_prefixed_blob(&mut reader, nbytes)?);
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("layout ") {
             let (name, len_s) = rest
                 .rsplit_once(' ')
                 .ok_or_else(|| anyhow::anyhow!("malformed layout header"))?;
             let nbytes: usize = len_s.parse().context("layout byte length")?;
-            let mut buf = vec![0u8; nbytes];
-            reader.read_exact(&mut buf).context("layout blob")?;
-            let toml = String::from_utf8(buf).context("layout utf-8")?;
-            let mut sep = [0u8; 1];
-            reader.read_exact(&mut sep).context("layout separator")?;
-            if sep[0] != b'\n' && sep[0] != b'\r' {
-                bail!("expected newline after layout blob");
-            }
-            if sep[0] == b'\r' {
-                let mut n2 = [0u8; 1];
-                reader.read_exact(&mut n2)?;
-            }
+            let toml = read_len_prefixed_blob(&mut reader, nbytes)?;
             layouts.push((name.to_string(), toml));
             continue;
+        }
+        if version >= 1 && config_toml.is_none() {
+            bail!("version {version} recording is missing config");
         }
         let mut events = vec![parse_event_line(trimmed)?];
         for l in reader.lines() {
@@ -439,18 +516,25 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         }
         return Ok(Tape {
             header: TapeHeader {
+                version,
                 current_layout,
                 scales,
+                config_toml,
                 layouts,
             },
             events,
         });
     }
 
+    if version >= 1 && config_toml.is_none() {
+        bail!("version {version} recording is missing config");
+    }
     Ok(Tape {
         header: TapeHeader {
+            version,
             current_layout,
             scales,
+            config_toml,
             layouts,
         },
         events: Vec::new(),
@@ -623,6 +707,7 @@ mod tests {
 
     fn sample_header() -> TapeHeader {
         TapeHeader {
+            version: 0,
             current_layout: "main".into(),
             scales: MappingScales {
                 scale_x: 30.0,
@@ -630,6 +715,7 @@ mod tests {
                 stick_scale_x: 3.0,
                 stick_scale_y: 2.5,
             },
+            config_toml: None,
             layouts: vec![
                 ("other".into(), "pad_x = 1\n[[rows]]\nkeys = []\n".into()),
                 ("main".into(), "pad_x = 0.1\n[[rows]]\nkeys = []\n".into()),
@@ -670,6 +756,8 @@ mod tests {
         };
         let parsed = roundtrip(&tape);
         assert_eq!(parsed.header.current_layout, "main");
+        assert_eq!(parsed.header.version, 0);
+        assert!(parsed.header.config_toml.is_none());
         assert_eq!(parsed.header.scales, tape.header.scales);
         let names: HashSet<_> = parsed
             .header
@@ -799,5 +887,94 @@ mod tests {
         assert!(BUTTON_ORDER.contains(&ControllerButton::L4));
         assert!(BUTTON_ORDER.contains(&ControllerButton::R5));
         assert!(BUTTON_ORDER.contains(&ControllerButton::PadLeft));
+    }
+
+    #[test]
+    fn missing_version_line_is_v0() {
+        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let mut bytes = format!(
+            "{TAPE_MAGIC}\ncurrent_layout main\nscale 30 32 3 2.5\nlayout main {}\n",
+            layout.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(layout.as_bytes());
+        bytes.push(b'\n');
+        let tape = parse_tape(bytes.as_slice()).unwrap();
+        assert_eq!(tape.header.version, 0);
+        assert!(tape.header.config_toml.is_none());
+        assert_eq!(tape.header.current_layout, "main");
+    }
+
+    fn sample_v1_header() -> TapeHeader {
+        TapeHeader {
+            version: CURRENT_TAPE_VERSION,
+            current_layout: "main".into(),
+            scales: MappingScales {
+                scale_x: 30.0,
+                scale_y: 32.0,
+                stick_scale_x: 3.0,
+                stick_scale_y: 2.5,
+            },
+            config_toml: Some("event_debounce_ms = 123\n".into()),
+            layouts: vec![("main".into(), "pad_x = 0.1\n[[rows]]\nkeys = []\n".into())],
+        }
+    }
+
+    #[test]
+    fn v1_header_round_trip_includes_config() {
+        let parsed = roundtrip(&Tape {
+            header: sample_v1_header(),
+            events: vec![RecordEvent::Idle { t_us: 1 }],
+        });
+        assert_eq!(parsed.header.version, CURRENT_TAPE_VERSION);
+        assert_eq!(
+            parsed.header.config_toml.as_deref(),
+            Some("event_debounce_ms = 123\n")
+        );
+        assert_eq!(parsed.events.len(), 1);
+    }
+
+    #[test]
+    fn v1_missing_config_errors() {
+        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let mut bytes = format!(
+            "{TAPE_MAGIC}\nversion 1\ncurrent_layout main\nscale 1 1 1 1\nlayout main {}\n",
+            layout.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(layout.as_bytes());
+        bytes.push(b'\n');
+        let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();
+        assert!(err.contains("missing config"), "{err}");
+    }
+
+    #[test]
+    fn unknown_version_errors() {
+        let bytes =
+            format!("{TAPE_MAGIC}\nversion 99\ncurrent_layout main\nscale 1 1 1 1\n").into_bytes();
+        let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();
+        assert!(err.contains("unsupported recording version 99"), "{err}");
+    }
+
+    #[test]
+    fn v0_must_not_contain_config_blob() {
+        let cfg = "event_debounce_ms = 1\n";
+        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let mut bytes = format!(
+            "{TAPE_MAGIC}\ncurrent_layout main\nscale 1 1 1 1\nconfig {}\n",
+            cfg.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(cfg.as_bytes());
+        bytes.push(b'\n');
+        bytes.extend(
+            format!("layout main {}\n", layout.len())
+                .into_bytes()
+                .into_iter(),
+        );
+        bytes.extend_from_slice(layout.as_bytes());
+        bytes.push(b'\n');
+        let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();
+        assert!(err.contains("version 0"), "{err}");
     }
 }

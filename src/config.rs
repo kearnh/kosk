@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 #[derive(Parser, Debug)]
@@ -26,6 +26,10 @@ pub struct Args {
     /// Log outgoing keys/text to FILE instead of injecting them (`-` = stdout).
     #[arg(long, value_name = "FILE")]
     pub keys_log: Option<PathBuf>,
+
+    /// Use the config file instead of config embedded in a recording.
+    #[arg(long)]
+    pub ignore_recorded_config: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -387,8 +391,109 @@ pub fn ps4() -> Ps4Config {
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
+
+const TAPE_CONFIG_SKIP: &[&str] = &[
+    "layouts",
+    "record_file",
+    "replay",
+    "preferred_controller",
+    "key_sink",
+    "debug",
+    "transparent",
+    "window_pos",
+    "text_input",
+];
+
+/// Config TOML stored in a recording: live config minus [`TAPE_CONFIG_SKIP`].
+pub fn tape_config_toml(cfg: &Config) -> Result<String> {
+    let serialized = toml::to_string(cfg).context("serialize config for tape")?;
+    let mut val: toml::Value = serialized.parse().context("reparse config toml")?;
+    let table = val
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("config did not serialize as a table"))?;
+    for k in TAPE_CONFIG_SKIP {
+        table.remove(*k);
+    }
+    Ok(toml::to_string(&val)?)
+}
+
+/// Merge recorded config onto `live`. Blacklisted keys in the blob are ignored.
+pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
+    let mut overlay: toml::Value =
+        toml::from_str(recorded).context("parse recorded config TOML")?;
+    if let Some(table) = overlay.as_table_mut() {
+        for k in TAPE_CONFIG_SKIP {
+            table.remove(*k);
+        }
+    } else {
+        bail!("recorded config must be a TOML table");
+    }
+    let live_serialized = toml::to_string(live).context("serialize live config")?;
+    let mut live_val: toml::Value = live_serialized.parse().context("reparse live config")?;
+    let live_table = live_val
+        .as_table_mut()
+        .ok_or_else(|| anyhow::anyhow!("live config did not serialize as a table"))?;
+    let overlay_table = overlay
+        .as_table()
+        .ok_or_else(|| anyhow::anyhow!("recorded config must be a TOML table"))?;
+    for (k, v) in overlay_table {
+        live_table.insert(k.clone(), v.clone());
+    }
+    live_val
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("apply recorded config: {e}"))
+}
+
+/// Install recorded config into the process (no-op for v0 / `--ignore-recorded-config`).
+pub fn apply_recorded_tape_config(header: &crate::controller::record::TapeHeader) -> Result<()> {
+    if header.version == 0 {
+        let path = CONFIG_PATH
+            .get()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "config.toml".into());
+        eprintln!(
+            "warn: recording has no version (treated as 0); using config from {path} (tape has no recorded config)"
+        );
+        return Ok(());
+    }
+    if ignore_recorded_config() {
+        return Ok(());
+    }
+    let toml = header
+        .config_toml
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("version {} recording is missing config", header.version))?;
+    let disk = DISK_CONFIG
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("config is not initialized"))?
+        .lock()
+        .unwrap()
+        .clone();
+    let merged = overlay_tape_config(&disk, toml)?;
+    let instance = CONFIG_INSTANCE
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("config is not initialized"))?;
+    *instance.lock().unwrap() = merged;
+    TAPE_OVERLAY_ACTIVE.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
+fn store_disk_config(cfg: Config) {
+    TAPE_OVERLAY_ACTIVE.store(false, Ordering::Relaxed);
+    match DISK_CONFIG.get() {
+        Some(m) => *m.lock().unwrap() = cfg,
+        None => {
+            DISK_CONFIG
+                .set(Mutex::new(cfg))
+                .expect("disk config was already set");
+        }
+    }
+}
 
 /// Load configuration file and return all resolved layout paths
 fn load_config() -> Result<Vec<PathBuf>> {
@@ -472,12 +577,13 @@ fn load_config() -> Result<Vec<PathBuf>> {
 
     if let Some(instance) = CONFIG_INSTANCE.get() {
         let mut config = instance.lock().unwrap();
-        *config = new_config;
+        *config = new_config.clone();
     } else {
         CONFIG_INSTANCE
-            .set(Arc::new(Mutex::new(new_config)))
+            .set(Arc::new(Mutex::new(new_config.clone())))
             .expect("Config was already initialized");
     }
+    store_disk_config(new_config);
 
     LAST_LOAD.store(now, Ordering::Relaxed);
 
@@ -572,6 +678,9 @@ pub fn init() -> Result<()> {
     CLI_KEYS_LOG
         .set(args.keys_log.clone())
         .expect("CLI keys-log was already set");
+    CLI_IGNORE_RECORDED_CONFIG
+        .set(args.ignore_recorded_config)
+        .expect("CLI ignore-recorded-config was already set");
     init_from_path(PathBuf::from(&args.config_path))
 }
 
@@ -603,6 +712,10 @@ pub fn cli_replay_file() -> Option<PathBuf> {
 
 pub fn cli_keys_log() -> Option<PathBuf> {
     CLI_KEYS_LOG.get().and_then(|p| p.clone())
+}
+
+pub fn ignore_recorded_config() -> bool {
+    CLI_IGNORE_RECORDED_CONFIG.get().copied().unwrap_or(false)
 }
 
 pub fn preferred_is_replay() -> bool {
@@ -637,9 +750,24 @@ pub fn save(new_config: Config) -> Result<()> {
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
 
+    if TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
+        let disk = DISK_CONFIG
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?;
+        let mut persist = disk.lock().unwrap().clone();
+        persist.window_pos = new_config.window_pos;
+        fs::write(path, toml::to_string_pretty(&persist)?)?;
+        *disk.lock().unwrap() = persist;
+        if let Some(instance) = CONFIG_INSTANCE.get() {
+            instance.lock().unwrap().window_pos = new_config.window_pos;
+        }
+        return Ok(());
+    }
+
     let toml_string = toml::to_string_pretty(&new_config)?;
     fs::write(path, toml_string)?;
 
+    store_disk_config(new_config.clone());
     if let Some(instance) = CONFIG_INSTANCE.get() {
         let mut config = instance.lock().unwrap();
         *config = new_config;
@@ -697,6 +825,7 @@ mod tests {
         let args = Args::try_parse_from(["kosk", "config.toml"]).unwrap();
         assert!(args.replay.is_none());
         assert!(args.keys_log.is_none());
+        assert!(!args.ignore_recorded_config);
     }
 
     #[test]
@@ -736,5 +865,66 @@ mod tests {
                 file: "captures/keys.log".into()
             }
         );
+    }
+
+    #[test]
+    fn parse_ignore_recorded_config_flag() {
+        let args =
+            Args::try_parse_from(["kosk", "config.toml", "--ignore-recorded-config"]).unwrap();
+        assert!(args.ignore_recorded_config);
+    }
+
+    fn sample_cfg() -> Config {
+        toml::from_str(
+            r#"
+            layouts = { main = "kb.toml" }
+            event_debounce_ms = 400
+            event_debounce_repeat_ms = 55
+            window_pos = "mouse pointer"
+            [key_sink]
+            type = "enigo"
+            "#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn tape_config_omits_blacklisted_keys() {
+        let toml = tape_config_toml(&sample_cfg()).unwrap();
+        assert!(!toml.contains("layouts"), "{toml}");
+        assert!(!toml.contains("window_pos"), "{toml}");
+        assert!(!toml.contains("key_sink"), "{toml}");
+        assert!(!toml.contains("text_input"), "{toml}");
+        assert!(toml.contains("event_debounce_ms"), "{toml}");
+    }
+
+    #[test]
+    fn overlay_changes_debounce_keeps_window_and_sink() {
+        let live = sample_cfg();
+        let merged = overlay_tape_config(&live, "event_debounce_ms = 123\n").unwrap();
+        assert_eq!(merged.event_debounce_ms, 123);
+        assert_eq!(merged.event_debounce_repeat_ms, 55);
+        assert_eq!(merged.window_pos, live.window_pos);
+        assert_eq!(merged.key_sink, KeySinkConfig::Enigo);
+        assert_eq!(merged.layouts, live.layouts);
+    }
+
+    #[test]
+    fn overlay_ignores_blacklisted_keys_in_blob() {
+        let live = sample_cfg();
+        let merged = overlay_tape_config(
+            &live,
+            r#"
+            event_debounce_ms = 1
+            window_pos = "top left"
+            [key_sink]
+            type = "log"
+            file = "x.log"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(merged.event_debounce_ms, 1);
+        assert_eq!(merged.window_pos, live.window_pos);
+        assert_eq!(merged.key_sink, KeySinkConfig::Enigo);
     }
 }

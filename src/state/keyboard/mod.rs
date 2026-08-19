@@ -244,7 +244,7 @@ impl KeyboardState {
         Ok(())
     }
 
-    pub(crate) fn tape_header(&self) -> TapeHeader {
+    pub(crate) fn tape_header(&self) -> Result<TapeHeader> {
         let cfg = config::get();
         let mut layouts: Vec<(String, String)> = self
             .layouts
@@ -252,7 +252,8 @@ impl KeyboardState {
             .map(|(name, layout)| (name.clone(), layout.source().to_owned()))
             .collect();
         layouts.sort_by(|a, b| a.0.cmp(&b.0));
-        TapeHeader {
+        Ok(TapeHeader {
+            version: crate::controller::record::CURRENT_TAPE_VERSION,
             current_layout: self.current_layout.clone(),
             scales: MappingScales {
                 scale_x: cfg.scale_x,
@@ -260,8 +261,9 @@ impl KeyboardState {
                 stick_scale_x: cfg.stick_scale_x,
                 stick_scale_y: cfg.stick_scale_y,
             },
+            config_toml: Some(config::tape_config_toml(&cfg)?),
             layouts,
-        }
+        })
     }
 
     pub(crate) fn install_recorded_layouts(&mut self, header: &TapeHeader) -> Result<()> {

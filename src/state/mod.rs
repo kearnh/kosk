@@ -239,6 +239,7 @@ impl AppState {
         &mut self,
         header: &crate::controller::record::TapeHeader,
     ) -> Result<()> {
+        config::apply_recorded_tape_config(header)?;
         keyboard::with_mut(|kb| kb.install_recorded_layouts(header))
     }
 }
@@ -262,7 +263,7 @@ fn toggle_recording() -> Result<()> {
     input_record::validate_record_template(template)?;
     let resolved = input_record::resolve_against_config_dir(template)?;
     let path = input_record::next_record_path(&resolved)?;
-    let header = keyboard::with_mut(|kb| kb.tape_header());
+    let header = keyboard::with_mut(|kb| kb.tape_header())?;
     session.start(path.clone(), header)?;
     eprintln!("recording {}", path.display());
     Ok(())

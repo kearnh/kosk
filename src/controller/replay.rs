@@ -235,6 +235,7 @@ mod tests {
     fn sample_tape() -> Tape {
         Tape {
             header: TapeHeader {
+                version: 0,
                 current_layout: "main".into(),
                 scales: MappingScales {
                     scale_x: 1.0,
@@ -242,6 +243,7 @@ mod tests {
                     stick_scale_x: 1.0,
                     stick_scale_y: 1.0,
                 },
+                config_toml: None,
                 layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nkeys = []\n".into())],
             },
             events: vec![
