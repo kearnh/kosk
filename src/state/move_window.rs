@@ -115,6 +115,9 @@ impl MoveWindowState {
             FlipWindowAboveBelow => {
                 let _ = events.push(Event::FlipWindowAboveBelow, source);
             }
+            RotateWindow => {
+                let _ = events.push(Event::RotateWindow, source);
+            }
             NudgeUp => {
                 let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y - NUDGE)), source);
             }

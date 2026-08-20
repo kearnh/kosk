@@ -30,6 +30,7 @@ pub enum Event {
     MoveWindow(WindowPos),
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
+    RotateWindow,
     Exit,
     ToggleRecord,
     ToggleShift,

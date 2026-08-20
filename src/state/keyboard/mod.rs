@@ -220,6 +220,9 @@ impl KeyboardState {
             FlipWindowAboveBelow => {
                 let _ = events.push(Event::FlipWindowAboveBelow, source);
             }
+            RotateWindow => {
+                let _ = events.push(Event::RotateWindow, source);
+            }
             Exit => {
                 let _ = events.push(Event::Exit, source);
             }

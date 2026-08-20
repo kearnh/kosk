@@ -12,6 +12,7 @@ pub enum MoveWindowAction {
     SnapBottomRight,
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
+    RotateWindow,
     NudgeUp,
     NudgeDown,
     NudgeLeft,
@@ -36,6 +37,7 @@ impl Action for MoveWindowAction {
             | MoveWindowAction::SnapBottomRight
             | MoveWindowAction::FlipWindowLeftRight
             | MoveWindowAction::FlipWindowAboveBelow
+            | MoveWindowAction::RotateWindow
             | MoveWindowAction::SwitchState(_) => TriggerMode::Edge,
         }
     }

@@ -26,7 +26,7 @@ An `Event` is a side effect the app will perform later, after the queue is drain
 | `SendKey(key, direction)` | Press, release, or click a virtual key via enigo |
 | `SendText(String)` | Type a Unicode string |
 | `ChangeState(StateId)` | Switch app mode (keyboard, menu, and so on) |
-| `MoveWindow`, `FlipWindow*`, `Exit`, `ToggleRecord` | Window and lifecycle actions |
+| `MoveWindow`, `FlipWindow*`, `RotateWindow`, `Exit`, `ToggleRecord` | Window and lifecycle actions |
 | `ToggleShift`, `ToggleCtrl`, `ToggleAlt` | Flip the corresponding sticky modifier on the on-screen keyboard |
 
 Sticky modifiers used to call `toggle_shift()` (and the Ctrl/Alt equivalents) directly inside `KeyboardState::do_action`. Because `do_action` runs every poll while a trigger is held, that flipped the modifier every few milliseconds. They now enqueue `ToggleShift` / `ToggleCtrl` / `ToggleAlt` instead. `process_events` is the only place that calls the actual toggle functions.

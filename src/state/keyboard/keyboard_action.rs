@@ -18,6 +18,7 @@ pub enum KeyboardAction {
     SwitchLayout(String),
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
+    RotateWindow,
     Exit,
     ToggleRecord,
 }
@@ -34,7 +35,9 @@ impl Action for KeyboardAction {
                 TriggerMode::WhileHeld
             }
             ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
-            | FlipWindowLeftRight | FlipWindowAboveBelow | Exit | ToggleRecord => TriggerMode::Edge,
+            | FlipWindowLeftRight | FlipWindowAboveBelow | RotateWindow | Exit | ToggleRecord => {
+                TriggerMode::Edge
+            }
         }
     }
 }
@@ -112,6 +115,18 @@ mod tests {
         assert_eq!(
             KeyboardAction::try_from("ToggleRecord").unwrap(),
             KeyboardAction::ToggleRecord
+        );
+    }
+
+    #[test]
+    fn parses_rotate_window() {
+        assert_eq!(
+            KeyboardAction::try_from("rotateWindow").unwrap(),
+            KeyboardAction::RotateWindow
+        );
+        assert_eq!(
+            KeyboardAction::try_from("RotateWindow").unwrap(),
+            KeyboardAction::RotateWindow
         );
     }
 }

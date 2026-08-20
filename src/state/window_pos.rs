@@ -32,6 +32,8 @@ pub struct PointerSnapshot {
     cursor_px: (i32, i32),
     work_px: (i32, i32, i32, i32),
     placement: Option<PointerPlacement>,
+    /// Next `rotate` is vertical when true, left/right when false.
+    next_rotate_vertical: bool,
 }
 
 impl PointerSnapshot {
@@ -70,6 +72,17 @@ impl PointerSnapshot {
         let geom = self.geom(window_size, pixels_per_point);
         let current = self.ensure_placement(geom);
         self.placement = Some(flip_vertical(current, geom));
+    }
+
+    /// Flip left/right, then above/below, then left/right again.
+    /// Dedicated flips do not change which axis comes next.
+    pub fn rotate(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
+        if self.next_rotate_vertical {
+            self.flip_vertical(window_size, pixels_per_point);
+        } else {
+            self.flip_horizontal(window_size, pixels_per_point);
+        }
+        self.next_rotate_vertical = !self.next_rotate_vertical;
     }
 }
 
@@ -126,6 +139,7 @@ fn capture_pointer_snapshot_win() -> Option<PointerSnapshot> {
             cursor_px: (pt.x, pt.y),
             work_px: (work.left, work.top, work.right, work.bottom),
             placement: None,
+            next_rotate_vertical: false,
         })
     }
 }
@@ -479,5 +493,53 @@ mod tests {
         assert!(pos.0 >= 0.0 && pos.1 >= 0.0);
         assert!(pos.0 + window.0 <= work.0 + 0.1);
         assert!(pos.1 + window.1 <= work.1 + 0.1);
+    }
+
+    fn snapshot(cursor: (i32, i32), work: (i32, i32, i32, i32)) -> PointerSnapshot {
+        PointerSnapshot {
+            cursor_px: cursor,
+            work_px: work,
+            placement: None,
+            next_rotate_vertical: false,
+        }
+    }
+
+    #[test]
+    fn rotate_alternates_horizontal_then_vertical() {
+        let window = (400.0, 200.0);
+        let ppp = 1.0;
+        let mut snap = snapshot((200, 100), (0, 0, 1920, 1080));
+
+        snap.rotate(window, ppp);
+        let first = snap.placement.unwrap();
+        assert_eq!(first.horizontal, PointerH::Left);
+        assert_eq!(first.vertical, PointerV::Align);
+
+        snap.rotate(window, ppp);
+        let second = snap.placement.unwrap();
+        assert_eq!(second.horizontal, PointerH::Left);
+        assert_eq!(second.vertical, PointerV::Below);
+
+        snap.rotate(window, ppp);
+        let third = snap.placement.unwrap();
+        assert_eq!(third.horizontal, PointerH::Right);
+        assert_eq!(third.vertical, PointerV::Below);
+    }
+
+    #[test]
+    fn flip_horizontal_does_not_change_rotate_axis() {
+        let window = (400.0, 200.0);
+        let ppp = 1.0;
+        let mut snap = snapshot((200, 100), (0, 0, 1920, 1080));
+
+        snap.flip_horizontal(window, ppp);
+        assert!(!snap.next_rotate_vertical);
+        assert_eq!(snap.placement.unwrap().horizontal, PointerH::Left);
+
+        snap.rotate(window, ppp);
+        let after = snap.placement.unwrap();
+        assert_eq!(after.horizontal, PointerH::Right);
+        assert_eq!(after.vertical, PointerV::Align);
+        assert!(snap.next_rotate_vertical);
     }
 }

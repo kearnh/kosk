@@ -120,6 +120,20 @@ impl AppState {
         }
     }
 
+    fn rotate_pointer(&mut self, ctx: &Context) {
+        if self.pos != WindowPos::MousePointer {
+            return;
+        }
+        if self.pointer_snapshot.is_none() {
+            self.pointer_snapshot = capture_pointer_snapshot();
+        }
+        let Some(snap) = self.pointer_snapshot.as_mut() else {
+            return;
+        };
+        let window_size = Self::window_size_from(ctx.content_rect());
+        snap.rotate(window_size, ctx.pixels_per_point());
+    }
+
     fn process_events(&mut self, ctx: &Context) {
         for (event, _) in self.events.drain_pending() {
             match event {
@@ -150,6 +164,9 @@ impl AppState {
                 }
                 Event::FlipWindowAboveBelow => {
                     self.flip_pointer(ctx, true);
+                }
+                Event::RotateWindow => {
+                    self.rotate_pointer(ctx);
                 }
                 Event::Exit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
