@@ -72,55 +72,40 @@ impl KeyboardState {
     ) -> Result<()> {
         match key {
             RawKey::Key(c) => {
-                events.start_batch(source);
+                let mut steps = Vec::new();
                 if self.shift_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Shift, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
                 if self.ctrl_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
                 }
                 if self.alt_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press));
                 }
                 // `enigo::text` (SendText) injects Unicode and ignores held modifiers, so
                 // Ctrl/Alt/Shift chords never reach the app. Virtual-key click does combine.
                 // Without mods, SendText is required: SendKey does not emit uppercase letters.
                 if self.ctrl_mod || self.alt_mod || self.shift_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Unicode(*c), enigo::Direction::Click),
-                        source,
-                    );
+                    steps.push(Event::SendKey(
+                        enigo::Key::Unicode(*c),
+                        enigo::Direction::Click,
+                    ));
                 } else {
-                    events.push(Event::SendText(c.to_string()), source);
+                    steps.push(Event::SendText(c.to_string()));
                 }
                 if self.alt_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release));
                 }
                 if self.ctrl_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(
+                        enigo::Key::Control,
+                        enigo::Direction::Release,
+                    ));
                 }
                 if self.shift_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Shift, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
-                if events.end_batch() {
+                if events.push_seq(steps, source) {
                     self.shift_state = false;
                     self.shift_mod = false;
                     self.ctrl_mod = false;
@@ -128,45 +113,30 @@ impl KeyboardState {
                 }
             }
             RawKey::Enigo(k) => {
-                events.start_batch(source);
+                let mut steps = Vec::new();
                 if self.shift_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Shift, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
                 if self.ctrl_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Control, enigo::Direction::Press));
                 }
                 if self.alt_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Press),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Press));
                 }
-                events.push(Event::SendKey(*k, enigo::Direction::Click), source);
+                steps.push(Event::SendKey(*k, enigo::Direction::Click));
                 if self.alt_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Alt, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Alt, enigo::Direction::Release));
                 }
                 if self.ctrl_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(
+                        enigo::Key::Control,
+                        enigo::Direction::Release,
+                    ));
                 }
                 if self.shift_mod {
-                    events.push(
-                        Event::SendKey(enigo::Key::Shift, enigo::Direction::Release),
-                        source,
-                    );
+                    steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
-                if events.end_batch() {
+                if events.push_seq(steps, source) {
                     self.shift_state = false;
                     self.shift_mod = false;
                     self.ctrl_mod = false;
@@ -221,20 +191,14 @@ impl KeyboardState {
                 let _ = events.push(Event::ToggleAlt, source);
             }
             Paste => {
-                events.start_batch(source);
-                let _ = events.push(
-                    Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
+                let _ = events.push_seq(
+                    vec![
+                        Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
+                        Event::SendKey(enigo::Key::Unicode('v'), enigo::Direction::Click),
+                        Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
+                    ],
                     source,
                 );
-                let _ = events.push(
-                    Event::SendKey(enigo::Key::Unicode('v'), enigo::Direction::Click),
-                    source,
-                );
-                let _ = events.push(
-                    Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
-                    source,
-                );
-                let _ = events.end_batch();
             }
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);

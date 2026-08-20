@@ -44,11 +44,10 @@ Each controller binding has its own timeline. Holding `padLeft` and `padRight` a
 
 ### `EventQueue`
 
-The queue keeps four pieces of state:
+The queue keeps three pieces of state:
 
 - **`pending`** is the list of events that have already been accepted and are waiting to be executed.
 - **`last_commit`** remembers, for each `EventSource`, when that source last got through and how it should behave next (see `SourceState` below).
-- **`batch_stack`** holds groups of events that must be accepted or dropped together (for example a Ctrl+letter chord).
 - **`held_this_tick`** records which controller bindings asked to commit during the current poll, including asks that were dropped. That set is how the queue notices a button going up.
 
 ## End-to-end flow
@@ -65,7 +64,7 @@ sequenceDiagram
     HW->>App: handle_controller_input(input)
     App->>Bind: evaluate(input)
     Bind-->>KB: actions (e.g. SendKeyUnderRightStick)
-    KB->>Q: start_batch / push / end_batch
+    KB->>Q: push / push_seq
     App->>Q: end_controller_tick()
     App->>Q: drain_pending()
     Q-->>App: Vec<(Event, EventSource)>
@@ -74,7 +73,7 @@ sequenceDiagram
 
 On each frame, `AppState` roughly does this:
 
-1. **Handle input.** Controller input goes through `handle_controller_input`; mouse clicks go through `draw_ui`. In both cases the current state (usually `KeyboardState`) may call `push` or open a batch on the shared `EventQueue`.
+1. **Handle input.** Controller input goes through `handle_controller_input`; mouse clicks go through `draw_ui`. In both cases the current state (usually `KeyboardState`) may call `push` or `push_seq` on the shared `EventQueue`.
 2. **Notice releases.** After controller handling, `end_controller_tick` looks at which bindings asked to commit this poll. A controller source that did not ask is treated as released.
 3. **Run accepted events.** `process_events` takes everything in `pending` and executes it: typing through `KeySink`, toggling sticky modifiers on the keyboard, changing mode, and so on.
 
@@ -104,27 +103,31 @@ Keyboard code has two ways to submit work.
 
 The simple way is a single call to `push`. That is what sticky modifiers do: `do_action` pushes one `ToggleShift` (or Ctrl/Alt) and is done.
 
-The other way is a **batch**. Typing a letter while Ctrl is down is several OS events that must not be split: press Control, click the key, release Control. `KeyboardState::send_key` wraps that sequence as:
+The other way is `push_seq`: several leaf events that must succeed or fail together. Typing a letter while Ctrl is down is several OS actions that must not be split: press Control, click the key, release Control. `KeyboardState::send_key` collects those steps in a `Vec` and submits them once:
 
 ```rust
-events.start_batch(source);
-events.push(/* modifier press */, source);
-events.push(/* key */, source);
-events.push(/* modifier release */, source);
-events.end_batch();
+let mut steps = Vec::new();
+steps.push(/* modifier press */);
+steps.push(/* key */);
+steps.push(/* modifier release */);
+if events.push_seq(steps, source) {
+    // clear sticky mods only if the chord was actually accepted
+}
 ```
 
-While a batch is open, each `push` only appends to the group. Debounce is not checked yet. Batches can nest; inner `end_batch` calls fold into the parent. The decision happens only when the **last** matching `end_batch` closes the group. Either every event in that group is accepted, or the whole group is dropped. `end_batch` returns `false` when the group was dropped, so keyboard code can avoid clearing modifier state for a send that never happened.
+The queue treats that list as one debounce decision. Either every event lands in `pending`, or the whole list is dropped. `push_seq` returns `false` when the list was dropped, so keyboard code can avoid clearing modifier state for a send that never happened.
 
-Because batches are how keys and chords are sent, closing a batch always uses the timed hold-repeat rules described next. Sticky modifiers are deliberately *not* wrapped in a batch, so they can use the other rule.
+An empty list is a no-op. A list of one event is the same as `push`. Two or more events always use the timed hold-repeat rule described next. Sticky modifiers are submitted with `push` on their own, so they can use suppress-until-release instead.
+
+Inside the queue this grouping is a private `EventGroup` (`Single` or a flat `Seq` of leaf `Event`s). It cannot nest, and `drain_pending` still returns a flat list of `(Event, EventSource)` pairs.
 
 ## Two accept rules
 
-When it is time to decide (a lone `push`, or the closing `end_batch` of a group), the queue looks at the `EventSource` and, for a lone `push`, at the event itself.
+When it is time to decide, the queue looks at the `EventSource` and at how the work was submitted.
 
 ### Letters, keys, and chords (timed hold-repeat)
 
-This is the auto-repeat path. It is used for every batch, and for any `push` that is not a sticky modifier toggle.
+This is the auto-repeat path. It is used for every `push_seq` of two or more events, and for any `push` that is not a sticky modifier toggle.
 
 The queue asks how long it has been since this source last got an event through:
 
@@ -150,7 +153,7 @@ Stick-select lock keeps the highlighted key fixed for a short window after a let
 
 A later letter or key on the same binding does not clear the flag. `record_hold_repeat_accepted` copies `suppress_until_release` forward, so mixing typing and toggling on one button cannot accidentally re-enable Shift flicker.
 
-In code, a lone `push` goes through `commit_allows`, which sends toggles to `toggle_allows` / `record_toggle_accepted` and everything else to the hold-repeat functions above.
+In code, a lone `push` goes through `commit_allows`, which sends toggles to `toggle_allows` / `record_toggle_accepted` and everything else to the hold-repeat functions above. A `push_seq` of two or more events always goes through `hold_repeat_allows` / `record_hold_repeat_accepted`.
 
 The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths.
 
@@ -167,7 +170,7 @@ The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cle
 
 ### How the queue notices a release
 
-Each controller poll, WhileHeld bindings may call `push` or `end_batch`. Every such call, even a dropped one, records the source in `held_this_tick`.
+Each controller poll, WhileHeld bindings may call `push` or `push_seq`. Every such call, even a dropped one, records the source in `held_this_tick`.
 
 After all controller handlers have run, `end_controller_tick` walks every controller source in `last_commit`. If a source is missing from `held_this_tick`, the button is treated as up: `released` is set, and both `repeat_armed` and `suppress_until_release` are cleared. Then `held_this_tick` is emptied for the next poll.
 
@@ -181,9 +184,9 @@ Assume `padRight` is bound to `sendKeyUnderRightStick` and the stick is over `l`
 
 | Time | Button | What the queue sees | Result |
 |------|--------|---------------------|--------|
-| 0 ms | down | first batch closes | **Accept** — `l` is typed |
-| 0–199 ms | held | a batch every poll | **Drop** — still inside the initial window |
-| 200 ms | held | batch closes; repeat arms | **Accept** — `l` |
+| 0 ms | down | first `push` / `push_seq` | **Accept** — `l` is typed |
+| 0–199 ms | held | the same every poll | **Drop** — still inside the initial window |
+| 200 ms | held | accepted; repeat arms | **Accept** — `l` |
 | 255 ms | held | 55 ms later | **Accept** — `l` |
 | 310 ms | held | 55 ms later | **Accept** — `l` |
 | … | held | every 55 ms | repeat while held |
@@ -221,15 +224,15 @@ Sliding to another modifier without releasing:
 
 ## What this does not cover
 
-**Actions that never touch the queue are not throttled.** Sticky modifiers used to be in that category; they are not anymore. If some other `do_action` path still mutates state without `push` or a batch, it still runs on every poll.
+**Actions that never touch the queue are not throttled.** Sticky modifiers used to be in that category; they are not anymore. If some other `do_action` path still mutates state without `push` or `push_seq`, it still runs on every poll.
 
-**The binding engine still fires every poll.** Debounce only drops the output. The handler still runs; `push` or `end_batch` just returns `false`.
+**The binding engine still fires every poll.** Debounce only drops the output. The handler still runs; `push` or `push_seq` just returns `false`.
 
 **Two bindings are two buckets.** `triggerLeft` and `padLeft` are timed separately even if both map to the same stick-send or toggle. If both read as down in one tick, both can get through. Clearing suppress on selection change is per stick side (that side's trigger and pad together), not global across the whole controller.
 
 **Mouse is one bucket, with no hold-repeat.** Rapid clicks share the `MouseClick` source and use the initial interval between them. There is no armed-repeat path for the pointer.
 
-**Closing a batch always uses the timed rule.** If a `ToggleShift` were placed inside a batch, it would be accepted or dropped with the letters, not with suppress-until-release. That is why `do_action` pushes toggles on their own.
+**A sequence of two or more events always uses the timed rule.** If a `ToggleShift` were placed inside `push_seq` with other events, it would be accepted or dropped with the letters, not with suppress-until-release. That is why `do_action` pushes toggles on their own.
 
 ## Debugging debounce in recordings
 
@@ -253,13 +256,12 @@ Those lines are the first place to look when a character is missing or duplicate
 |--------|--------------|-------|
 | `EventQueue::new()` | App startup | Reads debounce milliseconds from config |
 | `set_debounce_ms(initial, repeat)` | Start of each frame | Picks up live config changes |
-| `start_batch(source)` | Before a multi-event output | Opens a group; nested calls merge into the parent |
-| `push(event, source)` | One event, or a step inside a batch | Returns `false` if dropped (and no batch is open). Toggles use suppress-until-release; other events use hold-repeat |
-| `end_batch()` | After the batch's events | Returns `false` if the outer group was dropped. Always uses hold-repeat |
+| `push(event, source)` | One event | Returns `false` if dropped. Toggles use suppress-until-release; other events use hold-repeat |
+| `push_seq(events, source)` | Several events, one gesture | Empty is a no-op. One element is `push`. Two or more use hold-repeat. Returns `false` if dropped |
 | `end_controller_tick()` | After all controller handlers | Treats untouched controller sources as released |
 | `clear_toggle_suppress(sources)` | Stick selection changed | Lets another modifier toggle while the button is still held |
-| `drain_pending()` | Before executing events | Also flushes any batch left accidentally open |
+| `drain_pending()` | Before executing events | Flat list of accepted leaf events |
 
 ## Summary
 
-`EventQueue` is a per-button filter in front of typing and modifier changes. For keys it waits a long beat on the first press and a short beat if the same binding stays down, the way a keyboard auto-repeats. Mouse clicks always use the long beat. A chord is one decision for a whole group of events. Sticky modifiers are not on that timer: they fire once per hold, then stay quiet until the button comes up or the stick points at a different key. Anything that never enters the queue is outside this system.
+`EventQueue` is a per-button filter in front of typing and modifier changes. For keys it waits a long beat on the first press and a short beat if the same binding stays down, the way a keyboard auto-repeats. Mouse clicks always use the long beat. A chord is one `push_seq`: several leaf events, one decision. Sticky modifiers are not on that timer: they fire once per hold, then stay quiet until the button comes up or the stick points at a different key. Anything that never enters the queue is outside this system.

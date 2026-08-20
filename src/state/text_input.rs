@@ -62,18 +62,15 @@ impl TextInputState {
     }
 
     fn submit_text(&mut self, events: &mut EventQueue, source: &EventSource) {
-        events.start_batch(source);
+        let mut steps = Vec::new();
         if !self.text.is_empty() {
-            let _ = events.push(Event::SendText(self.text.to_string()), source);
-            let _ = events.push(
-                Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
-                source,
-            );
+            steps.push(Event::SendText(self.text.to_string()));
+            steps.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
             self.text.clear();
             self.cursor_pos = 0;
         }
-        let _ = events.push(Event::ChangeState(StateId::Keyboard), source);
-        let _ = events.end_batch();
+        steps.push(Event::ChangeState(StateId::Keyboard));
+        let _ = events.push_seq(steps, source);
     }
 
     fn process_events(&mut self, events: &mut EventQueue) {

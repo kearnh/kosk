@@ -48,9 +48,30 @@ impl Event {
     }
 }
 
-struct OpenBatch {
-    source: EventSource,
-    events: Vec<Event>,
+/// One debounce decision: a single leaf [`Event`] or a flat sequence of them.
+/// `Seq` holds [`Event`], not `EventGroup`, so groups cannot nest.
+enum EventGroup {
+    Single(Event),
+    Seq(Vec<Event>),
+}
+
+impl EventGroup {
+    fn from_seq(events: Vec<Event>) -> Option<Self> {
+        match events.len() {
+            0 => None,
+            1 => Some(EventGroup::Single(
+                events.into_iter().next().expect("len == 1"),
+            )),
+            _ => Some(EventGroup::Seq(events)),
+        }
+    }
+
+    fn events(&self) -> impl Iterator<Item = &Event> {
+        match self {
+            EventGroup::Single(event) => std::slice::from_ref(event).iter(),
+            EventGroup::Seq(events) => events.iter(),
+        }
+    }
 }
 
 struct SourceState {
@@ -72,15 +93,14 @@ struct SourceState {
 /// the armed flag so a second tap (double letters) uses the initial delay again
 /// instead of the short repeat interval.
 ///
-/// Batches started with [`start_batch`](Self::start_batch) carry a single source
-/// used when the outermost batch is committed; nested batches merge event lists only.
+/// [`push`](Self::push) submits one event. [`push_seq`](Self::push_seq) submits several
+/// that succeed or fail together (one debounce decision).
 pub struct EventQueue {
     pending: Vec<(Event, EventSource)>,
     debounce_initial: Option<Duration>,
     debounce_repeat: Option<Duration>,
     last_commit: HashMap<EventSource, SourceState>,
-    batch_stack: Vec<OpenBatch>,
-    /// Controller sources that [`push`](Self::push)/[`end_batch`](Self::end_batch)
+    /// Controller sources that [`push`](Self::push)/[`push_seq`](Self::push_seq)
     /// this evaluation tick (including debounce drops). Used to detect release.
     held_this_tick: HashSet<EventSource>,
     #[cfg(test)]
@@ -113,7 +133,6 @@ impl EventQueue {
             debounce_initial: initial,
             debounce_repeat: repeat,
             last_commit: HashMap::new(),
-            batch_stack: Vec::new(),
             held_this_tick: HashSet::new(),
             #[cfg(test)]
             test_now: None,
@@ -135,73 +154,30 @@ impl EventQueue {
         }
     }
 
-    /// No debouncing; every [`push`](Self::push) and batch is accepted.
+    /// No debouncing; every [`push`](Self::push) and [`push_seq`](Self::push_seq) is accepted.
     pub fn passthrough() -> Self {
         Self::with_debounce(None, None)
     }
 
-    pub fn start_batch(&mut self, source: &EventSource) {
-        self.batch_stack.push(OpenBatch {
-            source: source.clone(),
-            events: Vec::new(),
-        });
-    }
-
-    /// Finishes the innermost batch started with [`start_batch`](Self::start_batch).
-    ///
-    /// When closing a nested batch, its events are appended to the parent batch
-    /// and this always returns `true`. When closing the outermost batch, returns
-    /// `false` if that batch was dropped by debouncing. Returns `true` if there was
-    /// no open batch, the batch was empty, or the batch was committed.
-    pub fn end_batch(&mut self) -> bool {
-        let Some(OpenBatch {
-            source,
-            events: done,
-        }) = self.batch_stack.pop()
-        else {
-            debug_assert!(false, "EventQueue::end_batch without matching start_batch");
-            return true;
-        };
-        if done.is_empty() {
-            return true;
-        }
-        if let Some(parent) = self.batch_stack.last_mut() {
-            parent.events.extend(done);
-            return true;
-        }
-        self.touch(&source);
-        if !self.hold_repeat_allows(&source) {
-            self.trace_debounce(false, &source);
-            return false;
-        }
-        self.trace_debounce(true, &source);
-        self.pending
-            .extend(done.into_iter().map(|e| (e, source.clone())));
-        self.record_hold_repeat_accepted(source);
-        true
-    }
-
-    /// While a batch is open, appends to the innermost batch (always `true`).
-    /// The `source` argument is ignored until [`end_batch`](Self::end_batch).
+    /// Submits one event. Sticky modifier toggles use suppress-until-release; everything
+    /// else uses hold-repeat.
     pub fn push(&mut self, event: Event, source: &EventSource) -> bool {
-        if let Some(b) = self.batch_stack.last_mut() {
-            b.events.push(event);
-            return true;
+        self.commit(EventGroup::Single(event), source)
+    }
+
+    /// Submits several events as one debounce decision. An empty list is a no-op
+    /// (`true`, no debounce). A single-element list is treated as [`push`](Self::push).
+    /// Two or more events always use hold-repeat.
+    pub fn push_seq(&mut self, events: Vec<Event>, source: &EventSource) -> bool {
+        match EventGroup::from_seq(events) {
+            Some(group) => self.commit(group, source),
+            None => true,
         }
-        self.touch(source);
-        if !self.commit_allows(source, &event) {
-            self.trace_debounce(false, source);
-            return false;
-        }
-        self.trace_debounce(true, source);
-        self.pending.push((event.clone(), source.clone()));
-        self.record_commit(source.clone(), &event);
-        true
     }
 
     /// Call once per controller evaluation after bindings have run.
     ///
-    /// Any controller source that did not [`push`](Self::push) or [`end_batch`](Self::end_batch)
+    /// Any controller source that did not [`push`](Self::push) or [`push_seq`](Self::push_seq)
     /// this tick (including dropped repeats) is treated as released, so the next
     /// accept is a new first press rather than key-repeat.
     pub fn end_controller_tick(&mut self) {
@@ -226,11 +202,9 @@ impl EventQueue {
         }
     }
 
-    /// Takes queued events for processing. Open batches are merged into `pending`
-    /// first so no events are stranded and [`batch_stack`](Self) is always empty
-    /// afterward (expected to already be empty between frames).
+    /// Takes queued events for processing. Groups are flattened when accepted, so
+    /// this returns leaf [`Event`]s only.
     pub fn drain_pending(&mut self) -> Vec<(Event, EventSource)> {
-        self.flush_open_batches_into_pending();
         std::mem::take(&mut self.pending)
     }
 
@@ -248,18 +222,24 @@ impl EventQueue {
         Instant::now()
     }
 
-    fn flush_open_batches_into_pending(&mut self) {
-        while self.batch_stack.len() > 1 {
-            let inner = self.batch_stack.pop().expect("len > 1");
-            if let Some(parent) = self.batch_stack.last_mut() {
-                parent.events.extend(inner.events);
-            }
+    fn commit(&mut self, group: EventGroup, source: &EventSource) -> bool {
+        self.touch(source);
+        let allowed = match &group {
+            EventGroup::Single(event) => self.commit_allows(source, event),
+            EventGroup::Seq(_) => self.hold_repeat_allows(source),
+        };
+        if !allowed {
+            self.trace_debounce(false, source);
+            return false;
         }
-        if let Some(outer) = self.batch_stack.pop() {
-            let src = outer.source;
-            self.pending
-                .extend(outer.events.into_iter().map(|e| (e, src.clone())));
+        self.trace_debounce(true, source);
+        match &group {
+            EventGroup::Single(event) => self.record_commit(source.clone(), event),
+            EventGroup::Seq(_) => self.record_hold_repeat_accepted(source.clone()),
         }
+        self.pending
+            .extend(group.events().cloned().map(|e| (e, source.clone())));
+        true
     }
 
     fn commit_allows(&self, source: &EventSource, event: &Event) -> bool {
@@ -387,9 +367,7 @@ mod tests {
     }
 
     fn commit_letter(q: &mut EventQueue, src: &EventSource) -> bool {
-        q.start_batch(src);
-        q.push(Event::SendText("l".into()), src);
-        q.end_batch()
+        q.push(Event::SendText("l".into()), src)
     }
 
     fn accepted_texts(q: &mut EventQueue) -> Vec<String> {
