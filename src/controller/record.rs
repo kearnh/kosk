@@ -967,11 +967,7 @@ mod tests {
         .into_bytes();
         bytes.extend_from_slice(cfg.as_bytes());
         bytes.push(b'\n');
-        bytes.extend(
-            format!("layout main {}\n", layout.len())
-                .into_bytes()
-                .into_iter(),
-        );
+        bytes.extend(format!("layout main {}\n", layout.len()).into_bytes());
         bytes.extend_from_slice(layout.as_bytes());
         bytes.push(b'\n');
         let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();

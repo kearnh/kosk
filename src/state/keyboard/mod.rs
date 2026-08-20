@@ -10,6 +10,7 @@ use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
     controller::ControllerInput,
+    controller::{ControllerBinding, ControllerButton},
     state::{
         event::{Event, EventQueue, EventSource},
         keyboard::key::RawKey,
@@ -25,6 +26,20 @@ mod layout;
 mod when;
 
 pub use crate::state::keyboard::keyboard_action::KeyboardAction;
+
+fn stick_side_sources(left: bool) -> [EventSource; 2] {
+    if left {
+        [
+            EventSource::Controller(ControllerBinding::Single(ControllerButton::TriggerLeft)),
+            EventSource::Controller(ControllerBinding::Single(ControllerButton::PadLeft)),
+        ]
+    } else {
+        [
+            EventSource::Controller(ControllerBinding::Single(ControllerButton::TriggerRight)),
+            EventSource::Controller(ControllerBinding::Single(ControllerButton::PadRight)),
+        ]
+    }
+}
 
 #[derive(Default)]
 pub struct KeyboardState {
@@ -196,9 +211,15 @@ impl KeyboardState {
             SendEnigoKey(key) => {
                 self.send_key(&RawKey::Enigo(*key), events, source)?;
             }
-            ToggleShift => self.toggle_shift(),
-            ToggleCtrl => self.toggle_ctrl(),
-            ToggleAlt => self.toggle_alt(),
+            ToggleShift => {
+                let _ = events.push(Event::ToggleShift, source);
+            }
+            ToggleCtrl => {
+                let _ = events.push(Event::ToggleCtrl, source);
+            }
+            ToggleAlt => {
+                let _ = events.push(Event::ToggleAlt, source);
+            }
             Paste => {
                 events.start_batch(source);
                 let _ = events.push(
@@ -302,7 +323,7 @@ impl KeyboardState {
         Ok(())
     }
 
-    pub fn toggle_shift(&mut self) {
+    pub(crate) fn toggle_shift(&mut self) {
         if self.shift_state || self.shift_mod {
             self.shift_state = false;
             self.shift_mod = false;
@@ -315,11 +336,11 @@ impl KeyboardState {
         }
     }
 
-    pub fn toggle_ctrl(&mut self) {
+    pub(crate) fn toggle_ctrl(&mut self) {
         self.ctrl_mod = !self.ctrl_mod;
     }
 
-    pub fn toggle_alt(&mut self) {
+    pub(crate) fn toggle_alt(&mut self) {
         self.alt_mod = !self.alt_mod;
     }
 
@@ -350,23 +371,43 @@ impl KeyboardState {
             .get(&self.current_layout)
             .ok_or_else(|| anyhow::anyhow!("Current layout '{}' not found", self.current_layout))?;
 
+        let prev_selected = self.selected.clone();
+
         let selected_left =
             current_layout.get_nearest_key_left(input.left_stick(), self.shift_state);
         let selected_right =
             current_layout.get_nearest_key_right(input.right_stick(), self.shift_state);
 
-        if self
+        let lock_left = self
             .last_left_stick_action
-            .is_none_or(|t| t.elapsed() > self.stick_select_lock_ms)
-        {
-            self.selected.0 = selected_left.clone();
+            .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+        let lock_right = self
+            .last_right_stick_action
+            .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+
+        let new_left = if lock_left {
+            prev_selected.0.clone()
+        } else {
+            selected_left
+        };
+        let new_right = if lock_right {
+            prev_selected.1.clone()
+        } else {
+            selected_right
+        };
+
+        if prev_selected.0 != new_left {
+            events.clear_toggle_suppress(stick_side_sources(true));
+        }
+        if prev_selected.1 != new_right {
+            events.clear_toggle_suppress(stick_side_sources(false));
+        }
+
+        self.selected = (new_left, new_right);
+        if !lock_left {
             self.last_left_stick_action = None;
         }
-        if self
-            .last_right_stick_action
-            .is_none_or(|t| t.elapsed() > self.stick_select_lock_ms)
-        {
-            self.selected.1 = selected_right.clone();
+        if !lock_right {
             self.last_right_stick_action = None;
         }
 

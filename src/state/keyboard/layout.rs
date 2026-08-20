@@ -151,7 +151,7 @@ impl KeyButton {
             },
             Some(KeyDisplay::Rules(rules)) => {
                 for rule in rules {
-                    if rule.when.as_ref().map_or(true, |w| w.eval(ctx)) {
+                    if rule.when.as_ref().is_none_or(|w| w.eval(ctx)) {
                         return KeyAppearance {
                             text: rule.text.clone(),
                             button_color: rule.button_color.map(Into::into),

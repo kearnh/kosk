@@ -159,6 +159,15 @@ impl AppState {
                         eprintln!("toggleRecord: {e:#}");
                     }
                 }
+                Event::ToggleShift => {
+                    keyboard::with_mut(|kb| kb.toggle_shift());
+                }
+                Event::ToggleCtrl => {
+                    keyboard::with_mut(|kb| kb.toggle_ctrl());
+                }
+                Event::ToggleAlt => {
+                    keyboard::with_mut(|kb| kb.toggle_alt());
+                }
             }
         }
     }

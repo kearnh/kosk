@@ -338,7 +338,7 @@ mod tests {
             vec![TestAction::SingleFaceTop]
         );
         let fired = step(&mut e, &face_only, &both);
-        assert!(!fired.iter().any(|a| *a == TestAction::Chord));
+        assert!(!fired.contains(&TestAction::Chord));
     }
 
     #[test]

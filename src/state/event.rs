@@ -32,6 +32,20 @@ pub enum Event {
     FlipWindowAboveBelow,
     Exit,
     ToggleRecord,
+    ToggleShift,
+    ToggleCtrl,
+    ToggleAlt,
+}
+
+impl Event {
+    /// Sticky modifier toggles: at most one accept per key gesture (see
+    /// [`SourceState::suppress_until_release`]).
+    fn suppresses_until_release(&self) -> bool {
+        matches!(
+            self,
+            Event::ToggleShift | Event::ToggleCtrl | Event::ToggleAlt
+        )
+    }
 }
 
 struct OpenBatch {
@@ -44,6 +58,9 @@ struct SourceState {
     repeat_armed: bool,
     /// Binding went up since [`SourceState::last`]. Next accept is a new press, not a hold.
     released: bool,
+    /// After a sticky modifier toggle accept, drop further toggles until release or
+    /// selection change clears this flag.
+    suppress_until_release: bool,
 }
 
 /// Queues outgoing events with optional time-based debouncing by [`EventSource`].
@@ -153,14 +170,14 @@ impl EventQueue {
             return true;
         }
         self.touch(&source);
-        if !self.source_debounce_allows(&source) {
+        if !self.hold_repeat_allows(&source) {
             self.trace_debounce(false, &source);
             return false;
         }
         self.trace_debounce(true, &source);
         self.pending
             .extend(done.into_iter().map(|e| (e, source.clone())));
-        self.record_source_accepted(source);
+        self.record_hold_repeat_accepted(source);
         true
     }
 
@@ -172,13 +189,13 @@ impl EventQueue {
             return true;
         }
         self.touch(source);
-        if !self.source_debounce_allows(source) {
+        if !self.commit_allows(source, &event) {
             self.trace_debounce(false, source);
             return false;
         }
         self.trace_debounce(true, source);
-        self.pending.push((event, source.clone()));
-        self.record_source_accepted(source.clone());
+        self.pending.push((event.clone(), source.clone()));
+        self.record_commit(source.clone(), &event);
         true
     }
 
@@ -193,9 +210,20 @@ impl EventQueue {
             {
                 state.released = true;
                 state.repeat_armed = false;
+                state.suppress_until_release = false;
             }
         }
         self.held_this_tick.clear();
+    }
+
+    /// Clears sticky-modifier suppression for the given sources (e.g. when stick
+    /// selection moves to another key while a trigger stays held).
+    pub fn clear_toggle_suppress(&mut self, sources: impl IntoIterator<Item = EventSource>) {
+        for source in sources {
+            if let Some(state) = self.last_commit.get_mut(&source) {
+                state.suppress_until_release = false;
+            }
+        }
     }
 
     /// Takes queued events for processing. Open batches are merged into `pending`
@@ -234,7 +262,21 @@ impl EventQueue {
         }
     }
 
-    fn source_debounce_allows(&self, source: &EventSource) -> bool {
+    fn commit_allows(&self, source: &EventSource, event: &Event) -> bool {
+        if event.suppresses_until_release() {
+            return self.toggle_allows(source);
+        }
+        self.hold_repeat_allows(source)
+    }
+
+    fn toggle_allows(&self, source: &EventSource) -> bool {
+        let Some(state) = self.last_commit.get(source) else {
+            return true;
+        };
+        !state.suppress_until_release || state.released
+    }
+
+    fn hold_repeat_allows(&self, source: &EventSource) -> bool {
         let Some(initial) = self.debounce_initial else {
             return true;
         };
@@ -250,7 +292,29 @@ impl EventQueue {
         }
     }
 
-    fn record_source_accepted(&mut self, source: EventSource) {
+    fn record_commit(&mut self, source: EventSource, event: &Event) {
+        if event.suppresses_until_release() {
+            self.record_toggle_accepted(source);
+            return;
+        }
+        self.record_hold_repeat_accepted(source);
+    }
+
+    fn record_toggle_accepted(&mut self, source: EventSource) {
+        let now = self.now();
+        let is_mouse = matches!(source, EventSource::MouseClick);
+        self.last_commit.insert(
+            source,
+            SourceState {
+                last: now,
+                repeat_armed: false,
+                released: is_mouse,
+                suppress_until_release: true,
+            },
+        );
+    }
+
+    fn record_hold_repeat_accepted(&mut self, source: EventSource) {
         let Some(initial) = self.debounce_initial else {
             return;
         };
@@ -277,12 +341,14 @@ impl EventQueue {
         // Mouse is edge-triggered; never start a hold-repeat chain from clicks.
         // A controller accept means the binding is down, so clear `released`.
         let is_mouse = matches!(source, EventSource::MouseClick);
+        let suppress_until_release = prev.is_some_and(|s| s.suppress_until_release);
         self.last_commit.insert(
             source,
             SourceState {
                 last: now,
                 repeat_armed,
                 released: is_mouse,
+                suppress_until_release,
             },
         );
     }
@@ -334,6 +400,56 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    fn commit_toggle(q: &mut EventQueue, src: &EventSource) -> bool {
+        q.push(Event::ToggleShift, src)
+    }
+
+    fn accepted_toggles(q: &mut EventQueue) -> usize {
+        q.drain_pending()
+            .into_iter()
+            .filter(|(e, _)| matches!(e, Event::ToggleShift))
+            .count()
+    }
+
+    #[test]
+    fn toggle_hold_suppresses_repeat_until_release() {
+        let mut q = queue();
+        let src = pad_right();
+
+        assert!(commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 1);
+
+        assert!(!commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 0);
+
+        advance(&mut q, 500);
+        assert!(!commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 0);
+
+        q.end_controller_tick();
+        assert!(commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 1);
+    }
+
+    #[test]
+    fn toggle_suppress_cleared_when_selection_changes() {
+        let mut q = queue();
+        let src = pad_right();
+
+        assert!(commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 1);
+
+        q.clear_toggle_suppress([src.clone()]);
+        assert!(commit_toggle(&mut q, &src));
+        q.end_controller_tick();
+        assert_eq!(accepted_toggles(&mut q), 1);
     }
 
     #[test]
