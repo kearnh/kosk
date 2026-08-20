@@ -1,0 +1,30 @@
+---
+description: Prose style for code explanation docs under docs/ (not plans)
+globs: docs/*.md
+alwaysApply: false
+---
+
+# Code explanation docs
+
+Applies to `docs/*.md` (the code-explanation series). Does **not** apply to `docs/plans/` or `todo.md`; those may stay notes-like.
+
+`docs/event-debounce.md` is the style to match.
+
+## Voice
+
+Write full sentences and full explanations. A reader who was not in any prior chat must understand the page. Do not write as if taking notes for yourself.
+
+Avoid: terse fragments, crib notes, bullet-only surveys, “v0 decision” tables with no surrounding prose, unexplained abbreviations, assumed context.
+
+## Shape of a page
+
+- Open with what this part does and which source files it covers.
+- Explain why the code exists, name the types, and walk the real flow.
+- Cross-links to sibling docs are fine; the page must still stand alone.
+- End with what this does **not** cover, then a short summary in prose.
+
+## Truth
+
+Describe the program as it is written today. Do not present planned UX (from `todo.md` or `docs/plans/`) as if it were implemented. Link to a plan when future work is relevant.
+
+One document per subsystem, not one file per `.rs`. Tiny helpers belong as a section of a parent doc. Action enums stay with the mode that runs them.

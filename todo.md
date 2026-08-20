@@ -18,7 +18,7 @@ controller.
 
 ### Initial Steps
 
-Done: engine skeleton, tests, and `completion_dev` — see [docs/completion.md](docs/completion.md).
+Done: engine skeleton, tests, and `completion_dev` — see [docs/completion.md](docs/completion.md) for the engine as shipped, and [docs/plans/completion.md](docs/plans/completion.md) for the intended keyboard UX.
 
 - Find and evaluate crates that support what we need to do out of the box. Does any exist?
 - Research text completion methods, any public papers / write ups?
@@ -52,9 +52,10 @@ Bugs
 ----
 
 - Debounce no 100% right. Easy to send triple key when intending to only send 2.
+- The config watcher does not watch `mappings.toml`. Edits to that file are
+  ignored until something else reloads config (or the process restarts).
 - `config::save` dumps the whole `config.toml` via `toml::to_string_pretty`
   whenever window position is persisted. `controller_map = "mappings.toml"` is
   loaded into a HashMap and the path is forgotten, so save rewrites inline
   `[controller_map.*]` tables and later mapping edits (e.g. pad click) never
-  apply. The watcher also does not watch `mappings.toml`. Save should keep the
-  file reference (or only patch `window_pos`).
+  apply. Save should keep the file reference (or only patch `window_pos`).

@@ -1,48 +1,62 @@
-# Text completion (KOSK)
+# Text completion (`completion/`)
 
-Design notes, crate survey, and dev tools for the text-input prediction engine. The on-screen keyboard UI is not wired yet; see [todo.md](../todo.md).
+This document describes the completion library as it exists in `src/completion/`. The module can suggest words from a sorted dictionary given the text around a caret. Nothing in the on-screen keyboard or in [text-input mode](text-input.md) calls it yet. Intended UI (suggestion chips, controller accept/cancel) is sketched in [plans/completion.md](plans/completion.md), not here.
 
-## Crate survey (v0 decision)
+## What this module is
 
-| Crate / approach | Role | Verdict for v0 |
-|------------------|------|----------------|
-| **`fst`** | Memory-mapped finite state transducer; excellent prefix maps on huge static sets | Deferred: adds a dependency and build-time index step; overkill until wordlists are large. |
-| **Hunspell / spellcheck crates** | Morphology-aware correction | Deferred: dict licensing and FFI complexity; better when typo correction is a goal. |
-| **SymSpell-style** | Fast fuzzy prefix / edit distance | Deferred: v0 is exact prefix only. |
-| **Sorted `Vec<String>` + binary search** | `partition_point` / lower bound on first string `>= token`, scan forward while `starts_with(token)` | **Chosen for v0**: few dependencies, obvious behavior, easy to test. |
-| **Drop-in “predictive keyboard”** | — | None found that fits egui + this repo’s controller model; a thin `CompletionEngine` trait stays the integration point. |
+`kosk::completion` is a synchronous, in-process prefix matcher. You give it the string before the caret, the string after the caret, and a maximum number of results. It returns whole-word `Suggestion` values whose text is meant to replace the token currently being typed.
 
-**Chosen v0:** in-crate `DictionaryEngine` backed by a sorted, deduplicated word list, exact prefix match, capped results. Heavier models (ONNX, n-grams) are out of scope until dictionary UX is proven.
+The public surface is small:
 
-## Design notes (literature skim)
+- `CompletionEngine` — a trait with `suggest(&CompletionContext) -> Vec<Suggestion>`.
+- `DictionaryEngine` — the only implementation, backed by a `Vec<String>`.
+- `CompletionContext` — `prefix`, `suffix`, `max_results`.
+- `split_at_cursor` and `word_prefix_token` — helpers for turning a buffer plus byte index into that context.
 
-- **Current token:** suggestions use the alphanumeric suffix of `prefix` that **ends at the cursor** only if the cursor is not in whitespace (e.g. `"hello "` → no token; `"hello wor"` → `wor`).
-- **Prefix vs suffix:** `suffix` is passed through `CompletionContext` for future engines (e.g. morphological completion, closing quotes); v0 dictionary ignores it.
-- **Ranking:** v0 uses lexicographic order from the sorted list; later: frequency, recency, or keyboard distance.
-- **T9 / disambiguation:** multi-letter-key disambiguation is a different UX layer; not mixed into this engine.
-- **Typo tolerance:** SymSpell / edit distance can plug in as another `CompletionEngine` without changing the trait.
-- **Empty token:** v0 returns no suggestions (no “frequent words” list yet).
-- **Debouncing / async:** UI will debounce when wired; the engine API stays synchronous.
-- **Privacy:** offline wordlists only unless explicitly extended later.
+`src/completion/mod.rs` re-exports those types. There is no UI, no threading, and no file format beyond “newline-separated words.”
 
-## `completion_dev` binary
+## Splitting at the caret
 
-Run from the repo root:
+`split_at_cursor(text, cursor_byte)` returns `(prefix, suffix)` if `cursor_byte` is on a UTF-8 character boundary and not past the end of the string. Splitting inside a multi-byte character returns `None`. That is the same convention text-input mode uses for `cursor_pos`.
+
+`completion_dev` calls this first. A production UI would do the same from the field’s buffer and caret.
+
+## The current token
+
+`DictionaryEngine` does not search using the entire prefix. It calls `word_prefix_token(prefix)`, which walks backward from the end of `prefix` while characters are ASCII-style alphanumeric or `_`. If the last character is whitespace or punctuation, the token is empty.
+
+So `"hello wor"` with the caret after `r` yields token `wor`. `"hello "` with the caret after the space yields `""`. Empty tokens produce no suggestions. There is no “frequent words when idle” list.
+
+The suffix is stored on `CompletionContext` for future engines (closing a quote, morphology that cares about what follows). `DictionaryEngine::suggest` never reads it.
+
+## `DictionaryEngine`
+
+`from_wordlist_text` splits on lines, trims, drops empties, sorts, and deduplicates. `embedded_demo` loads `src/completion/test_words.txt` at compile time for tests and for `completion_dev` when no file is passed.
+
+`suggest` finds the first word not lexicographically less than the token (`partition_point`), then scans forward while `starts_with(token)`, stopping at `max_results` (at least 1). Order is dictionary order, not frequency or keyboard distance. Matching is exact prefix, case-sensitive, with no edit-distance fallback.
+
+That is the whole ranking model. Replacing it later is the reason the trait exists: a fuzzy engine can implement `CompletionEngine` without changing callers.
+
+## The `completion_dev` binary
+
+`src/bin/completion_dev.rs` is a clap tool that does not open a window or a controller. From the repository root:
 
 ```text
 cargo run --bin completion_dev -- --text "hello wor" --cursor 9
 ```
 
-- `--text` — full buffer (UTF-8). `--cursor` — **byte** index into `text`, must lie on a UTF-8 character boundary (same convention as the text field caret).
-- `--max` — max suggestions (default `8`).
-- `--wordlist PATH` — optional path to a newline-separated word list (UTF-8). If omitted, a small built-in list is used for demos.
+`--cursor` is a byte index. `--max` defaults to 8. `--wordlist PATH` loads a UTF-8 file; otherwise the embedded demo list is used. Suggestions print as a numbered list, or `(no suggestions)`.
 
-Example:
+Unit tests live next to the library (`cargo test completion`). They cover prefix hits, empty tokens, the max cap, and cursor splitting including emoji boundaries.
 
-```text
-cargo run --bin completion_dev -- --text "hel" --cursor 3
-```
+## What this does not cover
 
-## Library API
+**The engine is not consulted when you type in text-input mode.** Wiring would mean, on buffer change, building a `CompletionContext` and drawing the returned strings. That work is not in `text_input.rs`.
 
-Rust entry: `kosk::completion` (`DictionaryEngine`, `CompletionEngine`, `CompletionContext`, `Suggestion`, `split_at_cursor`, `word_prefix_token`). Unit tests: `cargo test completion`.
+**There is no user wordlist in the config directory, and no network.** Privacy of the planned UI (offline lists only) is already true of this library because it never fetches.
+
+**Typo correction, n-grams, and morphological completion are not implemented.** The plan file records why they were deferred.
+
+## Summary
+
+Completion is a pluggable `suggest` trait and one dictionary implementation that binary-searches a sorted word list for exact prefixes of the alphanumeric token at the caret. You can exercise it with `completion_dev`. The overlay does not show suggestions yet; when it does, this module is the piece that should stay synchronous and UI-agnostic, with the plan file describing the chips and controller actions around it.
