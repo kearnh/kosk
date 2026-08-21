@@ -24,7 +24,7 @@ On Windows, `capture_pointer_snapshot` reads `GetCursorPos` and the work area of
 
 The snapshot is taken once, when `window_pos` is `mouse pointer` and no snapshot exists yet. After that, moving the real mouse does not move the overlay. That is deliberate: the window should not follow the pointer while you aim at a key.
 
-Default placement is horizontal **right** of the cursor if the work area has room (`POINTER_GAP` is 12 px-equivalent), otherwise left. Vertically the top of the window **aligns** with the cursor (beside, not below). `place_near_pointer` applies those offsets independently and clamps to the work area.
+Default placement is horizontal **right** of the cursor if the work area has room (`POINTER_GAP` is 12 px-equivalent), otherwise left. Vertically the top of the window **aligns** with the cursor (beside, not below). `place_near_pointer` applies those offsets independently and clamps to the work area. A below flip sits the window fully under that hanging-down placement (top just below the old bottom). Using only the 12 px gap would look like a nudge, because beside is already below the cursor line.
 
 Non-Windows builds return no snapshot; pointer placement cannot work there yet.
 
@@ -33,7 +33,7 @@ Non-Windows builds return no snapshot; pointer placement cannot work there yet.
 Horizontal and vertical sides are stored separately on the snapshot. Flipping left/right keeps above/below, and the reverse.
 
 - `FlipWindowLeftRight` mirrors beside vs opposite beside.
-- `FlipWindowAboveBelow` cycles align → below (or above if below does not fit) → above → below.
+- `FlipWindowAboveBelow` cycles align → below (or above if below does not fit) → above → below. Below is a full window-height under the beside placement, not a 12 px nudge.
 - `RotateWindow` alternates which of those two flips it performs. The first rotate is horizontal, the next vertical, then horizontal again. Dedicated flip actions do not change which axis rotate will use next.
 
 These events only run when `WindowPos` is `MousePointer`. On a corner or absolute position they are no-ops. Keyboard mappings in the checked-in file bind L4/R4 to the dedicated flips; `rotateWindow` exists as an action for a single-button cycle.

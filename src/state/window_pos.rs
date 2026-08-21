@@ -183,7 +183,7 @@ fn fits_right(geom: PointerGeom) -> bool {
 
 fn fits_below(geom: PointerGeom) -> bool {
     let (_, cy) = geom.cursor;
-    (geom.origin.1 + geom.size.1) - cy >= geom.window.1 + POINTER_GAP
+    (geom.origin.1 + geom.size.1) - cy >= 2.0 * geom.window.1 + POINTER_GAP
 }
 
 fn choose_default_placement(geom: PointerGeom) -> PointerPlacement {
@@ -237,7 +237,7 @@ fn place_near_pointer(geom: PointerGeom, placement: PointerPlacement) -> (f32, f
     };
     let y = match placement.vertical {
         PointerV::Align => cy,
-        PointerV::Below => cy + gap,
+        PointerV::Below => cy + gap + wh,
         PointerV::Above => cy - gap - wh,
     };
     clamp_to_rect((x, y), geom.window, geom.origin, geom.size)
@@ -474,14 +474,46 @@ mod tests {
 
     #[test]
     fn flip_vertical_from_side_goes_below_if_room() {
-        let g = geom((200.0, 100.0), (400.0, 200.0), (1920.0, 1080.0));
+        let window = (400.0, 200.0);
+        let cursor = (200.0, 100.0);
+        let g = geom(cursor, window, (1920.0, 1080.0));
         let start = choose_default_placement(g);
+        let beside = place_near_pointer(g, start);
         let below = flip_vertical(start, g);
         assert_eq!(below.vertical, PointerV::Below);
         assert_eq!(below.horizontal, PointerH::Right);
+        let below_pos = place_near_pointer(g, below);
+        assert!(
+            (below_pos.1 - (cursor.1 + POINTER_GAP + window.1)).abs() < 0.1,
+            "{below_pos:?}"
+        );
+        assert!(
+            below_pos.1 - beside.1 > window.1,
+            "beside y={} below y={}",
+            beside.1,
+            below_pos.1
+        );
         let above = flip_vertical(below, g);
         assert_eq!(above.vertical, PointerV::Above);
         assert_eq!(above.horizontal, PointerH::Right);
+    }
+
+    #[test]
+    fn flip_vertical_from_side_goes_above_when_below_would_not_fit() {
+        let window = (400.0, 200.0);
+        let cursor = (200.0, 900.0);
+        let g = geom(cursor, window, (1920.0, 1080.0));
+        let start = choose_default_placement(g);
+        let next = flip_vertical(start, g);
+        assert_eq!(next.vertical, PointerV::Above);
+        let beside = place_near_pointer(g, start);
+        let above = place_near_pointer(g, next);
+        assert!(
+            beside.1 - above.1 > window.1 * 0.5,
+            "beside y={} above y={}",
+            beside.1,
+            above.1
+        );
     }
 
     #[test]
