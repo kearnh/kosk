@@ -11,20 +11,39 @@ enum PointerH {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 enum PointerV {
-    /// Top of the window aligned with the cursor (default "beside").
+    /// Top of the window at the cursor (hangs down).
     #[default]
-    Align,
-    Above,
-    Below,
+    Bottom,
+    /// Bottom of the window just above the cursor (hangs up).
+    Top,
 }
 
-/// Horizontal and vertical sides are independent so a left/right flip
-/// keeps above/below, and vice versa.
+/// One of the four corners around the captured pointer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 struct PointerPlacement {
     horizontal: PointerH,
     vertical: PointerV,
 }
+
+/// Counterclockwise around the cursor: BR → BL → TL → TR.
+const SLOT_RING: [PointerPlacement; 4] = [
+    PointerPlacement {
+        horizontal: PointerH::Right,
+        vertical: PointerV::Bottom,
+    },
+    PointerPlacement {
+        horizontal: PointerH::Left,
+        vertical: PointerV::Bottom,
+    },
+    PointerPlacement {
+        horizontal: PointerH::Left,
+        vertical: PointerV::Top,
+    },
+    PointerPlacement {
+        horizontal: PointerH::Right,
+        vertical: PointerV::Top,
+    },
+];
 
 /// Cursor and work-area at launch, in physical pixels (virtual screen).
 #[derive(Clone, Copy, Debug)]
@@ -32,8 +51,6 @@ pub struct PointerSnapshot {
     cursor_px: (i32, i32),
     work_px: (i32, i32, i32, i32),
     placement: Option<PointerPlacement>,
-    /// Next `rotate` is vertical when true, left/right when false.
-    next_rotate_vertical: bool,
 }
 
 impl PointerSnapshot {
@@ -65,24 +82,24 @@ impl PointerSnapshot {
     pub fn flip_horizontal(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
         let geom = self.geom(window_size, pixels_per_point);
         let current = self.ensure_placement(geom);
-        self.placement = Some(flip_horizontal(current, geom));
+        self.placement = Some(flip_horizontal(current));
     }
 
     pub fn flip_vertical(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
         let geom = self.geom(window_size, pixels_per_point);
         let current = self.ensure_placement(geom);
-        self.placement = Some(flip_vertical(current, geom));
+        self.placement = Some(flip_vertical(current));
     }
 
-    /// Flip left/right, then above/below, then left/right again.
-    /// Dedicated flips do not change which axis comes next.
+    /// Advance to the next of the four slots around the pointer.
     pub fn rotate(&mut self, window_size: (f32, f32), pixels_per_point: f32) {
-        if self.next_rotate_vertical {
-            self.flip_vertical(window_size, pixels_per_point);
-        } else {
-            self.flip_horizontal(window_size, pixels_per_point);
-        }
-        self.next_rotate_vertical = !self.next_rotate_vertical;
+        let geom = self.geom(window_size, pixels_per_point);
+        let current = self.ensure_placement(geom);
+        let i = SLOT_RING
+            .iter()
+            .position(|&slot| slot == current)
+            .unwrap_or(0);
+        self.placement = Some(SLOT_RING[(i + 1) % SLOT_RING.len()]);
     }
 }
 
@@ -139,7 +156,6 @@ fn capture_pointer_snapshot_win() -> Option<PointerSnapshot> {
             cursor_px: (pt.x, pt.y),
             work_px: (work.left, work.top, work.right, work.bottom),
             placement: None,
-            next_rotate_vertical: false,
         })
     }
 }
@@ -183,7 +199,7 @@ fn fits_right(geom: PointerGeom) -> bool {
 
 fn fits_below(geom: PointerGeom) -> bool {
     let (_, cy) = geom.cursor;
-    (geom.origin.1 + geom.size.1) - cy >= 2.0 * geom.window.1 + POINTER_GAP
+    (geom.origin.1 + geom.size.1) - cy >= geom.window.1
 }
 
 fn choose_default_placement(geom: PointerGeom) -> PointerPlacement {
@@ -193,11 +209,15 @@ fn choose_default_placement(geom: PointerGeom) -> PointerPlacement {
         } else {
             PointerH::Left
         },
-        vertical: PointerV::Align,
+        vertical: if fits_below(geom) {
+            PointerV::Bottom
+        } else {
+            PointerV::Top
+        },
     }
 }
 
-fn flip_horizontal(current: PointerPlacement, _geom: PointerGeom) -> PointerPlacement {
+fn flip_horizontal(current: PointerPlacement) -> PointerPlacement {
     PointerPlacement {
         horizontal: match current.horizontal {
             PointerH::Right => PointerH::Left,
@@ -207,26 +227,18 @@ fn flip_horizontal(current: PointerPlacement, _geom: PointerGeom) -> PointerPlac
     }
 }
 
-fn flip_vertical(current: PointerPlacement, geom: PointerGeom) -> PointerPlacement {
-    let vertical = match current.vertical {
-        PointerV::Align => {
-            if fits_below(geom) {
-                PointerV::Below
-            } else {
-                PointerV::Above
-            }
-        }
-        PointerV::Below => PointerV::Above,
-        PointerV::Above => PointerV::Below,
-    };
+fn flip_vertical(current: PointerPlacement) -> PointerPlacement {
     PointerPlacement {
         horizontal: current.horizontal,
-        vertical,
+        vertical: match current.vertical {
+            PointerV::Bottom => PointerV::Top,
+            PointerV::Top => PointerV::Bottom,
+        },
     }
 }
 
 /// Sit beside the pointer. Horizontal and vertical offsets are independent.
-/// Result is clamped to the work area.
+/// Result is clamped to the work area so the full window stays on screen.
 fn place_near_pointer(geom: PointerGeom, placement: PointerPlacement) -> (f32, f32) {
     let (cx, cy) = geom.cursor;
     let (ww, wh) = geom.window;
@@ -236,9 +248,8 @@ fn place_near_pointer(geom: PointerGeom, placement: PointerPlacement) -> (f32, f
         PointerH::Left => cx - gap - ww,
     };
     let y = match placement.vertical {
-        PointerV::Align => cy,
-        PointerV::Below => cy + gap + wh,
-        PointerV::Above => cy - gap - wh,
+        PointerV::Bottom => cy,
+        PointerV::Top => cy - gap - wh,
     };
     clamp_to_rect((x, y), geom.window, geom.origin, geom.size)
 }
@@ -438,7 +449,7 @@ mod tests {
         let g = geom(cursor, window, work);
         let place = choose_default_placement(g);
         assert_eq!(place.horizontal, PointerH::Right);
-        assert_eq!(place.vertical, PointerV::Align);
+        assert_eq!(place.vertical, PointerV::Bottom);
         let pos = place_near_pointer(g, place);
         assert!((pos.0 - (cursor.0 + POINTER_GAP)).abs() < 0.1, "{pos:?}");
         assert!((pos.1 - cursor.1).abs() < 0.1, "{pos:?}");
@@ -452,68 +463,62 @@ mod tests {
         let g = geom(cursor, window, work);
         let place = choose_default_placement(g);
         assert_eq!(place.horizontal, PointerH::Left);
+        assert_eq!(place.vertical, PointerV::Bottom);
         let pos = place_near_pointer(g, place);
         assert!(pos.0 + window.0 <= cursor.0, "{pos:?}");
     }
 
     #[test]
+    fn pointer_falls_back_top_when_no_room_below() {
+        let window = (400.0, 200.0);
+        let work = (1920.0, 1080.0);
+        let cursor = (200.0, 950.0);
+        let g = geom(cursor, window, work);
+        let place = choose_default_placement(g);
+        assert_eq!(place.horizontal, PointerH::Right);
+        assert_eq!(place.vertical, PointerV::Top);
+    }
+
+    #[test]
     fn flip_horizontal_keeps_vertical() {
-        let g = geom((200.0, 100.0), (400.0, 200.0), (1920.0, 1080.0));
-        let beside_right = choose_default_placement(g);
-        let below_right = flip_vertical(beside_right, g);
-        assert_eq!(below_right.vertical, PointerV::Below);
-        assert_eq!(below_right.horizontal, PointerH::Right);
+        let g = geom((500.0, 400.0), (400.0, 200.0), (1920.0, 1080.0));
+        let start = choose_default_placement(g);
+        assert_eq!(start.vertical, PointerV::Bottom);
+        let top_right = flip_vertical(start);
+        assert_eq!(top_right.vertical, PointerV::Top);
+        assert_eq!(top_right.horizontal, PointerH::Right);
 
-        let below_left = flip_horizontal(below_right, g);
-        assert_eq!(below_left.horizontal, PointerH::Left);
-        assert_eq!(below_left.vertical, PointerV::Below);
+        let top_left = flip_horizontal(top_right);
+        assert_eq!(top_left.horizontal, PointerH::Left);
+        assert_eq!(top_left.vertical, PointerV::Top);
 
-        let below_right_again = flip_horizontal(below_left, g);
-        assert_eq!(below_right_again, below_right);
+        let top_right_again = flip_horizontal(top_left);
+        assert_eq!(top_right_again, top_right);
     }
 
     #[test]
-    fn flip_vertical_from_side_goes_below_if_room() {
+    fn flip_vertical_toggles_top_and_bottom() {
         let window = (400.0, 200.0);
-        let cursor = (200.0, 100.0);
+        let cursor = (500.0, 400.0);
         let g = geom(cursor, window, (1920.0, 1080.0));
         let start = choose_default_placement(g);
-        let beside = place_near_pointer(g, start);
-        let below = flip_vertical(start, g);
-        assert_eq!(below.vertical, PointerV::Below);
-        assert_eq!(below.horizontal, PointerH::Right);
-        let below_pos = place_near_pointer(g, below);
+        assert_eq!(start.vertical, PointerV::Bottom);
+        let top = flip_vertical(start);
+        assert_eq!(top.vertical, PointerV::Top);
+        assert_eq!(top.horizontal, PointerH::Right);
+        let top_pos = place_near_pointer(g, top);
         assert!(
-            (below_pos.1 - (cursor.1 + POINTER_GAP + window.1)).abs() < 0.1,
-            "{below_pos:?}"
+            (top_pos.1 - (cursor.1 - POINTER_GAP - window.1)).abs() < 0.1,
+            "{top_pos:?}"
         );
-        assert!(
-            below_pos.1 - beside.1 > window.1,
-            "beside y={} below y={}",
-            beside.1,
-            below_pos.1
-        );
-        let above = flip_vertical(below, g);
-        assert_eq!(above.vertical, PointerV::Above);
-        assert_eq!(above.horizontal, PointerH::Right);
+        let bottom_again = flip_vertical(top);
+        assert_eq!(bottom_again, start);
     }
 
-    #[test]
-    fn flip_vertical_from_side_goes_above_when_below_would_not_fit() {
-        let window = (400.0, 200.0);
-        let cursor = (200.0, 900.0);
-        let g = geom(cursor, window, (1920.0, 1080.0));
-        let start = choose_default_placement(g);
-        let next = flip_vertical(start, g);
-        assert_eq!(next.vertical, PointerV::Above);
-        let beside = place_near_pointer(g, start);
-        let above = place_near_pointer(g, next);
-        assert!(
-            beside.1 - above.1 > window.1 * 0.5,
-            "beside y={} above y={}",
-            beside.1,
-            above.1
-        );
+    fn assert_inside_work(pos: (f32, f32), window: (f32, f32), work: (f32, f32)) {
+        assert!(pos.0 >= -0.1 && pos.1 >= -0.1, "{pos:?}");
+        assert!(pos.0 + window.0 <= work.0 + 0.1, "{pos:?}");
+        assert!(pos.1 + window.1 <= work.1 + 0.1, "{pos:?}");
     }
 
     #[test]
@@ -522,9 +527,22 @@ mod tests {
         let work = (800.0, 600.0);
         let g = geom((10.0, 10.0), window, work);
         let pos = place_near_pointer(g, choose_default_placement(g));
+        assert_inside_work(pos, window, work);
+    }
+
+    #[test]
+    fn slot_that_would_go_off_screen_is_clamped_inside() {
+        let window = (400.0, 200.0);
+        let work = (1920.0, 1080.0);
+        let cursor = (100.0, 50.0);
+        let g = geom(cursor, window, work);
+        let top_left = PointerPlacement {
+            horizontal: PointerH::Left,
+            vertical: PointerV::Top,
+        };
+        let pos = place_near_pointer(g, top_left);
+        assert_inside_work(pos, window, work);
         assert!(pos.0 >= 0.0 && pos.1 >= 0.0);
-        assert!(pos.0 + window.0 <= work.0 + 0.1);
-        assert!(pos.1 + window.1 <= work.1 + 0.1);
     }
 
     fn snapshot(cursor: (i32, i32), work: (i32, i32, i32, i32)) -> PointerSnapshot {
@@ -532,46 +550,68 @@ mod tests {
             cursor_px: cursor,
             work_px: work,
             placement: None,
-            next_rotate_vertical: false,
         }
     }
 
     #[test]
-    fn rotate_alternates_horizontal_then_vertical() {
+    fn rotate_cycles_four_slots_near_cursor() {
         let window = (400.0, 200.0);
         let ppp = 1.0;
-        let mut snap = snapshot((200, 100), (0, 0, 1920, 1080));
+        let mut snap = snapshot((500, 400), (0, 0, 1920, 1080));
+        let start = snap.coords_points(window, ppp);
+        assert_eq!(snap.placement.unwrap().horizontal, PointerH::Right);
+        assert_eq!(snap.placement.unwrap().vertical, PointerV::Bottom);
 
         snap.rotate(window, ppp);
         let first = snap.placement.unwrap();
         assert_eq!(first.horizontal, PointerH::Left);
-        assert_eq!(first.vertical, PointerV::Align);
+        assert_eq!(first.vertical, PointerV::Bottom);
+        let bl = snap.coords_points(window, ppp);
+        assert!(
+            (bl.0 - (500.0 - POINTER_GAP - window.0)).abs() < 0.1,
+            "{bl:?}"
+        );
+        assert!((bl.1 - 400.0).abs() < 0.1, "{bl:?}");
 
         snap.rotate(window, ppp);
         let second = snap.placement.unwrap();
         assert_eq!(second.horizontal, PointerH::Left);
-        assert_eq!(second.vertical, PointerV::Below);
+        assert_eq!(second.vertical, PointerV::Top);
+        let tl = snap.coords_points(window, ppp);
+        assert!(
+            (tl.1 - (400.0 - POINTER_GAP - window.1)).abs() < 0.1,
+            "{tl:?}"
+        );
 
         snap.rotate(window, ppp);
         let third = snap.placement.unwrap();
         assert_eq!(third.horizontal, PointerH::Right);
-        assert_eq!(third.vertical, PointerV::Below);
+        assert_eq!(third.vertical, PointerV::Top);
+
+        snap.rotate(window, ppp);
+        let fourth = snap.placement.unwrap();
+        assert_eq!(fourth.horizontal, PointerH::Right);
+        assert_eq!(fourth.vertical, PointerV::Bottom);
+        let back = snap.coords_points(window, ppp);
+        assert!(
+            (back.0 - start.0).abs() < 0.1 && (back.1 - start.1).abs() < 0.1,
+            "{back:?} vs {start:?}"
+        );
     }
 
     #[test]
-    fn flip_horizontal_does_not_change_rotate_axis() {
+    fn flip_then_rotate_stays_on_the_four_slots() {
         let window = (400.0, 200.0);
         let ppp = 1.0;
-        let mut snap = snapshot((200, 100), (0, 0, 1920, 1080));
+        let mut snap = snapshot((500, 400), (0, 0, 1920, 1080));
 
         snap.flip_horizontal(window, ppp);
-        assert!(!snap.next_rotate_vertical);
         assert_eq!(snap.placement.unwrap().horizontal, PointerH::Left);
+        assert_eq!(snap.placement.unwrap().vertical, PointerV::Bottom);
 
         snap.rotate(window, ppp);
         let after = snap.placement.unwrap();
-        assert_eq!(after.horizontal, PointerH::Right);
-        assert_eq!(after.vertical, PointerV::Align);
-        assert!(snap.next_rotate_vertical);
+        assert_eq!(after.horizontal, PointerH::Left);
+        assert_eq!(after.vertical, PointerV::Top);
     }
 }

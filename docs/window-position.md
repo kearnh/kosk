@@ -24,17 +24,17 @@ On Windows, `capture_pointer_snapshot` reads `GetCursorPos` and the work area of
 
 The snapshot is taken once, when `window_pos` is `mouse pointer` and no snapshot exists yet. After that, moving the real mouse does not move the overlay. That is deliberate: the window should not follow the pointer while you aim at a key.
 
-Default placement is horizontal **right** of the cursor if the work area has room (`POINTER_GAP` is 12 px-equivalent), otherwise left. Vertically the top of the window **aligns** with the cursor (beside, not below). `place_near_pointer` applies those offsets independently and clamps to the work area. A below flip sits the window fully under that hanging-down placement (top just below the old bottom). Using only the 12 px gap would look like a nudge, because beside is already below the cursor line.
+Default placement is horizontal **right** of the cursor if the work area has room (`POINTER_GAP` is 12 px-equivalent), otherwise left. Vertically the top of the window **aligns** with the cursor so the overlay hangs down (bottom-right of the pointer), unless there is not enough work area below, in which case it hangs up. `place_near_pointer` applies those offsets independently and then clamps so the full window stays inside the work area.
 
 Non-Windows builds return no snapshot; pointer placement cannot work there yet.
 
 ## Flips and rotate
 
-Horizontal and vertical sides are stored separately on the snapshot. Flipping left/right keeps above/below, and the reverse.
+Pointer placement is one of four slots around the captured cursor: bottom-right, bottom-left, top-left, and top-right. Each slot puts one corner of the window next to the cursor. After that, the same clamp as default placement keeps every edge on screen, so a slot near a monitor edge may slide rather than hang off.
 
-- `FlipWindowLeftRight` mirrors beside vs opposite beside.
-- `FlipWindowAboveBelow` cycles align → below (or above if below does not fit) → above → below. Below is a full window-height under the beside placement, not a 12 px nudge.
-- `RotateWindow` alternates which of those two flips it performs. The first rotate is horizontal, the next vertical, then horizontal again. Dedicated flip actions do not change which axis rotate will use next.
+- `FlipWindowLeftRight` mirrors left ↔ right and keeps top/bottom.
+- `FlipWindowAboveBelow` mirrors hang-down ↔ hang-up and keeps left/right.
+- `RotateWindow` walks the four slots counterclockwise: bottom-right → bottom-left → top-left → top-right → bottom-right. If launch started on another slot because of fit, rotate begins at that slot in the same ring. The fourth rotate returns to the start.
 
 These events only run when `WindowPos` is `MousePointer`. On a corner or absolute position they are no-ops. Keyboard mappings in the checked-in file bind L4/R4 to the dedicated flips; `rotateWindow` exists as an action for a single-button cycle.
 
@@ -57,7 +57,7 @@ The menu’s “Move” button switches to this mode. Controller navigation of t
 
 **The overlay never moves itself in response to the focused application’s caret.** Placement is config, the launch-time pointer, or this mode.
 
-**Flips do not persist as `window_pos` strings.** The snapshot’s placement lives in memory. Restarting with `mouse pointer` recaptures the cursor and picks the default beside-right (or left) alignment again.
+**Flips do not persist as `window_pos` strings.** The snapshot’s slot lives in memory. Restarting with `mouse pointer` recaptures the cursor and picks the default bottom-right (or left/top if that is what fits) again.
 
 ## Summary
 
