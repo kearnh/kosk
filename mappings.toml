@@ -15,7 +15,7 @@
 "options + faceTop" = "switchState.menu"
 "options + faceRight" = "switchState.textInput"
 "faceTop" = "toggleShift"
-"faceBottom" = "sendKey.space"
+"faceBottom" = "sendKey.enter"
 "faceLeft" = "sendKey.backspace"
 "l5" = "sendKey.backspace"
 "r5" = "sendKey.space"

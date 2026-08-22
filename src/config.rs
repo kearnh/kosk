@@ -9,7 +9,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
@@ -392,6 +392,8 @@ pub fn ps4() -> Ps4Config {
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+/// Relative path string from `controller_map = "…"` on the last successful load, or `None` if inline/absent.
+static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -495,6 +497,154 @@ fn store_disk_config(cfg: Config) {
     }
 }
 
+fn store_controller_map_file(rel: Option<String>) {
+    match CONTROLLER_MAP_FILE.get() {
+        Some(m) => *m.lock().unwrap() = rel,
+        None => {
+            CONTROLLER_MAP_FILE
+                .set(Mutex::new(rel))
+                .expect("controller map file path was already set");
+        }
+    }
+}
+
+fn controller_map_file() -> Option<String> {
+    CONTROLLER_MAP_FILE
+        .get()
+        .and_then(|m| m.lock().unwrap().clone())
+}
+
+/// Convert a `toml::Value` into a `toml_edit::Item` (toml_edit 0.22 has no `ser::to_item`).
+fn toml_to_item(value: &toml::Value) -> Result<toml_edit::Item> {
+    use serde::Serialize;
+    let edit_value = value
+        .serialize(toml_edit::ser::ValueSerializer::new())
+        .map_err(|e| anyhow::anyhow!("serialize TOML value: {e}"))?;
+    let item = toml_edit::Item::Value(edit_value);
+    match item.into_table() {
+        Ok(table) => Ok(toml_edit::Item::Table(table)),
+        Err(item) => Ok(item),
+    }
+}
+
+/// Diff `old` → `new` into an existing `toml_edit` table, preserving unrelated formatting.
+fn apply_toml_diff(
+    table: &mut toml_edit::Table,
+    old: &toml::Value,
+    new: &toml::Value,
+) -> Result<()> {
+    let old_table = old
+        .as_table()
+        .ok_or_else(|| anyhow::anyhow!("apply_toml_diff: old value must be a table"))?;
+    let new_table = new
+        .as_table()
+        .ok_or_else(|| anyhow::anyhow!("apply_toml_diff: new value must be a table"))?;
+
+    for (key, new_child) in new_table {
+        match old_table.get(key) {
+            Some(old_child) if old_child == new_child => {}
+            Some(old_child) if old_child.is_table() && new_child.is_table() => {
+                let can_recurse = table.get(key).is_some_and(|item| item.is_table());
+                if can_recurse {
+                    let child_table = table
+                        .get_mut(key)
+                        .and_then(|item| item.as_table_mut())
+                        .expect("checked is_table");
+                    apply_toml_diff(child_table, old_child, new_child)?;
+                } else {
+                    table[key] = toml_to_item(new_child)?;
+                }
+            }
+            _ => {
+                table[key] = toml_to_item(new_child)?;
+            }
+        }
+    }
+
+    for key in old_table.keys() {
+        if !new_table.contains_key(key) {
+            table.remove(key);
+        }
+    }
+
+    Ok(())
+}
+
+fn write_toml_diff_preserving(path: &Path, old: &toml::Value, new: &toml::Value) -> Result<()> {
+    if !old.is_table() || !new.is_table() {
+        bail!("write_toml_diff_preserving: old and new must be tables");
+    }
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Could not read {}", path.display()))?;
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .with_context(|| format!("Could not parse {}", path.display()))?;
+    apply_toml_diff(doc.as_table_mut(), old, new)?;
+    fs::write(path, doc.to_string())
+        .with_context(|| format!("Could not write {}", path.display()))?;
+    Ok(())
+}
+
+fn write_config_preserving(
+    path: &Path,
+    old: &Config,
+    new: &Config,
+    controller_map_file: Option<&str>,
+) -> Result<()> {
+    let mut old_val =
+        toml::Value::try_from(old).context("serialize old config for format-preserving save")?;
+    let mut new_val =
+        toml::Value::try_from(new).context("serialize new config for format-preserving save")?;
+
+    if let Some(rel) = controller_map_file {
+        if let Some(table) = old_val.as_table_mut() {
+            table.remove("controller_map");
+        }
+        if let Some(table) = new_val.as_table_mut() {
+            table.remove("controller_map");
+        }
+
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Could not read {}", path.display()))?;
+        let mut doc = content
+            .parse::<toml_edit::DocumentMut>()
+            .with_context(|| format!("Could not parse {}", path.display()))?;
+        apply_toml_diff(doc.as_table_mut(), &old_val, &new_val)?;
+
+        let needs_path = match doc.get("controller_map") {
+            Some(item) => item.as_str() != Some(rel),
+            None => true,
+        };
+        if needs_path {
+            doc["controller_map"] = toml_edit::value(rel);
+        }
+
+        fs::write(path, doc.to_string())
+            .with_context(|| format!("Could not write {}", path.display()))?;
+
+        if old.controller_map != new.controller_map {
+            let mappings_path = path
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?
+                .join(rel);
+            let old_map = toml::Value::try_from(&old.controller_map)
+                .context("serialize old controller_map")?;
+            let new_map = toml::Value::try_from(&new.controller_map)
+                .context("serialize new controller_map")?;
+            write_toml_diff_preserving(&mappings_path, &old_map, &new_map).with_context(|| {
+                format!(
+                    "failed to update controller_map file {}",
+                    mappings_path.display()
+                )
+            })?;
+        }
+    } else {
+        write_toml_diff_preserving(path, &old_val, &new_val)?;
+    }
+
+    Ok(())
+}
+
 /// Load configuration file and return all resolved layout paths
 fn load_config() -> Result<Vec<PathBuf>> {
     let config_path = CONFIG_PATH
@@ -513,6 +663,14 @@ fn load_config() -> Result<Vec<PathBuf>> {
     }
 
     let config_content = fs::read_to_string(config_path).context("Could not read config file")?;
+    let raw_root: toml::Value = config_content
+        .parse()
+        .context("Could not parse config TOML")?;
+    let map_file = match raw_root.get("controller_map") {
+        Some(toml::Value::String(s)) => Some(s.clone()),
+        _ => None,
+    };
+    store_controller_map_file(map_file);
     let new_config: Config =
         toml::from_str(&config_content).context("Could not parse config TOML")?;
 
@@ -749,14 +907,17 @@ pub fn save(new_config: Config) -> Result<()> {
     let path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
+    let map_file = controller_map_file();
+    let map_file_ref = map_file.as_deref();
 
     if TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
         let disk = DISK_CONFIG
             .get()
             .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?;
-        let mut persist = disk.lock().unwrap().clone();
+        let disk_before = disk.lock().unwrap().clone();
+        let mut persist = disk_before.clone();
         persist.window_pos = new_config.window_pos;
-        fs::write(path, toml::to_string_pretty(&persist)?)?;
+        write_config_preserving(path, &disk_before, &persist, map_file_ref)?;
         *disk.lock().unwrap() = persist;
         if let Some(instance) = CONFIG_INSTANCE.get() {
             instance.lock().unwrap().window_pos = new_config.window_pos;
@@ -764,8 +925,13 @@ pub fn save(new_config: Config) -> Result<()> {
         return Ok(());
     }
 
-    let toml_string = toml::to_string_pretty(&new_config)?;
-    fs::write(path, toml_string)?;
+    let disk_snapshot = DISK_CONFIG
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?
+        .lock()
+        .unwrap()
+        .clone();
+    write_config_preserving(path, &disk_snapshot, &new_config, map_file_ref)?;
 
     store_disk_config(new_config.clone());
     if let Some(instance) = CONFIG_INSTANCE.get() {
@@ -926,5 +1092,274 @@ mod tests {
         assert_eq!(merged.event_debounce_ms, 1);
         assert_eq!(merged.window_pos, live.window_pos);
         assert_eq!(merged.key_sink, KeySinkConfig::Enigo);
+    }
+
+    fn keyboard_face_top_map(action: &str) -> HashMap<StateId, HashMap<ControllerBinding, String>> {
+        let mut keyboard = HashMap::new();
+        keyboard.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
+            action.to_string(),
+        );
+        let mut map = HashMap::new();
+        map.insert(StateId::Keyboard, keyboard);
+        map
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kosk-config-save-{}-{}-{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn write_preserves_main_and_mappings_on_window_pos_only() {
+        let dir = temp_dir("window-pos");
+        let config_path = dir.join("config.toml");
+        let mappings_path = dir.join("mappings.toml");
+
+        let mappings = "\
+# keep-me-map\n\
+\n\
+[Keyboard]\n\
+\"faceTop\" = \"toggleShift\"\n\
+";
+        fs::write(&mappings_path, mappings).unwrap();
+        fs::write(
+            &config_path,
+            "\
+# keep-me-main\n\
+layouts = { main = \"kb.toml\" }\n\
+window_pos = \"top left\"\n\
+controller_map = \"mappings.toml\"\n\
+",
+        )
+        .unwrap();
+
+        let map = keyboard_face_top_map("toggleShift");
+        let mut old = sample_cfg();
+        old.window_pos = WindowPos::TopLeft;
+        old.controller_map = map.clone();
+        let mut new = old.clone();
+        new.window_pos = WindowPos::TopRight;
+
+        write_config_preserving(&config_path, &old, &new, Some("mappings.toml")).unwrap();
+
+        let main = fs::read_to_string(&config_path).unwrap();
+        assert!(main.contains("# keep-me-main"), "{main}");
+        assert!(
+            main.contains("controller_map = \"mappings.toml\""),
+            "{main}"
+        );
+        assert!(!main.contains("[controller_map"), "{main}");
+        assert!(main.contains("window_pos = \"top right\""), "{main}");
+
+        let mappings_after = fs::read_to_string(&mappings_path).unwrap();
+        assert_eq!(mappings_after, mappings);
+    }
+
+    #[test]
+    fn write_keeps_inline_controller_map() {
+        let dir = temp_dir("inline-map");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            "\
+# keep-inline\n\
+layouts = { main = \"kb.toml\" }\n\
+window_pos = \"top left\"\n\
+\n\
+[controller_map.Keyboard]\n\
+\"faceTop\" = \"toggleShift\"\n\
+",
+        )
+        .unwrap();
+
+        let map = keyboard_face_top_map("toggleShift");
+        let mut old = sample_cfg();
+        old.window_pos = WindowPos::TopLeft;
+        old.controller_map = map.clone();
+        let mut new = old.clone();
+        new.window_pos = WindowPos::BottomLeft;
+
+        write_config_preserving(&config_path, &old, &new, None).unwrap();
+
+        let main = fs::read_to_string(&config_path).unwrap();
+        assert!(main.contains("# keep-inline"), "{main}");
+        assert!(main.contains("[controller_map"), "{main}");
+        assert!(!main.contains("controller_map = \""), "{main}");
+        assert!(!dir.join("mappings.toml").exists());
+        assert!(main.contains("window_pos = \"bottom left\""), "{main}");
+    }
+
+    #[test]
+    fn write_preserves_mappings_format_when_binding_changes() {
+        let dir = temp_dir("map-change");
+        let config_path = dir.join("config.toml");
+        let mappings_path = dir.join("mappings.toml");
+
+        let mappings = "\
+# keep-me-map\n\
+\n\
+[Keyboard]\n\
+\"faceTop\" = \"toggleShift\"\n\
+\"faceBottom\" = \"sendKey.enter\"\n\
+";
+        fs::write(&mappings_path, mappings).unwrap();
+        fs::write(
+            &config_path,
+            "\
+# keep-me-main\n\
+layouts = { main = \"kb.toml\" }\n\
+window_pos = \"top left\"\n\
+controller_map = \"mappings.toml\"\n\
+",
+        )
+        .unwrap();
+
+        let mut keyboard = HashMap::new();
+        keyboard.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
+            "toggleShift".to_string(),
+        );
+        keyboard.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
+            "sendKey.enter".to_string(),
+        );
+        let mut map = HashMap::new();
+        map.insert(StateId::Keyboard, keyboard);
+
+        let mut old = sample_cfg();
+        old.window_pos = WindowPos::TopLeft;
+        old.controller_map = map;
+        let mut new = old.clone();
+        new.controller_map
+            .get_mut(&StateId::Keyboard)
+            .unwrap()
+            .insert(
+                ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
+                "toggleCtrl".to_string(),
+            );
+
+        write_config_preserving(&config_path, &old, &new, Some("mappings.toml")).unwrap();
+
+        let main = fs::read_to_string(&config_path).unwrap();
+        assert!(main.contains("# keep-me-main"), "{main}");
+        assert!(
+            main.contains("controller_map = \"mappings.toml\""),
+            "{main}"
+        );
+        assert!(!main.contains("[controller_map"), "{main}");
+
+        let mappings_after = fs::read_to_string(&mappings_path).unwrap();
+        assert!(mappings_after.contains("# keep-me-map"), "{mappings_after}");
+        assert!(
+            mappings_after.contains("\n\n[Keyboard]\n"),
+            "{mappings_after}"
+        );
+        assert!(
+            mappings_after.contains("\"faceBottom\" = \"sendKey.enter\""),
+            "{mappings_after}"
+        );
+        assert!(mappings_after.contains("toggleCtrl"), "{mappings_after}");
+        assert!(
+            !mappings_after.contains(r#""faceTop" = "toggleShift""#),
+            "{mappings_after}"
+        );
+    }
+    #[test]
+    fn write_preserves_real_config_shape_on_window_pos_change() {
+        let dir = temp_dir("real-shape");
+        let config_path = dir.join("config.toml");
+        let mappings_path = dir.join("mappings.toml");
+
+        let mappings = [
+            "# UNIQUE-MAP-COMMENT",
+            "# header line two",
+            "",
+            "[Keyboard]",
+            "\"faceTop\" = \"toggleShift\"",
+            "\"faceBottom\" = \"sendKey.enter\"",
+            "",
+            "[Menu]",
+            "\"faceBottom\" = \"activate\"",
+            "",
+        ]
+        .join("\n");
+        fs::write(&mappings_path, &mappings).unwrap();
+
+        let config = [
+            "# UNIQUE-MAIN-COMMENT",
+            "start_layout = \"main\"",
+            "window_pos = \"mouse pointer\"",
+            "transparent = true",
+            "controller_map = \"mappings.toml\"",
+            "",
+            "[sc2]",
+            "pad_origin_stretch = 0.3",
+            "",
+            "[layouts]",
+            "main = \"kb.toml\"",
+            "",
+            "[debug]",
+            "show_stick_cursors = true",
+            "",
+        ]
+        .join("\n");
+        fs::write(&config_path, &config).unwrap();
+
+        let mut keyboard = HashMap::new();
+        keyboard.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
+            "toggleShift".to_string(),
+        );
+        keyboard.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
+            "sendKey.enter".to_string(),
+        );
+        let mut menu = HashMap::new();
+        menu.insert(
+            ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
+            "activate".to_string(),
+        );
+        let mut map = HashMap::new();
+        map.insert(StateId::Keyboard, keyboard);
+        map.insert(StateId::Menu, menu);
+
+        let mut old = sample_cfg();
+        old.window_pos = WindowPos::MousePointer;
+        old.transparent = true;
+        old.controller_map = map;
+        old.sc2.pad_origin_stretch = 0.3;
+        old.debug = Some(Debug {
+            show_stick_cursors: true,
+            show_hitboxes: false,
+            show_stick_bounds: false,
+        });
+        let mut new = old.clone();
+        new.window_pos = WindowPos::Absolute(12.0, 34.0);
+
+        write_config_preserving(&config_path, &old, &new, Some("mappings.toml")).unwrap();
+
+        let main = fs::read_to_string(&config_path).unwrap();
+        assert!(main.contains("# UNIQUE-MAIN-COMMENT"), "{main}");
+        assert!(
+            main.contains("controller_map = \"mappings.toml\""),
+            "{main}"
+        );
+        assert!(!main.contains("[controller_map"), "{main}");
+        assert!(main.contains("transparent = true"), "{main}");
+        assert!(main.contains("pad_origin_stretch = 0.3"), "{main}");
+        assert!(main.contains("[debug]"), "{main}");
+        assert!(main.contains("[layouts]"), "{main}");
+        assert!(main.contains("window_pos = ["), "{main}");
+        assert_eq!(fs::read_to_string(&mappings_path).unwrap(), mappings);
     }
 }

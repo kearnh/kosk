@@ -1309,6 +1309,7 @@ dependencies = [
  "serde_plain",
  "strum",
  "toml",
+ "toml_edit 0.22.27",
  "windows-sys 0.52.0",
 ]
 
