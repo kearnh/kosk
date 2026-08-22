@@ -34,10 +34,15 @@ impl MenuState {
                     callback: Box::new(|| Some(StateId::MoveWindow)),
                 },
                 MenuButton {
+                    text: "Mappings",
+                    callback: Box::new(|| Some(StateId::Mappings)),
+                },
+                MenuButton {
                     text: "Back",
                     callback: Box::new(|| Some(StateId::Keyboard)),
                 },
             ],
+
             selected: 0,
             bindings: load_bindings(StateId::Menu)?,
         };

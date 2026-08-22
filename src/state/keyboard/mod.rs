@@ -577,6 +577,17 @@ pub(crate) fn with_mut<R>(f: impl FnOnce(&mut KeyboardState) -> R) -> R {
     f(&mut guard)
 }
 
+/// Names of currently loaded keyboard layouts (sorted), for the mappings catalog.
+pub(crate) fn layout_names() -> Vec<String> {
+    let Some(cell) = KEYBOARD.get() else {
+        return Vec::new();
+    };
+    let guard = cell.lock().unwrap();
+    let mut names: Vec<String> = guard.layouts.keys().cloned().collect();
+    names.sort();
+    names
+}
+
 pub fn init() -> Result<()> {
     let kb = KeyboardState::new()?;
     KEYBOARD

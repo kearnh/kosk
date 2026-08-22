@@ -11,6 +11,10 @@ pub enum EventSource {
     MouseClick,
     /// Physical controller binding that produced this commit (per-button debounce bucket).
     Controller(ControllerBinding),
+    /// Programmatic events enqueued by `on_return` / other in-process follow-ups.
+    /// Not a controller hold and not a mouse click — `end_controller_tick` must ignore it
+    /// the same way it ignores `MouseClick` (only `Controller(_)` participates in hold tracking).
+    FollowUp,
 }
 
 impl fmt::Display for EventSource {
@@ -18,8 +22,16 @@ impl fmt::Display for EventSource {
         match self {
             EventSource::MouseClick => f.write_str("mouse"),
             EventSource::Controller(b) => fmt::Display::fmt(b, f),
+            EventSource::FollowUp => f.write_str("followUp"),
         }
     }
+}
+
+/// Result delivered by a callee via [`Event::ReturnState`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReturnStateResult {
+    Value(String),
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +39,15 @@ pub enum Event {
     SendKey(enigo::Key, enigo::Direction),
     SendText(String),
     ChangeState(StateId),
+    /// Push the current mode and switch to `StateId` (sub-UI call).
+    CallState(StateId),
+    /// Pop the call stack, switch to the caller, deliver an explicit result.
+    /// Never encode cancel as an empty string — use [`ReturnStateResult::Cancelled`].
+    ReturnState(ReturnStateResult),
+    /// Request an egui frame without changing `StateId`.
+    /// Use when UI data changed in-place (draft pills, status, dirty flag) and no
+    /// Change/Call/Return already covers the refresh.
+    Repaint,
     MoveWindow(WindowPos),
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
@@ -207,6 +228,12 @@ impl EventQueue {
     /// this returns leaf [`Event`]s only.
     pub fn drain_pending(&mut self) -> Vec<(Event, EventSource)> {
         std::mem::take(&mut self.pending)
+    }
+
+    /// Append leaf events directly onto `pending`, bypassing debounce / `commit`.
+    /// Used by `process_events` to merge `on_return` follow-ups.
+    pub fn extend_pending(&mut self, events: impl IntoIterator<Item = (Event, EventSource)>) {
+        self.pending.extend(events);
     }
 
     fn touch(&mut self, source: &EventSource) {
@@ -516,5 +543,21 @@ mod tests {
             })
             .collect();
         assert_eq!(letters, ["l", "l"]);
+    }
+
+    #[test]
+    fn follow_up_display_and_extend_pending() {
+        assert_eq!(EventSource::FollowUp.to_string(), "followUp");
+        let mut q = EventQueue::passthrough();
+        q.extend_pending([
+            (Event::Repaint, EventSource::FollowUp),
+            (Event::ChangeState(StateId::Menu), EventSource::FollowUp),
+        ]);
+        let drained = q.drain_pending();
+        assert_eq!(drained.len(), 2);
+        assert!(matches!(drained[0].0, Event::Repaint));
+        assert_eq!(drained[0].1, EventSource::FollowUp);
+        assert!(matches!(drained[1].0, Event::ChangeState(StateId::Menu)));
+        q.end_controller_tick();
     }
 }

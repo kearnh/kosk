@@ -958,6 +958,11 @@ fn notify_config_changed() {
     }
 }
 
+/// Invoke `on_changed` callbacks (e.g. after an in-app mappings write the watcher misses).
+pub fn notify_changed() {
+    notify_config_changed();
+}
+
 pub fn on_changed<F>(callback: F) -> Result<()>
 where
     F: Fn() + Send + Sync + 'static,

@@ -41,6 +41,7 @@ pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {
             let action = MoveWindowAction::try_from(name).ok()?;
             Some(Box::new(action))
         }
+        StateId::Mappings | StateId::SelectKey => None,
     }
 }
 

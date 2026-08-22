@@ -4,8 +4,7 @@ use crate::{
     controller::ControllerInput,
     debug::DebugPlugin,
     state::{
-        event::Event,
-        event::EventQueue,
+        event::{Event, EventQueue},
         key_sink::{open_key_sink, KeySink},
         window_pos::{capture_pointer_snapshot, resolve_position, PointerSnapshot, WindowPos},
     },
@@ -18,10 +17,12 @@ pub mod actions;
 mod event;
 pub(crate) mod key_sink;
 pub(crate) mod keyboard;
+mod mappings;
 mod menu;
 mod menu_action;
 mod move_window;
 mod move_window_action;
+mod select_key;
 mod text_input;
 mod text_input_action;
 pub mod window_pos;
@@ -32,10 +33,14 @@ pub enum StateId {
     Keyboard,
     MoveWindow,
     TextInput,
+    Mappings,
+    SelectKey,
 }
 
 pub struct AppState {
     state: StateId,
+    /// Modes pushed by `CallState`, most-recent callee's caller at the end.
+    call_stack: Vec<StateId>,
     pos: WindowPos,
     monitor_size: (f32, f32),
     pointer_snapshot: Option<PointerSnapshot>,
@@ -51,9 +56,12 @@ impl AppState {
         move_window::init()?;
         menu::init()?;
         text_input::init()?;
+        select_key::init()?;
+        mappings::init()?;
 
         Ok(Self {
             state: StateId::Keyboard,
+            call_stack: Vec::new(),
             pos: cfg.window_pos,
             monitor_size,
             pointer_snapshot: None,
@@ -135,57 +143,110 @@ impl AppState {
     }
 
     fn process_events(&mut self, ctx: &Context) {
-        for (event, _) in self.events.drain_pending() {
-            match event {
-                Event::SendKey(key, direction) => {
-                    if let Err(e) = self.key_sink.key(key, direction) {
-                        eprintln!("key sink: {e:#}");
+        /// Max leaf events handled in one `process_events` call (follow-up storms).
+        const PROCESS_EVENTS_BUDGET: usize = 32;
+
+        let mut processed = 0usize;
+        loop {
+            let batch = self.events.drain_pending();
+            if batch.is_empty() {
+                break;
+            }
+            let mut follow_up = EventQueue::passthrough();
+            for (event, _source) in batch {
+                processed += 1;
+                if processed > PROCESS_EVENTS_BUDGET {
+                    eprintln!(
+                        "process_events: exceeded budget of {PROCESS_EVENTS_BUDGET} events; dropping remainder"
+                    );
+                    follow_up.drain_pending();
+                    let dropped = self.events.drain_pending().len();
+                    if dropped > 0 {
+                        eprintln!("process_events: dropped {dropped} further pending event(s)");
                     }
+                    return;
                 }
-                Event::SendText(text) => {
-                    if let Err(e) = self.key_sink.text(&text) {
-                        eprintln!("key sink: {e:#}");
+                match event {
+                    Event::SendKey(key, direction) => {
+                        if let Err(e) = self.key_sink.key(key, direction) {
+                            eprintln!("key sink: {e:#}");
+                        }
                     }
-                }
-                Event::ChangeState(state) => {
-                    self.state = state;
-                }
-                Event::MoveWindow(new_pos) => {
-                    let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
-                    if self.pos != final_pos {
-                        self.pos = final_pos;
-                        let mut cfg = config::get();
-                        cfg.window_pos = self.pos;
-                        let _ = config::save(cfg);
+                    Event::SendText(text) => {
+                        if let Err(e) = self.key_sink.text(&text) {
+                            eprintln!("key sink: {e:#}");
+                        }
                     }
-                }
-                Event::FlipWindowLeftRight => {
-                    self.flip_pointer(ctx, false);
-                }
-                Event::FlipWindowAboveBelow => {
-                    self.flip_pointer(ctx, true);
-                }
-                Event::RotateWindow => {
-                    self.rotate_pointer(ctx);
-                }
-                Event::Exit => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                Event::ToggleRecord => {
-                    if let Err(e) = toggle_recording() {
-                        eprintln!("toggleRecord: {e:#}");
+                    Event::ChangeState(state) => {
+                        self.call_stack.clear();
+                        if state == StateId::Mappings {
+                            mappings::with_mut(|m| m.begin_session());
+                        }
+                        self.state = state;
+                        ctx.request_repaint();
                     }
-                }
-                Event::ToggleShift => {
-                    keyboard::with_mut(|kb| kb.toggle_shift());
-                }
-                Event::ToggleCtrl => {
-                    keyboard::with_mut(|kb| kb.toggle_ctrl());
-                }
-                Event::ToggleAlt => {
-                    keyboard::with_mut(|kb| kb.toggle_alt());
+                    Event::CallState(callee) => {
+                        self.call_stack.push(self.state);
+                        self.state = callee;
+                        ctx.request_repaint();
+                    }
+                    Event::ReturnState(result) => {
+                        let Some(caller) = self.call_stack.pop() else {
+                            eprintln!("ReturnState with empty call_stack; ignored");
+                            continue;
+                        };
+                        self.state = caller;
+                        match caller {
+                            StateId::Mappings => {
+                                mappings::with_mut(|m| m.on_return(result, &mut follow_up));
+                            }
+                            _ => {
+                                let _ = result;
+                            }
+                        }
+                        ctx.request_repaint();
+                    }
+                    Event::Repaint => {
+                        ctx.request_repaint();
+                    }
+                    Event::MoveWindow(new_pos) => {
+                        let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
+                        if self.pos != final_pos {
+                            self.pos = final_pos;
+                            let mut cfg = config::get();
+                            cfg.window_pos = self.pos;
+                            let _ = config::save(cfg);
+                        }
+                    }
+                    Event::FlipWindowLeftRight => {
+                        self.flip_pointer(ctx, false);
+                    }
+                    Event::FlipWindowAboveBelow => {
+                        self.flip_pointer(ctx, true);
+                    }
+                    Event::RotateWindow => {
+                        self.rotate_pointer(ctx);
+                    }
+                    Event::Exit => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    Event::ToggleRecord => {
+                        if let Err(e) = toggle_recording() {
+                            eprintln!("toggleRecord: {e:#}");
+                        }
+                    }
+                    Event::ToggleShift => {
+                        keyboard::with_mut(|kb| kb.toggle_shift());
+                    }
+                    Event::ToggleCtrl => {
+                        keyboard::with_mut(|kb| kb.toggle_ctrl());
+                    }
+                    Event::ToggleAlt => {
+                        keyboard::with_mut(|kb| kb.toggle_alt());
+                    }
                 }
             }
+            self.events.extend_pending(follow_up.drain_pending());
         }
     }
 
@@ -218,6 +279,12 @@ impl AppState {
             }
             StateId::TextInput => {
                 text_input::with_mut(|ti| ti.draw_ui(ctx, ui, &mut self.events));
+            }
+            StateId::Mappings => {
+                mappings::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
+            }
+            StateId::SelectKey => {
+                select_key::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
             }
         }
         self.process_events(ctx);
@@ -254,6 +321,12 @@ impl AppState {
             }
             StateId::TextInput => {
                 text_input::with_mut(|ti| ti.handle_controller_input(input, &mut self.events))?
+            }
+            StateId::Mappings => {
+                mappings::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
+            }
+            StateId::SelectKey => {
+                select_key::with_mut(|s| s.handle_controller_input(input, &mut self.events))?
             }
         }
         self.events.end_controller_tick();
