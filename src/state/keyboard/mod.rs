@@ -318,21 +318,18 @@ impl KeyboardState {
         }
     }
 
+    pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        if holdover.is_none() {
+            self.selected = (None, None);
+        }
+        self.bindings.reset(holdover);
+    }
+
     pub fn handle_controller_input(
         &mut self,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let input = match input {
-            Some(input) => input,
-            None => {
-                // end of inputs, reset
-                self.selected = (None, None);
-                self.bindings.evaluate(None);
-                return Ok(());
-            }
-        };
-
         let current_layout = self
             .layouts
             .get(&self.current_layout)
@@ -378,7 +375,7 @@ impl KeyboardState {
             self.last_right_stick_action = None;
         }
 
-        for (binding, action) in self.bindings.evaluate(Some(input.as_ref())) {
+        for (binding, action) in self.bindings.evaluate(input) {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }

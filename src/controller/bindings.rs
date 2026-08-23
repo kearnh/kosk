@@ -85,19 +85,24 @@ impl<A: Action + Clone> BindingEngine<A> {
         })
     }
 
-    pub fn reset(&mut self) {
-        self.prev_held.clear();
+    /// Clear chord gesture bookkeeping and set the edge baseline.
+    ///
+    /// `holdover == None`: clear `prev_held` (device idle / UI-driven mode switch
+    /// with no controller snapshot).
+    /// `holdover == Some(input)`: adopt currently held mapped buttons as already
+    /// down so Edge actions do not fire for a press that began before this reset
+    /// (controller-driven mode switch holdover / carry-over).
+    pub fn reset(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.suppress_single.clear();
         self.chords_fired.clear();
         self.leaders_active.clear();
+        match holdover {
+            None => self.prev_held.clear(),
+            Some(input) => self.prev_held = self.compute_held(input),
+        }
     }
 
-    pub fn evaluate(&mut self, input: Option<&dyn ControllerInput>) -> Vec<(ControllerBinding, A)> {
-        let Some(input) = input else {
-            self.reset();
-            return Vec::new();
-        };
-
+    pub fn evaluate(&mut self, input: &dyn ControllerInput) -> Vec<(ControllerBinding, A)> {
         let held = self.compute_held(input);
         let newly_down: HashSet<_> = held.difference(&self.prev_held).cloned().collect();
         let newly_up: HashSet<_> = self.prev_held.difference(&held).cloned().collect();
@@ -175,6 +180,7 @@ mod tests {
         Chord,
         SingleFaceTop,
         RepeatFaceBottom,
+        EdgeFaceBottom,
         SingleOptions,
     }
 
@@ -186,9 +192,10 @@ mod tests {
         fn trigger_mode(&self) -> TriggerMode {
             match self {
                 TestAction::RepeatFaceBottom => TriggerMode::WhileHeld,
-                TestAction::Chord | TestAction::SingleFaceTop | TestAction::SingleOptions => {
-                    TriggerMode::Edge
-                }
+                TestAction::Chord
+                | TestAction::SingleFaceTop
+                | TestAction::EdgeFaceBottom
+                | TestAction::SingleOptions => TriggerMode::Edge,
             }
         }
     }
@@ -307,7 +314,7 @@ mod tests {
     ) -> Vec<TestAction> {
         engine.prev_held = prev.clone();
         engine
-            .evaluate(Some(&ButtonSetInput(now.clone())))
+            .evaluate(&ButtonSetInput(now.clone()))
             .into_iter()
             .map(|(_, a)| a)
             .collect()
@@ -399,5 +406,59 @@ mod tests {
             TestAction::SingleOptions,
         );
         assert!(BindingEngine::try_from_raw(raw).is_err());
+    }
+
+    #[test]
+    fn reset_holdover_suppresses_edge_until_repress() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::FaceBottom),
+            TestAction::EdgeFaceBottom,
+        );
+        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let held_bottom = ButtonSetInput(held(&[ControllerButton::FaceBottom]));
+        let empty = ButtonSetInput(held(&[]));
+
+        e.reset(Some(&held_bottom));
+        assert!(e
+            .evaluate(&held_bottom)
+            .into_iter()
+            .map(|(_, a)| a)
+            .collect::<Vec<_>>()
+            .is_empty());
+
+        assert!(e
+            .evaluate(&empty)
+            .into_iter()
+            .map(|(_, a)| a)
+            .collect::<Vec<_>>()
+            .is_empty());
+        assert_eq!(
+            e.evaluate(&held_bottom)
+                .into_iter()
+                .map(|(_, a)| a)
+                .collect::<Vec<_>>(),
+            vec![TestAction::EdgeFaceBottom]
+        );
+    }
+
+    #[test]
+    fn reset_none_clears_baseline_so_held_edges() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::FaceBottom),
+            TestAction::EdgeFaceBottom,
+        );
+        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let held_bottom = ButtonSetInput(held(&[ControllerButton::FaceBottom]));
+
+        e.reset(None);
+        assert_eq!(
+            e.evaluate(&held_bottom)
+                .into_iter()
+                .map(|(_, a)| a)
+                .collect::<Vec<_>>(),
+            vec![TestAction::EdgeFaceBottom]
+        );
     }
 }

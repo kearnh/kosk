@@ -137,18 +137,18 @@ impl MoveWindowState {
         Ok(())
     }
 
+    pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        self.bindings.reset(holdover);
+    }
+
     pub fn handle_controller_input(
         &mut self,
         _ctx: &Context,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
         coords: (f32, f32),
         events: &mut EventQueue,
     ) -> Result<()> {
-        if input.is_none() {
-            self.bindings.evaluate(None);
-        }
-
-        for (binding, action) in self.bindings.evaluate(input.as_ref().map(|b| b.as_ref())) {
+        for (binding, action) in self.bindings.evaluate(input) {
             let src = EventSource::Controller(binding);
             self.do_action(&action, coords, events, &src)?;
         }

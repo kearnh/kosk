@@ -168,16 +168,17 @@ impl TextInputState {
         self.process_events(events);
     }
 
+    pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        self.bindings.reset(holdover);
+        keyboard::with_mut(|kb| kb.reset_controller_input(holdover));
+    }
+
     pub fn handle_controller_input(
         &mut self,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        if input.is_none() {
-            self.bindings.evaluate(None);
-        }
-
-        let fired = self.bindings.evaluate(input.as_ref().map(|b| b.as_ref()));
+        let fired = self.bindings.evaluate(input);
         for (binding, action) in &fired {
             let src = EventSource::Controller(binding.clone());
             self.do_action(action, events, &src)?;

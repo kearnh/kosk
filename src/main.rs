@@ -105,12 +105,7 @@ impl eframe::App for App {
                 egui::Color32::from_rgb(20, 20, 20)
             },
             panel_fill: if is_transparent {
-                egui::Color32::from_rgba_unmultiplied(
-                    20,
-                    20,
-                    20,
-                    (opacity * 255.0).round() as u8,
-                )
+                egui::Color32::from_rgba_unmultiplied(20, 20, 20, (opacity * 255.0).round() as u8)
             } else {
                 egui::Color32::from_rgb(20, 20, 20)
             },
@@ -297,9 +292,13 @@ fn main() -> Result<()> {
                             for input in device {
                                 controller::record::session().tap_input(&input);
                                 let mut s = state_clone.lock().unwrap();
-                                if let Err(e) = s.handle_controller_input(&ctx, &input) {
-                                    eprintln!("warn: error from controller input handler: {}", e);
+                                let result = match &input {
+                                    None => s.reset_controller_input(&ctx),
+                                    Some(snap) => s.handle_controller_input(&ctx, snap.as_ref()),
                                 };
+                                if let Err(e) = result {
+                                    eprintln!("warn: error from controller input handler: {}", e);
+                                }
                                 ctx.request_repaint();
                             }
                             if is_replay {

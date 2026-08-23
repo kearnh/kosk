@@ -12,8 +12,7 @@ use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 use anyhow::Result;
 use egui::{
-    Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Ui,
-    Vec2,
+    Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Ui, Vec2,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
@@ -924,10 +923,7 @@ impl MappingsState {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     let action_resp = ui.add_sized(
-                                        Vec2::new(
-                                            ACTION_COL_WIDTH,
-                                            ui.spacing().interact_size.y,
-                                        ),
+                                        Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
                                         Label::new(action.as_str()).sense(Sense::click()),
                                     );
                                     if action_resp.clicked() {
@@ -966,8 +962,8 @@ impl MappingsState {
 
                                     let plus_col = n_pills;
                                     let plus_selected = row_focused && focus_col == plus_col;
-                                    let plus_resp = ui
-                                        .add(Button::new("[+]").selected(plus_selected));
+                                    let plus_resp =
+                                        ui.add(Button::new("[+]").selected(plus_selected));
                                     if plus_resp.clicked() {
                                         clicked_focus = Some((row_idx, plus_col));
                                         clicked_listen = Some((
@@ -1050,20 +1046,23 @@ impl MappingsState {
         }
     }
 
+    pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        match holdover {
+            None => self.prev_held.clear(),
+            Some(input) => self.prev_held = held_set(input),
+        }
+    }
+
     pub fn handle_controller_input(
         &mut self,
         _: &Context,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let Some(input) = input.as_ref() else {
-            self.prev_held.clear();
-            return Ok(());
-        };
         if self.listen.is_some() {
-            self.handle_listen_input(input.as_ref(), events);
+            self.handle_listen_input(input, events);
         } else {
-            self.handle_browse_input(input.as_ref(), events);
+            self.handle_browse_input(input, events);
         }
         Ok(())
     }
@@ -1254,10 +1253,132 @@ mod tests {
             .iter()
             .position(|r| r == SEND_KEY_GATEWAY)
             .expect("gateway");
-        let send_a = rows.iter().position(|r| r == "sendKey.a").expect("sendKey.a");
-        let send_z = rows.iter().position(|r| r == "sendKey.z").expect("sendKey.z");
+        let send_a = rows
+            .iter()
+            .position(|r| r == "sendKey.a")
+            .expect("sendKey.a");
+        let send_z = rows
+            .iter()
+            .position(|r| r == "sendKey.z")
+            .expect("sendKey.z");
         assert!(gateway < send_a);
         assert!(send_a < send_z);
-        assert!(rows.iter().take(gateway).all(|r| !r.starts_with("sendKey.")));
+        assert!(rows
+            .iter()
+            .take(gateway)
+            .all(|r| !r.starts_with("sendKey.")));
+    }
+
+    /// Minimal pad snapshot for edge tests (buttons only; sticks unused).
+    #[derive(Debug, Clone)]
+    struct ButtonSetInput(HashSet<ControllerButton>);
+
+    impl ControllerInput for ButtonSetInput {
+        fn left_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn right_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn dpad_up(&self) -> bool {
+            self.0.contains(&ControllerButton::DpadUp)
+        }
+        fn dpad_down(&self) -> bool {
+            self.0.contains(&ControllerButton::DpadDown)
+        }
+        fn dpad_left(&self) -> bool {
+            self.0.contains(&ControllerButton::DpadLeft)
+        }
+        fn dpad_right(&self) -> bool {
+            self.0.contains(&ControllerButton::DpadRight)
+        }
+        fn face_bottom(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceBottom)
+        }
+        fn face_right(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceRight)
+        }
+        fn face_top(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceTop)
+        }
+        fn face_left(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceLeft)
+        }
+        fn shoulder_left(&self) -> bool {
+            self.0.contains(&ControllerButton::ShoulderLeft)
+        }
+        fn shoulder_right(&self) -> bool {
+            self.0.contains(&ControllerButton::ShoulderRight)
+        }
+        fn stick_left(&self) -> bool {
+            self.0.contains(&ControllerButton::StickLeft)
+        }
+        fn stick_right(&self) -> bool {
+            self.0.contains(&ControllerButton::StickRight)
+        }
+        fn trigger_left(&self) -> Option<u8> {
+            None
+        }
+        fn trigger_right(&self) -> Option<u8> {
+            None
+        }
+        fn btn_options(&self) -> bool {
+            self.0.contains(&ControllerButton::Options)
+        }
+        fn btn_share(&self) -> bool {
+            self.0.contains(&ControllerButton::Share)
+        }
+        fn btn_system(&self) -> bool {
+            false
+        }
+        fn is_engaged(&self) -> bool {
+            self.0.is_empty() == false
+        }
+        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+
+    /// Mirror `begin_session` focus/edge baseline without `config::get()`.
+    fn enter_browse_focus(m: &mut MappingsState) {
+        m.draft.insert(StateId::Keyboard, HashMap::new());
+        m.dirty = false;
+        m.status = "ready".to_owned();
+        m.tab = StateId::Keyboard;
+        m.focus_zone = FocusZone::Table;
+        m.focus_row = 0;
+        m.focus_col = 0;
+        m.footer_focus = FooterItem::Save;
+        m.listen = None;
+        m.pending_key_pick = None;
+        m.prev_held.clear();
+    }
+
+    #[test]
+    fn holdover_missing_after_enter_activates_plus() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
+        let mut events = EventQueue::passthrough();
+        // Documents the bug: cleared prev_held + still-held A looks like rising ACTIVATE.
+        m.handle_browse_input(&held, &mut events);
+        assert!(
+            m.listen.is_some(),
+            "without holdover reset, held A activates [+]"
+        );
+    }
+
+    #[test]
+    fn holdover_reset_after_enter_suppresses_activate() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
+        m.reset_controller_input(Some(&held));
+        let mut events = EventQueue::passthrough();
+        m.handle_browse_input(&held, &mut events);
+        assert!(
+            m.listen.is_none(),
+            "holdover reset must not activate [+] while A still held"
+        );
     }
 }

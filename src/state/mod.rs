@@ -4,7 +4,7 @@ use crate::{
     controller::ControllerInput,
     debug::DebugPlugin,
     state::{
-        event::{Event, EventQueue},
+        event::{Event, EventQueue, ReturnStateResult},
         key_sink::{open_key_sink, KeySink},
         window_pos::{capture_pointer_snapshot, resolve_position, PointerSnapshot, WindowPos},
     },
@@ -146,7 +146,7 @@ impl AppState {
         snap.rotate(window_size, ctx.pixels_per_point());
     }
 
-    fn process_events(&mut self, ctx: &Context) {
+    fn process_events(&mut self, ctx: &Context, holdover: Option<&dyn ControllerInput>) {
         /// Max leaf events handled in one `process_events` call (follow-up storms).
         const PROCESS_EVENTS_BUDGET: usize = 32;
 
@@ -182,32 +182,15 @@ impl AppState {
                         }
                     }
                     Event::ChangeState(state) => {
-                        self.call_stack.clear();
-                        if state == StateId::Mappings {
-                            mappings::with_mut(|m| m.begin_session());
-                        }
-                        self.state = state;
+                        self.switch_state(state, holdover);
                         ctx.request_repaint();
                     }
                     Event::CallState(callee) => {
-                        self.call_stack.push(self.state);
-                        self.state = callee;
+                        self.call_state(callee, holdover);
                         ctx.request_repaint();
                     }
                     Event::ReturnState(result) => {
-                        let Some(caller) = self.call_stack.pop() else {
-                            eprintln!("ReturnState with empty call_stack; ignored");
-                            continue;
-                        };
-                        self.state = caller;
-                        match caller {
-                            StateId::Mappings => {
-                                mappings::with_mut(|m| m.on_return(result, &mut follow_up));
-                            }
-                            _ => {
-                                let _ = result;
-                            }
-                        }
+                        self.return_state(result, holdover, &mut follow_up);
                         ctx.request_repaint();
                     }
                     Event::Repaint => {
@@ -291,23 +274,67 @@ impl AppState {
                 select_key::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
             }
         }
-        self.process_events(ctx);
+        self.process_events(ctx, None);
+    }
+
+    fn switch_state(&mut self, state: StateId, holdover: Option<&dyn ControllerInput>) {
+        self.call_stack.clear();
+        if state == StateId::Mappings {
+            mappings::with_mut(|m| m.begin_session());
+        }
+        self.state = state;
+        self.reset_current_mode_controller(holdover);
+    }
+
+    fn call_state(&mut self, callee: StateId, holdover: Option<&dyn ControllerInput>) {
+        self.call_stack.push(self.state);
+        self.state = callee;
+        self.reset_current_mode_controller(holdover);
+    }
+
+    fn return_state(
+        &mut self,
+        result: ReturnStateResult,
+        holdover: Option<&dyn ControllerInput>,
+        follow_up: &mut EventQueue,
+    ) {
+        let Some(caller) = self.call_stack.pop() else {
+            eprintln!("ReturnState with empty call_stack; ignored");
+            return;
+        };
+        self.state = caller;
+        self.reset_current_mode_controller(holdover);
+        match caller {
+            StateId::Mappings => mappings::with_mut(|m| m.on_return(result, follow_up)),
+            _ => {
+                let _ = result;
+            }
+        }
+    }
+
+    fn reset_current_mode_controller(&mut self, holdover: Option<&dyn ControllerInput>) {
+        match self.state {
+            StateId::Keyboard => keyboard::with_mut(|kb| kb.reset_controller_input(holdover)),
+            StateId::Menu => menu::with_mut(|m| m.reset_controller_input(holdover)),
+            StateId::MoveWindow => move_window::with_mut(|mw| mw.reset_controller_input(holdover)),
+            StateId::TextInput => text_input::with_mut(|ti| ti.reset_controller_input(holdover)),
+            StateId::Mappings => mappings::with_mut(|m| m.reset_controller_input(holdover)),
+            StateId::SelectKey => select_key::with_mut(|s| s.reset_controller_input(holdover)),
+        }
     }
 
     pub fn handle_controller_input(
         &mut self,
         ctx: &Context,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
     ) -> Result<()> {
         let cfg = config::get();
 
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
 
-        if let Some(input) = input {
-            if cfg.debug.is_some() {
-                ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
-            }
+        if cfg.debug.is_some() {
+            ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
         }
 
         match self.state {
@@ -334,7 +361,18 @@ impl AppState {
             }
         }
         self.events.end_controller_tick();
-        self.process_events(ctx);
+        self.process_events(ctx, Some(input));
+        Ok(())
+    }
+
+    /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.
+    pub fn reset_controller_input(&mut self, ctx: &Context) -> Result<()> {
+        self.reset_current_mode_controller(None);
+        if config::get().debug.is_some() {
+            ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = None);
+        }
+        self.events.end_controller_tick();
+        self.process_events(ctx, None);
         Ok(())
     }
 

@@ -69,19 +69,26 @@ impl SelectKeyState {
         );
     }
 
+    pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        match holdover {
+            None => {
+                self.prev_ok = false;
+                self.prev_cancel = false;
+            }
+            Some(input) => {
+                self.prev_ok = OK.query(input);
+                self.prev_cancel = CANCEL.query(input);
+            }
+        }
+    }
+
     pub fn handle_controller_input(
         &mut self,
-        input: &Option<Box<dyn ControllerInput>>,
+        input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let Some(input) = input.as_ref() else {
-            self.prev_ok = false;
-            self.prev_cancel = false;
-            return Ok(());
-        };
-
-        let ok_down = OK.query(input.as_ref());
-        let cancel_down = CANCEL.query(input.as_ref());
+        let ok_down = OK.query(input);
+        let cancel_down = CANCEL.query(input);
 
         if ok_down && !self.prev_ok {
             let binding = crate::controller::ControllerBinding::Single(OK);
@@ -117,4 +124,101 @@ pub(crate) fn with_mut<R>(f: impl FnOnce(&mut SelectKeyState) -> R) -> R {
         .lock()
         .unwrap();
     f(&mut guard)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[derive(Debug, Clone)]
+    struct ButtonSetInput(HashSet<ControllerButton>);
+
+    impl ControllerInput for ButtonSetInput {
+        fn left_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn right_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn dpad_up(&self) -> bool {
+            false
+        }
+        fn dpad_down(&self) -> bool {
+            false
+        }
+        fn dpad_left(&self) -> bool {
+            false
+        }
+        fn dpad_right(&self) -> bool {
+            false
+        }
+        fn face_bottom(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceBottom)
+        }
+        fn face_right(&self) -> bool {
+            self.0.contains(&ControllerButton::FaceRight)
+        }
+        fn face_top(&self) -> bool {
+            false
+        }
+        fn face_left(&self) -> bool {
+            false
+        }
+        fn shoulder_left(&self) -> bool {
+            false
+        }
+        fn shoulder_right(&self) -> bool {
+            false
+        }
+        fn stick_left(&self) -> bool {
+            false
+        }
+        fn stick_right(&self) -> bool {
+            false
+        }
+        fn trigger_left(&self) -> Option<u8> {
+            None
+        }
+        fn trigger_right(&self) -> Option<u8> {
+            None
+        }
+        fn btn_options(&self) -> bool {
+            false
+        }
+        fn btn_share(&self) -> bool {
+            false
+        }
+        fn btn_system(&self) -> bool {
+            false
+        }
+        fn is_engaged(&self) -> bool {
+            !self.0.is_empty()
+        }
+        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+
+    #[test]
+    fn holdover_reset_suppresses_ok_until_repress() {
+        let mut s = SelectKeyState::new();
+        s.begin("");
+        let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
+        let empty = ButtonSetInput(HashSet::new());
+        s.reset_controller_input(Some(&held));
+
+        let mut events = EventQueue::passthrough();
+        s.handle_controller_input(&held, &mut events).unwrap();
+        assert!(
+            events.drain_pending().is_empty(),
+            "holdover must not OK on still-held A"
+        );
+        assert!(s.status.is_empty());
+
+        s.handle_controller_input(&empty, &mut events).unwrap();
+        s.handle_controller_input(&held, &mut events).unwrap();
+        assert!(events.drain_pending().is_empty());
+        assert_eq!(s.status, "enter a key");
+    }
 }
