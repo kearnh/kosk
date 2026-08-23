@@ -28,7 +28,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`stick_scale_x` / `stick_scale_y`** multiply analog deflection after it is mapped onto the keyboard (see [keyboard-layout.md](keyboard-layout.md)).
 - **`stick_warp`** is the circle-to-square warp applied in `ControllerInput::left_stick` / `right_stick` (see [controller.md](controller.md)).
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md).
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard/TextInput and **`ui_opacity`** (default `0.92`) on Menu/Mappings/MoveWindow/SelectKey; both are ignored when `transparent = false`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`stick_select_lock_ms`** holds stick highlighting still after a letter is sent ([keyboard.md](keyboard.md)).
 - **`controller_map`** is either an inline table or a string path to another TOML file. The checked-in config uses `controller_map = "mappings.toml"`.
@@ -75,7 +75,7 @@ Until that is fixed, treat `config::save` as “persist window position, possibl
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `window_pos`, and `text_input`. On replay, `overlay_tape_config` merges the blob onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, and `text_input`. On replay, `overlay_tape_config` merges the blob onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

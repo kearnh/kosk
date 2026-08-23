@@ -74,6 +74,10 @@ impl AppState {
         self.monitor_size = monitor_size;
     }
 
+    pub fn current_state(&self) -> StateId {
+        self.state
+    }
+
     fn window_size_from(content_rect: Rect) -> (f32, f32) {
         (content_rect.width(), content_rect.height())
     }

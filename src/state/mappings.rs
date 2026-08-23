@@ -11,7 +11,10 @@ use crate::state::select_key;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 use anyhow::Result;
-use egui::{Button, Context, ScrollArea, Ui};
+use egui::{
+    Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Ui,
+    Vec2,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use strum::VariantNames;
@@ -65,10 +68,16 @@ const ALL_BUTTONS: &[ControllerButton] = &[
 
 const SEND_KEY_GATEWAY: &str = "sendKey";
 
+const ACTION_COL_WIDTH: f32 = 200.0;
+const BINDING_COL_GAP: f32 = 16.0;
+
+fn row_focus_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(40, 90, 160, 80)
+}
+
 /// Why SelectKey was opened; consumed in [`MappingsState::on_return`].
 enum PendingKeyPick {
     AddBinding { binding: ControllerBinding },
-    RetargetAction { old_action: String },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -183,6 +192,18 @@ fn switch_state_catalog() -> Vec<String> {
         .collect()
 }
 
+fn pill_count(action: &str, draft: &HashMap<String, Vec<ControllerBinding>>) -> usize {
+    if action == SEND_KEY_GATEWAY {
+        0
+    } else {
+        draft.get(action).map(|v| v.len()).unwrap_or(0)
+    }
+}
+
+fn max_focus_col(n_pills: usize) -> usize {
+    n_pills // index of [+]
+}
+
 fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) -> Vec<String> {
     match mode {
         StateId::Keyboard => {
@@ -194,6 +215,8 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
             for layout in keyboard::layout_names() {
                 rows.push(format!("switchLayout.{layout}"));
             }
+            rows.sort();
+            rows.push(SEND_KEY_GATEWAY.to_owned());
             let mut concrete: Vec<String> = draft
                 .iter()
                 .filter(|(n, b)| n.starts_with("sendKey.") && !b.is_empty())
@@ -201,8 +224,6 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
                 .collect();
             concrete.sort();
             rows.extend(concrete);
-            rows.sort();
-            rows.push(SEND_KEY_GATEWAY.to_owned());
             rows
         }
         StateId::Menu => {
@@ -269,7 +290,7 @@ pub struct MappingsState {
     tab: StateId,
     focus_zone: FocusZone,
     focus_row: usize,
-    /// 0 = action label; 1..=n = pills; n+1 = `+`.
+    /// 0..n_pills = pill index; n_pills = trailing `[+]` (no action-label column).
     focus_col: usize,
     footer_focus: FooterItem,
     listen: Option<ListenState>,
@@ -365,20 +386,10 @@ impl MappingsState {
             self.focus_row = rows.len() - 1;
         }
         let action = &rows[self.focus_row];
-        let n_pills = if action == SEND_KEY_GATEWAY {
-            0
-        } else {
-            self.current_draft()
-                .get(action)
-                .map(|v| v.len())
-                .unwrap_or(0)
-        };
-        let max_col = n_pills + 1;
+        let n_pills = pill_count(action, self.current_draft());
+        let max_col = max_focus_col(n_pills);
         if self.focus_col > max_col {
             self.focus_col = max_col;
-        }
-        if action == SEND_KEY_GATEWAY && self.focus_col == 0 {
-            self.focus_col = 1; // only + is meaningful
         }
     }
 
@@ -418,26 +429,8 @@ impl MappingsState {
                 if let Some(idx) = rows.iter().position(|r| r == &new_action) {
                     self.focus_row = idx;
                     let n = draft.get(&new_action).map(|v| v.len()).unwrap_or(1);
-                    self.focus_col = n;
-                    self.focus_zone = FocusZone::Table;
-                }
-            }
-            PendingKeyPick::RetargetAction { old_action } => {
-                if old_action == new_action {
-                    self.status = "ready".to_owned();
-                    let _ = out.push(Event::Repaint, &EventSource::FollowUp);
-                    return;
-                }
-                let draft = self.draft.entry(StateId::Keyboard).or_default();
-                let old_vec = draft.remove(&old_action).unwrap_or_default();
-                draft.entry(new_action.clone()).or_default().extend(old_vec);
-                self.dirty = true;
-                self.status = "ready".to_owned();
-                self.tab = StateId::Keyboard;
-                let rows = catalog_rows(StateId::Keyboard, draft);
-                if let Some(idx) = rows.iter().position(|r| r == &new_action) {
-                    self.focus_row = idx;
-                    self.focus_col = 0;
+                    // New indexing: last pill is n-1; [+] is n.
+                    self.focus_col = n.saturating_sub(1);
                     self.focus_zone = FocusZone::Table;
                 }
             }
@@ -548,10 +541,11 @@ impl MappingsState {
             return;
         }
         let action = rows[self.focus_row].clone();
-        if action == SEND_KEY_GATEWAY || self.focus_col == 0 {
-            return;
+        let n_pills = pill_count(&action, self.current_draft());
+        if action == SEND_KEY_GATEWAY || self.focus_col >= n_pills {
+            return; // on [+] or gateway
         }
-        let pill = self.focus_col - 1;
+        let pill = self.focus_col;
         let draft = self.current_draft_mut();
         let Some(vec) = draft.get_mut(&action) else {
             return;
@@ -563,14 +557,6 @@ impl MappingsState {
         let empty = vec.is_empty();
         if empty {
             draft.remove(&action);
-        }
-        if empty && action.starts_with("sendKey.") {
-            self.focus_col = 0;
-        } else {
-            let n = draft.get(&action).map(|v| v.len()).unwrap_or(0);
-            if self.focus_col > n + 1 {
-                self.focus_col = n + 1;
-            }
         }
         self.dirty = true;
         self.status = "ready".to_owned();
@@ -596,26 +582,11 @@ impl MappingsState {
                     return;
                 }
                 let action = rows[self.focus_row].clone();
-                let n_pills = if action == SEND_KEY_GATEWAY {
-                    0
-                } else {
-                    self.current_draft()
-                        .get(&action)
-                        .map(|v| v.len())
-                        .unwrap_or(0)
-                };
-                if self.focus_col == 0 {
-                    if action.starts_with("sendKey.") && action != SEND_KEY_GATEWAY {
-                        let payload = action.strip_prefix("sendKey.").unwrap_or("").to_owned();
-                        self.pending_key_pick =
-                            Some(PendingKeyPick::RetargetAction { old_action: action });
-                        select_key::with_mut(|s| s.begin(&payload));
-                        let _ = events.push(Event::CallState(StateId::SelectKey), source);
-                    }
-                } else if self.focus_col == n_pills + 1 {
+                let n_pills = pill_count(&action, self.current_draft());
+                if self.focus_col == n_pills {
                     self.start_listen(ListenMode::Single, ListenTarget::Add { action }, held);
                 } else {
-                    let pill = self.focus_col - 1;
+                    let pill = self.focus_col;
                     self.start_listen(
                         ListenMode::Single,
                         ListenTarget::Replace { action, pill },
@@ -634,23 +605,12 @@ impl MappingsState {
         if self.focus_row >= rows.len() {
             return;
         }
-        // X/Y only on pills or `+` — not the action label (plan §6).
-        if self.focus_col == 0 {
-            return;
-        }
         let action = rows[self.focus_row].clone();
-        let n_pills = if action == SEND_KEY_GATEWAY {
-            0
-        } else {
-            self.current_draft()
-                .get(&action)
-                .map(|v| v.len())
-                .unwrap_or(0)
-        };
-        if self.focus_col == n_pills + 1 {
+        let n_pills = pill_count(&action, self.current_draft());
+        if self.focus_col == n_pills {
             self.start_listen(mode, ListenTarget::Add { action }, held);
         } else {
-            let pill = self.focus_col - 1;
+            let pill = self.focus_col;
             self.start_listen(mode, ListenTarget::Replace { action, pill }, held);
         }
     }
@@ -810,11 +770,13 @@ impl MappingsState {
                         self.focus_zone = FocusZone::Tabs;
                     } else {
                         self.focus_row -= 1;
+                        self.focus_col = 0;
                         self.clamp_focus();
                     }
                 }
                 FocusZone::Footer => {
                     self.focus_zone = FocusZone::Table;
+                    self.focus_col = 0;
                     self.clamp_focus();
                 }
             }
@@ -822,6 +784,7 @@ impl MappingsState {
             match self.focus_zone {
                 FocusZone::Tabs => {
                     self.focus_zone = FocusZone::Table;
+                    self.focus_col = 0;
                     self.clamp_focus();
                 }
                 FocusZone::Table => {
@@ -830,6 +793,7 @@ impl MappingsState {
                         self.focus_zone = FocusZone::Footer;
                     } else {
                         self.focus_row += 1;
+                        self.focus_col = 0;
                         self.clamp_focus();
                     }
                 }
@@ -892,7 +856,7 @@ impl MappingsState {
         let listening = self.listen.is_some();
 
         ui.horizontal(|ui| {
-            ui.heading("Key Mappings");
+            ui.heading(RichText::new("Key Mappings").color(Color32::WHITE));
             if self.dirty {
                 ui.label("unsaved*");
             }
@@ -922,14 +886,18 @@ impl MappingsState {
         let focus_row = self.focus_row;
         let focus_col = self.focus_col;
 
-        let mut clicked_retarget: Option<String> = None;
         let mut clicked_listen: Option<(ListenMode, ListenTarget)> = None;
         let mut clicked_focus: Option<(usize, usize)> = None;
 
         ui.add_enabled_ui(!listening, |ui| {
+            // allocate_ui_with_layout only advances by content width; add_sized
+            // keeps Action as a true fixed column under the header.
             ui.horizontal(|ui| {
-                ui.strong("Action");
-                ui.add_space(40.0);
+                ui.add_sized(
+                    Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
+                    Label::new(RichText::new("Action").strong()),
+                );
+                ui.add_space(BINDING_COL_GAP);
                 ui.strong("Binding");
             });
 
@@ -943,79 +911,90 @@ impl MappingsState {
                             draft_snapshot.get(action).cloned().unwrap_or_default()
                         };
                         let row_focused = focus_zone == FocusZone::Table && focus_row == row_idx;
+                        let n_pills = pills.len();
+                        let row_fill = if row_focused {
+                            row_focus_fill()
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        // Vertical-only margin so Binding lines up with header.
+                        let row_resp = Frame::NONE
+                            .fill(row_fill)
+                            .inner_margin(Margin::symmetric(0, 1))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let action_resp = ui.add_sized(
+                                        Vec2::new(
+                                            ACTION_COL_WIDTH,
+                                            ui.spacing().interact_size.y,
+                                        ),
+                                        Label::new(action.as_str()).sense(Sense::click()),
+                                    );
+                                    if action_resp.clicked() {
+                                        clicked_focus = Some((row_idx, 0));
+                                    }
 
-                        ui.horizontal(|ui| {
-                            let label_selected = row_focused && focus_col == 0;
-                            let label_text = if label_selected {
-                                format!("> {action}")
-                            } else {
-                                action.clone()
-                            };
-                            let label_resp =
-                                ui.add(Button::new(label_text).selected(label_selected));
-                            if label_resp.clicked() {
-                                clicked_focus = Some((row_idx, 0));
-                                if action.starts_with("sendKey.")
-                                    && action.as_str() != SEND_KEY_GATEWAY
-                                {
-                                    clicked_retarget = Some(action.clone());
-                                }
-                            }
+                                    ui.add_space(BINDING_COL_GAP);
 
-                            for (pill_idx, binding) in pills.iter().enumerate() {
-                                let col = pill_idx + 1;
-                                let selected = row_focused && focus_col == col;
-                                let text = if selected {
-                                    format!("> [{binding}]")
-                                } else {
-                                    format!("[{binding}]")
-                                };
-                                let resp = ui.add(Button::new(text).selected(selected));
-                                if resp.clicked() {
-                                    clicked_focus = Some((row_idx, col));
-                                    clicked_listen = Some((
-                                        ListenMode::Single,
-                                        ListenTarget::Replace {
-                                            action: action.clone(),
-                                            pill: pill_idx,
-                                        },
-                                    ));
-                                }
-                                if resp.secondary_clicked() {
-                                    clicked_focus = Some((row_idx, col));
-                                    clicked_listen = Some((
-                                        ListenMode::Chord,
-                                        ListenTarget::Replace {
-                                            action: action.clone(),
-                                            pill: pill_idx,
-                                        },
-                                    ));
-                                }
-                            }
+                                    for (pill_idx, binding) in pills.iter().enumerate() {
+                                        let col = pill_idx;
+                                        let selected = row_focused && focus_col == col;
+                                        let resp = ui.add(
+                                            Button::new(format!("[{binding}]")).selected(selected),
+                                        );
+                                        if resp.clicked() {
+                                            clicked_focus = Some((row_idx, col));
+                                            clicked_listen = Some((
+                                                ListenMode::Single,
+                                                ListenTarget::Replace {
+                                                    action: action.clone(),
+                                                    pill: pill_idx,
+                                                },
+                                            ));
+                                        }
+                                        if resp.secondary_clicked() {
+                                            clicked_focus = Some((row_idx, col));
+                                            clicked_listen = Some((
+                                                ListenMode::Chord,
+                                                ListenTarget::Replace {
+                                                    action: action.clone(),
+                                                    pill: pill_idx,
+                                                },
+                                            ));
+                                        }
+                                    }
 
-                            let plus_col = pills.len() + 1;
-                            let plus_selected = row_focused && focus_col == plus_col;
-                            let plus_text = if plus_selected { "> [+]" } else { "[+]" };
-                            let plus_resp = ui.add(Button::new(plus_text).selected(plus_selected));
-                            if plus_resp.clicked() {
-                                clicked_focus = Some((row_idx, plus_col));
-                                clicked_listen = Some((
-                                    ListenMode::Single,
-                                    ListenTarget::Add {
-                                        action: action.clone(),
-                                    },
-                                ));
-                            }
-                            if plus_resp.secondary_clicked() {
-                                clicked_focus = Some((row_idx, plus_col));
-                                clicked_listen = Some((
-                                    ListenMode::Chord,
-                                    ListenTarget::Add {
-                                        action: action.clone(),
-                                    },
-                                ));
-                            }
-                        });
+                                    let plus_col = n_pills;
+                                    let plus_selected = row_focused && focus_col == plus_col;
+                                    let plus_resp = ui
+                                        .add(Button::new("[+]").selected(plus_selected));
+                                    if plus_resp.clicked() {
+                                        clicked_focus = Some((row_idx, plus_col));
+                                        clicked_listen = Some((
+                                            ListenMode::Single,
+                                            ListenTarget::Add {
+                                                action: action.clone(),
+                                            },
+                                        ));
+                                    }
+                                    if plus_resp.secondary_clicked() {
+                                        clicked_focus = Some((row_idx, plus_col));
+                                        clicked_listen = Some((
+                                            ListenMode::Chord,
+                                            ListenTarget::Add {
+                                                action: action.clone(),
+                                            },
+                                        ));
+                                    }
+                                });
+                            })
+                            .response;
+                        if row_focused {
+                            row_resp.scroll_to_me(Some(Align::Center));
+                        }
+                        if row_resp.clicked() && clicked_focus.is_none() {
+                            clicked_focus = Some((row_idx, 0));
+                        }
                     }
                 });
         });
@@ -1024,16 +1003,9 @@ impl MappingsState {
             self.focus_zone = FocusZone::Table;
             self.focus_row = row;
             self.focus_col = col;
+            self.clamp_focus();
         }
-        if let Some(action) = clicked_retarget {
-            let payload = action.strip_prefix("sendKey.").unwrap_or("").to_owned();
-            self.pending_key_pick = Some(PendingKeyPick::RetargetAction { old_action: action });
-            select_key::with_mut(|s| s.begin(&payload));
-            let _ = events.push(
-                Event::CallState(StateId::SelectKey),
-                &EventSource::MouseClick,
-            );
-        } else if let Some((mode, target)) = clicked_listen {
+        if let Some((mode, target)) = clicked_listen {
             self.start_listen(mode, target, &HashSet::new());
         }
 
@@ -1267,25 +1239,25 @@ mod tests {
     }
 
     #[test]
-    fn on_return_retarget_renames_action() {
-        let mut m = MappingsState::new();
-        let mut kb = HashMap::new();
-        kb.insert(
-            "sendKey.enter".to_owned(),
+    fn keyboard_catalog_orders_send_key_gateway_above_concrete() {
+        let mut draft = HashMap::new();
+        draft.insert(
+            "sendKey.z".to_owned(),
+            vec![single(ControllerButton::FaceTop)],
+        );
+        draft.insert(
+            "sendKey.a".to_owned(),
             vec![single(ControllerButton::FaceBottom)],
         );
-        m.draft.insert(StateId::Keyboard, kb);
-        m.pending_key_pick = Some(PendingKeyPick::RetargetAction {
-            old_action: "sendKey.enter".to_owned(),
-        });
-        let mut out = EventQueue::passthrough();
-        m.on_return(ReturnStateResult::Value("space".to_owned()), &mut out);
-        let draft = m.draft.get(&StateId::Keyboard).unwrap();
-        assert!(!draft.contains_key("sendKey.enter"));
-        assert_eq!(
-            draft.get("sendKey.space").cloned().unwrap(),
-            vec![single(ControllerButton::FaceBottom)]
-        );
-        assert!(m.dirty);
+        let rows = catalog_rows(StateId::Keyboard, &draft);
+        let gateway = rows
+            .iter()
+            .position(|r| r == SEND_KEY_GATEWAY)
+            .expect("gateway");
+        let send_a = rows.iter().position(|r| r == "sendKey.a").expect("sendKey.a");
+        let send_z = rows.iter().position(|r| r == "sendKey.z").expect("sendKey.z");
+        assert!(gateway < send_a);
+        assert!(send_a < send_z);
+        assert!(rows.iter().take(gateway).all(|r| !r.starts_with("sendKey.")));
     }
 }

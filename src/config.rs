@@ -120,6 +120,14 @@ pub struct Config {
     #[serde(default = "default_transparent")]
     pub transparent: bool,
 
+    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput.
+    #[serde(default = "default_keyboard_opacity")]
+    pub keyboard_opacity: f32,
+
+    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / MoveWindow / SelectKey.
+    #[serde(default = "default_ui_opacity")]
+    pub ui_opacity: f32,
+
     #[serde(default)]
     pub debug: Option<Debug>,
 
@@ -328,6 +336,14 @@ fn default_transparent() -> bool {
     true
 }
 
+fn default_keyboard_opacity() -> f32 {
+    0.3
+}
+
+fn default_ui_opacity() -> f32 {
+    0.92
+}
+
 fn default_window_pos() -> WindowPos {
     WindowPos::BottomRight
 }
@@ -407,6 +423,8 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "key_sink",
     "debug",
     "transparent",
+    "keyboard_opacity",
+    "ui_opacity",
     "window_pos",
     "text_input",
 ];

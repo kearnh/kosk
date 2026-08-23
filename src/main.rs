@@ -6,7 +6,7 @@ use egui::Vec2;
 use kosk::config;
 use kosk::controller;
 use kosk::debug;
-use kosk::state::AppState;
+use kosk::state::{AppState, StateId};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +15,10 @@ struct App {
     window_setup_done: bool,
     size: Vec2,
     min_size: Vec2,
+    /// Last applied outer top-left; kept across content-driven resizes.
+    last_outer: Option<egui::Pos2>,
+    /// Resolved overlay alpha for the current mode (updated each frame).
+    current_opacity: f32,
 }
 
 impl App {
@@ -63,23 +67,36 @@ impl App {
             window_setup_done: false,
             size: Vec2::ZERO,
             min_size: Vec2::ZERO,
+            last_outer: None,
+            current_opacity: 1.0,
         }
     }
 }
 
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if config::get().transparent {
-            // Semi-transparent dark background so users know there's a window
-            // RGBA: slightly dark with ~30% opacity
-            [0.08, 0.08, 0.08, 0.3]
-        } else {
-            [0.08, 0.08, 0.08, 1.0]
-        }
+        [0.08, 0.08, 0.08, self.current_opacity]
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let is_transparent = config::get().transparent;
+        let cfg = config::get();
+        let is_transparent = cfg.transparent;
+        {
+            let state = self.state.lock().unwrap().current_state();
+            self.current_opacity = if !is_transparent {
+                1.0
+            } else {
+                let raw = match state {
+                    StateId::Keyboard | StateId::TextInput => cfg.keyboard_opacity,
+                    StateId::Menu
+                    | StateId::Mappings
+                    | StateId::MoveWindow
+                    | StateId::SelectKey => cfg.ui_opacity,
+                };
+                raw.clamp(0.0, 1.0)
+            };
+        }
+        let opacity = self.current_opacity;
 
         ctx.set_visuals(egui::Visuals {
             window_fill: if is_transparent {
@@ -88,7 +105,12 @@ impl eframe::App for App {
                 egui::Color32::from_rgb(20, 20, 20)
             },
             panel_fill: if is_transparent {
-                egui::Color32::from_rgba_premultiplied(20, 20, 20, 100)
+                egui::Color32::from_rgba_unmultiplied(
+                    20,
+                    20,
+                    20,
+                    (opacity * 255.0).round() as u8,
+                )
             } else {
                 egui::Color32::from_rgb(20, 20, 20)
             },
@@ -140,18 +162,8 @@ impl eframe::App for App {
             }
         }
 
-        {
-            let monitor_size = ctx.input(|i| {
-                i.viewport()
-                    .monitor_size
-                    .unwrap_or_else(|| egui::Vec2::new(1920.0, 1080.0))
-            });
-            let mut s = self.state.lock().unwrap();
-            s.set_monitor_size((monitor_size.x, monitor_size.y));
-            let pos = s.get_position(ctx.content_rect(), ctx.pixels_per_point());
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
-        }
-
+        // Measure first; OuterPosition is applied after size so content-driven
+        // resizes can keep the previous top edge instead of re-resolving corners.
         let mut size = Vec2::ZERO;
 
         egui::CentralPanel::default()
@@ -172,9 +184,45 @@ impl eframe::App for App {
             x: self.min_size.x.max(size.x),
             y: self.min_size.y.max(size.y),
         };
-        if size != self.size {
+
+        let size_changed = size != self.size;
+        if size_changed {
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+            self.size = size;
         }
+
+        let monitor_size = ctx.input(|i| {
+            i.viewport()
+                .monitor_size
+                .unwrap_or_else(|| egui::Vec2::new(1920.0, 1080.0))
+        });
+        {
+            let mut s = self.state.lock().unwrap();
+            s.set_monitor_size((monitor_size.x, monitor_size.y));
+        }
+
+        let outer = if size_changed {
+            let kept = self.last_outer.unwrap_or_else(|| {
+                let mut s = self.state.lock().unwrap();
+                let (x, y) = s.get_position(
+                    egui::Rect::from_min_size(egui::Pos2::ZERO, size),
+                    ctx.pixels_per_point(),
+                );
+                egui::Pos2::new(x, y)
+            });
+            let max_x = (monitor_size.x - size.x).max(0.0);
+            let max_y = (monitor_size.y - size.y).max(0.0);
+            egui::Pos2::new(kept.x.clamp(0.0, max_x), kept.y.clamp(0.0, max_y))
+        } else {
+            let mut s = self.state.lock().unwrap();
+            let (x, y) = s.get_position(
+                egui::Rect::from_min_size(egui::Pos2::ZERO, size),
+                ctx.pixels_per_point(),
+            );
+            egui::Pos2::new(x, y)
+        };
+        self.last_outer = Some(outer);
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(outer));
     }
 }
 
