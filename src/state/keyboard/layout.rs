@@ -451,7 +451,7 @@ impl KeyboardLayout {
     }
 
     /// Reset centre/hitbox/rest fields. Call sites must use this (or
-    /// `KeyboardState::invalidate_geometry`) — do not open-code `captured_centres = None`.
+    /// `KeyboardState::on_layouts_changed`) — do not open-code `captured_centres = None`.
     pub fn clear_captured_geometry(&mut self) {
         self.captured_centres = None;
         self.key_hit_boxes.clear();

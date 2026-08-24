@@ -23,13 +23,13 @@ struct App {
 
 impl App {
     fn new(cc: &CreationContext<'_>, state: Arc<Mutex<AppState>>) -> Self {
-        // Configure fonts for Unicode support
+        // Configure fonts: Phosphor icons always; Segoe fallbacks on Windows when present.
         let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor_icons::add_fonts(&mut fonts);
 
         // On Windows, use Segoe UI Symbol and Emoji as fallbacks for unicode characters
         #[cfg(target_os = "windows")]
         {
-            let mut font_added = false;
             if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\seguisym.ttf") {
                 fonts.font_data.insert(
                     "SegoeUISymbol".to_owned(),
@@ -40,7 +40,6 @@ impl App {
                     .entry(egui::FontFamily::Proportional)
                     .or_default()
                     .push("SegoeUISymbol".to_owned());
-                font_added = true;
             }
             if let Ok(font_data) = std::fs::read("C:\\Windows\\Fonts\\seguiemj.ttf") {
                 fonts.font_data.insert(
@@ -52,13 +51,10 @@ impl App {
                     .entry(egui::FontFamily::Proportional)
                     .or_default()
                     .push("SegoeUIEmoji".to_owned());
-                font_added = true;
-            }
-
-            if font_added {
-                cc.egui_ctx.set_fonts(fonts);
             }
         }
+
+        cc.egui_ctx.set_fonts(fonts);
 
         debug::register(&cc.egui_ctx);
 

@@ -17,6 +17,7 @@ anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
 eframe = { version = "0.36.1", default-features = false, features = ["glow", "inspection"] }
 egui = { version = "0.36.1", features = ["serde"] }
+egui_phosphor_icons = "0.5"
 enigo = { version = "0.6.1", features = ["serde"] }
 hidapi = "2.6.5"
 notify = "6.1.1"

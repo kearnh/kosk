@@ -20,6 +20,7 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Ui};
 
+mod display_icon;
 pub(crate) mod geometry_snap;
 mod key;
 mod keyboard_action;
@@ -55,6 +56,7 @@ pub struct KeyboardState {
     last_left_stick_action: Option<Instant>,
     last_right_stick_action: Option<Instant>,
     stick_select_lock_ms: Duration,
+    label_cache: display_icon::LabelCache,
 }
 
 impl KeyboardState {
@@ -272,7 +274,7 @@ impl KeyboardState {
         self.layouts = map;
         self.current_layout = header.current_layout.clone();
         self.selected = (None, None);
-        self.invalidate_geometry();
+        self.on_layouts_changed();
         Ok(())
     }
 
@@ -282,18 +284,19 @@ impl KeyboardState {
         }
         if self.current_layout != name {
             self.current_layout = name.to_string();
-            self.invalidate_geometry();
+            self.on_layouts_changed();
         }
         self.selected = (None, None);
         Ok(())
     }
 
-    /// Drop captured centres on every loaded layout and clear the published snapshot.
-    fn invalidate_geometry(&mut self) {
+    /// Bookkeeping after layouts are replaced or the current layout name changes.
+    fn on_layouts_changed(&mut self) {
         for layout in self.layouts.values_mut() {
             layout.clear_captured_geometry();
         }
         geometry_snap::clear();
+        self.label_cache.clear();
     }
 
     pub(crate) fn toggle_shift(&mut self) {
@@ -399,7 +402,20 @@ impl KeyboardState {
             alt: self.alt_mod,
         };
 
-        let current_layout = self.layouts.get_mut(&self.current_layout)?;
+        // Split field borrows so label_cache and layouts can be used together.
+        let KeyboardState {
+            layouts,
+            current_layout: current_layout_name,
+            label_cache,
+            selected,
+            shift_state,
+            shift_mod,
+            ctrl_mod,
+            alt_mod,
+            ..
+        } = self;
+
+        let current_layout = layouts.get_mut(current_layout_name)?;
 
         let mut pressed_key: Option<RawKey> = None;
 
@@ -432,8 +448,8 @@ impl KeyboardState {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-            let left_center = current_layout.get_nearest_key_left((0.0, 0.0), self.shift_state);
-            let right_center = current_layout.get_nearest_key_right((0.0, 0.0), self.shift_state);
+            let left_center = current_layout.get_nearest_key_left((0.0, 0.0), *shift_state);
+            let right_center = current_layout.get_nearest_key_right((0.0, 0.0), *shift_state);
 
             for (keys, indent, height) in &*current_layout {
                 ui.horizontal(|ui| {
@@ -456,25 +472,24 @@ impl KeyboardState {
                         }
 
                         let appearance = key.appearance(&display_ctx);
-                        let mut label = egui::RichText::new(appearance.text)
-                            .size(key.font_size.unwrap_or(current_layout.font_size));
-                        if let Some(c) = appearance.text_color {
-                            label = label.color(c);
-                        }
+                        let font_size = key.font_size.unwrap_or(current_layout.font_size);
+                        let color = appearance
+                            .text_color
+                            .unwrap_or(ui.style().visuals.widgets.inactive.fg_stroke.color);
+                        let label = label_cache.get(&appearance.text, font_size, color);
                         let mut button = egui::Button::new(label);
 
                         if let Some(fill) = appearance.button_color {
                             button = button.fill(fill);
-                        } else if key.is_key(
-                            self.shift_state,
-                            &RawKey::Action(KeyboardAction::ToggleShift),
-                        ) && self.shift_state
+                        } else if key
+                            .is_key(*shift_state, &RawKey::Action(KeyboardAction::ToggleShift))
+                            && *shift_state
                         {
                             button = button.selected(true);
                         } else {
-                            let current_key = key.key(self.shift_state);
-                            let sel0 = self.selected.0.as_ref().is_some_and(|s| s == &current_key);
-                            let sel1 = self.selected.1.as_ref().is_some_and(|s| s == &current_key);
+                            let current_key = key.key(*shift_state);
+                            let sel0 = selected.0.as_ref().is_some_and(|s| s == &current_key);
+                            let sel1 = selected.1.as_ref().is_some_and(|s| s == &current_key);
 
                             if sel0 && sel1 {
                                 // Purple for both
@@ -482,7 +497,7 @@ impl KeyboardState {
                                     .fill(egui::Color32::from_rgb(120, 60, 180))
                                     .selected(true);
                             } else if sel0
-                                || (self.selected.0.is_none()
+                                || (selected.0.is_none()
                                     && left_center.as_ref().is_some_and(|c| c == &current_key))
                             {
                                 // Blue for left stick
@@ -490,7 +505,7 @@ impl KeyboardState {
                                     .fill(egui::Color32::from_rgb(50, 100, 180))
                                     .selected(true);
                             } else if sel1
-                                || (self.selected.1.is_none()
+                                || (selected.1.is_none()
                                     && right_center.as_ref().is_some_and(|c| c == &current_key))
                             {
                                 // Green for right stick
@@ -508,15 +523,15 @@ impl KeyboardState {
                         }
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                        if key.display_modifiers && (self.ctrl_mod || self.alt_mod) {
+                        if key.display_modifiers && (*ctrl_mod || *alt_mod) {
                             let mut mods = Vec::new();
-                            if self.ctrl_mod {
+                            if *ctrl_mod {
                                 mods.push("ctrl");
                             }
-                            if self.shift_mod {
+                            if *shift_mod {
                                 mods.push("shift");
                             }
-                            if self.alt_mod {
+                            if *alt_mod {
                                 mods.push("alt");
                             }
                             let mod_string = mods.join("+");
@@ -532,7 +547,7 @@ impl KeyboardState {
                         }
 
                         if response.clicked() {
-                            pressed_key = Some(key.key(self.shift_state));
+                            pressed_key = Some(key.key(*shift_state));
                         }
                     }
                     if capturing_centres {
@@ -546,7 +561,7 @@ impl KeyboardState {
 
         if capturing_centres {
             current_layout.update_geometry(captured_data);
-            geometry_snap::publish(&self.current_layout, current_layout);
+            geometry_snap::publish(current_layout_name, current_layout);
         }
 
         pressed_key
@@ -566,7 +581,7 @@ impl KeyboardState {
 
         self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
 
-        self.invalidate_geometry();
+        self.on_layouts_changed();
 
         Ok(())
     }
