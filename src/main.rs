@@ -78,7 +78,8 @@ impl eframe::App for App {
         [0.08, 0.08, 0.08, self.current_opacity]
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
         let cfg = config::get();
         let is_transparent = cfg.transparent;
         {
@@ -163,10 +164,10 @@ impl eframe::App for App {
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let inner = egui::Frame::NONE.show(ui, |ui| {
                     let mut s = self.state.lock().unwrap();
-                    s.draw_ui(ctx, ui);
+                    s.draw_ui(&ctx, ui);
                 });
                 size = inner.response.rect.size() + [10.0, 10.0].into();
             });

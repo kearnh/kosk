@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use egui::text::CCursor;
+use egui::text::{ByteIndex, CCursor};
 use egui::text_selection::text_cursor_state::{char_index_from_byte_index, cursor_rect};
 use egui::{Color32, Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
@@ -148,7 +148,7 @@ impl TextInputState {
             let row_height = ui.fonts_mut(|f| f.row_height(&font_id));
             let ccursor = CCursor::new(char_index_from_byte_index(
                 self.text.as_str(),
-                self.cursor_pos,
+                ByteIndex(self.cursor_pos),
             ));
             let primary_cursor_rect = cursor_rect(&output.galley, &ccursor, row_height)
                 .translate(output.galley_pos.to_vec2());
