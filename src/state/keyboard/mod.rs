@@ -20,7 +20,7 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Ui};
 
-mod display_icon;
+pub(crate) mod display_icon;
 pub(crate) mod geometry_snap;
 mod key;
 mod keyboard_action;

@@ -4,6 +4,7 @@ use crate::config;
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::get_action;
 use crate::state::event::{Event, EventQueue, EventSource, ReturnStateResult};
+use crate::state::keyboard::display_icon::LabelCache;
 use crate::state::keyboard::{self, KeyboardAction};
 use crate::state::menu_action::MenuAction;
 use crate::state::move_window_action::MoveWindowAction;
@@ -72,6 +73,36 @@ const BINDING_COL_GAP: f32 = 16.0;
 
 fn row_focus_fill() -> Color32 {
     Color32::from_rgba_unmultiplied(40, 90, 160, 80)
+}
+
+const UI_FONT_SIZE: f32 = 14.0;
+
+fn status_icon_template(status: &str) -> String {
+    if status == "ready" {
+        "{icon:check} ready".to_owned()
+    } else if status == "saved" {
+        "{icon:check-circle} saved".to_owned()
+    } else if status.starts_with("warning:")
+        || status.starts_with("conflict:")
+        || status.starts_with("invalid")
+        || status.starts_with("save failed")
+    {
+        format!("{{icon:warning}} {status}")
+    } else {
+        status.to_owned()
+    }
+}
+
+fn status_color(status: &str) -> Color32 {
+    if status.starts_with("warning:") || status.starts_with("conflict:") {
+        Color32::YELLOW
+    } else if status.starts_with("invalid") || status.starts_with("save failed") {
+        Color32::from_rgb(255, 120, 120)
+    } else if status == "saved" {
+        Color32::from_rgb(140, 220, 140)
+    } else {
+        Color32::WHITE
+    }
 }
 
 /// Why SelectKey was opened; consumed in [`MappingsState::on_return`].
@@ -289,12 +320,13 @@ pub struct MappingsState {
     tab: StateId,
     focus_zone: FocusZone,
     focus_row: usize,
-    /// 0..n_pills = pill index; n_pills = trailing `[+]` (no action-label column).
+    /// 0..n_pills = pill index; n_pills = trailing add (`+`) control.
     focus_col: usize,
     footer_focus: FooterItem,
     listen: Option<ListenState>,
     pending_key_pick: Option<PendingKeyPick>,
     prev_held: HashSet<ControllerButton>,
+    label_cache: LabelCache,
 }
 
 impl MappingsState {
@@ -311,6 +343,7 @@ impl MappingsState {
             listen: None,
             pending_key_pick: None,
             prev_held: HashSet::new(),
+            label_cache: LabelCache::new(),
         }
     }
 
@@ -857,20 +890,22 @@ impl MappingsState {
         ui.horizontal(|ui| {
             ui.heading(RichText::new("Key Mappings").color(Color32::WHITE));
             if self.dirty {
-                ui.label("unsaved*");
+                let dirty = self.label_cache.get(
+                    "{icon:circle:fill} unsaved",
+                    UI_FONT_SIZE,
+                    Color32::from_rgb(255, 180, 60),
+                );
+                ui.label(dirty);
             }
         });
 
         ui.horizontal(|ui| {
             for mode in EDITABLE_MODES {
                 let selected = self.tab == mode;
-                let focused = self.focus_zone == FocusZone::Tabs && self.tab == mode;
-                let label = if focused {
-                    format!("> {} <", mode_label(mode))
-                } else {
-                    mode_label(mode).to_owned()
-                };
-                if ui.add(Button::new(label).selected(selected)).clicked() {
+                if ui
+                    .add(Button::new(mode_label(mode)).selected(selected))
+                    .clicked()
+                {
                     self.set_tab(mode);
                     self.focus_zone = FocusZone::Tabs;
                 }
@@ -884,6 +919,18 @@ impl MappingsState {
         let focus_zone = self.focus_zone;
         let focus_row = self.focus_row;
         let focus_col = self.focus_col;
+        let plus_label = self
+            .label_cache
+            .get("{icon:plus}", UI_FONT_SIZE, Color32::WHITE);
+        let delete_label =
+            self.label_cache
+                .get("{icon:trash} Delete", UI_FONT_SIZE, Color32::WHITE);
+        let cancel_label = self
+            .label_cache
+            .get("{icon:x} Cancel", UI_FONT_SIZE, Color32::WHITE);
+        let save_label =
+            self.label_cache
+                .get("{icon:floppy-disk} Save", UI_FONT_SIZE, Color32::WHITE);
 
         let mut clicked_listen: Option<(ListenMode, ListenTarget)> = None;
         let mut clicked_focus: Option<(usize, usize)> = None;
@@ -962,8 +1009,9 @@ impl MappingsState {
 
                                     let plus_col = n_pills;
                                     let plus_selected = row_focused && focus_col == plus_col;
-                                    let plus_resp =
-                                        ui.add(Button::new("[+]").selected(plus_selected));
+                                    let plus_resp = ui.add(
+                                        Button::new(plus_label.clone()).selected(plus_selected),
+                                    );
                                     if plus_resp.clicked() {
                                         clicked_focus = Some((row_idx, plus_col));
                                         clicked_listen = Some((
@@ -1013,15 +1061,29 @@ impl MappingsState {
                 Some(ListenMode::Chord) => "chord",
                 None => "",
             };
-            ui.colored_label(egui::Color32::YELLOW, format!("LISTENING — {kind} …"));
-            ui.label("B = cancel listen");
+            let listen_label = self.label_cache.get(
+                &format!("{{icon:microphone}} LISTENING — {kind} …"),
+                UI_FONT_SIZE,
+                Color32::YELLOW,
+            );
+            ui.label(listen_label);
+            let cancel_listen =
+                self.label_cache
+                    .get("{icon:x} B = cancel listen", UI_FONT_SIZE, Color32::WHITE);
+            ui.label(cancel_listen);
         } else {
-            ui.label(format!("status: {}", self.status));
+            let status = self.status.clone();
+            let status_label = self.label_cache.get(
+                &status_icon_template(&status),
+                UI_FONT_SIZE,
+                status_color(&status),
+            );
+            ui.label(status_label);
             ui.horizontal(|ui| {
                 let del_sel =
                     self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Delete;
                 if ui
-                    .add(Button::new("Delete binding").selected(del_sel))
+                    .add(Button::new(delete_label).selected(del_sel))
                     .clicked()
                 {
                     self.focus_zone = FocusZone::Footer;
@@ -1030,12 +1092,15 @@ impl MappingsState {
                 }
                 let cancel_sel =
                     self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Cancel;
-                if ui.add(Button::new("Cancel").selected(cancel_sel)).clicked() {
+                if ui
+                    .add(Button::new(cancel_label).selected(cancel_sel))
+                    .clicked()
+                {
                     self.do_cancel(events, &EventSource::MouseClick);
                 }
                 let save_sel =
                     self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Save;
-                if ui.add(Button::new("Save").selected(save_sel)).clicked() {
+                if ui.add(Button::new(save_label).selected(save_sel)).clicked() {
                     self.focus_zone = FocusZone::Footer;
                     self.footer_focus = FooterItem::Save;
                     self.do_save();

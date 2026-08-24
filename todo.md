@@ -48,6 +48,13 @@ Done: engine skeleton, tests, and `completion_dev` — see [docs/completion.md](
   `Vec<String>`, `selected_index`, last `prefix` used to
   avoid redundant work.
 
+Mappings UI
+-----------
+
+- Controller: Cancel/Save/Delete only via D-pad Down past every binding row.
+  Add a jump-to-footer shortcut (e.g. Options) so the footer is reachable
+  without scrolling the whole list.
+
 Bugs
 ----
 
