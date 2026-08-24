@@ -1332,7 +1332,7 @@ mod tests {
             false
         }
         fn is_engaged(&self) -> bool {
-            self.0.is_empty() == false
+            !self.0.is_empty()
         }
         fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
             Box::new(self.clone())

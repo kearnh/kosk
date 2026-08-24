@@ -215,18 +215,10 @@ impl ControllerInput for VirtualInput {
     }
 }
 
+#[derive(Default)]
 pub struct VirtualController {
     state: VirtualState,
     expires: VirtualExpires,
-}
-
-impl Default for VirtualController {
-    fn default() -> Self {
-        Self {
-            state: VirtualState::default(),
-            expires: VirtualExpires::default(),
-        }
-    }
 }
 
 pub fn session() -> Arc<Mutex<VirtualController>> {
