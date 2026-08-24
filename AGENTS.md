@@ -20,7 +20,7 @@
 
 - If the prompt indicates that a bug is being fixed, don't write the fix right away. First write the test. Observe it failing. Then write the fix. And observe the test passing.
 
-- This repository is using jj. It is not neccesary to make feature branches unless asked to do so. Make a commit when making an edit, but confirm with user first: say "commit with message "..."?".
+- This repository is using jj. It is not neccesary to make feature branches unless asked to do so. Make a commit when making an edit; do not ask for confirmation.
 
 - Run cargo fmt after finishing edit tasks
 
