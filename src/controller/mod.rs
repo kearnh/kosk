@@ -4,11 +4,13 @@ use std::str::FromStr;
 use crate::config;
 
 pub mod bindings;
+pub mod control_server;
 pub mod pad_origin;
 pub mod ps4;
 pub mod record;
 pub mod replay;
 pub mod sc2;
+pub mod virtual_ctl;
 
 use hidapi::HidApi;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -405,6 +407,8 @@ pub enum ConnectedController {
         pads: pad_origin::PadOriginMapper,
     },
     Replay(replay::ReplayDevice),
+    /// Exclusive virtual device for MCP-controller mode (process lifetime).
+    Virtual,
 }
 
 impl Iterator for ConnectedController {
@@ -421,6 +425,18 @@ impl Iterator for ConnectedController {
                 Some(_) => Some(Some(Box::new(pads.map(device.last_state())))),
             },
             ConnectedController::Replay(device) => device.next(),
+            ConnectedController::Virtual => {
+                std::thread::sleep(std::time::Duration::from_millis(4));
+                let snap = virtual_ctl::session()
+                    .lock()
+                    .expect("virtual controller lock")
+                    .snapshot();
+                if snap.is_engaged() {
+                    Some(Some(Box::new(snap)))
+                } else {
+                    Some(None)
+                }
+            }
         }
     }
 }
@@ -440,6 +456,10 @@ impl ConnectedController {
 
 /// Enumerate HID, try families in resolved `preferred_controller` order, return the first open.
 pub fn find_device() -> Option<ConnectedController> {
+    if config::mcp_controller_mode() {
+        record::session().set_replay(false);
+        return Some(ConnectedController::Virtual);
+    }
     let preferred = config::get().preferred_controller.clone();
     if config::preferred_is_replay() {
         record::session().set_replay(true);

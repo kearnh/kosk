@@ -224,6 +224,9 @@ impl eframe::App for App {
 
 fn main() -> Result<()> {
     config::init()?;
+    if config::mcp_controller_mode() {
+        controller::control_server::spawn(config::mcp_controller_bind())?;
+    }
 
     // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
     #[cfg(feature = "wgpu")]

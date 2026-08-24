@@ -30,6 +30,11 @@ pub struct Args {
     /// Use the config file instead of config embedded in a recording.
     #[arg(long)]
     pub ignore_recorded_config: bool,
+
+    /// Exclusive virtual controller + local control port for kosk-mcp.
+    /// Also enabled by env `KOSK_CONTROLLER_MCP` (see `mcp_controller_mode`).
+    #[arg(long)]
+    pub mcp_controller: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
@@ -412,6 +417,7 @@ static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CLI_MCP_CONTROLLER: OnceLock<bool> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
 
@@ -857,7 +863,16 @@ pub fn init() -> Result<()> {
     CLI_IGNORE_RECORDED_CONFIG
         .set(args.ignore_recorded_config)
         .expect("CLI ignore-recorded-config was already set");
-    init_from_path(PathBuf::from(&args.config_path))
+    CLI_MCP_CONTROLLER
+        .set(args.mcp_controller)
+        .expect("CLI mcp-controller was already set");
+    init_from_path(PathBuf::from(&args.config_path))?;
+    if mcp_controller_mode() && preferred_is_replay() {
+        bail!(
+            "mcp-controller mode cannot be combined with replay (--replay / preferred_controller=replay)"
+        );
+    }
+    Ok(())
 }
 
 /// Load config from `config_path` without parsing process args (for auxiliary binaries).
@@ -892,6 +907,51 @@ pub fn cli_keys_log() -> Option<PathBuf> {
 
 pub fn ignore_recorded_config() -> bool {
     CLI_IGNORE_RECORDED_CONFIG.get().copied().unwrap_or(false)
+}
+
+
+/// True if `--mcp-controller` OR env `KOSK_CONTROLLER_MCP` is set truthy/address.
+pub fn mcp_controller_mode() -> bool {
+    if CLI_MCP_CONTROLLER.get().copied().unwrap_or(false) {
+        return true;
+    }
+    match std::env::var("KOSK_CONTROLLER_MCP") {
+        Err(_) => false,
+        Ok(v) => {
+            let t = v.trim();
+            !(t.is_empty() || t == "0" || t.eq_ignore_ascii_case("false"))
+        }
+    }
+}
+
+/// Bind address when MCP-controller mode is on. Default `127.0.0.1:5720`.
+///
+/// Env `KOSK_CONTROLLER_MCP`:
+/// - `1` / `true` / CLI-only → `127.0.0.1:5720`
+/// - otherwise parse as `host:port` (same idea as `EGUI_INSPECTION`)
+pub fn mcp_controller_bind() -> std::net::SocketAddr {
+    const DEFAULT: &str = "127.0.0.1:5720";
+    match std::env::var("KOSK_CONTROLLER_MCP") {
+        Ok(v) => {
+            let t = v.trim();
+            if t.is_empty()
+                || t == "0"
+                || t.eq_ignore_ascii_case("false")
+                || t == "1"
+                || t.eq_ignore_ascii_case("true")
+            {
+                DEFAULT.parse().expect("default mcp controller bind")
+            } else {
+                t.parse().unwrap_or_else(|_| {
+                    eprintln!(
+                        "warn: could not parse KOSK_CONTROLLER_MCP={t:?} as host:port; using {DEFAULT}"
+                    );
+                    DEFAULT.parse().expect("default mcp controller bind")
+                })
+            }
+        }
+        Err(_) => DEFAULT.parse().expect("default mcp controller bind"),
+    }
 }
 
 pub fn preferred_is_replay() -> bool {

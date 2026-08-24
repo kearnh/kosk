@@ -1,0 +1,17 @@
+[package]
+name = "kosk-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kosk-mcp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+egui_mcp = "=0.2.0"
+rmcp = { version = "1.7", features = ["server", "macros", "transport-io", "schemars"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+schemars = "1.0"

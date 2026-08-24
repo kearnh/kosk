@@ -17,7 +17,7 @@ use crate::controller::{ControllerButton, ControllerInput};
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
 pub const CURRENT_TAPE_VERSION: u32 = 1;
 
-const BUTTON_ORDER: [ControllerButton; 23] = [
+pub(crate) const BUTTON_ORDER: [ControllerButton; 23] = [
     ControllerButton::DpadUp,
     ControllerButton::DpadDown,
     ControllerButton::DpadLeft,

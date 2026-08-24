@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/kosk-mcp"]
+resolver = "2"
+
 [package]
 name = "kosk"
 version = "0.1.0"
@@ -11,13 +15,14 @@ path = "src/bin/sc2_test.rs"
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
-eframe = { version = "0.36.1", default-features = false, features = ["glow"] }
+eframe = { version = "0.36.1", default-features = false, features = ["glow", "inspection"] }
 egui = { version = "0.36.1", features = ["serde"] }
 enigo = { version = "0.6.1", features = ["serde"] }
 hidapi = "2.6.5"
 notify = "6.1.1"
 raw-window-handle = "0.6"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 serde_plain = "1.0.2"
 strum = { version = "0.27", features = ["derive"] }
 toml = "0.8"
