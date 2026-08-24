@@ -909,7 +909,6 @@ pub fn ignore_recorded_config() -> bool {
     CLI_IGNORE_RECORDED_CONFIG.get().copied().unwrap_or(false)
 }
 
-
 /// True if `--mcp-controller` OR env `KOSK_CONTROLLER_MCP` is set truthy/address.
 pub fn mcp_controller_mode() -> bool {
     if CLI_MCP_CONTROLLER.get().copied().unwrap_or(false) {

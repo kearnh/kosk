@@ -21,7 +21,9 @@ impl StickSide {
         match s.trim().to_ascii_lowercase().as_str() {
             "left" | "l" => Ok(Self::Left),
             "right" | "r" => Ok(Self::Right),
-            other => Err(format!("unknown stick/pad side '{other}' (expected left|right)")),
+            other => Err(format!(
+                "unknown stick/pad side '{other}' (expected left|right)"
+            )),
         }
     }
 }
