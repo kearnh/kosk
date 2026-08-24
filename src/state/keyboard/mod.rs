@@ -20,6 +20,7 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Ui};
 
+pub(crate) mod geometry_snap;
 mod key;
 mod keyboard_action;
 mod layout;
@@ -204,15 +205,8 @@ impl KeyboardState {
                 let _ = events.push(Event::ChangeState(*state), source);
             }
             SwitchLayout(layout_name) => {
-                if self.layouts.contains_key(layout_name) {
-                    self.current_layout = layout_name.to_string();
-                    // Reset selection when switching layouts
-                    self.selected = (None, None);
-                    input_record::session().tap_layout(layout_name);
-                } else {
-                    return Err(anyhow::anyhow!("Layout '{}' not found", layout_name));
-                }
-                return Ok(());
+                self.set_current_layout(layout_name)?;
+                input_record::session().tap_layout(layout_name);
             }
             FlipWindowLeftRight => {
                 let _ = events.push(Event::FlipWindowLeftRight, source);
@@ -278,6 +272,7 @@ impl KeyboardState {
         self.layouts = map;
         self.current_layout = header.current_layout.clone();
         self.selected = (None, None);
+        self.invalidate_geometry();
         Ok(())
     }
 
@@ -285,9 +280,20 @@ impl KeyboardState {
         if !self.layouts.contains_key(name) {
             return Err(anyhow::anyhow!("Layout '{}' not found", name));
         }
-        self.current_layout = name.to_string();
+        if self.current_layout != name {
+            self.current_layout = name.to_string();
+            self.invalidate_geometry();
+        }
         self.selected = (None, None);
         Ok(())
+    }
+
+    /// Drop captured centres on every loaded layout and clear the published snapshot.
+    fn invalidate_geometry(&mut self) {
+        for layout in self.layouts.values_mut() {
+            layout.clear_captured_geometry();
+        }
+        geometry_snap::clear();
     }
 
     pub(crate) fn toggle_shift(&mut self) {
@@ -540,6 +546,7 @@ impl KeyboardState {
 
         if capturing_centres {
             current_layout.update_geometry(captured_data);
+            geometry_snap::publish(&self.current_layout, current_layout);
         }
 
         pressed_key
@@ -558,6 +565,8 @@ impl KeyboardState {
         self.bindings = load_bindings(StateId::Keyboard)?;
 
         self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
+
+        self.invalidate_geometry();
 
         Ok(())
     }

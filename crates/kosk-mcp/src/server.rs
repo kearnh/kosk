@@ -5,12 +5,7 @@ use std::time::Duration;
 
 use egui_mcp::{Bridge, UiServer};
 use rmcp::{
-    ErrorData as McpError, ServerHandler, ServiceExt as _,
-    handler::server::{
-        router::tool::ToolRouter,
-        tool::ToolCallContext,
-        wrapper::Parameters,
-    },
+    handler::server::{router::tool::ToolRouter, tool::ToolCallContext, wrapper::Parameters},
     model::{
         CallToolRequestParams, CallToolResult, Content, Implementation, InitializeRequestParams,
         InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
@@ -18,7 +13,7 @@ use rmcp::{
     },
     schemars,
     service::{RequestContext, RoleServer},
-    tool, tool_router, transport,
+    tool, tool_router, transport, ErrorData as McpError, ServerHandler, ServiceExt as _,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -35,6 +30,7 @@ Prerequisites:
 Controller semantics:
 - Sticks and pads are latent holds until `release_*` / `controller_neutral` (or optional `duration_ms` expiry).
 - Prefer observe → act → verify (query_tree / get_controller_state / screenshot).
+- Keyboard stick targets: wait for Keyboard first frame → `geometry_ready` → `stick_for_key` → `set_stick` / pad or trigger tap. Returned sticks are post-map −1..1 (same space as `set_stick`).
 "#;
 
 fn text_error(msg: impl Into<String>) -> CallToolResult {
@@ -109,6 +105,40 @@ struct TriggerArgs {
     value: Option<u8>,
     #[serde(default)]
     duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct LayoutOptArgs {
+    #[serde(default)]
+    layout: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+struct KeyQueryArgs {
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    row: Option<usize>,
+    #[serde(default)]
+    col: Option<usize>,
+    #[serde(default)]
+    layout: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct StickForKeyArgs {
+    side: String,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    row: Option<usize>,
+    #[serde(default)]
+    col: Option<usize>,
+    /// Defaults to true when omitted.
+    #[serde(default)]
+    include_range: Option<bool>,
+    #[serde(default)]
+    layout: Option<String>,
 }
 
 fn controller_addr() -> String {
@@ -269,7 +299,10 @@ impl Server {
 
     /// Latch a stick axis (hold-at until release/neutral/duration).
     #[tool]
-    async fn set_stick(&self, Parameters(args): Parameters<StickArgs>) -> Result<CallToolResult, McpError> {
+    async fn set_stick(
+        &self,
+        Parameters(args): Parameters<StickArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let mut body = json!({
             "cmd": "set_stick",
             "side": args.side,
@@ -293,7 +326,10 @@ impl Server {
 
     /// Latch a touchpad (explicit touching + XY). Hold-at until release/neutral/duration.
     #[tool]
-    async fn set_pad(&self, Parameters(args): Parameters<PadArgs>) -> Result<CallToolResult, McpError> {
+    async fn set_pad(
+        &self,
+        Parameters(args): Parameters<PadArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let mut body = json!({
             "cmd": "set_pad",
             "side": args.side,
@@ -375,6 +411,75 @@ impl Server {
         _p: Parameters<EmptyArgs>,
     ) -> Result<CallToolResult, McpError> {
         controller_tool(json!({"cmd": "get_state"})).await
+    }
+
+    /// Whether keyboard centres are captured (after first Keyboard draw).
+    #[tool]
+    async fn geometry_ready(&self, _p: Parameters<EmptyArgs>) -> Result<CallToolResult, McpError> {
+        controller_tool(json!({"cmd": "geometry_ready"})).await
+    }
+
+    /// List non-Skip keys in the published geometry snapshot.
+    #[tool]
+    async fn list_keys(
+        &self,
+        Parameters(args): Parameters<LayoutOptArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut body = json!({"cmd": "list_keys"});
+        if let Some(layout) = args.layout {
+            body["layout"] = json!(layout);
+        }
+        controller_tool(body).await
+    }
+
+    /// Fetch one key's centre/hitbox/rest/scale info.
+    #[tool]
+    async fn get_key(
+        &self,
+        Parameters(args): Parameters<KeyQueryArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut body = json!({"cmd": "get_key"});
+        if let Some(key) = args.key {
+            body["key"] = json!(key);
+        }
+        if let Some(row) = args.row {
+            body["row"] = json!(row);
+        }
+        if let Some(col) = args.col {
+            body["col"] = json!(col);
+        }
+        if let Some(layout) = args.layout {
+            body["layout"] = json!(layout);
+        }
+        controller_tool(body).await
+    }
+
+    /// Post-map −1..1 stick target for a key on left|right stick.
+    #[tool]
+    async fn stick_for_key(
+        &self,
+        Parameters(args): Parameters<StickForKeyArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut body = json!({
+            "cmd": "stick_for_key",
+            "side": args.side,
+        });
+        if let Some(key) = args.key {
+            body["key"] = json!(key);
+        }
+        if let Some(row) = args.row {
+            body["row"] = json!(row);
+        }
+        if let Some(col) = args.col {
+            body["col"] = json!(col);
+        }
+        if let Some(include_range) = args.include_range {
+            body["include_range"] = json!(include_range);
+        }
+        if let Some(layout) = args.layout {
+            body["layout"] = json!(layout);
+        }
+        controller_tool(body).await
     }
 }
 

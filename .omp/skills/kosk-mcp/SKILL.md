@@ -68,6 +68,9 @@ Controller tools (latent hold-at until `release_*` / `controller_neutral`, or op
 | `set_trigger` | Analog trigger |
 | `get_controller_state` / `controller_status` | Observe |
 | `controller_neutral` | Clear all inputs |
+| `geometry_ready` / `list_keys` / `get_key` / `stick_for_key` | Keyboard stick targets (post-map −1..1) |
+
+After attach, call `geometry_ready` (wait until Keyboard first frame) then `stick_for_key` before inventing stick coords.
 
 ### 4. Teardown
 
@@ -85,5 +88,6 @@ Prefer loopback. Do not bind `0.0.0.0` without intent — inspection and control
 - [ ] `/mcp reload` if tools missing
 - [ ] Launch: `EGUI_INSPECTION=1` + `KOSK_CONTROLLER_MCP=1` (or `--mcp-controller`)
 - [ ] `attach` → `127.0.0.1:5719`
+- [ ] `geometry_ready` → `stick_for_key` before inventing stick coords
 - [ ] `set_stick` / `set_pad` / buttons / `query_tree` / `screenshot`
 - [ ] `disconnect` + kill kosk

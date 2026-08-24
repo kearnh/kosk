@@ -450,6 +450,88 @@ impl KeyboardLayout {
         self.right_stick_center = self.get_key_center(&RawKey::Key('k')).unwrap_or_default();
     }
 
+    /// Reset centre/hitbox/rest fields. Call sites must use this (or
+    /// `KeyboardState::invalidate_geometry`) — do not open-code `captured_centres = None`.
+    pub fn clear_captured_geometry(&mut self) {
+        self.captured_centres = None;
+        self.key_hit_boxes.clear();
+        self.left_stick_center = (0.0, 0.0);
+        self.right_stick_center = (0.0, 0.0);
+    }
+
+    /// Copy centres/hitboxes/ids into an immutable snapshot for MCP queries.
+    pub fn export_geometry(
+        &self,
+        layout_name: &str,
+        revision: u64,
+    ) -> crate::state::keyboard::geometry_snap::GeometrySnapshot {
+        use crate::state::keyboard::geometry_snap::{
+            wire_id, GeometrySnapshot, SnapHitBox, SnapKey, SnapRect,
+        };
+
+        let centres = self.captured_centres.as_ref();
+        let mut keys = Vec::new();
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (col_idx, key_button) in row.keys.iter().enumerate() {
+                let Some(id) = wire_id(&key_button.key.normal) else {
+                    continue; // Skip
+                };
+                let centre = centres
+                    .and_then(|c| c.get(row_idx))
+                    .and_then(|r| r.get(col_idx))
+                    .and_then(|p| p.map(|pos| (pos.x, pos.y)));
+                let hitbox = self
+                    .key_hit_boxes
+                    .get(row_idx)
+                    .and_then(|r| r.get(col_idx))
+                    .and_then(|h| {
+                        h.as_ref().map(|hb| match hb {
+                            HitBox::Circle { x, y, r } => SnapHitBox::Circle {
+                                x: *x,
+                                y: *y,
+                                r: *r,
+                            },
+                            HitBox::Ellipse { x, y, rx, ry } => SnapHitBox::Ellipse {
+                                x: *x,
+                                y: *y,
+                                rx: *rx,
+                                ry: *ry,
+                            },
+                        })
+                    });
+                keys.push(SnapKey {
+                    row: row_idx,
+                    col: col_idx,
+                    id,
+                    selectable: key_button.selectable,
+                    centre,
+                    hitbox,
+                });
+            }
+        }
+
+        let rect_to_snap = |r: &egui::Rect| SnapRect {
+            min_x: r.min.x,
+            min_y: r.min.y,
+            max_x: r.max.x,
+            max_y: r.max.y,
+        };
+
+        GeometrySnapshot {
+            layout: layout_name.to_owned(),
+            revision,
+            scale_x: self.scale_x,
+            scale_y: self.scale_y,
+            stick_scale_x: self.stick_scale_x,
+            stick_scale_y: self.stick_scale_y,
+            left_rest: self.left_stick_center,
+            right_rest: self.right_stick_center,
+            left_bounds: self.left_stick_bounds.iter().map(rect_to_snap).collect(),
+            right_bounds: self.right_stick_bounds.iter().map(rect_to_snap).collect(),
+            keys,
+        }
+    }
+
     pub fn stick_to_cursor_left(&self, stick: (f32, f32)) -> (f32, f32) {
         let (x, y) = stick;
         let dx = self.scale_x(x.into()) * self.stick_scale_x;
