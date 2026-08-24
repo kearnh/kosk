@@ -25,3 +25,5 @@
 - Run cargo fmt after finishing edit tasks
 
 - Run cargo clippy after editing and attend to any warnings
+
+- File edits: prefer hashline `edit` for existing files. Use `write` only for new files or deliberate full rewrites when you hold the complete intended contents. Never invent a whole-file `write` from a partial read window — that truncates the file.
