@@ -112,6 +112,7 @@ height = 1.1
 key = "switchState.menu"
 display = "{icon:list}"
 width = 0.8
+font_size = 18.0
 
 [[rows.keys]]
 key = "a"
