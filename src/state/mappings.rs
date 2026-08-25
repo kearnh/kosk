@@ -896,97 +896,107 @@ impl MappingsState {
         let mut clicked_focus: Option<(usize, usize)> = None;
 
         ui.add_enabled_ui(self.delete_confirm.is_none(), |ui| {
-            let table_frame = if focus_zone == FocusZone::Table {
-                Frame::NONE
-                    .fill(table_focus_fill())
-                    .stroke(table_focus_stroke())
-                    .inner_margin(Margin::same(4))
+            // Always reserve stroke width so content does not jump when focus changes.
+            let stroke = if focus_zone == FocusZone::Table {
+                table_focus_stroke()
             } else {
-                Frame::NONE.inner_margin(Margin::same(4))
+                Stroke::new(table_focus_stroke().width, Color32::TRANSPARENT)
             };
-            table_frame.show(ui, |ui| {
-                // allocate_ui_with_layout only advances by content width; add_sized
-                // keeps Action as a true fixed column under the header.
-                ui.horizontal(|ui| {
-                    ui.add_sized(
-                        Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
-                        Label::new(RichText::new("Action").strong()),
-                    );
-                    ui.add_space(BINDING_COL_GAP);
-                    ui.strong("Binding");
-                });
-
-                ScrollArea::vertical()
-                    .max_height(8.0 * 28.0)
-                    .show(ui, |ui| {
-                        for (row_idx, action) in rows.iter().enumerate() {
-                            let pills = if action.as_str() == SEND_KEY_GATEWAY {
-                                Vec::new()
-                            } else {
-                                draft_snapshot.get(action).cloned().unwrap_or_default()
-                            };
-                            let row_focused = focus_zone == FocusZone::Table
-                                && table_entered
-                                && focus_row == row_idx;
-                            let n_pills = pills.len();
-                            let row_fill = if row_focused {
-                                row_focus_fill()
-                            } else {
-                                Color32::TRANSPARENT
-                            };
-                            // Vertical-only margin so Binding lines up with header.
-                            let row_resp = Frame::NONE
-                                .fill(row_fill)
-                                .inner_margin(Margin::symmetric(0, 1))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        let action_resp = ui.add_sized(
-                                            Vec2::new(
-                                                ACTION_COL_WIDTH,
-                                                ui.spacing().interact_size.y,
-                                            ),
-                                            Label::new(action.as_str()).sense(Sense::click()),
-                                        );
-                                        if action_resp.clicked() {
-                                            clicked_focus = Some((row_idx, 0));
-                                        }
-
-                                        ui.add_space(BINDING_COL_GAP);
-
-                                        for (pill_idx, binding) in pills.iter().enumerate() {
-                                            let col = pill_idx;
-                                            let selected = row_focused && focus_col == col;
-                                            let resp = ui.add(
-                                                Button::new(format!("[{binding}]"))
-                                                    .selected(selected),
-                                            );
-                                            if resp.clicked() {
-                                                clicked_focus = Some((row_idx, col));
-                                                clicked_replace = Some((action.clone(), pill_idx));
-                                            }
-                                        }
-
-                                        let plus_col = n_pills;
-                                        let plus_selected = row_focused && focus_col == plus_col;
-                                        let plus_resp = ui.add(
-                                            Button::new(plus_label.clone()).selected(plus_selected),
-                                        );
-                                        if plus_resp.clicked() {
-                                            clicked_focus = Some((row_idx, plus_col));
-                                            clicked_add = Some(action.clone());
-                                        }
-                                    });
-                                })
-                                .response;
-                            if row_focused {
-                                row_resp.scroll_to_me(Some(Align::Center));
-                            }
-                            if row_resp.clicked() && clicked_focus.is_none() {
-                                clicked_focus = Some((row_idx, 0));
-                            }
-                        }
+            let fill = if focus_zone == FocusZone::Table && !table_entered {
+                table_focus_fill()
+            } else {
+                Color32::TRANSPARENT
+            };
+            Frame::NONE
+                .fill(fill)
+                .stroke(stroke)
+                .inner_margin(Margin::same(4))
+                .show(ui, |ui| {
+                    // allocate_ui_with_layout only advances by content width; add_sized
+                    // keeps Action as a true fixed column under the header.
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
+                            Label::new(RichText::new("Action").strong()),
+                        );
+                        ui.add_space(BINDING_COL_GAP);
+                        ui.strong("Binding");
                     });
-            });
+
+                    ScrollArea::vertical()
+                        .max_height(8.0 * 28.0)
+                        .show(ui, |ui| {
+                            for (row_idx, action) in rows.iter().enumerate() {
+                                let pills = if action.as_str() == SEND_KEY_GATEWAY {
+                                    Vec::new()
+                                } else {
+                                    draft_snapshot.get(action).cloned().unwrap_or_default()
+                                };
+                                let row_focused = focus_zone == FocusZone::Table
+                                    && table_entered
+                                    && focus_row == row_idx;
+                                let n_pills = pills.len();
+                                let row_fill = if row_focused {
+                                    row_focus_fill()
+                                } else {
+                                    Color32::TRANSPARENT
+                                };
+                                // Vertical-only margin so Binding lines up with header.
+                                let row_resp = Frame::NONE
+                                    .fill(row_fill)
+                                    .inner_margin(Margin::symmetric(0, 1))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            let action_resp = ui.add_sized(
+                                                Vec2::new(
+                                                    ACTION_COL_WIDTH,
+                                                    ui.spacing().interact_size.y,
+                                                ),
+                                                Label::new(action.as_str()).sense(Sense::click()),
+                                            );
+                                            if action_resp.clicked() {
+                                                clicked_focus = Some((row_idx, 0));
+                                            }
+
+                                            ui.add_space(BINDING_COL_GAP);
+
+                                            for (pill_idx, binding) in pills.iter().enumerate() {
+                                                let col = pill_idx;
+                                                let selected = row_focused && focus_col == col;
+                                                let resp = ui.add(
+                                                    Button::new(format!("[{binding}]"))
+                                                        .selected(selected),
+                                                );
+                                                if resp.clicked() {
+                                                    clicked_focus = Some((row_idx, col));
+                                                    clicked_replace =
+                                                        Some((action.clone(), pill_idx));
+                                                }
+                                            }
+
+                                            let plus_col = n_pills;
+                                            let plus_selected =
+                                                row_focused && focus_col == plus_col;
+                                            let plus_resp = ui.add(
+                                                Button::new(plus_label.clone())
+                                                    .selected(plus_selected),
+                                            );
+                                            if plus_resp.clicked() {
+                                                clicked_focus = Some((row_idx, plus_col));
+                                                clicked_add = Some(action.clone());
+                                            }
+                                        });
+                                    })
+                                    .response;
+                                if row_focused {
+                                    row_resp.scroll_to_me(Some(Align::Center));
+                                }
+                                if row_resp.clicked() && clicked_focus.is_none() {
+                                    clicked_focus = Some((row_idx, 0));
+                                }
+                            }
+                        });
+                });
         });
 
         if let Some((row, col)) = clicked_focus {
