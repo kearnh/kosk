@@ -12,7 +12,8 @@ use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 use anyhow::Result;
 use egui::{
-    Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Ui, Vec2,
+    Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Stroke, Ui,
+    Vec2,
 };
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -73,6 +74,14 @@ fn row_focus_fill() -> Color32 {
     Color32::from_rgba_unmultiplied(40, 90, 160, 80)
 }
 
+fn table_focus_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(40, 90, 160, 40)
+}
+
+fn table_focus_stroke() -> Stroke {
+    Stroke::new(2.0, Color32::from_rgb(80, 160, 255))
+}
+
 const UI_FONT_SIZE: f32 = 14.0;
 
 fn status_icon_template(status: &str) -> String {
@@ -113,15 +122,10 @@ enum PendingSelect {
     Add,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FocusZone {
     Tabs,
     Table,
-    Footer,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FooterItem {
     Cancel,
     Save,
 }
@@ -307,7 +311,8 @@ pub struct MappingsState {
     focus_row: usize,
     /// 0..n_pills = pill index; n_pills = trailing add (`+`) control.
     focus_col: usize,
-    footer_focus: FooterItem,
+    /// When `focus_zone == Table`, true means row/pill navigation is active.
+    table_entered: bool,
     pending_select: Option<PendingSelect>,
     /// Fake delete modal payload: (action, pill). While set, input is modal-only.
     delete_confirm: Option<(String, usize)>,
@@ -325,7 +330,7 @@ impl MappingsState {
             focus_zone: FocusZone::Table,
             focus_row: 0,
             focus_col: 0,
-            footer_focus: FooterItem::Save,
+            table_entered: false,
             pending_select: None,
             delete_confirm: None,
             prev_held: HashSet::new(),
@@ -344,7 +349,7 @@ impl MappingsState {
         self.focus_zone = FocusZone::Table;
         self.focus_row = 0;
         self.focus_col = 0;
-        self.footer_focus = FooterItem::Save;
+        self.table_entered = false;
         self.pending_select = None;
         self.delete_confirm = None;
         self.prev_held.clear();
@@ -516,6 +521,7 @@ impl MappingsState {
             self.focus_row = idx;
             self.focus_col = pill;
             self.focus_zone = FocusZone::Table;
+            self.table_entered = true;
         }
     }
 
@@ -585,6 +591,7 @@ impl MappingsState {
         self.focus_row = 0;
         self.focus_col = 0;
         self.focus_zone = FocusZone::Tabs;
+        self.table_entered = false;
         self.delete_confirm = None;
         self.clamp_focus();
     }
@@ -608,7 +615,7 @@ impl MappingsState {
 
     /// Rising Y on a real pill opens the fake delete modal; elsewhere a no-op.
     fn request_delete_focused(&mut self) {
-        if self.focus_zone != FocusZone::Table {
+        if self.focus_zone != FocusZone::Table || !self.table_entered {
             return;
         }
         let rows = self.rows();
@@ -626,11 +633,13 @@ impl MappingsState {
     fn activate_focused(&mut self, events: &mut EventQueue, source: &EventSource) {
         match self.focus_zone {
             FocusZone::Tabs => {}
-            FocusZone::Footer => match self.footer_focus {
-                FooterItem::Cancel => self.do_cancel(events, source),
-                FooterItem::Save => self.do_save(),
-            },
+            FocusZone::Cancel => self.do_cancel(events, source),
+            FocusZone::Save => self.do_save(),
             FocusZone::Table => {
+                if !self.table_entered {
+                    self.table_entered = true;
+                    return;
+                }
                 let rows = self.rows();
                 if self.focus_row >= rows.len() {
                     return;
@@ -718,7 +727,11 @@ impl MappingsState {
         }
 
         if rising(BACK_CANCEL, &held, &prev) {
-            self.do_cancel(events, &source_for(BACK_CANCEL));
+            if self.focus_zone == FocusZone::Table && self.table_entered {
+                self.table_entered = false;
+            } else {
+                self.do_cancel(events, &source_for(BACK_CANCEL));
+            }
             self.prev_held = held;
             return;
         }
@@ -751,38 +764,46 @@ impl MappingsState {
             match self.focus_zone {
                 FocusZone::Tabs => {}
                 FocusZone::Table => {
-                    if self.focus_row == 0 {
-                        self.focus_zone = FocusZone::Tabs;
+                    if self.table_entered {
+                        if self.focus_row > 0 {
+                            self.focus_row -= 1;
+                            self.focus_col = 0;
+                            self.clamp_focus();
+                        }
                     } else {
-                        self.focus_row -= 1;
-                        self.focus_col = 0;
-                        self.clamp_focus();
+                        self.focus_zone = FocusZone::Tabs;
                     }
                 }
-                FocusZone::Footer => {
+                FocusZone::Cancel => {
                     self.focus_zone = FocusZone::Table;
-                    self.focus_col = 0;
-                    self.clamp_focus();
+                    self.table_entered = false;
+                }
+                FocusZone::Save => {
+                    self.focus_zone = FocusZone::Cancel;
                 }
             }
         } else if rising(NAV_DOWN, &held, &prev) {
             match self.focus_zone {
                 FocusZone::Tabs => {
                     self.focus_zone = FocusZone::Table;
-                    self.focus_col = 0;
-                    self.clamp_focus();
+                    self.table_entered = false;
                 }
                 FocusZone::Table => {
-                    let n = self.rows().len();
-                    if n == 0 || self.focus_row + 1 >= n {
-                        self.focus_zone = FocusZone::Footer;
+                    if self.table_entered {
+                        let n = self.rows().len();
+                        if n > 0 && self.focus_row + 1 < n {
+                            self.focus_row += 1;
+                            self.focus_col = 0;
+                            self.clamp_focus();
+                        }
                     } else {
-                        self.focus_row += 1;
-                        self.focus_col = 0;
-                        self.clamp_focus();
+                        self.focus_zone = FocusZone::Cancel;
                     }
                 }
-                FocusZone::Footer => {}
+                FocusZone::Cancel => {
+                    self.focus_zone = FocusZone::Save;
+                }
+                FocusZone::Save => {}
             }
         } else if rising(NAV_LEFT, &held, &prev) {
             match self.focus_zone {
@@ -793,16 +814,14 @@ impl MappingsState {
                     self.set_tab(next);
                 }
                 FocusZone::Table => {
-                    if self.focus_col > 0 {
+                    if self.table_entered && self.focus_col > 0 {
                         self.focus_col -= 1;
                         self.clamp_focus();
                     }
                 }
-                FocusZone::Footer => {
-                    self.footer_focus = match self.footer_focus {
-                        FooterItem::Cancel => FooterItem::Save,
-                        FooterItem::Save => FooterItem::Cancel,
-                    };
+                FocusZone::Cancel => {}
+                FocusZone::Save => {
+                    self.focus_zone = FocusZone::Cancel;
                 }
             }
         } else if rising(NAV_RIGHT, &held, &prev) {
@@ -813,15 +832,15 @@ impl MappingsState {
                     self.set_tab(next);
                 }
                 FocusZone::Table => {
-                    self.focus_col += 1;
-                    self.clamp_focus();
+                    if self.table_entered {
+                        self.focus_col += 1;
+                        self.clamp_focus();
+                    }
                 }
-                FocusZone::Footer => {
-                    self.footer_focus = match self.footer_focus {
-                        FooterItem::Cancel => FooterItem::Save,
-                        FooterItem::Save => FooterItem::Cancel,
-                    };
+                FocusZone::Cancel => {
+                    self.focus_zone = FocusZone::Save;
                 }
+                FocusZone::Save => {}
             }
         }
 
@@ -859,6 +878,7 @@ impl MappingsState {
         let rows = self.rows();
         let draft_snapshot = self.current_draft().clone();
         let focus_zone = self.focus_zone;
+        let table_entered = self.table_entered;
         let focus_row = self.focus_row;
         let focus_col = self.focus_col;
         let plus_label = self
@@ -876,85 +896,102 @@ impl MappingsState {
         let mut clicked_focus: Option<(usize, usize)> = None;
 
         ui.add_enabled_ui(self.delete_confirm.is_none(), |ui| {
-            // allocate_ui_with_layout only advances by content width; add_sized
-            // keeps Action as a true fixed column under the header.
-            ui.horizontal(|ui| {
-                ui.add_sized(
-                    Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
-                    Label::new(RichText::new("Action").strong()),
-                );
-                ui.add_space(BINDING_COL_GAP);
-                ui.strong("Binding");
-            });
-
-            ScrollArea::vertical()
-                .max_height(8.0 * 28.0)
-                .show(ui, |ui| {
-                    for (row_idx, action) in rows.iter().enumerate() {
-                        let pills = if action.as_str() == SEND_KEY_GATEWAY {
-                            Vec::new()
-                        } else {
-                            draft_snapshot.get(action).cloned().unwrap_or_default()
-                        };
-                        let row_focused = focus_zone == FocusZone::Table && focus_row == row_idx;
-                        let n_pills = pills.len();
-                        let row_fill = if row_focused {
-                            row_focus_fill()
-                        } else {
-                            Color32::TRANSPARENT
-                        };
-                        // Vertical-only margin so Binding lines up with header.
-                        let row_resp = Frame::NONE
-                            .fill(row_fill)
-                            .inner_margin(Margin::symmetric(0, 1))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    let action_resp = ui.add_sized(
-                                        Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
-                                        Label::new(action.as_str()).sense(Sense::click()),
-                                    );
-                                    if action_resp.clicked() {
-                                        clicked_focus = Some((row_idx, 0));
-                                    }
-
-                                    ui.add_space(BINDING_COL_GAP);
-
-                                    for (pill_idx, binding) in pills.iter().enumerate() {
-                                        let col = pill_idx;
-                                        let selected = row_focused && focus_col == col;
-                                        let resp = ui.add(
-                                            Button::new(format!("[{binding}]")).selected(selected),
-                                        );
-                                        if resp.clicked() {
-                                            clicked_focus = Some((row_idx, col));
-                                            clicked_replace = Some((action.clone(), pill_idx));
-                                        }
-                                    }
-
-                                    let plus_col = n_pills;
-                                    let plus_selected = row_focused && focus_col == plus_col;
-                                    let plus_resp = ui.add(
-                                        Button::new(plus_label.clone()).selected(plus_selected),
-                                    );
-                                    if plus_resp.clicked() {
-                                        clicked_focus = Some((row_idx, plus_col));
-                                        clicked_add = Some(action.clone());
-                                    }
-                                });
-                            })
-                            .response;
-                        if row_focused {
-                            row_resp.scroll_to_me(Some(Align::Center));
-                        }
-                        if row_resp.clicked() && clicked_focus.is_none() {
-                            clicked_focus = Some((row_idx, 0));
-                        }
-                    }
+            let table_frame = if focus_zone == FocusZone::Table {
+                Frame::NONE
+                    .fill(table_focus_fill())
+                    .stroke(table_focus_stroke())
+                    .inner_margin(Margin::same(4))
+            } else {
+                Frame::NONE.inner_margin(Margin::same(4))
+            };
+            table_frame.show(ui, |ui| {
+                // allocate_ui_with_layout only advances by content width; add_sized
+                // keeps Action as a true fixed column under the header.
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
+                        Label::new(RichText::new("Action").strong()),
+                    );
+                    ui.add_space(BINDING_COL_GAP);
+                    ui.strong("Binding");
                 });
+
+                ScrollArea::vertical()
+                    .max_height(8.0 * 28.0)
+                    .show(ui, |ui| {
+                        for (row_idx, action) in rows.iter().enumerate() {
+                            let pills = if action.as_str() == SEND_KEY_GATEWAY {
+                                Vec::new()
+                            } else {
+                                draft_snapshot.get(action).cloned().unwrap_or_default()
+                            };
+                            let row_focused = focus_zone == FocusZone::Table
+                                && table_entered
+                                && focus_row == row_idx;
+                            let n_pills = pills.len();
+                            let row_fill = if row_focused {
+                                row_focus_fill()
+                            } else {
+                                Color32::TRANSPARENT
+                            };
+                            // Vertical-only margin so Binding lines up with header.
+                            let row_resp = Frame::NONE
+                                .fill(row_fill)
+                                .inner_margin(Margin::symmetric(0, 1))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        let action_resp = ui.add_sized(
+                                            Vec2::new(
+                                                ACTION_COL_WIDTH,
+                                                ui.spacing().interact_size.y,
+                                            ),
+                                            Label::new(action.as_str()).sense(Sense::click()),
+                                        );
+                                        if action_resp.clicked() {
+                                            clicked_focus = Some((row_idx, 0));
+                                        }
+
+                                        ui.add_space(BINDING_COL_GAP);
+
+                                        for (pill_idx, binding) in pills.iter().enumerate() {
+                                            let col = pill_idx;
+                                            let selected = row_focused && focus_col == col;
+                                            let resp = ui.add(
+                                                Button::new(format!("[{binding}]"))
+                                                    .selected(selected),
+                                            );
+                                            if resp.clicked() {
+                                                clicked_focus = Some((row_idx, col));
+                                                clicked_replace = Some((action.clone(), pill_idx));
+                                            }
+                                        }
+
+                                        let plus_col = n_pills;
+                                        let plus_selected = row_focused && focus_col == plus_col;
+                                        let plus_resp = ui.add(
+                                            Button::new(plus_label.clone()).selected(plus_selected),
+                                        );
+                                        if plus_resp.clicked() {
+                                            clicked_focus = Some((row_idx, plus_col));
+                                            clicked_add = Some(action.clone());
+                                        }
+                                    });
+                                })
+                                .response;
+                            if row_focused {
+                                row_resp.scroll_to_me(Some(Align::Center));
+                            }
+                            if row_resp.clicked() && clicked_focus.is_none() {
+                                clicked_focus = Some((row_idx, 0));
+                            }
+                        }
+                    });
+            });
         });
 
         if let Some((row, col)) = clicked_focus {
             self.focus_zone = FocusZone::Table;
+            self.table_entered = true;
             self.focus_row = row;
             self.focus_col = col;
             self.clamp_focus();
@@ -980,24 +1017,22 @@ impl MappingsState {
         );
         ui.label(status_label);
         ui.horizontal(|ui| {
-            let cancel_sel =
-                self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Cancel;
+            let cancel_sel = self.focus_zone == FocusZone::Cancel;
             if ui
                 .add(Button::new(cancel_label).selected(cancel_sel))
                 .clicked()
             {
+                self.focus_zone = FocusZone::Cancel;
                 self.do_cancel(events, &EventSource::MouseClick);
             }
-            let save_sel =
-                self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Save;
+            let save_sel = self.focus_zone == FocusZone::Save;
             if ui.add(Button::new(save_label).selected(save_sel)).clicked() {
-                self.focus_zone = FocusZone::Footer;
-                self.footer_focus = FooterItem::Save;
+                self.focus_zone = FocusZone::Save;
                 self.do_save();
             }
         });
-        ui.label("A edit/add   Y delete binding   B Back/Cancel");
-        ui.label("L1/R1 mode tab   D-pad move row / pill");
+        ui.label("A enter table / edit   B back out / Cancel   Y delete binding");
+        ui.label("L1/R1 mode tab   D-pad move focus / row / pill");
 
         if let Some((action, pill)) = self.delete_confirm.clone() {
             let binding_text = self
@@ -1502,10 +1537,15 @@ mod tests {
         m.focus_zone = FocusZone::Table;
         m.focus_row = 0;
         m.focus_col = 0;
-        m.footer_focus = FooterItem::Save;
+        m.table_entered = false;
         m.pending_select = None;
         m.delete_confirm = None;
         m.prev_held.clear();
+    }
+
+    fn enter_table_cells(m: &mut MappingsState) {
+        enter_browse_focus(m);
+        m.table_entered = true;
     }
 
     fn gateway_row(m: &MappingsState) -> usize {
@@ -1523,13 +1563,14 @@ mod tests {
         m.focus_col = 0; // gateway has no pills; col 0 is [+]
         let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
         let mut events = EventQueue::passthrough();
-        // Documents the bug: cleared prev_held + still-held A looks like rising ACTIVATE.
+        // Outer Table absorbs rising A as drill-in; no SelectKey until cells entered.
         m.handle_browse_input(&held, &mut events);
         let drained = events.drain_pending();
         assert!(
-            matches!(drained.first(), Some((Event::CallState(_), _))),
-            "without holdover reset, held A opens SelectKey from [+]"
+            drained.is_empty(),
+            "outer Table rising A must not push CallState"
         );
+        assert!(m.table_entered, "outer rising A enters the table");
     }
 
     #[test]
@@ -1547,12 +1588,13 @@ mod tests {
             "holdover reset must not activate [+] while A still held"
         );
         assert!(m.pending_select.is_none());
+        assert!(!m.table_entered);
     }
 
     #[test]
     fn activate_plus_on_gateway_prefills_send_key_action() {
         let mut m = MappingsState::new();
-        enter_browse_focus(&mut m);
+        enter_table_cells(&mut m);
         m.focus_row = gateway_row(&m);
         m.focus_col = 0;
         let mut events = EventQueue::passthrough();
@@ -1574,7 +1616,7 @@ mod tests {
     #[test]
     fn activate_pill_prefills_replace_binding_and_editing() {
         let mut m = MappingsState::new();
-        enter_browse_focus(&mut m);
+        enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
             vec![single(ControllerButton::FaceTop)],
@@ -1610,7 +1652,7 @@ mod tests {
     #[test]
     fn delete_modal_confirm_removes_pill() {
         let mut m = MappingsState::new();
-        enter_browse_focus(&mut m);
+        enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
             vec![single(ControllerButton::FaceTop)],
@@ -1642,7 +1684,7 @@ mod tests {
     #[test]
     fn delete_modal_cancel_keeps_pill() {
         let mut m = MappingsState::new();
-        enter_browse_focus(&mut m);
+        enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
             vec![single(ControllerButton::FaceTop)],
@@ -1668,5 +1710,87 @@ mod tests {
             Some(vec![single(ControllerButton::FaceTop)])
         );
         assert!(!m.dirty);
+    }
+
+    fn press(m: &mut MappingsState, button: ControllerButton, events: &mut EventQueue) {
+        let none = ButtonSetInput(HashSet::new());
+        let held = ButtonSetInput(HashSet::from([button]));
+        m.handle_browse_input(&none, events);
+        m.handle_browse_input(&held, events);
+    }
+
+    #[test]
+    fn outer_table_down_up_visits_cancel_then_save() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let mut events = EventQueue::passthrough();
+
+        press(&mut m, ControllerButton::DpadDown, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Cancel);
+
+        press(&mut m, ControllerButton::DpadDown, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Save);
+
+        press(&mut m, ControllerButton::DpadUp, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Cancel);
+
+        press(&mut m, ControllerButton::DpadUp, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+        assert!(!m.table_entered);
+    }
+
+    #[test]
+    fn outer_table_a_enters_b_backs_out_without_leave() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let mut events = EventQueue::passthrough();
+
+        press(&mut m, ControllerButton::FaceBottom, &mut events);
+        assert!(m.table_entered);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+
+        press(&mut m, ControllerButton::FaceRight, &mut events);
+        assert!(!m.table_entered);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+        assert!(
+            events.drain_pending().is_empty(),
+            "B while table_entered must not ChangeState"
+        );
+    }
+
+    #[test]
+    fn table_entered_up_down_stay_inside_at_edges() {
+        let mut m = MappingsState::new();
+        enter_table_cells(&mut m);
+        let n = m.rows().len();
+        assert!(n > 0);
+        m.focus_row = n - 1;
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+
+        press(&mut m, ControllerButton::DpadDown, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+        assert!(m.table_entered);
+        assert_eq!(m.focus_row, n - 1);
+
+        m.focus_row = 0;
+        press(&mut m, ControllerButton::DpadUp, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+        assert!(m.table_entered);
+        assert_eq!(m.focus_row, 0);
+    }
+
+    #[test]
+    fn outer_table_up_to_tabs_then_down_back() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let mut events = EventQueue::passthrough();
+
+        press(&mut m, ControllerButton::DpadUp, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Tabs);
+
+        press(&mut m, ControllerButton::DpadDown, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Table);
+        assert!(!m.table_entered);
     }
 }
