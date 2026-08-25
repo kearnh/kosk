@@ -30,8 +30,36 @@ impl fmt::Display for EventSource {
 /// Result delivered by a callee via [`Event::ReturnState`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReturnStateResult {
-    Value(String),
+    /// SelectKey OK. Both strings trimmed; binding is canonical `ControllerBinding` Display.
+    SelectKey {
+        binding: String,
+        action: String,
+    },
     Cancelled,
+}
+
+/// Typed sub-UI call: the variant owns both the callee identity and its args,
+/// so mismatched callee/arg pairs cannot type-check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallRequest {
+    /// Prefill for SelectKey. `draft_mode` is a snapshot of the current mappings tab draft
+    /// (action → bindings) for the reactive existing-bindings list.
+    SelectKey {
+        binding: String,
+        action: String,
+        mode: StateId,
+        draft_mode: HashMap<String, Vec<ControllerBinding>>,
+        /// Pill being replaced; omit from the reactive list when shown under the typed action.
+        editing: Option<ControllerBinding>,
+    },
+}
+
+impl CallRequest {
+    pub fn callee(&self) -> StateId {
+        match self {
+            CallRequest::SelectKey { .. } => StateId::SelectKey,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +68,7 @@ pub enum Event {
     SendText(String),
     ChangeState(StateId),
     /// Push the current mode and switch to `StateId` (sub-UI call).
-    CallState(StateId),
+    CallState(CallRequest),
     /// Pop the call stack, switch to the caller, deliver an explicit result.
     /// Never encode cancel as an empty string — use [`ReturnStateResult::Cancelled`].
     ReturnState(ReturnStateResult),

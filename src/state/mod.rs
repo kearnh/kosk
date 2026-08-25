@@ -4,7 +4,7 @@ use crate::{
     controller::ControllerInput,
     debug::DebugPlugin,
     state::{
-        event::{Event, EventQueue, ReturnStateResult},
+        event::{CallRequest, Event, EventQueue, ReturnStateResult},
         key_sink::{open_key_sink, KeySink},
         window_pos::{capture_pointer_snapshot, resolve_position, PointerSnapshot, WindowPos},
     },
@@ -185,8 +185,8 @@ impl AppState {
                         self.switch_state(state, holdover);
                         ctx.request_repaint();
                     }
-                    Event::CallState(callee) => {
-                        self.call_state(callee, holdover);
+                    Event::CallState(request) => {
+                        self.call_state(request, holdover);
                         ctx.request_repaint();
                     }
                     Event::ReturnState(result) => {
@@ -286,9 +286,18 @@ impl AppState {
         self.reset_current_mode_controller(holdover);
     }
 
-    fn call_state(&mut self, callee: StateId, holdover: Option<&dyn ControllerInput>) {
+    fn call_state(&mut self, request: CallRequest, holdover: Option<&dyn ControllerInput>) {
         self.call_stack.push(self.state);
-        self.state = callee;
+        self.state = request.callee();
+        match request {
+            CallRequest::SelectKey {
+                binding,
+                action,
+                mode,
+                draft_mode,
+                editing,
+            } => select_key::with_mut(|s| s.begin(binding, action, mode, draft_mode, editing)),
+        }
         self.reset_current_mode_controller(holdover);
     }
 
@@ -305,6 +314,10 @@ impl AppState {
         self.state = caller;
         self.reset_current_mode_controller(holdover);
         match caller {
+            // FIXME(HACK): ReturnState mutates the caller's process-wide singleton (Mappings)
+            // to deliver SelectKey's result. Prefer stack-owned session frames (or another
+            // AppState-owned return channel that does not poke mode singletons) so resume
+            // does not require `mappings::with_mut` side effects. See mappings SelectKey plan.
             StateId::Mappings => mappings::with_mut(|m| m.on_return(result, follow_up)),
             _ => {
                 let _ = result;

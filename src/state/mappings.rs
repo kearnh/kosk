@@ -3,12 +3,11 @@
 use crate::config;
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::get_action;
-use crate::state::event::{Event, EventQueue, EventSource, ReturnStateResult};
+use crate::state::event::{CallRequest, Event, EventQueue, EventSource, ReturnStateResult};
 use crate::state::keyboard::display_icon::LabelCache;
 use crate::state::keyboard::{self, KeyboardAction};
 use crate::state::menu_action::MenuAction;
 use crate::state::move_window_action::MoveWindowAction;
-use crate::state::select_key;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 use anyhow::Result;
@@ -16,6 +15,7 @@ use egui::{
     Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Ui, Vec2,
 };
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
 use strum::VariantNames;
 
@@ -27,9 +27,7 @@ const NAV_RIGHT: ControllerButton = ControllerButton::DpadRight;
 const TAB_PREV: ControllerButton = ControllerButton::ShoulderLeft; // L1
 const TAB_NEXT: ControllerButton = ControllerButton::ShoulderRight; // R1
 const ACTIVATE: ControllerButton = ControllerButton::FaceBottom; // A
-const LISTEN_SINGLE: ControllerButton = ControllerButton::FaceLeft; // X
-const LISTEN_CHORD: ControllerButton = ControllerButton::FaceTop; // Y
-const DELETE_BINDING: ControllerButton = ControllerButton::Share;
+const DELETE_CONFIRM: ControllerButton = ControllerButton::FaceTop; // Y
 const BACK_CANCEL: ControllerButton = ControllerButton::FaceRight; // B
                                                                    // ----------------------------------------------------------------------
 
@@ -106,8 +104,13 @@ fn status_color(status: &str) -> Color32 {
 }
 
 /// Why SelectKey was opened; consumed in [`MappingsState::on_return`].
-enum PendingKeyPick {
-    AddBinding { binding: ControllerBinding },
+enum PendingSelect {
+    Replace {
+        action: String,
+        pill: usize,
+    },
+    /// Target action comes back from SelectKey; prefill only guides the Action field.
+    Add,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -119,29 +122,11 @@ enum FocusZone {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FooterItem {
-    Delete,
     Cancel,
     Save,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ListenMode {
-    Single,
-    Chord,
-}
-
-enum ListenTarget {
-    Replace { action: String, pill: usize },
-    Add { action: String },
-}
-
-struct ListenState {
-    mode: ListenMode,
-    target: ListenTarget,
-    chord_leader: Option<ControllerButton>,
-}
-
-/// Shared conflict check used by listen-commit and Save.
+/// Shared conflict check used by `on_return` and Save.
 /// `ignore` = binding currently on the pill being replaced (treated as absent).
 fn validate_binding_candidate(
     draft_mode: &HashMap<String, Vec<ControllerBinding>>,
@@ -323,8 +308,9 @@ pub struct MappingsState {
     /// 0..n_pills = pill index; n_pills = trailing add (`+`) control.
     focus_col: usize,
     footer_focus: FooterItem,
-    listen: Option<ListenState>,
-    pending_key_pick: Option<PendingKeyPick>,
+    pending_select: Option<PendingSelect>,
+    /// Fake delete modal payload: (action, pill). While set, input is modal-only.
+    delete_confirm: Option<(String, usize)>,
     prev_held: HashSet<ControllerButton>,
     label_cache: LabelCache,
 }
@@ -340,8 +326,8 @@ impl MappingsState {
             focus_row: 0,
             focus_col: 0,
             footer_focus: FooterItem::Save,
-            listen: None,
-            pending_key_pick: None,
+            pending_select: None,
+            delete_confirm: None,
             prev_held: HashSet::new(),
             label_cache: LabelCache::new(),
         }
@@ -359,8 +345,8 @@ impl MappingsState {
         self.focus_row = 0;
         self.focus_col = 0;
         self.footer_focus = FooterItem::Save;
-        self.listen = None;
-        self.pending_key_pick = None;
+        self.pending_select = None;
+        self.delete_confirm = None;
         self.prev_held.clear();
     }
 
@@ -431,43 +417,167 @@ impl MappingsState {
     /// programmatic follow-ups (not MouseClick). When mutating visible
     /// draft/status, also `out.push(Event::Repaint, &EventSource::FollowUp)`.
     pub fn on_return(&mut self, result: ReturnStateResult, out: &mut EventQueue) {
-        let Some(pending) = self.pending_key_pick.take() else {
+        let Some(pending) = self.pending_select.take() else {
             return;
         };
-        let ReturnStateResult::Value(value) = result else {
+        let ReturnStateResult::SelectKey { binding, action } = result else {
             return; // Cancelled; draft unchanged — no Repaint required
         };
-        let trimmed = value.trim();
-        let new_action = format!("sendKey.{trimmed}");
-        if get_action(StateId::Keyboard, &new_action).is_none() {
-            self.status = format!("invalid key: {trimmed}");
+        let candidate = match ControllerBinding::from_str(&binding) {
+            Ok(candidate) => candidate,
+            Err(err) => {
+                self.status = err;
+                let _ = out.push(Event::Repaint, &EventSource::FollowUp);
+                return;
+            }
+        };
+        if get_action(self.tab, &action).is_none() {
+            self.status = format!("invalid action: {action}");
             let _ = out.push(Event::Repaint, &EventSource::FollowUp);
             return;
         }
 
         match pending {
-            PendingKeyPick::AddBinding { binding } => {
-                let draft = self.draft.entry(StateId::Keyboard).or_default();
-                if let Err(err) = validate_binding_candidate(draft, &binding, None) {
+            PendingSelect::Replace {
+                action: old_action,
+                pill,
+            } => {
+                let ignore = self
+                    .current_draft()
+                    .get(&old_action)
+                    .and_then(|v| v.get(pill))
+                    .cloned();
+                if let Err(err) =
+                    validate_binding_candidate(self.current_draft(), &candidate, ignore.as_ref())
+                {
                     self.status = err;
                     let _ = out.push(Event::Repaint, &EventSource::FollowUp);
                     return;
                 }
-                draft.entry(new_action.clone()).or_default().push(binding);
+                if action == old_action {
+                    if let Some(vec) = self.current_draft_mut().get_mut(&old_action) {
+                        if pill < vec.len() {
+                            vec[pill] = candidate;
+                            self.dirty = true;
+                            self.status = "ready".to_owned();
+                        }
+                    }
+                    self.focus_action_pill(&old_action, pill);
+                } else {
+                    let draft = self.current_draft_mut();
+                    if let Some(vec) = draft.get_mut(&old_action) {
+                        if pill < vec.len() {
+                            vec.remove(pill);
+                            if vec.is_empty() {
+                                draft.remove(&old_action);
+                            }
+                        }
+                    }
+                    draft.entry(action.clone()).or_default().push(candidate);
+                    self.dirty = true;
+                    self.status = "ready".to_owned();
+                    let last = self
+                        .current_draft()
+                        .get(&action)
+                        .map(|v| v.len())
+                        .unwrap_or(1)
+                        .saturating_sub(1);
+                    self.focus_action_pill(&action, last);
+                }
+            }
+            PendingSelect::Add => {
+                if let Err(err) = validate_binding_candidate(self.current_draft(), &candidate, None)
+                {
+                    self.status = err;
+                    let _ = out.push(Event::Repaint, &EventSource::FollowUp);
+                    return;
+                }
+                self.current_draft_mut()
+                    .entry(action.clone())
+                    .or_default()
+                    .push(candidate);
                 self.dirty = true;
                 self.status = "ready".to_owned();
-                self.tab = StateId::Keyboard;
-                let rows = catalog_rows(StateId::Keyboard, draft);
-                if let Some(idx) = rows.iter().position(|r| r == &new_action) {
-                    self.focus_row = idx;
-                    let n = draft.get(&new_action).map(|v| v.len()).unwrap_or(1);
-                    // New indexing: last pill is n-1; [+] is n.
-                    self.focus_col = n.saturating_sub(1);
-                    self.focus_zone = FocusZone::Table;
-                }
+                let last = self
+                    .current_draft()
+                    .get(&action)
+                    .map(|v| v.len())
+                    .unwrap_or(1)
+                    .saturating_sub(1);
+                self.focus_action_pill(&action, last);
             }
         }
         let _ = out.push(Event::Repaint, &EventSource::FollowUp);
+    }
+
+    fn focus_action_pill(&mut self, action: &str, pill: usize) {
+        let rows = self.rows();
+        if let Some(idx) = rows.iter().position(|r| r == action) {
+            self.focus_row = idx;
+            self.focus_col = pill;
+            self.focus_zone = FocusZone::Table;
+        }
+    }
+
+    fn push_select_key_call(
+        &self,
+        binding: String,
+        action: String,
+        editing: Option<ControllerBinding>,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) {
+        let _ = events.push(
+            Event::CallState(CallRequest::SelectKey {
+                binding,
+                action,
+                mode: self.tab,
+                draft_mode: self.current_draft().clone(),
+                editing,
+            }),
+            source,
+        );
+    }
+
+    /// Replace flow: A (or click) on an existing pill.
+    fn open_select_key(
+        &mut self,
+        pending: PendingSelect,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) {
+        let (action, pill) = match &pending {
+            PendingSelect::Replace { action, pill } => (action.clone(), *pill),
+            PendingSelect::Add => return,
+        };
+        let pill_binding = self
+            .current_draft()
+            .get(&action)
+            .and_then(|v| v.get(pill))
+            .cloned();
+        let binding = pill_binding
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        self.pending_select = Some(pending);
+        self.push_select_key_call(binding, action, pill_binding, events, source);
+    }
+
+    /// Add flow: A (or click) on a row's `+`. `row_action` guides the Action
+    /// prefill only; the returned action comes from SelectKey.
+    fn open_add_for_row(
+        &mut self,
+        row_action: String,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) {
+        let action = if row_action == SEND_KEY_GATEWAY {
+            format!("{SEND_KEY_GATEWAY}.")
+        } else {
+            row_action
+        };
+        self.pending_select = Some(PendingSelect::Add);
+        self.push_select_key_call(String::new(), action, None, events, source);
     }
 
     fn set_tab(&mut self, mode: StateId) {
@@ -475,99 +585,32 @@ impl MappingsState {
         self.focus_row = 0;
         self.focus_col = 0;
         self.focus_zone = FocusZone::Tabs;
+        self.delete_confirm = None;
         self.clamp_focus();
     }
 
-    fn start_listen(
-        &mut self,
-        mode: ListenMode,
-        target: ListenTarget,
-        held: &HashSet<ControllerButton>,
-    ) {
-        self.listen = Some(ListenState {
-            mode,
-            target,
-            chord_leader: None,
-        });
-        self.prev_held = held.clone();
-        self.status = match mode {
-            ListenMode::Single => "LISTENING — single button".to_owned(),
-            ListenMode::Chord => "LISTENING — chord".to_owned(),
+    fn delete_pill(&mut self, action: &str, pill: usize) {
+        let draft = self.current_draft_mut();
+        let Some(vec) = draft.get_mut(action) else {
+            return;
         };
-    }
-
-    fn cancel_listen(&mut self) {
-        self.listen = None;
+        if pill >= vec.len() {
+            return;
+        }
+        vec.remove(pill);
+        if vec.is_empty() {
+            draft.remove(action);
+        }
+        self.dirty = true;
         self.status = "ready".to_owned();
+        self.clamp_focus();
     }
 
-    fn ignore_for(
-        draft: &HashMap<String, Vec<ControllerBinding>>,
-        target: &ListenTarget,
-    ) -> Option<ControllerBinding> {
-        match target {
-            ListenTarget::Replace { action, pill } => {
-                draft.get(action).and_then(|v| v.get(*pill).cloned())
-            }
-            ListenTarget::Add { .. } => None,
-        }
-    }
-
-    fn commit_capture(
-        &mut self,
-        candidate: ControllerBinding,
-        events: &mut EventQueue,
-        source: &EventSource,
-    ) {
-        let Some(listen) = self.listen.take() else {
-            return;
-        };
-        let draft = self.current_draft();
-        let ignore = Self::ignore_for(draft, &listen.target);
-        if let Err(err) = validate_binding_candidate(draft, &candidate, ignore.as_ref()) {
-            self.status = err;
-            self.listen = Some(listen);
+    /// Rising Y on a real pill opens the fake delete modal; elsewhere a no-op.
+    fn request_delete_focused(&mut self) {
+        if self.focus_zone != FocusZone::Table {
             return;
         }
-
-        if let ListenTarget::Replace { action, pill } = &listen.target {
-            if let Some(old) = self.current_draft().get(action).and_then(|v| v.get(*pill)) {
-                if old == &candidate {
-                    self.status = "ready".to_owned();
-                    return;
-                }
-            }
-        }
-
-        match listen.target {
-            ListenTarget::Replace { action, pill } => {
-                if let Some(vec) = self.current_draft_mut().get_mut(&action) {
-                    if pill < vec.len() {
-                        vec[pill] = candidate;
-                        self.dirty = true;
-                        self.status = "ready".to_owned();
-                    }
-                }
-            }
-            ListenTarget::Add { action } => {
-                if action == SEND_KEY_GATEWAY {
-                    self.pending_key_pick = Some(PendingKeyPick::AddBinding { binding: candidate });
-                    select_key::with_mut(|s| s.begin(""));
-                    let _ = events.push(Event::CallState(StateId::SelectKey), source);
-                    self.status = "ready".to_owned();
-                } else {
-                    self.current_draft_mut()
-                        .entry(action)
-                        .or_default()
-                        .push(candidate);
-                    self.dirty = true;
-                    self.status = "ready".to_owned();
-                }
-            }
-        }
-    }
-
-    fn delete_focused_pill(&mut self) {
         let rows = self.rows();
         if self.focus_row >= rows.len() {
             return;
@@ -577,34 +620,13 @@ impl MappingsState {
         if action == SEND_KEY_GATEWAY || self.focus_col >= n_pills {
             return; // on [+] or gateway
         }
-        let pill = self.focus_col;
-        let draft = self.current_draft_mut();
-        let Some(vec) = draft.get_mut(&action) else {
-            return;
-        };
-        if pill >= vec.len() {
-            return;
-        }
-        vec.remove(pill);
-        let empty = vec.is_empty();
-        if empty {
-            draft.remove(&action);
-        }
-        self.dirty = true;
-        self.status = "ready".to_owned();
-        self.clamp_focus();
+        self.delete_confirm = Some((action, self.focus_col));
     }
 
-    fn activate_focused(
-        &mut self,
-        events: &mut EventQueue,
-        source: &EventSource,
-        held: &HashSet<ControllerButton>,
-    ) {
+    fn activate_focused(&mut self, events: &mut EventQueue, source: &EventSource) {
         match self.focus_zone {
             FocusZone::Tabs => {}
             FocusZone::Footer => match self.footer_focus {
-                FooterItem::Delete => self.delete_focused_pill(),
                 FooterItem::Cancel => self.do_cancel(events, source),
                 FooterItem::Save => self.do_save(),
             },
@@ -616,40 +638,18 @@ impl MappingsState {
                 let action = rows[self.focus_row].clone();
                 let n_pills = pill_count(&action, self.current_draft());
                 if self.focus_col == n_pills {
-                    self.start_listen(ListenMode::Single, ListenTarget::Add { action }, held);
+                    self.open_add_for_row(action, events, source);
                 } else {
                     let pill = self.focus_col;
-                    self.start_listen(
-                        ListenMode::Single,
-                        ListenTarget::Replace { action, pill },
-                        held,
-                    );
+                    self.open_select_key(PendingSelect::Replace { action, pill }, events, source);
                 }
             }
         }
     }
 
-    fn listen_on_focused(&mut self, mode: ListenMode, held: &HashSet<ControllerButton>) {
-        if self.focus_zone != FocusZone::Table {
-            return;
-        }
-        let rows = self.rows();
-        if self.focus_row >= rows.len() {
-            return;
-        }
-        let action = rows[self.focus_row].clone();
-        let n_pills = pill_count(&action, self.current_draft());
-        if self.focus_col == n_pills {
-            self.start_listen(mode, ListenTarget::Add { action }, held);
-        } else {
-            let pill = self.focus_col;
-            self.start_listen(mode, ListenTarget::Replace { action, pill }, held);
-        }
-    }
-
     fn do_cancel(&mut self, events: &mut EventQueue, source: &EventSource) {
-        self.listen = None;
-        self.pending_key_pick = None;
+        self.pending_select = None;
+        self.delete_confirm = None;
         let _ = events.push(Event::ChangeState(StateId::Menu), source);
     }
 
@@ -702,57 +702,20 @@ impl MappingsState {
         self.status = "saved".to_owned();
     }
 
-    fn handle_listen_input(&mut self, input: &dyn ControllerInput, events: &mut EventQueue) {
-        let held = held_set(input);
-        let newly: Vec<ControllerButton> = held.difference(&self.prev_held).cloned().collect();
-
-        if rising(BACK_CANCEL, &held, &self.prev_held) {
-            self.cancel_listen();
-            self.prev_held = held;
-            return;
-        }
-
-        let Some(listen) = self.listen.as_mut() else {
-            self.prev_held = held;
-            return;
-        };
-
-        match listen.mode {
-            ListenMode::Single => {
-                if let Some(btn) = newly.into_iter().next() {
-                    let candidate = ControllerBinding::Single(btn.clone());
-                    let source = source_for(btn);
-                    self.commit_capture(candidate, events, &source);
-                }
-            }
-            ListenMode::Chord => match listen.chord_leader.clone() {
-                None => {
-                    if let Some(btn) = newly.into_iter().next() {
-                        listen.chord_leader = Some(btn);
-                        self.status = "LISTENING — chord (hold leader, press follower)".to_owned();
-                    }
-                }
-                Some(leader) => {
-                    if !held.contains(&leader) {
-                        listen.chord_leader = None;
-                        self.status = "LISTENING — chord".to_owned();
-                    } else if let Some(follower) = newly.into_iter().find(|b| *b != leader) {
-                        let candidate = ControllerBinding::Chord {
-                            leader: leader.clone(),
-                            follower: follower.clone(),
-                        };
-                        let source = EventSource::Controller(candidate.clone());
-                        self.commit_capture(candidate, events, &source);
-                    }
-                }
-            },
-        }
-        self.prev_held = held_set(input);
-    }
-
     fn handle_browse_input(&mut self, input: &dyn ControllerInput, events: &mut EventQueue) {
         let held = held_set(input);
         let prev = self.prev_held.clone();
+
+        if let Some((action, pill)) = self.delete_confirm.clone() {
+            if rising(ACTIVATE, &held, &prev) {
+                self.delete_pill(&action, pill);
+                self.delete_confirm = None;
+            } else if rising(BACK_CANCEL, &held, &prev) {
+                self.delete_confirm = None;
+            }
+            self.prev_held = held;
+            return;
+        }
 
         if rising(BACK_CANCEL, &held, &prev) {
             self.do_cancel(events, &source_for(BACK_CANCEL));
@@ -773,24 +736,14 @@ impl MappingsState {
             self.prev_held = held;
             return;
         }
-        if rising(DELETE_BINDING, &held, &prev) {
-            self.delete_focused_pill();
+        if rising(DELETE_CONFIRM, &held, &prev) {
+            self.request_delete_focused();
             self.prev_held = held;
             return;
         }
-        if rising(LISTEN_SINGLE, &held, &prev) {
-            self.listen_on_focused(ListenMode::Single, &held);
-            self.prev_held = held_set(input);
-            return;
-        }
-        if rising(LISTEN_CHORD, &held, &prev) {
-            self.listen_on_focused(ListenMode::Chord, &held);
-            self.prev_held = held_set(input);
-            return;
-        }
         if rising(ACTIVATE, &held, &prev) {
-            self.activate_focused(events, &source_for(ACTIVATE), &held);
-            self.prev_held = held_set(input);
+            self.activate_focused(events, &source_for(ACTIVATE));
+            self.prev_held = held;
             return;
         }
 
@@ -847,8 +800,7 @@ impl MappingsState {
                 }
                 FocusZone::Footer => {
                     self.footer_focus = match self.footer_focus {
-                        FooterItem::Delete => FooterItem::Delete,
-                        FooterItem::Cancel => FooterItem::Delete,
+                        FooterItem::Cancel => FooterItem::Save,
                         FooterItem::Save => FooterItem::Cancel,
                     };
                 }
@@ -866,9 +818,8 @@ impl MappingsState {
                 }
                 FocusZone::Footer => {
                     self.footer_focus = match self.footer_focus {
-                        FooterItem::Delete => FooterItem::Cancel,
                         FooterItem::Cancel => FooterItem::Save,
-                        FooterItem::Save => FooterItem::Save,
+                        FooterItem::Save => FooterItem::Cancel,
                     };
                 }
             }
@@ -877,16 +828,7 @@ impl MappingsState {
         self.prev_held = held;
     }
 
-    pub fn draw_ui(&mut self, _: &Context, ui: &mut Ui, events: &mut EventQueue) {
-        // Defensive: if we somehow still have a pending pick with no active call,
-        // drop it on paint when not mid-listen (ChangeState already clears stack).
-        if self.pending_key_pick.is_some() && self.listen.is_none() {
-            // Keep pending only across CallState; parent clears stack on ChangeState.
-            // Soft clear happens when begin_session runs; leave as-is here.
-        }
-
-        let listening = self.listen.is_some();
-
+    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         ui.horizontal(|ui| {
             ui.heading(RichText::new("Key Mappings").color(Color32::WHITE));
             if self.dirty {
@@ -922,9 +864,6 @@ impl MappingsState {
         let plus_label = self
             .label_cache
             .get("{icon:plus}", UI_FONT_SIZE, Color32::WHITE);
-        let delete_label =
-            self.label_cache
-                .get("{icon:trash} Delete", UI_FONT_SIZE, Color32::WHITE);
         let cancel_label = self
             .label_cache
             .get("{icon:x} Cancel", UI_FONT_SIZE, Color32::WHITE);
@@ -932,10 +871,11 @@ impl MappingsState {
             self.label_cache
                 .get("{icon:floppy-disk} Save", UI_FONT_SIZE, Color32::WHITE);
 
-        let mut clicked_listen: Option<(ListenMode, ListenTarget)> = None;
+        let mut clicked_replace: Option<(String, usize)> = None;
+        let mut clicked_add: Option<String> = None;
         let mut clicked_focus: Option<(usize, usize)> = None;
 
-        ui.add_enabled_ui(!listening, |ui| {
+        ui.add_enabled_ui(self.delete_confirm.is_none(), |ui| {
             // allocate_ui_with_layout only advances by content width; add_sized
             // keeps Action as a true fixed column under the header.
             ui.horizontal(|ui| {
@@ -987,23 +927,7 @@ impl MappingsState {
                                         );
                                         if resp.clicked() {
                                             clicked_focus = Some((row_idx, col));
-                                            clicked_listen = Some((
-                                                ListenMode::Single,
-                                                ListenTarget::Replace {
-                                                    action: action.clone(),
-                                                    pill: pill_idx,
-                                                },
-                                            ));
-                                        }
-                                        if resp.secondary_clicked() {
-                                            clicked_focus = Some((row_idx, col));
-                                            clicked_listen = Some((
-                                                ListenMode::Chord,
-                                                ListenTarget::Replace {
-                                                    action: action.clone(),
-                                                    pill: pill_idx,
-                                                },
-                                            ));
+                                            clicked_replace = Some((action.clone(), pill_idx));
                                         }
                                     }
 
@@ -1014,21 +938,7 @@ impl MappingsState {
                                     );
                                     if plus_resp.clicked() {
                                         clicked_focus = Some((row_idx, plus_col));
-                                        clicked_listen = Some((
-                                            ListenMode::Single,
-                                            ListenTarget::Add {
-                                                action: action.clone(),
-                                            },
-                                        ));
-                                    }
-                                    if plus_resp.secondary_clicked() {
-                                        clicked_focus = Some((row_idx, plus_col));
-                                        clicked_listen = Some((
-                                            ListenMode::Chord,
-                                            ListenTarget::Add {
-                                                action: action.clone(),
-                                            },
-                                        ));
+                                        clicked_add = Some(action.clone());
                                     }
                                 });
                             })
@@ -1049,65 +959,77 @@ impl MappingsState {
             self.focus_col = col;
             self.clamp_focus();
         }
-        if let Some((mode, target)) = clicked_listen {
-            self.start_listen(mode, target, &HashSet::new());
+        if let Some((action, pill)) = clicked_replace {
+            self.open_select_key(
+                PendingSelect::Replace { action, pill },
+                events,
+                &EventSource::MouseClick,
+            );
+        }
+        if let Some(action) = clicked_add {
+            self.open_add_for_row(action, events, &EventSource::MouseClick);
         }
 
         ui.separator();
 
-        if listening {
-            let kind = match self.listen.as_ref().map(|l| l.mode) {
-                Some(ListenMode::Single) => "single button",
-                Some(ListenMode::Chord) => "chord",
-                None => "",
-            };
-            let listen_label = self.label_cache.get(
-                &format!("{{icon:microphone}} LISTENING — {kind} …"),
-                UI_FONT_SIZE,
-                Color32::YELLOW,
-            );
-            ui.label(listen_label);
-            let cancel_listen =
-                self.label_cache
-                    .get("{icon:x} B = cancel listen", UI_FONT_SIZE, Color32::WHITE);
-            ui.label(cancel_listen);
-        } else {
-            let status = self.status.clone();
-            let status_label = self.label_cache.get(
-                &status_icon_template(&status),
-                UI_FONT_SIZE,
-                status_color(&status),
-            );
-            ui.label(status_label);
-            ui.horizontal(|ui| {
-                let del_sel =
-                    self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Delete;
-                if ui
-                    .add(Button::new(delete_label).selected(del_sel))
-                    .clicked()
-                {
-                    self.focus_zone = FocusZone::Footer;
-                    self.footer_focus = FooterItem::Delete;
-                    self.delete_focused_pill();
-                }
-                let cancel_sel =
-                    self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Cancel;
-                if ui
-                    .add(Button::new(cancel_label).selected(cancel_sel))
-                    .clicked()
-                {
-                    self.do_cancel(events, &EventSource::MouseClick);
-                }
-                let save_sel =
-                    self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Save;
-                if ui.add(Button::new(save_label).selected(save_sel)).clicked() {
-                    self.focus_zone = FocusZone::Footer;
-                    self.footer_focus = FooterItem::Save;
-                    self.do_save();
-                }
-            });
-            ui.label("A activate/+   X listen single   Y listen chord   Share delete pill");
-            ui.label("B Back/Cancel   L1/R1 mode tab   D-pad move row / pill");
+        let status = self.status.clone();
+        let status_label = self.label_cache.get(
+            &status_icon_template(&status),
+            UI_FONT_SIZE,
+            status_color(&status),
+        );
+        ui.label(status_label);
+        ui.horizontal(|ui| {
+            let cancel_sel =
+                self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Cancel;
+            if ui
+                .add(Button::new(cancel_label).selected(cancel_sel))
+                .clicked()
+            {
+                self.do_cancel(events, &EventSource::MouseClick);
+            }
+            let save_sel =
+                self.focus_zone == FocusZone::Footer && self.footer_focus == FooterItem::Save;
+            if ui.add(Button::new(save_label).selected(save_sel)).clicked() {
+                self.focus_zone = FocusZone::Footer;
+                self.footer_focus = FooterItem::Save;
+                self.do_save();
+            }
+        });
+        ui.label("A edit/add   Y delete binding   B Back/Cancel");
+        ui.label("L1/R1 mode tab   D-pad move row / pill");
+
+        if let Some((action, pill)) = self.delete_confirm.clone() {
+            let binding_text = self
+                .current_draft()
+                .get(&action)
+                .and_then(|v| v.get(pill))
+                .map(|b| format!("[{b}]"))
+                .unwrap_or_else(|| "[?]".to_owned());
+            let mut confirm = false;
+            let mut cancel = false;
+            egui::Area::new(egui::Id::new("delete_confirm_modal"))
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    Frame::window(ui.style()).show(ui, |ui| {
+                        ui.label(format!("Delete {binding_text} from {action}?"));
+                        ui.horizontal(|ui| {
+                            if ui.button("Confirm").clicked() {
+                                confirm = true;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                cancel = true;
+                            }
+                        });
+                    });
+                });
+            if confirm {
+                self.delete_pill(&action, pill);
+                self.delete_confirm = None;
+            } else if cancel {
+                self.delete_confirm = None;
+            }
         }
     }
 
@@ -1124,11 +1046,7 @@ impl MappingsState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        if self.listen.is_some() {
-            self.handle_listen_input(input, events);
-        } else {
-            self.handle_browse_input(input, events);
-        }
+        self.handle_browse_input(input, events);
         Ok(())
     }
 }
@@ -1242,14 +1160,18 @@ mod tests {
     }
 
     #[test]
-    fn on_return_value_adds_send_key_and_repaints() {
+    fn on_return_add_appends_pill_and_repaints() {
         let mut m = MappingsState::new();
         m.draft.insert(StateId::Keyboard, HashMap::new());
-        m.pending_key_pick = Some(PendingKeyPick::AddBinding {
-            binding: single(ControllerButton::Share),
-        });
+        m.pending_select = Some(PendingSelect::Add);
         let mut out = EventQueue::passthrough();
-        m.on_return(ReturnStateResult::Value("enter".to_owned()), &mut out);
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "share".to_owned(),
+                action: "sendKey.enter".to_owned(),
+            },
+            &mut out,
+        );
         let pills = m
             .draft
             .get(&StateId::Keyboard)
@@ -1258,7 +1180,7 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(pills, vec![single(ControllerButton::Share)]);
         assert!(m.dirty);
-        assert!(m.pending_key_pick.is_none());
+        assert!(m.pending_select.is_none());
         let drained = out.drain_pending();
         assert!(matches!(drained[0].0, Event::Repaint));
         assert_eq!(drained[0].1, EventSource::FollowUp);
@@ -1268,12 +1190,10 @@ mod tests {
     fn on_return_cancelled_clears_pending_without_repaint() {
         let mut m = MappingsState::new();
         m.draft.insert(StateId::Keyboard, HashMap::new());
-        m.pending_key_pick = Some(PendingKeyPick::AddBinding {
-            binding: single(ControllerButton::Share),
-        });
+        m.pending_select = Some(PendingSelect::Add);
         let mut out = EventQueue::passthrough();
         m.on_return(ReturnStateResult::Cancelled, &mut out);
-        assert!(m.pending_key_pick.is_none());
+        assert!(m.pending_select.is_none());
         assert!(!m.dirty);
         assert!(m
             .draft
@@ -1284,22 +1204,191 @@ mod tests {
     }
 
     #[test]
-    fn on_return_rejects_invalid_key() {
+    fn on_return_rejects_invalid_action() {
         let mut m = MappingsState::new();
         m.draft.insert(StateId::Keyboard, HashMap::new());
-        m.pending_key_pick = Some(PendingKeyPick::AddBinding {
-            binding: single(ControllerButton::Share),
+        m.pending_select = Some(PendingSelect::Add);
+        let mut out = EventQueue::passthrough();
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "share".to_owned(),
+                action: "notAnAction".to_owned(),
+            },
+            &mut out,
+        );
+        assert_eq!(m.status, "invalid action: notAnAction");
+        assert!(!m.dirty);
+        assert!(m.pending_select.is_none());
+        let drained = out.drain_pending();
+        assert!(matches!(drained[0].0, Event::Repaint));
+    }
+
+    #[test]
+    fn on_return_rejects_unparseable_binding() {
+        let mut m = MappingsState::new();
+        m.draft.insert(StateId::Keyboard, HashMap::new());
+        m.pending_select = Some(PendingSelect::Add);
+        let mut out = EventQueue::passthrough();
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "not-a-button".to_owned(),
+                action: "toggleShift".to_owned(),
+            },
+            &mut out,
+        );
+        assert!(m.status != "ready" && !m.status.is_empty());
+        assert!(!m.dirty);
+        assert!(m.pending_select.is_none());
+        let drained = out.drain_pending();
+        assert!(matches!(drained[0].0, Event::Repaint));
+    }
+
+    #[test]
+    fn on_return_replace_same_action_updates_pill() {
+        let mut m = MappingsState::new();
+        m.draft.insert(
+            StateId::Keyboard,
+            HashMap::from([(
+                "toggleShift".to_owned(),
+                vec![single(ControllerButton::FaceTop)],
+            )]),
+        );
+        m.pending_select = Some(PendingSelect::Replace {
+            action: "toggleShift".to_owned(),
+            pill: 0,
         });
         let mut out = EventQueue::passthrough();
         m.on_return(
-            ReturnStateResult::Value("not-a-real-key".to_owned()),
+            ReturnStateResult::SelectKey {
+                binding: "faceLeft".to_owned(),
+                action: "toggleShift".to_owned(),
+            },
             &mut out,
         );
-        assert_eq!(m.status, "invalid key: not-a-real-key");
+        let pills = m
+            .draft
+            .get(&StateId::Keyboard)
+            .and_then(|d| d.get("toggleShift"))
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(pills, vec![single(ControllerButton::FaceLeft)]);
+        assert!(m.dirty);
+        assert_eq!(m.status, "ready");
+        let rows = m.rows();
+        assert_eq!(rows[m.focus_row], "toggleShift");
+        assert_eq!(m.focus_col, 0);
+    }
+
+    #[test]
+    fn on_return_replace_other_action_moves_pill() {
+        let mut m = MappingsState::new();
+        m.draft.insert(
+            StateId::Keyboard,
+            HashMap::from([
+                (
+                    "toggleShift".to_owned(),
+                    vec![single(ControllerButton::FaceTop)],
+                ),
+                (
+                    "toggleCtrl".to_owned(),
+                    vec![single(ControllerButton::FaceBottom)],
+                ),
+            ]),
+        );
+        m.pending_select = Some(PendingSelect::Replace {
+            action: "toggleShift".to_owned(),
+            pill: 0,
+        });
+        let mut out = EventQueue::passthrough();
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "faceTop".to_owned(),
+                action: "toggleCtrl".to_owned(),
+            },
+            &mut out,
+        );
+        let draft = m.draft.get(&StateId::Keyboard).expect("keyboard draft");
+        assert!(!draft.contains_key("toggleShift"), "empty action dropped");
+        assert_eq!(
+            draft.get("toggleCtrl").cloned().unwrap_or_default(),
+            vec![
+                single(ControllerButton::FaceBottom),
+                single(ControllerButton::FaceTop)
+            ]
+        );
+        assert!(m.dirty);
+        let rows = m.rows();
+        assert_eq!(rows[m.focus_row], "toggleCtrl");
+        assert_eq!(m.focus_col, 1, "focused on appended last pill");
+    }
+
+    #[test]
+    fn on_return_replace_move_conflict_leaves_draft_unchanged() {
+        let mut m = MappingsState::new();
+        m.draft.insert(
+            StateId::Keyboard,
+            HashMap::from([
+                (
+                    "toggleShift".to_owned(),
+                    vec![single(ControllerButton::FaceTop)],
+                ),
+                (
+                    "toggleCtrl".to_owned(),
+                    vec![single(ControllerButton::FaceLeft)],
+                ),
+            ]),
+        );
+        m.pending_select = Some(PendingSelect::Replace {
+            action: "toggleShift".to_owned(),
+            pill: 0,
+        });
+        let mut out = EventQueue::passthrough();
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "faceLeft".to_owned(),
+                action: "toggleCtrl".to_owned(),
+            },
+            &mut out,
+        );
+        assert!(m.status.starts_with("conflict:"));
         assert!(!m.dirty);
-        assert!(m.pending_key_pick.is_none());
-        let drained = out.drain_pending();
-        assert!(matches!(drained[0].0, Event::Repaint));
+        let draft = m.draft.get(&StateId::Keyboard).expect("keyboard draft");
+        assert_eq!(
+            draft.get("toggleShift").cloned().unwrap_or_default(),
+            vec![single(ControllerButton::FaceTop)]
+        );
+        assert_eq!(
+            draft.get("toggleCtrl").cloned().unwrap_or_default(),
+            vec![single(ControllerButton::FaceLeft)]
+        );
+    }
+
+    #[test]
+    fn on_return_add_conflict_leaves_draft_unchanged() {
+        let mut m = MappingsState::new();
+        m.draft.insert(
+            StateId::Keyboard,
+            HashMap::from([(
+                "toggleShift".to_owned(),
+                vec![single(ControllerButton::FaceTop)],
+            )]),
+        );
+        m.pending_select = Some(PendingSelect::Add);
+        let mut out = EventQueue::passthrough();
+        m.on_return(
+            ReturnStateResult::SelectKey {
+                binding: "faceTop".to_owned(),
+                action: "toggleCtrl".to_owned(),
+            },
+            &mut out,
+        );
+        assert!(m.status.starts_with("conflict:"));
+        assert!(!m.dirty);
+        assert!(!m
+            .draft
+            .get(&StateId::Keyboard)
+            .expect("keyboard draft")
+            .contains_key("toggleCtrl"));
     }
 
     #[test]
@@ -1414,22 +1503,32 @@ mod tests {
         m.focus_row = 0;
         m.focus_col = 0;
         m.footer_focus = FooterItem::Save;
-        m.listen = None;
-        m.pending_key_pick = None;
+        m.pending_select = None;
+        m.delete_confirm = None;
         m.prev_held.clear();
+    }
+
+    fn gateway_row(m: &MappingsState) -> usize {
+        m.rows()
+            .iter()
+            .position(|r| r == SEND_KEY_GATEWAY)
+            .expect("gateway row")
     }
 
     #[test]
     fn holdover_missing_after_enter_activates_plus() {
         let mut m = MappingsState::new();
         enter_browse_focus(&mut m);
+        m.focus_row = gateway_row(&m);
+        m.focus_col = 0; // gateway has no pills; col 0 is [+]
         let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
         let mut events = EventQueue::passthrough();
         // Documents the bug: cleared prev_held + still-held A looks like rising ACTIVATE.
         m.handle_browse_input(&held, &mut events);
+        let drained = events.drain_pending();
         assert!(
-            m.listen.is_some(),
-            "without holdover reset, held A activates [+]"
+            matches!(drained.first(), Some((Event::CallState(_), _))),
+            "without holdover reset, held A opens SelectKey from [+]"
         );
     }
 
@@ -1437,13 +1536,137 @@ mod tests {
     fn holdover_reset_after_enter_suppresses_activate() {
         let mut m = MappingsState::new();
         enter_browse_focus(&mut m);
+        m.focus_row = gateway_row(&m);
+        m.focus_col = 0;
         let held = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
         m.reset_controller_input(Some(&held));
         let mut events = EventQueue::passthrough();
         m.handle_browse_input(&held, &mut events);
         assert!(
-            m.listen.is_none(),
+            events.drain_pending().is_empty(),
             "holdover reset must not activate [+] while A still held"
         );
+        assert!(m.pending_select.is_none());
+    }
+
+    #[test]
+    fn activate_plus_on_gateway_prefills_send_key_action() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        m.focus_row = gateway_row(&m);
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+        m.activate_focused(&mut events, &EventSource::MouseClick);
+        assert!(matches!(m.pending_select, Some(PendingSelect::Add)));
+        let drained = events.drain_pending();
+        assert_eq!(
+            drained.first().map(|(e, _)| e),
+            Some(&Event::CallState(CallRequest::SelectKey {
+                binding: String::new(),
+                action: "sendKey.".to_owned(),
+                mode: StateId::Keyboard,
+                draft_mode: HashMap::new(),
+                editing: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn activate_pill_prefills_replace_binding_and_editing() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        m.current_draft_mut().insert(
+            "toggleShift".to_owned(),
+            vec![single(ControllerButton::FaceTop)],
+        );
+        m.focus_row = m
+            .rows()
+            .iter()
+            .position(|r| r == "toggleShift")
+            .expect("toggleShift row");
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+        m.activate_focused(&mut events, &EventSource::MouseClick);
+        assert!(matches!(
+            m.pending_select,
+            Some(PendingSelect::Replace { .. })
+        ));
+        let drained = events.drain_pending();
+        assert_eq!(
+            drained.first().map(|(e, _)| e),
+            Some(&Event::CallState(CallRequest::SelectKey {
+                binding: "faceTop".to_owned(),
+                action: "toggleShift".to_owned(),
+                mode: StateId::Keyboard,
+                draft_mode: HashMap::from([(
+                    "toggleShift".to_owned(),
+                    vec![single(ControllerButton::FaceTop)]
+                )]),
+                editing: Some(single(ControllerButton::FaceTop)),
+            }))
+        );
+    }
+
+    #[test]
+    fn delete_modal_confirm_removes_pill() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        m.current_draft_mut().insert(
+            "toggleShift".to_owned(),
+            vec![single(ControllerButton::FaceTop)],
+        );
+        m.focus_row = m
+            .rows()
+            .iter()
+            .position(|r| r == "toggleShift")
+            .expect("toggleShift row");
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+
+        let y = ButtonSetInput(HashSet::from([ControllerButton::FaceTop]));
+        let none = ButtonSetInput(HashSet::new());
+        let a = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
+        m.handle_browse_input(&y, &mut events);
+        assert_eq!(
+            m.delete_confirm,
+            Some(("toggleShift".to_owned(), 0)),
+            "rising Y on a pill opens the delete modal"
+        );
+        m.handle_browse_input(&none, &mut events);
+        m.handle_browse_input(&a, &mut events);
+        assert!(m.delete_confirm.is_none());
+        assert!(!m.current_draft().contains_key("toggleShift"));
+        assert!(m.dirty);
+    }
+
+    #[test]
+    fn delete_modal_cancel_keeps_pill() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        m.current_draft_mut().insert(
+            "toggleShift".to_owned(),
+            vec![single(ControllerButton::FaceTop)],
+        );
+        m.focus_row = m
+            .rows()
+            .iter()
+            .position(|r| r == "toggleShift")
+            .expect("toggleShift row");
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+
+        let y = ButtonSetInput(HashSet::from([ControllerButton::FaceTop]));
+        let none = ButtonSetInput(HashSet::new());
+        let b = ButtonSetInput(HashSet::from([ControllerButton::FaceRight]));
+        m.handle_browse_input(&y, &mut events);
+        assert!(m.delete_confirm.is_some());
+        m.handle_browse_input(&none, &mut events);
+        m.handle_browse_input(&b, &mut events);
+        assert!(m.delete_confirm.is_none());
+        assert_eq!(
+            m.current_draft().get("toggleShift").cloned(),
+            Some(vec![single(ControllerButton::FaceTop)])
+        );
+        assert!(!m.dirty);
     }
 }
