@@ -438,6 +438,8 @@ impl KeyboardState {
         style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
         style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(50, 100, 180, 220);
         style.visuals.selection.stroke.color = egui::Color32::WHITE;
+        // Keep key slots at TOML widths: padding + icon glyphs must not expand the row.
+        style.spacing.button_padding = egui::Vec2::ZERO;
 
         let pad_x = current_layout.scale_x(current_layout.pad_x);
         let pad_y = current_layout.scale_y(current_layout.pad_y);
@@ -516,10 +518,11 @@ impl KeyboardState {
                         }
 
                         let size = egui::Vec2::new(current_layout.scale_x(key.width), row_height);
-                        let response = ui.add_sized(size, button);
+                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                        let response = ui.place(rect, button.truncate());
 
                         if capturing_centres {
-                            row_centres.push(Some(response.rect.center()));
+                            row_centres.push(Some(rect.center()));
                         }
 
                         // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
