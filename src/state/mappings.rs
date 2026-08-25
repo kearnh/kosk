@@ -873,6 +873,14 @@ impl MappingsState {
             }
         });
 
+        if self.tab == StateId::TextInput {
+            ui.label(
+                RichText::new("Unmapped inputs inherit Keyboard bindings.")
+                    .italics()
+                    .weak(),
+            );
+        }
+
         ui.separator();
 
         let rows = self.rows();
