@@ -6,7 +6,10 @@ use egui::Vec2;
 use kosk::config;
 use kosk::controller;
 use kosk::debug;
-use kosk::state::{AppState, StateId};
+use kosk::state::{
+    os_focus::{text_entry_focus_wanted, OsFocusGuard},
+    AppState, StateId,
+};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
 
@@ -19,6 +22,8 @@ struct App {
     last_outer: Option<egui::Pos2>,
     /// Resolved overlay alpha for the current mode (updated each frame).
     current_opacity: f32,
+    /// Held while a text-entry mode has OS foreground focus.
+    os_focus_guard: Option<OsFocusGuard>,
 }
 
 impl App {
@@ -65,6 +70,7 @@ impl App {
             min_size: Vec2::ZERO,
             last_outer: None,
             current_opacity: 1.0,
+            os_focus_guard: None,
         }
     }
 }
@@ -78,8 +84,8 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         let cfg = config::get();
         let is_transparent = cfg.transparent;
+        let state = self.state.lock().unwrap().current_state();
         {
-            let state = self.state.lock().unwrap().current_state();
             self.current_opacity = if !is_transparent {
                 1.0
             } else {
@@ -121,10 +127,16 @@ impl eframe::App for App {
                     LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
                 };
                 let hwnd = h.hwnd.get() as HWND;
+                // Keep the overlay non-activating (can be reset by system), except while
+                // a text-entry mode needs OS keyboard input.
+                let wants_text_entry = text_entry_focus_wanted(state);
                 unsafe {
-                    // Set WS_EX_NOACTIVATE and WS_EX_LAYERED every frame (can be reset by system)
                     let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                    let mut new_ex_style = current_ex_style | (WS_EX_NOACTIVATE as isize);
+                    let mut new_ex_style = if wants_text_entry {
+                        current_ex_style & !(WS_EX_NOACTIVATE as isize)
+                    } else {
+                        current_ex_style | (WS_EX_NOACTIVATE as isize)
+                    };
 
                     if is_transparent {
                         new_ex_style |= WS_EX_LAYERED as isize;
@@ -150,6 +162,13 @@ impl eframe::App for App {
                         }
                         self.window_setup_done = true;
                     }
+                }
+                if wants_text_entry {
+                    if self.os_focus_guard.is_none() {
+                        self.os_focus_guard = Some(OsFocusGuard::activate_for_text_entry(hwnd));
+                    }
+                } else if let Some(guard) = self.os_focus_guard.take() {
+                    guard.restore();
                 }
             }
         }

@@ -22,6 +22,7 @@ mod menu;
 mod menu_action;
 mod move_window;
 mod move_window_action;
+pub mod os_focus;
 mod select_key;
 mod text_input;
 mod text_input_action;
