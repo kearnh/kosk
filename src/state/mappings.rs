@@ -130,6 +130,12 @@ enum FocusZone {
     Save,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeleteModalFocus {
+    Cancel,
+    Confirm,
+}
+
 /// Shared conflict check used by `on_return` and Save.
 /// `ignore` = binding currently on the pill being replaced (treated as absent).
 fn validate_binding_candidate(
@@ -316,6 +322,8 @@ pub struct MappingsState {
     pending_select: Option<PendingSelect>,
     /// Fake delete modal payload: (action, pill). While set, input is modal-only.
     delete_confirm: Option<(String, usize)>,
+    /// Which modal button is focused while `delete_confirm` is set.
+    delete_modal_focus: DeleteModalFocus,
     prev_held: HashSet<ControllerButton>,
     label_cache: LabelCache,
 }
@@ -333,6 +341,7 @@ impl MappingsState {
             table_entered: false,
             pending_select: None,
             delete_confirm: None,
+            delete_modal_focus: DeleteModalFocus::Cancel,
             prev_held: HashSet::new(),
             label_cache: LabelCache::new(),
         }
@@ -352,6 +361,7 @@ impl MappingsState {
         self.table_entered = false;
         self.pending_select = None;
         self.delete_confirm = None;
+        self.delete_modal_focus = DeleteModalFocus::Cancel;
         self.prev_held.clear();
     }
 
@@ -628,6 +638,7 @@ impl MappingsState {
             return; // on [+] or gateway
         }
         self.delete_confirm = Some((action, self.focus_col));
+        self.delete_modal_focus = DeleteModalFocus::Cancel;
     }
 
     fn activate_focused(&mut self, events: &mut EventQueue, source: &EventSource) {
@@ -716,11 +727,25 @@ impl MappingsState {
         let prev = self.prev_held.clone();
 
         if let Some((action, pill)) = self.delete_confirm.clone() {
-            if rising(ACTIVATE, &held, &prev) {
-                self.delete_pill(&action, pill);
+            if rising(BACK_CANCEL, &held, &prev) {
                 self.delete_confirm = None;
-            } else if rising(BACK_CANCEL, &held, &prev) {
-                self.delete_confirm = None;
+                self.delete_modal_focus = DeleteModalFocus::Cancel;
+            } else if rising(ACTIVATE, &held, &prev) {
+                match self.delete_modal_focus {
+                    DeleteModalFocus::Confirm => {
+                        self.delete_pill(&action, pill);
+                        self.delete_confirm = None;
+                        self.delete_modal_focus = DeleteModalFocus::Cancel;
+                    }
+                    DeleteModalFocus::Cancel => {
+                        self.delete_confirm = None;
+                    }
+                }
+            } else if rising(NAV_LEFT, &held, &prev) || rising(NAV_RIGHT, &held, &prev) {
+                self.delete_modal_focus = match self.delete_modal_focus {
+                    DeleteModalFocus::Cancel => DeleteModalFocus::Confirm,
+                    DeleteModalFocus::Confirm => DeleteModalFocus::Cancel,
+                };
             }
             self.prev_held = held;
             return;
@@ -1073,20 +1098,30 @@ impl MappingsState {
                         .show(ui, |ui| {
                             ui.label(format!("Delete {binding_text} from {action}?"));
                             ui.horizontal(|ui| {
-                                if ui.button("Confirm").clicked() {
-                                    confirm = true;
-                                }
-                                if ui.button("Cancel").clicked() {
+                                let cancel_sel =
+                                    self.delete_modal_focus == DeleteModalFocus::Cancel;
+                                if ui.add(Button::new("Cancel").selected(cancel_sel)).clicked() {
                                     cancel = true;
                                 }
+                                let confirm_sel =
+                                    self.delete_modal_focus == DeleteModalFocus::Confirm;
+                                if ui
+                                    .add(Button::new("Confirm").selected(confirm_sel))
+                                    .clicked()
+                                {
+                                    confirm = true;
+                                }
                             });
+                            ui.label("A select   D-pad choose   B dismiss");
                         });
                 });
             if confirm {
                 self.delete_pill(&action, pill);
                 self.delete_confirm = None;
+                self.delete_modal_focus = DeleteModalFocus::Cancel;
             } else if cancel {
                 self.delete_confirm = None;
+                self.delete_modal_focus = DeleteModalFocus::Cancel;
             }
         }
     }
@@ -1690,6 +1725,7 @@ mod tests {
 
         let y = ButtonSetInput(HashSet::from([ControllerButton::FaceTop]));
         let none = ButtonSetInput(HashSet::new());
+        let right = ButtonSetInput(HashSet::from([ControllerButton::DpadRight]));
         let a = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
         m.handle_browse_input(&y, &mut events);
         assert_eq!(
@@ -1697,6 +1733,11 @@ mod tests {
             Some(("toggleShift".to_owned(), 0)),
             "rising Y on a pill opens the delete modal"
         );
+        assert_eq!(m.delete_modal_focus, DeleteModalFocus::Cancel);
+        // Cancel starts focused; move to Confirm, then A deletes.
+        m.handle_browse_input(&none, &mut events);
+        m.handle_browse_input(&right, &mut events);
+        assert_eq!(m.delete_modal_focus, DeleteModalFocus::Confirm);
         m.handle_browse_input(&none, &mut events);
         m.handle_browse_input(&a, &mut events);
         assert!(m.delete_confirm.is_none());
@@ -1722,16 +1763,46 @@ mod tests {
 
         let y = ButtonSetInput(HashSet::from([ControllerButton::FaceTop]));
         let none = ButtonSetInput(HashSet::new());
+        let a = ButtonSetInput(HashSet::from([ControllerButton::FaceBottom]));
+        m.handle_browse_input(&y, &mut events);
+        assert!(m.delete_confirm.is_some());
+        assert_eq!(m.delete_modal_focus, DeleteModalFocus::Cancel);
+        // A on Cancel dismisses without deleting.
+        m.handle_browse_input(&none, &mut events);
+        m.handle_browse_input(&a, &mut events);
+        assert!(m.delete_confirm.is_none());
+        assert_eq!(
+            m.current_draft().get("toggleShift").cloned(),
+            Some(vec![single(ControllerButton::FaceTop)])
+        );
+        assert!(!m.dirty);
+    }
+
+    #[test]
+    fn delete_modal_b_also_dismisses() {
+        let mut m = MappingsState::new();
+        enter_table_cells(&mut m);
+        m.current_draft_mut().insert(
+            "toggleShift".to_owned(),
+            vec![single(ControllerButton::FaceTop)],
+        );
+        m.focus_row = m
+            .rows()
+            .iter()
+            .position(|r| r == "toggleShift")
+            .expect("toggleShift row");
+        m.focus_col = 0;
+        let mut events = EventQueue::passthrough();
+
+        let y = ButtonSetInput(HashSet::from([ControllerButton::FaceTop]));
+        let none = ButtonSetInput(HashSet::new());
         let b = ButtonSetInput(HashSet::from([ControllerButton::FaceRight]));
         m.handle_browse_input(&y, &mut events);
         assert!(m.delete_confirm.is_some());
         m.handle_browse_input(&none, &mut events);
         m.handle_browse_input(&b, &mut events);
         assert!(m.delete_confirm.is_none());
-        assert_eq!(
-            m.current_draft().get("toggleShift").cloned(),
-            Some(vec![single(ControllerButton::FaceTop)])
-        );
+        assert!(m.current_draft().contains_key("toggleShift"));
         assert!(!m.dirty);
     }
 
