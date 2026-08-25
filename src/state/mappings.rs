@@ -1062,20 +1062,25 @@ impl MappingsState {
             let mut confirm = false;
             let mut cancel = false;
             egui::Area::new(egui::Id::new("delete_confirm_modal"))
-                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                // Slightly above center so the dialog sits over the table, not the footer.
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::new(0.0, -72.0))
                 .order(egui::Order::Foreground)
                 .show(ctx, |ui| {
-                    Frame::window(ui.style()).show(ui, |ui| {
-                        ui.label(format!("Delete {binding_text} from {action}?"));
-                        ui.horizontal(|ui| {
-                            if ui.button("Confirm").clicked() {
-                                confirm = true;
-                            }
-                            if ui.button("Cancel").clicked() {
-                                cancel = true;
-                            }
+                    // Overlay visuals force window_fill transparent; override for readability.
+                    Frame::window(ui.style())
+                        .fill(Color32::from_rgb(28, 28, 32))
+                        .stroke(Stroke::new(1.5, Color32::from_rgb(140, 140, 150)))
+                        .show(ui, |ui| {
+                            ui.label(format!("Delete {binding_text} from {action}?"));
+                            ui.horizontal(|ui| {
+                                if ui.button("Confirm").clicked() {
+                                    confirm = true;
+                                }
+                                if ui.button("Cancel").clicked() {
+                                    cancel = true;
+                                }
+                            });
                         });
-                    });
                 });
             if confirm {
                 self.delete_pill(&action, pill);
