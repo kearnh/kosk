@@ -1112,7 +1112,6 @@ impl MappingsState {
                                     confirm = true;
                                 }
                             });
-                            ui.label("A select   D-pad choose   B dismiss");
                         });
                 });
             if confirm {
