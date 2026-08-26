@@ -51,46 +51,11 @@ pub trait ControllerInput: Debug {
         warp(self.right_stick_raw(), config::get().stick_warp)
     }
 
-    fn dpad_up(&self) -> bool;
-    fn dpad_down(&self) -> bool;
-    fn dpad_left(&self) -> bool;
-    fn dpad_right(&self) -> bool;
-    fn face_bottom(&self) -> bool;
-    fn face_right(&self) -> bool;
-    fn face_top(&self) -> bool;
-    fn face_left(&self) -> bool;
-    fn shoulder_left(&self) -> bool;
-    fn shoulder_right(&self) -> bool;
-    fn stick_left(&self) -> bool;
-    fn stick_right(&self) -> bool;
     fn trigger_left(&self) -> Option<u8>;
     fn trigger_right(&self) -> Option<u8>;
-    fn btn_options(&self) -> bool;
-    fn btn_share(&self) -> bool;
-    fn btn_system(&self) -> bool;
-    fn pad_left(&self) -> bool {
-        false
-    }
-    fn pad_right(&self) -> bool {
-        false
-    }
-    /// SC2 left paddles; default off (DualShock 4 has none).
-    fn l4(&self) -> bool {
-        false
-    }
-    fn l5(&self) -> bool {
-        false
-    }
-    fn r4(&self) -> bool {
-        false
-    }
-    fn r5(&self) -> bool {
-        false
-    }
-    /// SC2 Quick Access (⋯ / QAM) between the pads; default off (DualShock 4 has none).
-    fn btn_quick_access(&self) -> bool {
-        false
-    }
+
+    /// Whether `button` is held. Exhaustive over [`ControllerButton`].
+    fn query(&self, button: ControllerButton) -> bool;
 
     /// Whether this snapshot should reach the app (vs being swallowed as idle).
     fn is_engaged(&self) -> bool;
@@ -105,7 +70,9 @@ pub trait ControllerInput: Debug {
 /// case-insensitively and `-` / `_` are ignored, so `stick-left`, `stick_left`,
 /// and `stickLeft` all parse to the same value. Device feel (trigger threshold,
 /// pad haptics) lives in `[ps4]` / `[sc2]`, not in this key.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::EnumIter, strum::EnumCount, strum::VariantArray,
+)]
 pub enum ControllerButton {
     DpadUp,
     DpadDown,
@@ -131,37 +98,6 @@ pub enum ControllerButton {
     R4,
     R5,
     QuickAccess,
-}
-
-impl ControllerButton {
-    pub(crate) fn query(&self, input: &dyn ControllerInput) -> bool {
-        match self {
-            ControllerButton::DpadUp => input.dpad_up(),
-            ControllerButton::DpadDown => input.dpad_down(),
-            ControllerButton::DpadLeft => input.dpad_left(),
-            ControllerButton::DpadRight => input.dpad_right(),
-            ControllerButton::FaceBottom => input.face_bottom(),
-            ControllerButton::FaceRight => input.face_right(),
-            ControllerButton::FaceLeft => input.face_left(),
-            ControllerButton::FaceTop => input.face_top(),
-            ControllerButton::ShoulderLeft => input.shoulder_left(),
-            ControllerButton::ShoulderRight => input.shoulder_right(),
-            ControllerButton::StickLeft => input.stick_left(),
-            ControllerButton::StickRight => input.stick_right(),
-            ControllerButton::TriggerLeft => input.trigger_left().is_some(),
-            ControllerButton::TriggerRight => input.trigger_right().is_some(),
-            ControllerButton::Options => input.btn_options(),
-            ControllerButton::Share => input.btn_share(),
-            ControllerButton::System => input.btn_system(),
-            ControllerButton::PadLeft => input.pad_left(),
-            ControllerButton::PadRight => input.pad_right(),
-            ControllerButton::L4 => input.l4(),
-            ControllerButton::L5 => input.l5(),
-            ControllerButton::R4 => input.r4(),
-            ControllerButton::R5 => input.r5(),
-            ControllerButton::QuickAccess => input.btn_quick_access(),
-        }
-    }
 }
 
 /// Lower-case the input and strip `-` / `_` so `stick-left`, `stick_left`, and
@@ -722,5 +658,62 @@ mod tests {
                 ControllerKind::Ps4
             ]
         );
+    }
+
+    #[test]
+    fn controller_button_variants_match_count_and_order() {
+        use strum::{EnumCount, IntoEnumIterator, VariantArray};
+
+        assert_eq!(ControllerButton::VARIANTS.len(), ControllerButton::COUNT);
+        assert_eq!(
+            record::BUTTON_ORDER.as_ptr(),
+            ControllerButton::VARIANTS.as_ptr()
+        );
+        assert_eq!(record::BUTTON_ORDER.len(), ControllerButton::VARIANTS.len());
+        assert!(ControllerButton::VARIANTS.contains(&ControllerButton::QuickAccess));
+        assert_eq!(
+            *ControllerButton::VARIANTS.last().unwrap(),
+            ControllerButton::QuickAccess
+        );
+        let via_iter: Vec<_> = ControllerButton::iter().collect();
+        assert_eq!(via_iter.as_slice(), ControllerButton::VARIANTS);
+    }
+
+    #[derive(Debug, Clone)]
+    struct FaceBottomOnly;
+
+    impl ControllerInput for FaceBottomOnly {
+        fn left_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn right_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn trigger_left(&self) -> Option<u8> {
+            None
+        }
+        fn trigger_right(&self) -> Option<u8> {
+            None
+        }
+        fn query(&self, button: ControllerButton) -> bool {
+            button == ControllerButton::FaceBottom
+        }
+        fn is_engaged(&self) -> bool {
+            true
+        }
+        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+
+    #[test]
+    fn query_round_trip_filters_held_buttons() {
+        use strum::IntoEnumIterator;
+
+        let stub = FaceBottomOnly;
+        let held: Vec<_> = ControllerButton::iter()
+            .filter(|&b| stub.query(b))
+            .collect();
+        assert_eq!(held, vec![ControllerButton::FaceBottom]);
     }
 }

@@ -9,8 +9,10 @@ use std::time::{Duration, Instant};
 
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
+use strum::IntoEnumIterator;
+
 use crate::config::HapticIntensity;
-use crate::controller::ControllerInput;
+use crate::controller::{ControllerButton, ControllerInput};
 
 const VALVE_VID: u16 = 0x28de;
 const PID_WIRED: u16 = 0x1302;
@@ -311,8 +313,8 @@ impl Sc2Device {
 
     fn maybe_pad_haptic(&mut self) {
         let cfg = crate::config::sc2();
-        let left = self.state.pad_left();
-        let right = self.state.pad_right();
+        let left = self.state.query(ControllerButton::PadLeft);
+        let right = self.state.query(ControllerButton::PadRight);
         if left != self.prev_pad_left_click {
             haptic_click(&self.device, HAPTIC_SIDE_TP_LEFT, cfg.touchpad_left_haptic);
         }
@@ -367,42 +369,6 @@ impl ControllerInput for Sc2State {
     fn right_stick_raw(&self) -> (f32, f32) {
         self.pad_as_stick_right()
     }
-    fn dpad_up(&self) -> bool {
-        self.bit(BTN_DPAD_UP)
-    }
-    fn dpad_down(&self) -> bool {
-        self.bit(BTN_DPAD_DOWN)
-    }
-    fn dpad_left(&self) -> bool {
-        self.bit(BTN_DPAD_LEFT)
-    }
-    fn dpad_right(&self) -> bool {
-        self.bit(BTN_DPAD_RIGHT)
-    }
-    fn face_bottom(&self) -> bool {
-        self.bit(BTN_A)
-    }
-    fn face_right(&self) -> bool {
-        self.bit(BTN_B)
-    }
-    fn face_left(&self) -> bool {
-        self.bit(BTN_X)
-    }
-    fn face_top(&self) -> bool {
-        self.bit(BTN_Y)
-    }
-    fn shoulder_left(&self) -> bool {
-        self.bit(BTN_LB)
-    }
-    fn shoulder_right(&self) -> bool {
-        self.bit(BTN_RB)
-    }
-    fn stick_left(&self) -> bool {
-        self.bit(BTN_L3)
-    }
-    fn stick_right(&self) -> bool {
-        self.bit(BTN_R3)
-    }
     fn trigger_left(&self) -> Option<u8> {
         scale_trigger(
             self.trigger_left,
@@ -417,63 +383,38 @@ impl ControllerInput for Sc2State {
             crate::config::sc2().trigger_right_threshold,
         )
     }
-    fn btn_options(&self) -> bool {
-        self.bit(BTN_MENU)
-    }
-    fn btn_share(&self) -> bool {
-        self.bit(BTN_VIEW)
-    }
-    fn btn_system(&self) -> bool {
-        self.bit(BTN_STEAM)
-    }
-    fn btn_quick_access(&self) -> bool {
-        self.bit(BTN_QAM)
-    }
-    fn pad_left(&self) -> bool {
-        self.bit(BTN_LPAD_CLICK)
-    }
-    fn pad_right(&self) -> bool {
-        self.bit(BTN_RPAD_CLICK)
-    }
-    fn l4(&self) -> bool {
-        self.bit(BTN_L4)
-    }
-    fn l5(&self) -> bool {
-        self.bit(BTN_L5)
-    }
-    fn r4(&self) -> bool {
-        self.bit(BTN_R4)
-    }
-    fn r5(&self) -> bool {
-        self.bit(BTN_R5)
+    fn query(&self, button: ControllerButton) -> bool {
+        match button {
+            ControllerButton::DpadUp => self.bit(BTN_DPAD_UP),
+            ControllerButton::DpadDown => self.bit(BTN_DPAD_DOWN),
+            ControllerButton::DpadLeft => self.bit(BTN_DPAD_LEFT),
+            ControllerButton::DpadRight => self.bit(BTN_DPAD_RIGHT),
+            ControllerButton::FaceBottom => self.bit(BTN_A),
+            ControllerButton::FaceRight => self.bit(BTN_B),
+            ControllerButton::FaceLeft => self.bit(BTN_X),
+            ControllerButton::FaceTop => self.bit(BTN_Y),
+            ControllerButton::ShoulderLeft => self.bit(BTN_LB),
+            ControllerButton::ShoulderRight => self.bit(BTN_RB),
+            ControllerButton::StickLeft => self.bit(BTN_L3),
+            ControllerButton::StickRight => self.bit(BTN_R3),
+            ControllerButton::TriggerLeft => self.trigger_left().is_some(),
+            ControllerButton::TriggerRight => self.trigger_right().is_some(),
+            ControllerButton::Options => self.bit(BTN_MENU),
+            ControllerButton::Share => self.bit(BTN_VIEW),
+            ControllerButton::System => self.bit(BTN_STEAM),
+            ControllerButton::PadLeft => self.bit(BTN_LPAD_CLICK),
+            ControllerButton::PadRight => self.bit(BTN_RPAD_CLICK),
+            ControllerButton::L4 => self.bit(BTN_L4),
+            ControllerButton::L5 => self.bit(BTN_L5),
+            ControllerButton::R4 => self.bit(BTN_R4),
+            ControllerButton::R5 => self.bit(BTN_R5),
+            ControllerButton::QuickAccess => self.bit(BTN_QAM),
+        }
     }
     fn is_engaged(&self) -> bool {
         self.left_pad_touch()
             || self.right_pad_touch()
-            || self.dpad_up()
-            || self.dpad_down()
-            || self.dpad_left()
-            || self.dpad_right()
-            || self.face_bottom()
-            || self.face_right()
-            || self.face_top()
-            || self.face_left()
-            || self.shoulder_left()
-            || self.shoulder_right()
-            || self.stick_left()
-            || self.stick_right()
-            || self.trigger_left().is_some()
-            || self.trigger_right().is_some()
-            || self.btn_options()
-            || self.btn_share()
-            || self.btn_system()
-            || self.btn_quick_access()
-            || self.pad_left()
-            || self.pad_right()
-            || self.l4()
-            || self.l5()
-            || self.r4()
-            || self.r5()
+            || ControllerButton::iter().any(|b| self.query(b))
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
@@ -506,20 +447,20 @@ mod tests {
         put_i16(&mut r, 20, 0); // left pad Y
         let s = parse_input_report(&r).expect("parse 0x42");
         assert_eq!(s.seq, 7);
-        assert!(s.face_bottom());
+        assert!(s.query(ControllerButton::FaceBottom));
         assert!(s.left_pad_touch());
         assert_eq!(s.left_pad.0, 32767);
         let (x, y) = s.pad_as_stick_left();
         assert!((x - 1.0).abs() < 0.001);
         assert!(y.abs() < 0.001);
         assert!(s.trigger_left().is_some());
-        assert!(!s.l4());
+        assert!(!s.query(ControllerButton::L4));
         put_u32(&mut r, 2, BTN_L4 | BTN_R5);
         let paddles = parse_input_report(&r).expect("parse paddles");
-        assert!(paddles.l4());
-        assert!(!paddles.l5());
-        assert!(!paddles.r4());
-        assert!(paddles.r5());
+        assert!(paddles.query(ControllerButton::L4));
+        assert!(!paddles.query(ControllerButton::L5));
+        assert!(!paddles.query(ControllerButton::R4));
+        assert!(paddles.query(ControllerButton::R5));
     }
 
     #[test]
@@ -528,8 +469,8 @@ mod tests {
         r[0] = REPORT_STATE;
         put_u32(&mut r, 2, BTN_QAM);
         let state = parse_input_report(&r).expect("parse qam");
-        assert!(state.btn_quick_access());
-        assert!(!state.btn_system());
+        assert!(state.query(ControllerButton::QuickAccess));
+        assert!(!state.query(ControllerButton::System));
     }
 
     #[test]

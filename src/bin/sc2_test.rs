@@ -11,7 +11,8 @@ use clap::{Parser, Subcommand};
 use hidapi::HidApi;
 use kosk::controller::pad_origin::PadOriginMapper;
 use kosk::controller::sc2;
-use kosk::controller::ControllerInput;
+use kosk::controller::{ControllerButton, ControllerInput};
+use strum::IntoEnumIterator;
 
 const VALVE_VID: u16 = 0x28de;
 
@@ -137,73 +138,10 @@ fn format_line(input: &dyn ControllerInput, state: &sc2::Sc2State, with_warp: bo
         let (rx, ry) = input.right_stick();
         let _ = write!(s, " warp L({lx:+.3},{ly:+.3}) R({rx:+.3},{ry:+.3})");
     }
-    let mut btns = Vec::new();
-    if input.face_bottom() {
-        btns.push("faceBottom");
-    }
-    if input.face_right() {
-        btns.push("faceRight");
-    }
-    if input.face_left() {
-        btns.push("faceLeft");
-    }
-    if input.face_top() {
-        btns.push("faceTop");
-    }
-    if input.shoulder_left() {
-        btns.push("LB");
-    }
-    if input.shoulder_right() {
-        btns.push("RB");
-    }
-    if input.dpad_up() {
-        btns.push("dpadUp");
-    }
-    if input.dpad_down() {
-        btns.push("dpadDown");
-    }
-    if input.dpad_left() {
-        btns.push("dpadLeft");
-    }
-    if input.dpad_right() {
-        btns.push("dpadRight");
-    }
-    if input.stick_left() {
-        btns.push("L3");
-    }
-    if input.stick_right() {
-        btns.push("R3");
-    }
-    if input.btn_share() {
-        btns.push("share");
-    }
-    if input.btn_options() {
-        btns.push("options");
-    }
-    if input.btn_system() {
-        btns.push("system");
-    }
-    if input.btn_quick_access() {
-        btns.push("quickAccess");
-    }
-    if input.pad_left() {
-        btns.push("padLeft");
-    }
-    if input.pad_right() {
-        btns.push("padRight");
-    }
-    if input.l4() {
-        btns.push("l4");
-    }
-    if input.l5() {
-        btns.push("l5");
-    }
-    if input.r4() {
-        btns.push("r4");
-    }
-    if input.r5() {
-        btns.push("r5");
-    }
+    let btns: Vec<String> = ControllerButton::iter()
+        .filter(|&b| input.query(b))
+        .map(|b| b.to_string())
+        .collect();
     if !btns.is_empty() {
         let _ = write!(s, " [{}]", btns.join(" "));
     }

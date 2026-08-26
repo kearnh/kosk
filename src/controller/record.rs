@@ -12,37 +12,15 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 
 use crate::config;
+use strum::VariantArray;
+
 use crate::controller::{ControllerButton, ControllerInput};
 
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
 pub const CURRENT_TAPE_VERSION: u32 = 1;
 
-pub(crate) const BUTTON_ORDER: [ControllerButton; 24] = [
-    ControllerButton::DpadUp,
-    ControllerButton::DpadDown,
-    ControllerButton::DpadLeft,
-    ControllerButton::DpadRight,
-    ControllerButton::FaceBottom,
-    ControllerButton::FaceRight,
-    ControllerButton::FaceLeft,
-    ControllerButton::FaceTop,
-    ControllerButton::ShoulderLeft,
-    ControllerButton::ShoulderRight,
-    ControllerButton::StickLeft,
-    ControllerButton::StickRight,
-    ControllerButton::TriggerLeft,
-    ControllerButton::TriggerRight,
-    ControllerButton::Options,
-    ControllerButton::Share,
-    ControllerButton::System,
-    ControllerButton::PadLeft,
-    ControllerButton::PadRight,
-    ControllerButton::L4,
-    ControllerButton::L5,
-    ControllerButton::R4,
-    ControllerButton::R5,
-    ControllerButton::QuickAccess,
-];
+/// Bit *i* in snapshots is `VARIANTS[i]`; append new buttons at the end of the enum.
+pub(crate) const BUTTON_ORDER: &[ControllerButton] = ControllerButton::VARIANTS;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MappingScales {
@@ -81,7 +59,7 @@ impl InputSnapshot {
         let (rx, ry) = input.right_stick();
         let mut buttons = 0u32;
         for (i, btn) in BUTTON_ORDER.iter().enumerate() {
-            if btn.query(input) {
+            if input.query(*btn) {
                 buttons |= 1 << i;
             }
         }
@@ -883,7 +861,7 @@ mod tests {
         };
         for (i, btn) in BUTTON_ORDER.iter().enumerate() {
             snap.buttons = 1 << i;
-            assert!(snap.button(btn.clone()), "{btn:?}");
+            assert!(snap.button(*btn), "{btn:?}");
         }
         assert!(BUTTON_ORDER.contains(&ControllerButton::L4));
         assert!(BUTTON_ORDER.contains(&ControllerButton::R5));

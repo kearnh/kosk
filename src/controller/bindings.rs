@@ -49,7 +49,7 @@ impl<A: Action + Clone> BindingEngine<A> {
                     singles.insert(button, action);
                 }
                 ControllerBinding::Chord { leader, follower } => {
-                    chord_leaders.insert(leader.clone());
+                    chord_leaders.insert(leader);
                     chords.push(ChordEntry {
                         leader,
                         follower,
@@ -70,8 +70,8 @@ impl<A: Action + Clone> BindingEngine<A> {
 
         let mut buttons: HashSet<ControllerButton> = singles.keys().cloned().collect();
         for c in &chords {
-            buttons.insert(c.leader.clone());
-            buttons.insert(c.follower.clone());
+            buttons.insert(c.leader);
+            buttons.insert(c.follower);
         }
 
         Ok(Self {
@@ -112,33 +112,33 @@ impl<A: Action + Clone> BindingEngine<A> {
         }
 
         for chord in &self.chords {
-            if chord.leader.query(input) {
-                self.leaders_active.insert(chord.leader.clone());
+            if input.query(chord.leader) {
+                self.leaders_active.insert(chord.leader);
             } else {
                 self.leaders_active.remove(&chord.leader);
             }
         }
 
         self.chords_fired
-            .retain(|(leader, follower)| leader.query(input) && follower.query(input));
+            .retain(|(leader, follower)| input.query(*leader) && input.query(*follower));
 
         let mut fired = Vec::new();
 
         for chord in &self.chords {
-            let key = (chord.leader.clone(), chord.follower.clone());
+            let key = (chord.leader, chord.follower);
             if self.chords_fired.contains(&key) {
                 continue;
             }
             if newly_down.contains(&chord.follower) && self.leaders_active.contains(&chord.leader) {
                 fired.push((
                     ControllerBinding::Chord {
-                        leader: chord.leader.clone(),
-                        follower: chord.follower.clone(),
+                        leader: chord.leader,
+                        follower: chord.follower,
                     },
                     chord.action.clone(),
                 ));
                 self.chords_fired.insert(key);
-                self.suppress_single.insert(chord.follower.clone());
+                self.suppress_single.insert(chord.follower);
             }
         }
 
@@ -151,7 +151,7 @@ impl<A: Action + Clone> BindingEngine<A> {
                 TriggerMode::WhileHeld => held.contains(button),
             };
             if should_fire {
-                fired.push((ControllerBinding::Single(button.clone()), action.clone()));
+                fired.push((ControllerBinding::Single(*button), action.clone()));
             }
         }
 
@@ -162,8 +162,8 @@ impl<A: Action + Clone> BindingEngine<A> {
     fn compute_held(&self, input: &dyn ControllerInput) -> HashSet<ControllerButton> {
         self.buttons
             .iter()
-            .filter(|b| b.query(input))
-            .cloned()
+            .filter(|b| input.query(**b))
+            .copied()
             .collect()
     }
 }
@@ -230,74 +230,14 @@ mod tests {
         fn right_stick_raw(&self) -> (f32, f32) {
             (0.0, 0.0)
         }
-        fn dpad_up(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadUp)
-        }
-        fn dpad_down(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadDown)
-        }
-        fn dpad_left(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadLeft)
-        }
-        fn dpad_right(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadRight)
-        }
-        fn face_bottom(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceBottom)
-        }
-        fn face_right(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceRight)
-        }
-        fn face_top(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceTop)
-        }
-        fn face_left(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceLeft)
-        }
-        fn shoulder_left(&self) -> bool {
-            self.0.contains(&ControllerButton::ShoulderLeft)
-        }
-        fn shoulder_right(&self) -> bool {
-            self.0.contains(&ControllerButton::ShoulderRight)
-        }
-        fn stick_left(&self) -> bool {
-            self.0.contains(&ControllerButton::StickLeft)
-        }
-        fn stick_right(&self) -> bool {
-            self.0.contains(&ControllerButton::StickRight)
-        }
         fn trigger_left(&self) -> Option<u8> {
             None
         }
         fn trigger_right(&self) -> Option<u8> {
             None
         }
-        fn btn_options(&self) -> bool {
-            self.0.contains(&ControllerButton::Options)
-        }
-        fn btn_share(&self) -> bool {
-            false
-        }
-        fn btn_system(&self) -> bool {
-            false
-        }
-        fn pad_left(&self) -> bool {
-            self.0.contains(&ControllerButton::PadLeft)
-        }
-        fn pad_right(&self) -> bool {
-            self.0.contains(&ControllerButton::PadRight)
-        }
-        fn l4(&self) -> bool {
-            self.0.contains(&ControllerButton::L4)
-        }
-        fn l5(&self) -> bool {
-            self.0.contains(&ControllerButton::L5)
-        }
-        fn r4(&self) -> bool {
-            self.0.contains(&ControllerButton::R4)
-        }
-        fn r5(&self) -> bool {
-            self.0.contains(&ControllerButton::R5)
+        fn query(&self, button: ControllerButton) -> bool {
+            self.0.contains(&button)
         }
         fn is_engaged(&self) -> bool {
             !self.0.is_empty()

@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::controller::record::BUTTON_ORDER;
+use strum::EnumCount;
+
 use crate::controller::{ControllerButton, ControllerInput};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +43,7 @@ struct VirtualExpires {
     right_stick: Option<Instant>,
     left_pad: Option<Instant>,
     right_pad: Option<Instant>,
-    buttons: [Option<Instant>; 23],
+    buttons: [Option<Instant>; ControllerButton::COUNT],
     lt: Option<Instant>,
     rt: Option<Instant>,
 }
@@ -130,77 +132,14 @@ impl ControllerInput for VirtualInput {
     fn right_stick(&self) -> (f32, f32) {
         self.axes(StickSide::Right)
     }
-    fn dpad_up(&self) -> bool {
-        self.button(ControllerButton::DpadUp)
-    }
-    fn dpad_down(&self) -> bool {
-        self.button(ControllerButton::DpadDown)
-    }
-    fn dpad_left(&self) -> bool {
-        self.button(ControllerButton::DpadLeft)
-    }
-    fn dpad_right(&self) -> bool {
-        self.button(ControllerButton::DpadRight)
-    }
-    fn face_bottom(&self) -> bool {
-        self.button(ControllerButton::FaceBottom)
-    }
-    fn face_right(&self) -> bool {
-        self.button(ControllerButton::FaceRight)
-    }
-    fn face_top(&self) -> bool {
-        self.button(ControllerButton::FaceTop)
-    }
-    fn face_left(&self) -> bool {
-        self.button(ControllerButton::FaceLeft)
-    }
-    fn shoulder_left(&self) -> bool {
-        self.button(ControllerButton::ShoulderLeft)
-    }
-    fn shoulder_right(&self) -> bool {
-        self.button(ControllerButton::ShoulderRight)
-    }
-    fn stick_left(&self) -> bool {
-        self.button(ControllerButton::StickLeft)
-    }
-    fn stick_right(&self) -> bool {
-        self.button(ControllerButton::StickRight)
-    }
     fn trigger_left(&self) -> Option<u8> {
         self.lt
     }
     fn trigger_right(&self) -> Option<u8> {
         self.rt
     }
-    fn btn_options(&self) -> bool {
-        self.button(ControllerButton::Options)
-    }
-    fn btn_share(&self) -> bool {
-        self.button(ControllerButton::Share)
-    }
-    fn btn_system(&self) -> bool {
-        self.button(ControllerButton::System)
-    }
-    fn pad_left(&self) -> bool {
-        self.button(ControllerButton::PadLeft)
-    }
-    fn pad_right(&self) -> bool {
-        self.button(ControllerButton::PadRight)
-    }
-    fn l4(&self) -> bool {
-        self.button(ControllerButton::L4)
-    }
-    fn l5(&self) -> bool {
-        self.button(ControllerButton::L5)
-    }
-    fn r4(&self) -> bool {
-        self.button(ControllerButton::R4)
-    }
-    fn r5(&self) -> bool {
-        self.button(ControllerButton::R5)
-    }
-    fn btn_quick_access(&self) -> bool {
-        self.button(ControllerButton::QuickAccess)
+    fn query(&self, button: ControllerButton) -> bool {
+        self.button(button)
     }
     fn is_engaged(&self) -> bool {
         self.lx != 0.0
@@ -403,7 +342,7 @@ impl VirtualController {
         let snap = self.snapshot();
         let mut pressed = Vec::new();
         for btn in BUTTON_ORDER {
-            if snap.button(btn.clone()) {
+            if snap.button(*btn) {
                 pressed.push(format!("{btn:?}"));
             }
         }
@@ -467,7 +406,7 @@ mod tests {
         assert!((s.left_stick().0 + 0.9).abs() < 1e-6);
         assert!((s.left_stick().1 - 0.1).abs() < 1e-6);
         // Pad click bit is independent of touching.
-        assert!(!s.pad_left());
+        assert!(!s.query(ControllerButton::PadLeft));
     }
 
     #[test]
@@ -482,7 +421,7 @@ mod tests {
         assert!(!s.is_engaged());
         assert_eq!(s.left_stick(), (0.0, 0.0));
         assert!(!s.right_pad.touching);
-        assert!(!s.face_bottom());
+        assert!(!s.query(ControllerButton::FaceBottom));
         assert!(s.trigger_left().is_none());
     }
 }

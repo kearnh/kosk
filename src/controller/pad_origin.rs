@@ -153,77 +153,14 @@ impl ControllerInput for MappedSc2Input {
     fn right_stick(&self) -> (f32, f32) {
         warp(self.right, config::get().stick_warp)
     }
-    fn dpad_up(&self) -> bool {
-        self.inner.dpad_up()
-    }
-    fn dpad_down(&self) -> bool {
-        self.inner.dpad_down()
-    }
-    fn dpad_left(&self) -> bool {
-        self.inner.dpad_left()
-    }
-    fn dpad_right(&self) -> bool {
-        self.inner.dpad_right()
-    }
-    fn face_bottom(&self) -> bool {
-        self.inner.face_bottom()
-    }
-    fn face_right(&self) -> bool {
-        self.inner.face_right()
-    }
-    fn face_left(&self) -> bool {
-        self.inner.face_left()
-    }
-    fn face_top(&self) -> bool {
-        self.inner.face_top()
-    }
-    fn shoulder_left(&self) -> bool {
-        self.inner.shoulder_left()
-    }
-    fn shoulder_right(&self) -> bool {
-        self.inner.shoulder_right()
-    }
-    fn stick_left(&self) -> bool {
-        self.inner.stick_left()
-    }
-    fn stick_right(&self) -> bool {
-        self.inner.stick_right()
-    }
     fn trigger_left(&self) -> Option<u8> {
         self.inner.trigger_left()
     }
     fn trigger_right(&self) -> Option<u8> {
         self.inner.trigger_right()
     }
-    fn btn_options(&self) -> bool {
-        self.inner.btn_options()
-    }
-    fn btn_share(&self) -> bool {
-        self.inner.btn_share()
-    }
-    fn btn_system(&self) -> bool {
-        self.inner.btn_system()
-    }
-    fn btn_quick_access(&self) -> bool {
-        self.inner.btn_quick_access()
-    }
-    fn pad_left(&self) -> bool {
-        self.inner.pad_left()
-    }
-    fn pad_right(&self) -> bool {
-        self.inner.pad_right()
-    }
-    fn l4(&self) -> bool {
-        self.inner.l4()
-    }
-    fn l5(&self) -> bool {
-        self.inner.l5()
-    }
-    fn r4(&self) -> bool {
-        self.inner.r4()
-    }
-    fn r5(&self) -> bool {
-        self.inner.r5()
+    fn query(&self, button: crate::controller::ControllerButton) -> bool {
+        self.inner.query(button)
     }
     fn is_engaged(&self) -> bool {
         self.inner.is_engaged()

@@ -43,77 +43,14 @@ impl ControllerInput for ReplayInput {
     fn right_stick(&self) -> (f32, f32) {
         (self.0.rx, self.0.ry)
     }
-    fn dpad_up(&self) -> bool {
-        self.0.button(ControllerButton::DpadUp)
-    }
-    fn dpad_down(&self) -> bool {
-        self.0.button(ControllerButton::DpadDown)
-    }
-    fn dpad_left(&self) -> bool {
-        self.0.button(ControllerButton::DpadLeft)
-    }
-    fn dpad_right(&self) -> bool {
-        self.0.button(ControllerButton::DpadRight)
-    }
-    fn face_bottom(&self) -> bool {
-        self.0.button(ControllerButton::FaceBottom)
-    }
-    fn face_right(&self) -> bool {
-        self.0.button(ControllerButton::FaceRight)
-    }
-    fn face_top(&self) -> bool {
-        self.0.button(ControllerButton::FaceTop)
-    }
-    fn face_left(&self) -> bool {
-        self.0.button(ControllerButton::FaceLeft)
-    }
-    fn shoulder_left(&self) -> bool {
-        self.0.button(ControllerButton::ShoulderLeft)
-    }
-    fn shoulder_right(&self) -> bool {
-        self.0.button(ControllerButton::ShoulderRight)
-    }
-    fn stick_left(&self) -> bool {
-        self.0.button(ControllerButton::StickLeft)
-    }
-    fn stick_right(&self) -> bool {
-        self.0.button(ControllerButton::StickRight)
-    }
     fn trigger_left(&self) -> Option<u8> {
         self.0.lt
     }
     fn trigger_right(&self) -> Option<u8> {
         self.0.rt
     }
-    fn btn_options(&self) -> bool {
-        self.0.button(ControllerButton::Options)
-    }
-    fn btn_share(&self) -> bool {
-        self.0.button(ControllerButton::Share)
-    }
-    fn btn_system(&self) -> bool {
-        self.0.button(ControllerButton::System)
-    }
-    fn pad_left(&self) -> bool {
-        self.0.button(ControllerButton::PadLeft)
-    }
-    fn pad_right(&self) -> bool {
-        self.0.button(ControllerButton::PadRight)
-    }
-    fn l4(&self) -> bool {
-        self.0.button(ControllerButton::L4)
-    }
-    fn l5(&self) -> bool {
-        self.0.button(ControllerButton::L5)
-    }
-    fn r4(&self) -> bool {
-        self.0.button(ControllerButton::R4)
-    }
-    fn r5(&self) -> bool {
-        self.0.button(ControllerButton::R5)
-    }
-    fn btn_quick_access(&self) -> bool {
-        self.0.button(ControllerButton::QuickAccess)
+    fn query(&self, button: ControllerButton) -> bool {
+        self.0.button(button)
     }
     fn is_engaged(&self) -> bool {
         true
@@ -296,7 +233,7 @@ mod tests {
         match dev.next_immediate() {
             Some(ReplayStep::Snapshot(s)) => {
                 assert_eq!(s.0.lx, 0.5);
-                assert!(s.face_bottom());
+                assert!(s.query(ControllerButton::FaceBottom));
             }
             other => panic!("expected snapshot, got {other:?}"),
         }

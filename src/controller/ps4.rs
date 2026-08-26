@@ -2,7 +2,9 @@ use anyhow::Result;
 use hidapi::{HidApi, HidDevice};
 use std::sync::RwLock;
 
-use crate::controller::ControllerInput;
+use strum::IntoEnumIterator;
+
+use crate::controller::{ControllerButton, ControllerInput};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -36,26 +38,6 @@ pub struct Ps4InputData {
 impl Ps4InputData {
     fn sticks_active(&self) -> bool {
         self.left != (0, 0) || self.right != (0, 0)
-    }
-
-    fn any_digital(&self) -> bool {
-        self.dpad_up
-            || self.dpad_down
-            || self.dpad_left
-            || self.dpad_right
-            || self.cross
-            || self.circle
-            || self.triangle
-            || self.square
-            || self.l1
-            || self.r1
-            || self.l3
-            || self.r3
-            || self.options
-            || self.share
-            || self.ps
-            || self.l2.is_some()
-            || self.r2.is_some()
     }
 }
 
@@ -282,42 +264,6 @@ impl ControllerInput for Ps4InputData {
     fn right_stick_raw(&self) -> (f32, f32) {
         (self.right.0 as f32 / 128.0, self.right.1 as f32 / 128.0)
     }
-    fn dpad_up(&self) -> bool {
-        self.dpad_up
-    }
-    fn dpad_down(&self) -> bool {
-        self.dpad_down
-    }
-    fn dpad_left(&self) -> bool {
-        self.dpad_left
-    }
-    fn dpad_right(&self) -> bool {
-        self.dpad_right
-    }
-    fn face_bottom(&self) -> bool {
-        self.cross
-    }
-    fn face_right(&self) -> bool {
-        self.circle
-    }
-    fn face_top(&self) -> bool {
-        self.triangle
-    }
-    fn face_left(&self) -> bool {
-        self.square
-    }
-    fn shoulder_left(&self) -> bool {
-        self.l1
-    }
-    fn shoulder_right(&self) -> bool {
-        self.r1
-    }
-    fn stick_left(&self) -> bool {
-        self.l3
-    }
-    fn stick_right(&self) -> bool {
-        self.r3
-    }
     fn trigger_left(&self) -> Option<u8> {
         let threshold = crate::config::ps4().trigger_left_threshold;
         self.l2.filter(|&t| t >= threshold)
@@ -326,18 +272,37 @@ impl ControllerInput for Ps4InputData {
         let threshold = crate::config::ps4().trigger_right_threshold;
         self.r2.filter(|&t| t >= threshold)
     }
-    fn btn_options(&self) -> bool {
-        self.options
-    }
-    fn btn_share(&self) -> bool {
-        self.share
-    }
-    fn btn_system(&self) -> bool {
-        self.ps
+    fn query(&self, button: ControllerButton) -> bool {
+        match button {
+            ControllerButton::DpadUp => self.dpad_up,
+            ControllerButton::DpadDown => self.dpad_down,
+            ControllerButton::DpadLeft => self.dpad_left,
+            ControllerButton::DpadRight => self.dpad_right,
+            ControllerButton::FaceBottom => self.cross,
+            ControllerButton::FaceRight => self.circle,
+            ControllerButton::FaceLeft => self.square,
+            ControllerButton::FaceTop => self.triangle,
+            ControllerButton::ShoulderLeft => self.l1,
+            ControllerButton::ShoulderRight => self.r1,
+            ControllerButton::StickLeft => self.l3,
+            ControllerButton::StickRight => self.r3,
+            ControllerButton::TriggerLeft => self.trigger_left().is_some(),
+            ControllerButton::TriggerRight => self.trigger_right().is_some(),
+            ControllerButton::Options => self.options,
+            ControllerButton::Share => self.share,
+            ControllerButton::System => self.ps,
+            ControllerButton::PadLeft
+            | ControllerButton::PadRight
+            | ControllerButton::L4
+            | ControllerButton::L5
+            | ControllerButton::R4
+            | ControllerButton::R5
+            | ControllerButton::QuickAccess => false,
+        }
     }
 
     fn is_engaged(&self) -> bool {
-        self.any_digital() || self.sticks_active()
+        ControllerButton::iter().any(|b| self.query(b)) || self.sticks_active()
     }
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {

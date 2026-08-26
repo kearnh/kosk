@@ -152,8 +152,8 @@ impl SelectKeyState {
                 self.prev_cancel = false;
             }
             Some(input) => {
-                self.prev_ok = OK.query(input);
-                self.prev_cancel = CANCEL.query(input);
+                self.prev_ok = input.query(OK);
+                self.prev_cancel = input.query(CANCEL);
             }
         }
     }
@@ -163,8 +163,8 @@ impl SelectKeyState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let ok_down = OK.query(input);
-        let cancel_down = CANCEL.query(input);
+        let ok_down = input.query(OK);
+        let cancel_down = input.query(CANCEL);
 
         if ok_down && !self.prev_ok {
             let binding = crate::controller::ControllerBinding::Single(OK);
@@ -217,56 +217,14 @@ mod tests {
         fn right_stick_raw(&self) -> (f32, f32) {
             (0.0, 0.0)
         }
-        fn dpad_up(&self) -> bool {
-            false
-        }
-        fn dpad_down(&self) -> bool {
-            false
-        }
-        fn dpad_left(&self) -> bool {
-            false
-        }
-        fn dpad_right(&self) -> bool {
-            false
-        }
-        fn face_bottom(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceBottom)
-        }
-        fn face_right(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceRight)
-        }
-        fn face_top(&self) -> bool {
-            false
-        }
-        fn face_left(&self) -> bool {
-            false
-        }
-        fn shoulder_left(&self) -> bool {
-            false
-        }
-        fn shoulder_right(&self) -> bool {
-            false
-        }
-        fn stick_left(&self) -> bool {
-            false
-        }
-        fn stick_right(&self) -> bool {
-            false
-        }
         fn trigger_left(&self) -> Option<u8> {
             None
         }
         fn trigger_right(&self) -> Option<u8> {
             None
         }
-        fn btn_options(&self) -> bool {
-            false
-        }
-        fn btn_share(&self) -> bool {
-            false
-        }
-        fn btn_system(&self) -> bool {
-            false
+        fn query(&self, button: ControllerButton) -> bool {
+            self.0.contains(&button)
         }
         fn is_engaged(&self) -> bool {
             !self.0.is_empty()

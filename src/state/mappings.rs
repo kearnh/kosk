@@ -18,7 +18,7 @@ use egui::{
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
-use strum::VariantNames;
+use strum::{VariantArray, VariantNames};
 
 // --- Hardcoded Mappings chrome (not user-remappable; edit here only) ---
 const NAV_UP: ControllerButton = ControllerButton::DpadUp;
@@ -37,33 +37,6 @@ const EDITABLE_MODES: [StateId; 4] = [
     StateId::Menu,
     StateId::TextInput,
     StateId::MoveWindow,
-];
-
-const ALL_BUTTONS: &[ControllerButton] = &[
-    ControllerButton::DpadUp,
-    ControllerButton::DpadDown,
-    ControllerButton::DpadLeft,
-    ControllerButton::DpadRight,
-    ControllerButton::FaceBottom,
-    ControllerButton::FaceRight,
-    ControllerButton::FaceLeft,
-    ControllerButton::FaceTop,
-    ControllerButton::ShoulderLeft,
-    ControllerButton::ShoulderRight,
-    ControllerButton::StickLeft,
-    ControllerButton::StickRight,
-    ControllerButton::TriggerLeft,
-    ControllerButton::TriggerRight,
-    ControllerButton::Options,
-    ControllerButton::Share,
-    ControllerButton::System,
-    ControllerButton::PadLeft,
-    ControllerButton::PadRight,
-    ControllerButton::L4,
-    ControllerButton::L5,
-    ControllerButton::R4,
-    ControllerButton::R5,
-    ControllerButton::QuickAccess,
 ];
 
 const SEND_KEY_GATEWAY: &str = "sendKey";
@@ -162,10 +135,10 @@ fn validate_binding_candidate(
             occupied.insert(binding.clone(), action.clone());
             match binding {
                 ControllerBinding::Single(b) => {
-                    singles.insert(b.clone());
+                    singles.insert(*b);
                 }
                 ControllerBinding::Chord { leader, .. } => {
-                    leaders.insert(leader.clone());
+                    leaders.insert(*leader);
                 }
             }
         }
@@ -290,10 +263,10 @@ fn tab_index(mode: StateId) -> usize {
 }
 
 fn held_set(input: &dyn ControllerInput) -> HashSet<ControllerButton> {
-    ALL_BUTTONS
+    ControllerButton::VARIANTS
         .iter()
-        .filter(|b| b.query(input))
-        .cloned()
+        .filter(|b| input.query(**b))
+        .copied()
         .collect()
 }
 
@@ -1527,56 +1500,14 @@ mod tests {
         fn right_stick_raw(&self) -> (f32, f32) {
             (0.0, 0.0)
         }
-        fn dpad_up(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadUp)
-        }
-        fn dpad_down(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadDown)
-        }
-        fn dpad_left(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadLeft)
-        }
-        fn dpad_right(&self) -> bool {
-            self.0.contains(&ControllerButton::DpadRight)
-        }
-        fn face_bottom(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceBottom)
-        }
-        fn face_right(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceRight)
-        }
-        fn face_top(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceTop)
-        }
-        fn face_left(&self) -> bool {
-            self.0.contains(&ControllerButton::FaceLeft)
-        }
-        fn shoulder_left(&self) -> bool {
-            self.0.contains(&ControllerButton::ShoulderLeft)
-        }
-        fn shoulder_right(&self) -> bool {
-            self.0.contains(&ControllerButton::ShoulderRight)
-        }
-        fn stick_left(&self) -> bool {
-            self.0.contains(&ControllerButton::StickLeft)
-        }
-        fn stick_right(&self) -> bool {
-            self.0.contains(&ControllerButton::StickRight)
-        }
         fn trigger_left(&self) -> Option<u8> {
             None
         }
         fn trigger_right(&self) -> Option<u8> {
             None
         }
-        fn btn_options(&self) -> bool {
-            self.0.contains(&ControllerButton::Options)
-        }
-        fn btn_share(&self) -> bool {
-            self.0.contains(&ControllerButton::Share)
-        }
-        fn btn_system(&self) -> bool {
-            false
+        fn query(&self, button: ControllerButton) -> bool {
+            self.0.contains(&button)
         }
         fn is_engaged(&self) -> bool {
             !self.0.is_empty()
