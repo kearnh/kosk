@@ -12,7 +12,7 @@ Sticks in the report are 0–255 with 128 as center. The driver subtracts 128, a
 
 D-pad and face buttons are packed into the state bytes the usual DualShock way (hat nibble plus Cross/Circle/Square/Triangle bits). `face_bottom` is Cross, `face_right` is Circle, `face_top` is Triangle, `face_left` is Square. `btn_options`, `btn_share`, and `btn_system` are Options, Share, and PS.
 
-Triggers become `Option<u8>` by comparing the analog byte to `config.ps4.trigger_left_threshold` / `trigger_right_threshold`. Below threshold is `None`; at or above is `Some(value)`. DualShock 4 has no pads and no paddles, so those trait methods stay on the defaults.
+Triggers become `Option<u8>` by comparing the analog byte to `config.ps4.trigger_left_threshold` / `trigger_right_threshold`. Below threshold is `None`; at or above is `Some(value)`. DualShock 4 has no pads, paddles, or Quick Access, so those trait methods stay on the defaults.
 
 `is_engaged` is true when either stick is off center or any digital (including a trigger that passed threshold) is down. An idle poll still produces a snapshot in some paths; the iterator uses engagement to decide whether the app should see `None`.
 
@@ -28,7 +28,7 @@ State reports use IDs `0x42`, `0x45` (BLE), and `0x47`. The parsed `Sc2State` ho
 
 For the on-screen keyboard, `left_stick_raw` / `right_stick_raw` on `Sc2State` return the **touchpads**, not the physical analog sticks. `pad_as_stick` converts a 16-bit pad sample to −1…1 and inverts Y, and returns `(0, 0)` when that pad is not touched. Physical sticks remain in the struct (`physical_left_stick`) for debugging and for `sc2_test`; they do not move the keyboard highlight in v1.
 
-Pad clicks are `pad_left` / `pad_right`. Rear paddles are `l4`, `l5`, `r4`, `r5`. Face buttons follow the Xbox-style layout mapped onto KOSK’s semantic names (A is `face_bottom`, and so on). Menu/View/Steam fill Options/Share/System.
+Pad clicks are `pad_left` / `pad_right`. Rear paddles are `l4`, `l5`, `r4`, `r5`. The Quick Access (⋯) button between the pads is `quickAccess` (`BTN_QAM`). Face buttons follow the Xbox-style layout mapped onto KOSK’s semantic names (A is `face_bottom`, and so on). Menu/View/Steam fill Options/Share/System.
 
 Triggers use both analog value and a click bit. `scale_trigger` reports `Some` when the click is down or the scaled analog value meets `[sc2]` threshold.
 

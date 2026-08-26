@@ -2,7 +2,8 @@
 # Action names match each state's action enum (same strings as keyboard layout keys).
 # Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
 # SC2 paddles: l4/r4 flip the OSK around the pointer (left/right, above/below);
-# l5, r5 as below. DualShock 4 has none.
+# l5, r5 as below. SC2 Quick Access (⋯ between pads): quickAccess / qam.
+# DualShock 4 has neither paddles nor Quick Access (those bindings stay idle).
 # Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
 # also have a standalone mapping in this table; the follower may.
 # Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.

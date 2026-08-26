@@ -14,7 +14,7 @@ The trait is a snapshot. One value is “this poll.” Implementations are `Debu
 
 Raw sticks are `left_stick_raw` / `right_stick_raw`. The default `left_stick` / `right_stick` methods apply `warp(..., config.stick_warp)` and then clamp to the square. Steam Controller 2’s mapped input overrides those methods so pad-origin stretch runs *before* warp (see [devices.md](devices.md)). Replay overrides them too: a tape already stored warped (and, for SC2, stretched) coordinates, so playing them back must not warp again.
 
-Digital controls are one method per button. Names are semantic rather than PlayStation- or Steam-specific: `face_bottom` is Cross on a DualShock 4 and A on a Steam Controller. Pads (`pad_left`, `pad_right`) and paddles (`l4`, `l5`, `r4`, `r5`) default to false so DualShock 4 does not have to mention them.
+Digital controls are one method per button. Names are semantic rather than PlayStation- or Steam-specific: `face_bottom` is Cross on a DualShock 4 and A on a Steam Controller. Pads (`pad_left`, `pad_right`), paddles (`l4`, `l5`, `r4`, `r5`), and Quick Access (`btn_quick_access`) default to false so DualShock 4 does not have to mention them.
 
 `trigger_left` / `trigger_right` return `Some(value)` when the analog trigger is considered down (device threshold applied in the driver) and `None` when it is not. Bindings treat “some” as held; they do not use the analog value.
 
@@ -28,7 +28,7 @@ That function is applied on every `left_stick` / `right_stick` read unless the i
 
 ## Buttons and bindings as strings
 
-`ControllerButton` is the unit used in mappings: dpad, face, shoulders, stick clicks, triggers, Options/Share/System, pads, and L4/L5/R4/R5. `FromStr` is case-insensitive and ignores `-` and `_`, so `stick-left`, `stick_left`, and `stickLeft` are the same button. Arguments on a button (the old `triggerLeft,threshold=40` form) are rejected; thresholds belong in `[ps4]` / `[sc2]`.
+`ControllerButton` is the unit used in mappings: dpad, face, shoulders, stick clicks, triggers, Options/Share/System, pads, L4/L5/R4/R5, and SC2 Quick Access (`quickAccess` / `qam`). Pads, paddles, and Quick Access default to not held on DualShock 4. `FromStr` is case-insensitive and ignores `-` and `_`, so `stick-left`, `stick_left`, and `stickLeft` are the same button. Arguments on a button (the old `triggerLeft,threshold=40` form) are rejected; thresholds belong in `[ps4]` / `[sc2]`.
 
 `ControllerBinding` is either one button or a two-button chord `leader + follower`. Chord strings also parse through `FromStr`. Leader and follower must differ. These types serialize as the canonical display strings (`faceTop`, `options + faceTop`) so they can be TOML table keys.
 

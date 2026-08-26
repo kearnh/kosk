@@ -199,6 +199,9 @@ impl ControllerInput for VirtualInput {
     fn r5(&self) -> bool {
         self.button(ControllerButton::R5)
     }
+    fn btn_quick_access(&self) -> bool {
+        self.button(ControllerButton::QuickAccess)
+    }
     fn is_engaged(&self) -> bool {
         self.lx != 0.0
             || self.ly != 0.0

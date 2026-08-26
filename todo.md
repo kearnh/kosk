@@ -1,6 +1,13 @@
 Todo
 ====
 
+Controller / bindings
+---------------------
+
+- Warn (log or UI) when a mapping uses an input the detected controller does not
+  support (e.g. `quickAccess`, paddles on DualShock 4). Today unsupported
+  buttons simply never fire because device drivers report them as not held.
+
 Menu
 ----
 

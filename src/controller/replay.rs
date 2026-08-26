@@ -112,6 +112,9 @@ impl ControllerInput for ReplayInput {
     fn r5(&self) -> bool {
         self.0.button(ControllerButton::R5)
     }
+    fn btn_quick_access(&self) -> bool {
+        self.0.button(ControllerButton::QuickAccess)
+    }
     fn is_engaged(&self) -> bool {
         true
     }

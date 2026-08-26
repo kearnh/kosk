@@ -63,6 +63,7 @@ const ALL_BUTTONS: &[ControllerButton] = &[
     ControllerButton::L5,
     ControllerButton::R4,
     ControllerButton::R5,
+    ControllerButton::QuickAccess,
 ];
 
 const SEND_KEY_GATEWAY: &str = "sendKey";

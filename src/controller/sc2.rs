@@ -26,6 +26,7 @@ const BTN_A: u32 = 0x0000_0001;
 const BTN_B: u32 = 0x0000_0002;
 const BTN_X: u32 = 0x0000_0004;
 const BTN_Y: u32 = 0x0000_0008;
+const BTN_QAM: u32 = 0x0000_0010; // Quick Access (⋯)
 const BTN_R3: u32 = 0x0000_0020;
 const BTN_VIEW: u32 = 0x0000_0040;
 const BTN_R4: u32 = 0x0000_0080;
@@ -425,6 +426,9 @@ impl ControllerInput for Sc2State {
     fn btn_system(&self) -> bool {
         self.bit(BTN_STEAM)
     }
+    fn btn_quick_access(&self) -> bool {
+        self.bit(BTN_QAM)
+    }
     fn pad_left(&self) -> bool {
         self.bit(BTN_LPAD_CLICK)
     }
@@ -463,6 +467,7 @@ impl ControllerInput for Sc2State {
             || self.btn_options()
             || self.btn_share()
             || self.btn_system()
+            || self.btn_quick_access()
             || self.pad_left()
             || self.pad_right()
             || self.l4()
@@ -515,6 +520,16 @@ mod tests {
         assert!(!paddles.l5());
         assert!(!paddles.r4());
         assert!(paddles.r5());
+    }
+
+    #[test]
+    fn parse_quick_access_bit() {
+        let mut r = [0u8; 54];
+        r[0] = REPORT_STATE;
+        put_u32(&mut r, 2, BTN_QAM);
+        let state = parse_input_report(&r).expect("parse qam");
+        assert!(state.btn_quick_access());
+        assert!(!state.btn_system());
     }
 
     #[test]

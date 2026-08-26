@@ -204,6 +204,9 @@ impl ControllerInput for MappedSc2Input {
     fn btn_system(&self) -> bool {
         self.inner.btn_system()
     }
+    fn btn_quick_access(&self) -> bool {
+        self.inner.btn_quick_access()
+    }
     fn pad_left(&self) -> bool {
         self.inner.pad_left()
     }

@@ -183,6 +183,9 @@ fn format_line(input: &dyn ControllerInput, state: &sc2::Sc2State, with_warp: bo
     if input.btn_system() {
         btns.push("system");
     }
+    if input.btn_quick_access() {
+        btns.push("quickAccess");
+    }
     if input.pad_left() {
         btns.push("padLeft");
     }

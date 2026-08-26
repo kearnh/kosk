@@ -87,6 +87,10 @@ pub trait ControllerInput: Debug {
     fn r5(&self) -> bool {
         false
     }
+    /// SC2 Quick Access (⋯ / QAM) between the pads; default off (DualShock 4 has none).
+    fn btn_quick_access(&self) -> bool {
+        false
+    }
 
     /// Whether this snapshot should reach the app (vs being swallowed as idle).
     fn is_engaged(&self) -> bool;
@@ -126,6 +130,7 @@ pub enum ControllerButton {
     L5,
     R4,
     R5,
+    QuickAccess,
 }
 
 impl ControllerButton {
@@ -154,6 +159,7 @@ impl ControllerButton {
             ControllerButton::L5 => input.l5(),
             ControllerButton::R4 => input.r4(),
             ControllerButton::R5 => input.r5(),
+            ControllerButton::QuickAccess => input.btn_quick_access(),
         }
     }
 }
@@ -230,6 +236,9 @@ impl FromStr for ControllerButton {
             "l5" => no_args("l5", &args).map(|_| ControllerButton::L5),
             "r4" => no_args("r4", &args).map(|_| ControllerButton::R4),
             "r5" => no_args("r5", &args).map(|_| ControllerButton::R5),
+            "quickaccess" | "qam" => {
+                no_args("quickAccess", &args).map(|_| ControllerButton::QuickAccess)
+            }
             "triggerleft" => no_args("triggerLeft", &args).map(|_| ControllerButton::TriggerLeft),
             "triggerright" => {
                 no_args("triggerRight", &args).map(|_| ControllerButton::TriggerRight)
@@ -265,6 +274,7 @@ impl fmt::Display for ControllerButton {
             ControllerButton::L5 => f.write_str("l5"),
             ControllerButton::R4 => f.write_str("r4"),
             ControllerButton::R5 => f.write_str("r5"),
+            ControllerButton::QuickAccess => f.write_str("quickAccess"),
         }
     }
 }
@@ -653,6 +663,17 @@ mod tests {
         assert_eq!(
             parse(&ControllerButton::R5.to_string()),
             ControllerButton::R5
+        );
+    }
+
+    #[test]
+    fn parses_quick_access_button() {
+        assert_eq!(parse("quickAccess"), ControllerButton::QuickAccess);
+        assert_eq!(parse("quick-access"), ControllerButton::QuickAccess);
+        assert_eq!(parse("qam"), ControllerButton::QuickAccess);
+        assert_eq!(
+            parse(&ControllerButton::QuickAccess.to_string()),
+            ControllerButton::QuickAccess
         );
     }
 

@@ -17,7 +17,7 @@ use crate::controller::{ControllerButton, ControllerInput};
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
 pub const CURRENT_TAPE_VERSION: u32 = 1;
 
-pub(crate) const BUTTON_ORDER: [ControllerButton; 23] = [
+pub(crate) const BUTTON_ORDER: [ControllerButton; 24] = [
     ControllerButton::DpadUp,
     ControllerButton::DpadDown,
     ControllerButton::DpadLeft,
@@ -41,6 +41,7 @@ pub(crate) const BUTTON_ORDER: [ControllerButton; 23] = [
     ControllerButton::L5,
     ControllerButton::R4,
     ControllerButton::R5,
+    ControllerButton::QuickAccess,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -887,6 +888,7 @@ mod tests {
         assert!(BUTTON_ORDER.contains(&ControllerButton::L4));
         assert!(BUTTON_ORDER.contains(&ControllerButton::R5));
         assert!(BUTTON_ORDER.contains(&ControllerButton::PadLeft));
+        assert!(BUTTON_ORDER.contains(&ControllerButton::QuickAccess));
     }
 
     #[test]
