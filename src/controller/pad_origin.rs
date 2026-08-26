@@ -2,7 +2,8 @@
 //!
 //! First-touch origin is tracked across frames, then leftover pad travel on the
 //! short edge is stretched so the keyboard can still reach ±1. Circle-to-square
-//! `stick_warp` runs after this, via [`ControllerInput::left_stick`].
+//! `stick_warp` runs after this, via [`ControllerInput::left_pad`]. Lift is
+//! `None`; analog sticks are not stretched.
 
 use std::time::{Duration, Instant};
 
@@ -53,17 +54,16 @@ pub struct PadOrigin {
 impl PadOrigin {
     pub fn update(
         &mut self,
-        touching: bool,
-        pos: (f32, f32),
+        pos: Option<(f32, f32)>,
         now: Instant,
         settle: Duration,
         k: f32,
         max_gain: f32,
-    ) -> (f32, f32) {
-        if !touching {
+    ) -> Option<(f32, f32)> {
+        let Some(pos) = pos else {
             *self = Self::default();
-            return (0.0, 0.0);
-        }
+            return None;
+        };
         if !self.touching {
             self.touching = true;
             self.touch_at = Some(now);
@@ -74,9 +74,9 @@ impl PadOrigin {
                 self.origin = Some(pos);
             }
             // Absolute until origin is captured, and on the capture frame itself.
-            return pos;
+            return Some(pos);
         };
-        stretch_stick(pos, origin, k, max_gain)
+        Some(stretch_stick(pos, origin, k, max_gain))
     }
 }
 
@@ -98,22 +98,12 @@ impl PadOriginMapper {
         let settle = Duration::from_millis(cfg.pad_origin_settle_ms);
         let k = cfg.pad_origin_stretch;
         let max_gain = cfg.pad_origin_stretch_max_gain;
-        let left = self.left.update(
-            state.left_pad_touch(),
-            state.pad_as_stick_left(),
-            now,
-            settle,
-            k,
-            max_gain,
-        );
-        let right = self.right.update(
-            state.right_pad_touch(),
-            state.pad_as_stick_right(),
-            now,
-            settle,
-            k,
-            max_gain,
-        );
+        let left = self
+            .left
+            .update(state.pad_as_stick_left(), now, settle, k, max_gain);
+        let right = self
+            .right
+            .update(state.pad_as_stick_right(), now, settle, k, max_gain);
         MappedSc2Input {
             inner: state.clone(),
             left,
@@ -122,20 +112,20 @@ impl PadOriginMapper {
     }
 }
 
-/// Raw SC2 snapshot with OSK pad stretch applied in [`left_stick`](ControllerInput::left_stick).
+/// Raw SC2 snapshot with OSK pad stretch applied in [`left_pad`](ControllerInput::left_pad).
 #[derive(Debug, Clone)]
 pub struct MappedSc2Input {
     inner: Sc2State,
-    left: (f32, f32),
-    right: (f32, f32),
+    left: Option<(f32, f32)>,
+    right: Option<(f32, f32)>,
 }
 
 impl MappedSc2Input {
-    pub fn stretched_left(&self) -> (f32, f32) {
+    pub fn stretched_left(&self) -> Option<(f32, f32)> {
         self.left
     }
 
-    pub fn stretched_right(&self) -> (f32, f32) {
+    pub fn stretched_right(&self) -> Option<(f32, f32)> {
         self.right
     }
 }
@@ -147,11 +137,17 @@ impl ControllerInput for MappedSc2Input {
     fn right_stick_raw(&self) -> (f32, f32) {
         self.inner.right_stick_raw()
     }
-    fn left_stick(&self) -> (f32, f32) {
-        warp(self.left, config::get().stick_warp)
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        self.inner.left_pad_raw()
     }
-    fn right_stick(&self) -> (f32, f32) {
-        warp(self.right, config::get().stick_warp)
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
+        self.inner.right_pad_raw()
+    }
+    fn left_pad(&self) -> Option<(f32, f32)> {
+        self.left.map(|p| warp(p, config::get().stick_warp))
+    }
+    fn right_pad(&self) -> Option<(f32, f32)> {
+        self.right.map(|p| warp(p, config::get().stick_warp))
     }
     fn trigger_left(&self) -> Option<u8> {
         self.inner.trigger_left()
@@ -224,61 +220,60 @@ mod tests {
         let k = 0.3;
         let max_gain = 1.5;
 
-        let first = pad.update(true, (-0.5, 0.2), t0, settle, k, max_gain);
-        assert_eq!(first, (-0.5, 0.2));
+        let first = pad.update(Some((-0.5, 0.2)), t0, settle, k, max_gain);
+        assert_eq!(first, Some((-0.5, 0.2)));
 
         let during = pad.update(
-            true,
-            (-0.6, 0.2),
+            Some((-0.6, 0.2)),
             t0 + Duration::from_millis(10),
             settle,
             k,
             max_gain,
         );
-        assert_eq!(during, (-0.6, 0.2), "still absolute before settle");
+        assert_eq!(during, Some((-0.6, 0.2)), "still absolute before settle");
 
         let capture = pad.update(
-            true,
-            (-0.4, 0.1),
+            Some((-0.4, 0.1)),
             t0 + Duration::from_millis(20),
             settle,
             k,
             max_gain,
         );
-        assert_eq!(capture, (-0.4, 0.1), "capture frame stays absolute");
-
-        let moved = pad.update(
-            true,
-            (-0.7, 0.1),
-            t0 + Duration::from_millis(25),
-            settle,
-            k,
-            max_gain,
+        assert_eq!(
+            capture,
+            Some((-0.4, 0.1)),
+            "capture frame stays absolute"
         );
+
+        let moved = pad
+            .update(
+                Some((-0.7, 0.1)),
+                t0 + Duration::from_millis(25),
+                settle,
+                k,
+                max_gain,
+            )
+            .expect("still touching");
         let expected = stretch_axis(-0.7, -0.4, k, max_gain);
         assert!((moved.0 - expected).abs() < 1e-6);
         assert!(moved.0 < -0.7);
 
         assert_eq!(
-            pad.update(
-                false,
-                (0.0, 0.0),
-                t0 + Duration::from_millis(30),
-                settle,
-                k,
-                max_gain
-            ),
-            (0.0, 0.0)
+            pad.update(None, t0 + Duration::from_millis(30), settle, k, max_gain),
+            None
         );
 
         let again = pad.update(
-            true,
-            (0.2, -0.3),
+            Some((0.2, -0.3)),
             t0 + Duration::from_millis(40),
             settle,
             k,
             max_gain,
         );
-        assert_eq!(again, (0.2, -0.3), "lift+retouch starts a new origin");
+        assert_eq!(
+            again,
+            Some((0.2, -0.3)),
+            "lift+retouch starts a new origin"
+        );
     }
 }

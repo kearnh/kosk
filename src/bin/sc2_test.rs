@@ -98,9 +98,9 @@ fn monitor(dump_raw: bool, config: Option<PathBuf>) -> Result<()> {
             Some(Some(input)) => {
                 let line = if with_warp {
                     let mapped = pads.map(device.last_state());
-                    format_line(&mapped, device.last_state(), true)
+                    format_line(&mapped, true)
                 } else {
-                    format_line(input.as_ref(), device.last_state(), false)
+                    format_line(input.as_ref(), false)
                 };
                 if line != last {
                     println!("{line}");
@@ -123,20 +123,25 @@ fn monitor(dump_raw: bool, config: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn format_line(input: &dyn ControllerInput, state: &sc2::Sc2State, with_warp: bool) -> String {
+fn format_line(input: &dyn ControllerInput, with_warp: bool) -> String {
     let (lx, ly) = input.left_stick_raw();
     let (rx, ry) = input.right_stick_raw();
-    let (slx, sly) = state.physical_left_stick();
-    let (srx, sry) = state.physical_right_stick();
     let mut s = String::new();
     let _ = write!(
         s,
-        "pad L({lx:+.3},{ly:+.3}) R({rx:+.3},{ry:+.3}) stick L({slx:+.3},{sly:+.3}) R({srx:+.3},{sry:+.3})"
+        "pad L({}) R({}) stick L({lx:+.3},{ly:+.3}) R({rx:+.3},{ry:+.3})",
+        fmt_pad(input.left_pad_raw()),
+        fmt_pad(input.right_pad_raw()),
     );
     if with_warp {
         let (lx, ly) = input.left_stick();
         let (rx, ry) = input.right_stick();
-        let _ = write!(s, " warp L({lx:+.3},{ly:+.3}) R({rx:+.3},{ry:+.3})");
+        let _ = write!(
+            s,
+            " warpPad L({}) R({}) warpStick L({lx:+.3},{ly:+.3}) R({rx:+.3},{ry:+.3})",
+            fmt_pad(input.left_pad()),
+            fmt_pad(input.right_pad()),
+        );
     }
     let btns: Vec<String> = ControllerButton::iter()
         .filter(|&b| input.query(b))
@@ -152,4 +157,11 @@ fn format_line(input: &dyn ControllerInput, state: &sc2::Sc2State, with_warp: bo
         let _ = write!(s, " RT={t}");
     }
     s
+}
+
+fn fmt_pad(p: Option<(f32, f32)>) -> String {
+    match p {
+        None => "-".to_string(),
+        Some((x, y)) => format!("{x:+.3},{y:+.3}"),
+    }
 }

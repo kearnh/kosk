@@ -1,6 +1,7 @@
 //! In-app Key Mappings editor (controller-operable, action-centric).
 
 use crate::config;
+use crate::controller::bindings::StickDpad;
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::get_action;
 use crate::state::event::{CallRequest, Event, EventQueue, EventSource, ReturnStateResult};
@@ -299,6 +300,7 @@ pub struct MappingsState {
     /// Which modal button is focused while `delete_confirm` is set.
     delete_modal_focus: DeleteModalFocus,
     prev_held: HashSet<ControllerButton>,
+    stick_dpad: StickDpad,
     label_cache: LabelCache,
 }
 
@@ -317,6 +319,7 @@ impl MappingsState {
             delete_confirm: None,
             delete_modal_focus: DeleteModalFocus::Cancel,
             prev_held: HashSet::new(),
+            stick_dpad: StickDpad::default(),
             label_cache: LabelCache::new(),
         }
     }
@@ -697,7 +700,11 @@ impl MappingsState {
     }
 
     fn handle_browse_input(&mut self, input: &dyn ControllerInput, events: &mut EventQueue) {
-        let held = held_set(input);
+        let extra = self.stick_dpad.update(input.left_stick_raw());
+        let mut held = held_set(input);
+        if let Some(dir) = extra {
+            held.insert(dir.to_button());
+        }
         let prev = self.prev_held.clone();
 
         if let Some((action, pill)) = self.delete_confirm.clone() {
@@ -1100,9 +1107,17 @@ impl MappingsState {
     }
 
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        self.stick_dpad.reset();
         match holdover {
             None => self.prev_held.clear(),
-            Some(input) => self.prev_held = held_set(input),
+            Some(input) => {
+                let extra = self.stick_dpad.update(input.left_stick_raw());
+                let mut held = held_set(input);
+                if let Some(dir) = extra {
+                    held.insert(dir.to_button());
+                }
+                self.prev_held = held;
+            }
         }
     }
 
@@ -1517,6 +1532,36 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone)]
+    struct AnalogInput {
+        stick: (f32, f32),
+        buttons: HashSet<ControllerButton>,
+    }
+
+    impl ControllerInput for AnalogInput {
+        fn left_stick_raw(&self) -> (f32, f32) {
+            self.stick
+        }
+        fn right_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn trigger_left(&self) -> Option<u8> {
+            None
+        }
+        fn trigger_right(&self) -> Option<u8> {
+            None
+        }
+        fn query(&self, button: ControllerButton) -> bool {
+            self.buttons.contains(&button)
+        }
+        fn is_engaged(&self) -> bool {
+            true
+        }
+        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+
     /// Mirror `begin_session` focus/edge baseline without `config::get()`.
     fn enter_browse_focus(m: &mut MappingsState) {
         m.draft.insert(StateId::Keyboard, HashMap::new());
@@ -1742,6 +1787,26 @@ mod tests {
         let held = ButtonSetInput(HashSet::from([button]));
         m.handle_browse_input(&none, events);
         m.handle_browse_input(&held, events);
+    }
+
+    #[test]
+    fn analog_up_moves_focus_like_dpad_up() {
+        let mut m = MappingsState::new();
+        enter_browse_focus(&mut m);
+        let mut events = EventQueue::passthrough();
+        press(&mut m, ControllerButton::DpadDown, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Cancel);
+        let center = AnalogInput {
+            stick: (0.0, 0.0),
+            buttons: HashSet::new(),
+        };
+        let up = AnalogInput {
+            stick: (0.0, -0.8),
+            buttons: HashSet::new(),
+        };
+        m.handle_browse_input(&center, &mut events);
+        m.handle_browse_input(&up, &mut events);
+        assert_eq!(m.focus_zone, FocusZone::Table);
     }
 
     #[test]

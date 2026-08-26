@@ -41,14 +41,29 @@ pub trait ControllerInput: Debug {
     fn left_stick_raw(&self) -> (f32, f32);
     fn right_stick_raw(&self) -> (f32, f32);
 
-    /// Stick used by the keyboard. Default is circle-to-square `stick_warp`.
-    /// SC2 OSK mapping overrides this to apply pad-origin stretch first.
+    /// Analog stick after circle-to-square `stick_warp` only (no pad-origin stretch).
     // FIXME can we cache stick_warp somehow so we don't have to constantly lock config mutex?
     fn left_stick(&self) -> (f32, f32) {
         warp(self.left_stick_raw(), config::get().stick_warp)
     }
     fn right_stick(&self) -> (f32, f32) {
         warp(self.right_stick_raw(), config::get().stick_warp)
+    }
+
+    /// Trackpad sample, or `None` when the thumb is lifted. Centered touch is
+    /// `Some((0.0, 0.0))`, not a lift.
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        None
+    }
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
+        None
+    }
+    fn left_pad(&self) -> Option<(f32, f32)> {
+        self.left_pad_raw().map(|p| warp(p, config::get().stick_warp))
+    }
+    fn right_pad(&self) -> Option<(f32, f32)> {
+        self.right_pad_raw()
+            .map(|p| warp(p, config::get().stick_warp))
     }
 
     fn trigger_left(&self) -> Option<u8>;

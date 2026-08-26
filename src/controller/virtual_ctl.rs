@@ -98,39 +98,40 @@ impl VirtualInput {
             .is_some_and(|i| self.buttons & (1 << i) != 0)
     }
 
-    fn axes(&self, side: StickSide) -> (f32, f32) {
-        match side {
-            StickSide::Left => {
-                if self.left_pad.touching {
-                    (self.left_pad.x, self.left_pad.y)
-                } else {
-                    (self.lx, self.ly)
-                }
-            }
-            StickSide::Right => {
-                if self.right_pad.touching {
-                    (self.right_pad.x, self.right_pad.y)
-                } else {
-                    (self.rx, self.ry)
-                }
-            }
+    fn pad_xy(pad: &PadState) -> Option<(f32, f32)> {
+        if pad.touching {
+            Some((pad.x, pad.y))
+        } else {
+            None
         }
     }
 }
 
 impl ControllerInput for VirtualInput {
     fn left_stick_raw(&self) -> (f32, f32) {
-        self.axes(StickSide::Left)
+        (self.lx, self.ly)
     }
     fn right_stick_raw(&self) -> (f32, f32) {
-        self.axes(StickSide::Right)
+        (self.rx, self.ry)
     }
     // No re-warp / pad-origin — MCP supplies post-map coordinates (same as ReplayInput).
     fn left_stick(&self) -> (f32, f32) {
-        self.axes(StickSide::Left)
+        (self.lx, self.ly)
     }
     fn right_stick(&self) -> (f32, f32) {
-        self.axes(StickSide::Right)
+        (self.rx, self.ry)
+    }
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        Self::pad_xy(&self.left_pad)
+    }
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
+        Self::pad_xy(&self.right_pad)
+    }
+    fn left_pad(&self) -> Option<(f32, f32)> {
+        Self::pad_xy(&self.left_pad)
+    }
+    fn right_pad(&self) -> Option<(f32, f32)> {
+        Self::pad_xy(&self.right_pad)
     }
     fn trigger_left(&self) -> Option<u8> {
         self.lt
@@ -403,10 +404,14 @@ mod tests {
         ctl.set_stick(StickSide::Left, 0.5, 0.25, None);
         ctl.set_pad(StickSide::Left, -0.9, 0.1, true, None);
         let s = ctl.snapshot();
-        assert!((s.left_stick().0 + 0.9).abs() < 1e-6);
-        assert!((s.left_stick().1 - 0.1).abs() < 1e-6);
+        assert_eq!(s.left_stick(), (0.5, 0.25));
+        assert_eq!(s.left_pad(), Some((-0.9, 0.1)));
         // Pad click bit is independent of touching.
         assert!(!s.query(ControllerButton::PadLeft));
+        ctl.release_pad(StickSide::Left);
+        let s = ctl.snapshot();
+        assert_eq!(s.left_pad(), None);
+        assert_eq!(s.left_stick(), (0.5, 0.25));
     }
 
     #[test]

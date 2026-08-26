@@ -83,11 +83,11 @@ impl Sc2State {
         self.bit(BTN_RPAD_TOUCH)
     }
 
-    pub fn pad_as_stick_left(&self) -> (f32, f32) {
+    pub fn pad_as_stick_left(&self) -> Option<(f32, f32)> {
         pad_as_stick(self.left_pad.0, self.left_pad.1, self.left_pad_touch())
     }
 
-    pub fn pad_as_stick_right(&self) -> (f32, f32) {
+    pub fn pad_as_stick_right(&self) -> Option<(f32, f32)> {
         pad_as_stick(self.right_pad.0, self.right_pad.1, self.right_pad_touch())
     }
 
@@ -107,14 +107,14 @@ impl Sc2State {
     }
 }
 
-pub fn pad_as_stick(pad_x: i16, pad_y: i16, touching: bool) -> (f32, f32) {
+pub fn pad_as_stick(pad_x: i16, pad_y: i16, touching: bool) -> Option<(f32, f32)> {
     if !touching {
-        return (0.0, 0.0);
+        return None;
     }
-    (
+    Some((
         (pad_x as f32 / 32767.0).clamp(-1.0, 1.0),
         (-(pad_y as f32) / 32767.0).clamp(-1.0, 1.0),
-    )
+    ))
 }
 
 /// Firmware `0x82` command + gain (dB). 1 = tick, 2 = click.
@@ -364,9 +364,15 @@ impl Iterator for Sc2Device {
 
 impl ControllerInput for Sc2State {
     fn left_stick_raw(&self) -> (f32, f32) {
-        self.pad_as_stick_left()
+        self.physical_left_stick()
     }
     fn right_stick_raw(&self) -> (f32, f32) {
+        self.physical_right_stick()
+    }
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        self.pad_as_stick_left()
+    }
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
         self.pad_as_stick_right()
     }
     fn trigger_left(&self) -> Option<u8> {
@@ -412,8 +418,13 @@ impl ControllerInput for Sc2State {
         }
     }
     fn is_engaged(&self) -> bool {
+        fn analog_engaged(p: (f32, f32)) -> bool {
+            p.0.abs().max(p.1.abs()) > 0.15
+        }
         self.left_pad_touch()
             || self.right_pad_touch()
+            || analog_engaged(self.physical_left_stick())
+            || analog_engaged(self.physical_right_stick())
             || ControllerButton::iter().any(|b| self.query(b))
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
@@ -450,7 +461,7 @@ mod tests {
         assert!(s.query(ControllerButton::FaceBottom));
         assert!(s.left_pad_touch());
         assert_eq!(s.left_pad.0, 32767);
-        let (x, y) = s.pad_as_stick_left();
+        let (x, y) = s.pad_as_stick_left().expect("left pad touching");
         assert!((x - 1.0).abs() < 0.001);
         assert!(y.abs() < 0.001);
         assert!(s.trigger_left().is_some());
@@ -510,8 +521,8 @@ mod tests {
 
     #[test]
     fn pad_as_stick_touch_and_y_flip() {
-        assert_eq!(pad_as_stick(100, 100, false), (0.0, 0.0));
-        let (x, y) = pad_as_stick(32767, 32767, true);
+        assert_eq!(pad_as_stick(100, 100, false), None);
+        let (x, y) = pad_as_stick(32767, 32767, true).expect("touching");
         assert!((x - 1.0).abs() < 0.001);
         assert!((y + 1.0).abs() < 0.001);
     }

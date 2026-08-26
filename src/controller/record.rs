@@ -42,7 +42,7 @@ pub struct TapeHeader {
     pub layouts: Vec<(String, String)>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct InputSnapshot {
     pub lx: f32,
     pub ly: f32,
@@ -51,6 +51,8 @@ pub struct InputSnapshot {
     pub buttons: u32,
     pub lt: Option<u8>,
     pub rt: Option<u8>,
+    pub lpad: Option<(f32, f32)>,
+    pub rpad: Option<(f32, f32)>,
 }
 
 impl InputSnapshot {
@@ -71,6 +73,8 @@ impl InputSnapshot {
             buttons,
             lt: input.trigger_left(),
             rt: input.trigger_right(),
+            lpad: input.left_pad(),
+            rpad: input.right_pad(),
         }
     }
 
@@ -201,6 +205,25 @@ fn parse_trigger(s: &str) -> Result<Option<u8>> {
     Ok(Some(s.parse().with_context(|| format!("trigger '{s}'"))?))
 }
 
+fn fmt_pad(p: Option<(f32, f32)>) -> String {
+    match p {
+        None => "-".to_string(),
+        Some((x, y)) => format!("{x},{y}"),
+    }
+}
+
+fn parse_pad(s: &str) -> Result<Option<(f32, f32)>> {
+    if s == "-" {
+        return Ok(None);
+    }
+    let (xs, ys) = s
+        .split_once(',')
+        .ok_or_else(|| anyhow::anyhow!("pad '{s}'"))?;
+    let x: f32 = xs.parse().with_context(|| format!("pad x '{s}'"))?;
+    let y: f32 = ys.parse().with_context(|| format!("pad y '{s}'"))?;
+    Ok(Some((x, y)))
+}
+
 fn write_len_prefixed_blob(
     out: &mut Vec<u8>,
     kind: &str,
@@ -262,14 +285,16 @@ pub fn encode_event(ev: &RecordEvent) -> String {
     match ev {
         RecordEvent::Idle { t_us } => format!("{t_us} idle"),
         RecordEvent::Snapshot { t_us, snap } => format!(
-            "{t_us} {} {} {} {} {:x} {} {}",
+            "{t_us} {} {} {} {} {:x} {} {} {} {}",
             snap.lx,
             snap.ly,
             snap.rx,
             snap.ry,
             snap.buttons,
             fmt_trigger(snap.lt),
-            fmt_trigger(snap.rt)
+            fmt_trigger(snap.rt),
+            fmt_pad(snap.lpad),
+            fmt_pad(snap.rpad)
         ),
         RecordEvent::Layout { t_us, name } => format!("{t_us} layout {name}"),
         RecordEvent::Debounce {
@@ -355,6 +380,10 @@ fn parse_event_line(line: &str) -> Result<RecordEvent> {
     )?;
     let lt = parse_trigger(parts.next().ok_or_else(|| anyhow::anyhow!("missing lt"))?)?;
     let rt = parse_trigger(parts.next().ok_or_else(|| anyhow::anyhow!("missing rt"))?)?;
+    let (lpad, rpad) = match (parts.next(), parts.next()) {
+        (Some(lp), Some(rp)) => (parse_pad(lp)?, parse_pad(rp)?),
+        _ => (None, None),
+    };
     Ok(RecordEvent::Snapshot {
         t_us,
         snap: InputSnapshot {
@@ -365,6 +394,8 @@ fn parse_event_line(line: &str) -> Result<RecordEvent> {
             buttons,
             lt,
             rt,
+            lpad,
+            rpad,
         },
     })
 }
@@ -718,6 +749,8 @@ mod tests {
                         buttons: 0x1a2b,
                         lt: None,
                         rt: Some(180),
+                        lpad: None,
+                        rpad: None,
                     },
                 },
                 RecordEvent::Layout {
@@ -770,6 +803,39 @@ mod tests {
             }
             other => panic!("expected debounce, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn snapshot_pads_optional_and_round_trip() {
+        match parse_event_line("20 0.25 -0.5 0 1 1a2b - 180").unwrap() {
+            RecordEvent::Snapshot { snap, .. } => {
+                assert_eq!(snap.lpad, None);
+                assert_eq!(snap.rpad, None);
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+        match parse_event_line("20 0.25 -0.5 0 1 1a2b - 180 - 0.1,-0.2").unwrap() {
+            RecordEvent::Snapshot { snap, .. } => {
+                assert_eq!(snap.lpad, None);
+                assert_eq!(snap.rpad, Some((0.1, -0.2)));
+            }
+            other => panic!("expected snapshot, got {other:?}"),
+        }
+        let ev = RecordEvent::Snapshot {
+            t_us: 20,
+            snap: InputSnapshot {
+                lx: 0.0,
+                ly: 0.0,
+                rx: 0.0,
+                ry: 0.0,
+                buttons: 0,
+                lt: None,
+                rt: None,
+                lpad: None,
+                rpad: Some((0.1, -0.2)),
+            },
+        };
+        assert_eq!(parse_event_line(&encode_event(&ev)).unwrap(), ev);
     }
 
     #[test]
@@ -858,6 +924,8 @@ mod tests {
             buttons: 0,
             lt: None,
             rt: None,
+            lpad: None,
+            rpad: None,
         };
         for (i, btn) in BUTTON_ORDER.iter().enumerate() {
             snap.buttons = 1 << i;

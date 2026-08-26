@@ -346,10 +346,14 @@ impl KeyboardState {
 
         let prev_selected = self.selected.clone();
 
-        let selected_left =
-            current_layout.get_nearest_key_left(input.left_stick(), self.shift_state);
-        let selected_right =
-            current_layout.get_nearest_key_right(input.right_stick(), self.shift_state);
+        let selected_left = current_layout.get_nearest_key_left(
+            input.left_pad().unwrap_or_else(|| input.left_stick()),
+            self.shift_state,
+        );
+        let selected_right = current_layout.get_nearest_key_right(
+            input.right_pad().unwrap_or_else(|| input.right_stick()),
+            self.shift_state,
+        );
 
         let lock_left = self
             .last_left_stick_action

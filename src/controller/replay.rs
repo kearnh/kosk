@@ -43,6 +43,18 @@ impl ControllerInput for ReplayInput {
     fn right_stick(&self) -> (f32, f32) {
         (self.0.rx, self.0.ry)
     }
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        self.0.lpad
+    }
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
+        self.0.rpad
+    }
+    fn left_pad(&self) -> Option<(f32, f32)> {
+        self.0.lpad
+    }
+    fn right_pad(&self) -> Option<(f32, f32)> {
+        self.0.rpad
+    }
     fn trigger_left(&self) -> Option<u8> {
         self.0.lt
     }
@@ -197,6 +209,8 @@ mod tests {
                         buttons: 1 << 4, // FaceBottom
                         lt: None,
                         rt: None,
+                        lpad: None,
+                        rpad: None,
                     },
                 },
                 RecordEvent::Debounce {
@@ -221,6 +235,8 @@ mod tests {
                         buttons: 0,
                         lt: Some(40),
                         rt: None,
+                        lpad: None,
+                        rpad: None,
                     },
                 },
             ],

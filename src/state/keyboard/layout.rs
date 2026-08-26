@@ -618,7 +618,7 @@ impl KeyboardLayout {
                 let d_lock = ctx.plugin::<DebugPlugin>();
                 let d = d_lock.lock();
                 if let Some(input) = &d.controller_input {
-                    let (x, y) = input.left_stick();
+                    let (x, y) = input.left_pad().unwrap_or_else(|| input.left_stick());
                     let (cursor_x, cursor_y) = self.stick_to_cursor_left((x, y));
                     painter.circle_filled(
                         [cursor_x, cursor_y].into(),
@@ -626,7 +626,7 @@ impl KeyboardLayout {
                         Color32::from_rgb(0, 0, 255),
                     );
 
-                    let (x, y) = input.right_stick();
+                    let (x, y) = input.right_pad().unwrap_or_else(|| input.right_stick());
                     let (cursor_x, cursor_y) = self.stick_to_cursor_right((x, y));
                     painter.circle_filled(
                         [cursor_x, cursor_y].into(),

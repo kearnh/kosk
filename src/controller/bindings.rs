@@ -3,6 +3,68 @@ use std::collections::{HashMap, HashSet};
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::{Action, TriggerMode};
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DpadDir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl DpadDir {
+    pub fn to_button(self) -> ControllerButton {
+        match self {
+            DpadDir::Up => ControllerButton::DpadUp,
+            DpadDir::Down => ControllerButton::DpadDown,
+            DpadDir::Left => ControllerButton::DpadLeft,
+            DpadDir::Right => ControllerButton::DpadRight,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct StickDpad {
+    held: Option<DpadDir>,
+}
+
+impl StickDpad {
+    pub fn update(&mut self, analog: (f32, f32)) -> Option<DpadDir> {
+        let (x, y) = analog;
+        let mag = x.abs().max(y.abs());
+        if self.held.is_some() {
+            if mag < 0.35 {
+                self.held = None;
+                return None;
+            }
+            return self.held;
+        }
+        if mag >= 0.50 {
+            let dir = if x.abs() >= y.abs() {
+                if x < 0.0 {
+                    DpadDir::Left
+                } else {
+                    DpadDir::Right
+                }
+            } else if y < 0.0 {
+                DpadDir::Up
+            } else {
+                DpadDir::Down
+            };
+            self.held = Some(dir);
+            return Some(dir);
+        }
+        None
+    }
+
+    pub fn reset(&mut self) {
+        self.held = None;
+    }
+
+    pub fn held(&self) -> Option<DpadDir> {
+        self.held
+    }
+}
+
 struct ChordEntry<A> {
     leader: ControllerButton,
     follower: ControllerButton,
@@ -21,6 +83,7 @@ pub struct BindingEngine<A> {
     chords_fired: HashSet<(ControllerButton, ControllerButton)>,
     /// Leaders currently held, for chord completion.
     leaders_active: HashSet<ControllerButton>,
+    stick_dpad: Option<StickDpad>,
 }
 
 impl<A> Default for BindingEngine<A> {
@@ -33,6 +96,7 @@ impl<A> Default for BindingEngine<A> {
             suppress_single: HashSet::new(),
             chords_fired: HashSet::new(),
             leaders_active: HashSet::new(),
+            stick_dpad: None,
         }
     }
 }
@@ -82,7 +146,13 @@ impl<A: Action + Clone> BindingEngine<A> {
             suppress_single: HashSet::new(),
             chords_fired: HashSet::new(),
             leaders_active: HashSet::new(),
+            stick_dpad: None,
         })
+    }
+
+    pub fn with_left_stick_dpad(mut self) -> Self {
+        self.stick_dpad = Some(StickDpad::default());
+        self
     }
 
     /// Clear chord gesture bookkeeping and set the edge baseline.
@@ -96,6 +166,12 @@ impl<A: Action + Clone> BindingEngine<A> {
         self.suppress_single.clear();
         self.chords_fired.clear();
         self.leaders_active.clear();
+        if let Some(sd) = &mut self.stick_dpad {
+            sd.reset();
+            if let Some(input) = holdover {
+                sd.update(input.left_stick_raw());
+            }
+        }
         match holdover {
             None => self.prev_held.clear(),
             Some(input) => self.prev_held = self.compute_held(input),
@@ -103,6 +179,9 @@ impl<A: Action + Clone> BindingEngine<A> {
     }
 
     pub fn evaluate(&mut self, input: &dyn ControllerInput) -> Vec<(ControllerBinding, A)> {
+        if let Some(sd) = &mut self.stick_dpad {
+            sd.update(input.left_stick_raw());
+        }
         let held = self.compute_held(input);
         let newly_down: HashSet<_> = held.difference(&self.prev_held).cloned().collect();
         let newly_up: HashSet<_> = self.prev_held.difference(&held).cloned().collect();
@@ -160,9 +239,14 @@ impl<A: Action + Clone> BindingEngine<A> {
     }
 
     fn compute_held(&self, input: &dyn ControllerInput) -> HashSet<ControllerButton> {
+        let extra = self
+            .stick_dpad
+            .as_ref()
+            .and_then(|s| s.held())
+            .map(DpadDir::to_button);
         self.buttons
             .iter()
-            .filter(|b| input.query(**b))
+            .filter(|b| input.query(**b) || extra == Some(**b))
             .copied()
             .collect()
     }
@@ -182,6 +266,7 @@ mod tests {
         RepeatFaceBottom,
         EdgeFaceBottom,
         SingleOptions,
+        EdgeDpadUp,
     }
 
     impl Action for TestAction {
@@ -195,7 +280,8 @@ mod tests {
                 TestAction::Chord
                 | TestAction::SingleFaceTop
                 | TestAction::EdgeFaceBottom
-                | TestAction::SingleOptions => TriggerMode::Edge,
+                | TestAction::SingleOptions
+                | TestAction::EdgeDpadUp => TriggerMode::Edge,
             }
         }
     }
@@ -400,5 +486,122 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![TestAction::EdgeFaceBottom]
         );
+    }
+
+    #[test]
+    fn stick_dpad_hysteresis() {
+        let mut s = StickDpad::default();
+        assert_eq!(s.update((0.0, -0.49)), None);
+        assert_eq!(s.update((0.0, -0.50)), Some(DpadDir::Up));
+        assert_eq!(s.update((0.0, -0.40)), Some(DpadDir::Up));
+        assert_eq!(s.update((0.8, -0.9)), Some(DpadDir::Up), "no snap mid-hold");
+        assert_eq!(s.update((0.0, -0.34)), None);
+        assert_eq!(s.update((0.8, 0.4)), Some(DpadDir::Right));
+        assert_eq!(DpadDir::Up.to_button(), ControllerButton::DpadUp);
+        assert_eq!(DpadDir::Down.to_button(), ControllerButton::DpadDown);
+        assert_eq!(DpadDir::Left.to_button(), ControllerButton::DpadLeft);
+        assert_eq!(DpadDir::Right.to_button(), ControllerButton::DpadRight);
+    }
+
+    #[derive(Debug, Clone)]
+    struct AnalogInput {
+        stick: (f32, f32),
+        buttons: HashSet<ControllerButton>,
+    }
+
+    impl ControllerInput for AnalogInput {
+        fn left_stick_raw(&self) -> (f32, f32) {
+            self.stick
+        }
+        fn right_stick_raw(&self) -> (f32, f32) {
+            (0.0, 0.0)
+        }
+        fn trigger_left(&self) -> Option<u8> {
+            None
+        }
+        fn trigger_right(&self) -> Option<u8> {
+            None
+        }
+        fn query(&self, button: ControllerButton) -> bool {
+            self.buttons.contains(&button)
+        }
+        fn is_engaged(&self) -> bool {
+            true
+        }
+        fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+
+    fn dpad_up_engine(stick: bool) -> BindingEngine<TestAction> {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::DpadUp),
+            TestAction::EdgeDpadUp,
+        );
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::FaceBottom),
+            TestAction::EdgeFaceBottom,
+        );
+        let e = BindingEngine::try_from_raw(raw).unwrap();
+        if stick {
+            e.with_left_stick_dpad()
+        } else {
+            e
+        }
+    }
+
+    fn actions(fired: Vec<(ControllerBinding, TestAction)>) -> Vec<TestAction> {
+        fired.into_iter().map(|(_, a)| a).collect()
+    }
+
+    #[test]
+    fn left_stick_dpad_fires_edge_once() {
+        let mut e = dpad_up_engine(true);
+        let center = AnalogInput {
+            stick: (0.0, 0.0),
+            buttons: HashSet::new(),
+        };
+        let tilted = AnalogInput {
+            stick: (0.0, -0.8),
+            buttons: HashSet::new(),
+        };
+        assert!(actions(e.evaluate(&center)).is_empty());
+        assert_eq!(actions(e.evaluate(&tilted)), vec![TestAction::EdgeDpadUp]);
+        assert!(actions(e.evaluate(&tilted)).is_empty());
+        assert!(actions(e.evaluate(&tilted)).is_empty());
+    }
+
+    #[test]
+    fn left_stick_without_option_does_not_fire_dpad() {
+        let mut e = dpad_up_engine(false);
+        let tilted = AnalogInput {
+            stick: (0.0, -0.8),
+            buttons: HashSet::new(),
+        };
+        assert!(actions(e.evaluate(&tilted)).is_empty());
+    }
+
+    #[test]
+    fn left_stick_dpad_reset_holdover_suppresses_edge() {
+        let mut e = dpad_up_engine(true);
+        let tilted = AnalogInput {
+            stick: (0.0, -0.8),
+            buttons: HashSet::new(),
+        };
+        e.reset(Some(&tilted));
+        assert!(actions(e.evaluate(&tilted)).is_empty());
+    }
+
+    #[test]
+    fn analog_up_does_not_fire_face_bottom() {
+        let mut e = dpad_up_engine(true);
+        let tilted = AnalogInput {
+            stick: (0.0, -0.8),
+            buttons: HashSet::new(),
+        };
+        let fired = actions(e.evaluate(&tilted));
+        assert_eq!(fired, vec![TestAction::EdgeDpadUp]);
+        assert!(!fired.contains(&TestAction::EdgeFaceBottom));
     }
 }
