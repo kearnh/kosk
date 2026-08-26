@@ -1,6 +1,6 @@
 # Keyboard layouts (`layout.rs`, `key.rs`, `when.rs`)
 
-This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and `when.rs`. The checked-in layout is `old_steam_controller_kb.toml`, named `main` from `config.toml`. Keyboard mode’s use of the layout is in [keyboard.md](keyboard.md).
+This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and `when.rs`. Checked-in layouts include `old_steam_controller_kb.toml` (`main`) and `symbols.toml` (`symbols`) from `config.toml`. Keyboard mode’s use of the layout is in [keyboard.md](keyboard.md).
 
 ## What a layout file is
 
@@ -43,7 +43,7 @@ After egui draws, `update_geometry` stores centers and calls `calculate_hitboxes
 
 `selectable = false` and skip keys get no hitbox.
 
-Stick rest positions are currently inferred: the left stick’s origin is the center of the `d` key, the right the `k` key, or `(0, 0)` if those keys are missing. That is a layout convention of the Steam Controller file, not a TOML field. A comment in the code flags it as something that should become configurable.
+Stick rest positions come from optional top-level `stick_rest_left` / `stick_rest_right` fields: each is a `[row, column]` index into `rows` / `rows.keys` (0-based). The referenced key must exist and must not be `Skip` (Skip has no captured centre). If a field is omitted, that side’s rest centre is `(0, 0)`. The checked-in `main` layout points at home-row `d` / `k`; `symbols` points at `]` / `;`.
 
 `stick_to_cursor_left` / `_right` take a warped stick in −1…1, multiply by `scale_* * stick_scale_*`, and add the rest center. That point is then hit-tested.
 

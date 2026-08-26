@@ -33,6 +33,7 @@ file = "captures/kosk-000.krec"
 
 [layouts]
 main = "old_steam_controller_kb.toml"
+symbols = "symbols.toml"
 
 [debug]
 show_stick_cursors = true

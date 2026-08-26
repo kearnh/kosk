@@ -1,10 +1,12 @@
-# Steam Controller keyboard layout
+# Symbols layout (Steam Controller geometry)
+# US ANSI punctuation missing from `main`, plus Escape/Delete.
+# Digits stay for muscle memory; letter rows are punctuation.
 pad_x = 0.125
 pad_y = 0.1
 font_size = 24.0
-# Home-row d / k (row 2): left rest col 3, right rest col 9
-stick_rest_left = [2, 3]
-stick_rest_right = [2, 9]
+# Rest on ] (left pad) and ; (right pad) in the symbol row
+stick_rest_left = [1, 2]
+stick_rest_right = [1, 6]
 
 [stick_bounds]
 left = [
@@ -16,9 +18,15 @@ right = [
     { min = { x = 10.4, y = 5.0 }, max = { x = 14.0, y = 6.2 } },
 ]
 
+# Number row: Esc (US top-left), digits, =+ (US right of 0). Dropped 6/- (still on main).
 [[rows]]
 indent = 0.0
 height = 1.0
+
+[[rows.keys]]
+key = "Escape"
+display = "Esc"
+width = 1.2
 
 [[rows.keys]]
 key = { normal = "1", shift = "!" }
@@ -34,10 +42,6 @@ key = { normal = "4", shift = "$" }
 
 [[rows.keys]]
 key = { normal = "5", shift = "%" }
-
-[[rows.keys]]
-key = { normal = "6", shift = "^" }
-width = 1.2
 
 [[rows.keys]]
 key = "Skip"
@@ -57,32 +61,35 @@ key = { normal = "9", shift = "(" }
 key = { normal = "0", shift = ")" }
 
 [[rows.keys]]
-key = { normal = "-", shift = "_" }
+key = { normal = "=", shift = "+" }
 
 [[rows.keys]]
 key = "Backspace"
 display = "{icon:backspace}"
 
+# Symbol row (US letter-adjacent punctuation): `~  [ {  ] }  \ |  |  ; :  ' "  / ?
 [[rows]]
 indent = 0.0
 height = 1.3
 
 [[rows.keys]]
-key = "q"
+key = { normal = "`", shift = "~" }
 width = 1.4
 
 [[rows.keys]]
-key = "w"
+key = { normal = "[", shift = "{" }
 
 [[rows.keys]]
-key = "e"
+key = { normal = "]", shift = "}" }
 
 [[rows.keys]]
-key = "r"
+key = { normal = "\\\\", shift = "|" }
+display = { normal = "\\", shift = "|" }
 width = 1.3
 
 [[rows.keys]]
-key = "t"
+key = "Delete"
+display = "Del"
 width = 1.6
 
 [[rows.keys]]
@@ -90,23 +97,24 @@ key = "Skip"
 width = 0.25
 
 [[rows.keys]]
-key = "y"
+key = { normal = ";", shift = ":" }
 width = 1.6
 
 [[rows.keys]]
-key = "u"
+key = { normal = "'", shift = "\"" }
 width = 1.4
 
 [[rows.keys]]
-key = "i"
+key = { normal = "/", shift = "?" }
 
 [[rows.keys]]
-key = "o"
+key = "Skip"
 
 [[rows.keys]]
-key = "p"
+key = "Skip"
 width = 1.4
 
+# Home row chrome (menu / return); skips keep SC widths for stick_bounds
 [[rows]]
 indent = 0.0
 height = 1.1
@@ -118,19 +126,19 @@ width = 0.8
 font_size = 18.0
 
 [[rows.keys]]
-key = "a"
+key = "Skip"
 
 [[rows.keys]]
-key = "s"
+key = "Skip"
 
 [[rows.keys]]
-key = "d"
+key = "Skip"
 
 [[rows.keys]]
-key = "f"
+key = "Skip"
 
 [[rows.keys]]
-key = "g"
+key = "Skip"
 width = 1.4
 
 [[rows.keys]]
@@ -138,17 +146,17 @@ key = "Skip"
 width = 0.25
 
 [[rows.keys]]
-key = "h"
+key = "Skip"
 width = 1.5
 
 [[rows.keys]]
-key = "j"
+key = "Skip"
 
 [[rows.keys]]
-key = "k"
+key = "Skip"
 
 [[rows.keys]]
-key = "l"
+key = "Skip"
 
 [[rows.keys]]
 key = "Return"
@@ -167,16 +175,16 @@ display = "{icon:arrow-fat-up}"
 key = { normal = ",", shift = "<" }
 
 [[rows.keys]]
-key = "z"
+key = "Skip"
 
 [[rows.keys]]
-key = "x"
+key = "Skip"
 
 [[rows.keys]]
-key = "c"
+key = "Skip"
 
 [[rows.keys]]
-key = "v"
+key = "Skip"
 width = 1.2
 
 [[rows.keys]]
@@ -184,17 +192,14 @@ key = "Skip"
 width = 0.25
 
 [[rows.keys]]
-key = "b"
+key = "Skip"
 width = 1.2
 
 [[rows.keys]]
-key = "n"
+key = "Skip"
 
 [[rows.keys]]
-key = "m"
-
-[[rows.keys]]
-key = { normal = "?", shift = "/" }
+key = "Skip"
 
 [[rows.keys]]
 key = { normal = ".", shift = ">" }
@@ -215,11 +220,6 @@ display = "{icon:arrow-line-right}"
 key = " "
 width = 9.1
 display_modifiers = true
-
-# [[rows.keys]]
-# key = "exit"
-# display = "Done"
-# width = 3.3
 
 [[rows]]
 indent = 0.0

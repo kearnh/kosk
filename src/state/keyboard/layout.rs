@@ -213,6 +213,12 @@ struct KeyboardLayoutFile {
     font_size: f32,
     #[serde(default)]
     stick_bounds: StickBounds,
+    /// Rest centre for the left stick/pad as `[row, column]` into `rows` / `rows.keys`.
+    #[serde(default)]
+    stick_rest_left: Option<(usize, usize)>,
+    /// Rest centre for the right stick/pad as `[row, column]` into `rows` / `rows.keys`.
+    #[serde(default)]
+    stick_rest_right: Option<(usize, usize)>,
 }
 
 fn default_pad_x() -> f32 {
@@ -223,6 +229,29 @@ fn default_pad_y() -> f32 {
 }
 fn default_font_size() -> f32 {
     18.0
+}
+
+fn validate_stick_rest(
+    rows: &[KeyboardRow],
+    rest: Option<(usize, usize)>,
+    field: &str,
+) -> Result<()> {
+    let Some((row, col)) = rest else {
+        return Ok(());
+    };
+    let Some(r) = rows.get(row) else {
+        anyhow::bail!("{field}: row {row} out of range ({} rows)", rows.len());
+    };
+    let Some(key) = r.keys.get(col) else {
+        anyhow::bail!(
+            "{field}: column {col} out of range (row {row} has {} keys)",
+            r.keys.len()
+        );
+    };
+    if key.is_skip() {
+        anyhow::bail!("{field}: [{row}, {col}] points at a Skip key");
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -281,6 +310,8 @@ pub struct KeyboardLayout {
     stick_scale_y: f32,
     left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
+    stick_rest_left: Option<(usize, usize)>,
+    stick_rest_right: Option<(usize, usize)>,
 
     key_hit_boxes: Vec<Vec<Option<HitBox>>>,
 
@@ -320,7 +351,12 @@ impl KeyboardLayout {
             pad_y,
             font_size,
             stick_bounds,
+            stick_rest_left,
+            stick_rest_right,
         } = parsed;
+
+        validate_stick_rest(&rows, stick_rest_left, "stick_rest_left")?;
+        validate_stick_rest(&rows, stick_rest_right, "stick_rest_right")?;
 
         let scale: Vec2 = (scale_x, scale_y).into();
 
@@ -335,6 +371,8 @@ impl KeyboardLayout {
             stick_scale_y,
             left_stick_center: (0.0, 0.0),
             right_stick_center: (0.0, 0.0),
+            stick_rest_left,
+            stick_rest_right,
             key_hit_boxes: Default::default(),
             left_stick_bounds: stick_bounds
                 .left
@@ -445,9 +483,19 @@ impl KeyboardLayout {
     pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
-        // FIXME make centers configurable
-        self.left_stick_center = self.get_key_center(&RawKey::Key('d')).unwrap_or_default();
-        self.right_stick_center = self.get_key_center(&RawKey::Key('k')).unwrap_or_default();
+        self.left_stick_center = self
+            .centre_at_rest(self.stick_rest_left)
+            .unwrap_or_default();
+        self.right_stick_center = self
+            .centre_at_rest(self.stick_rest_right)
+            .unwrap_or_default();
+    }
+
+    fn centre_at_rest(&self, rest: Option<(usize, usize)>) -> Option<(f32, f32)> {
+        let (row, col) = rest?;
+        let centres = self.captured_centres.as_ref()?;
+        let pos = centres.get(row)?.get(col).copied()??;
+        Some((pos.x, pos.y))
     }
 
     /// Reset centre/hitbox/rest fields. Call sites must use this (or
@@ -711,10 +759,61 @@ mod tests {
     #[test]
     fn parses_repo_layout_toml() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for path in ["qwerty.toml", "old_steam_controller_kb.toml"] {
+        for path in [
+            "qwerty.toml",
+            "old_steam_controller_kb.toml",
+            "symbols.toml",
+        ] {
             let s = fs::read_to_string(dir.join(path)).unwrap();
             let _: KeyboardLayoutFile = toml::from_str(&s).unwrap();
+            KeyboardLayout::load_with_scales(&s, 30.0, 32.0, 3.0, 2.5).unwrap();
         }
+    }
+
+    #[test]
+    fn stick_rest_rejects_skip_and_oob() {
+        let skip = r#"
+stick_rest_left = [0, 0]
+[[rows]]
+indent = 0.0
+keys = [ { key = "Skip" } ]
+"#;
+        let err = KeyboardLayout::load_with_scales(skip, 1.0, 1.0, 1.0, 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Skip"), "{err}");
+
+        let oob = r#"
+stick_rest_right = [0, 9]
+[[rows]]
+indent = 0.0
+keys = [ { key = "a" } ]
+"#;
+        let err = KeyboardLayout::load_with_scales(oob, 1.0, 1.0, 1.0, 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("out of range"), "{err}");
+    }
+
+    #[test]
+    fn stick_rest_uses_row_col_centre() {
+        let toml = r#"
+stick_rest_left = [0, 1]
+stick_rest_right = [0, 0]
+[[rows]]
+indent = 0.0
+keys = [
+  { key = "a", width = 1.0 },
+  { key = "=", width = 1.0 },
+]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 30.0, 32.0, 3.0, 2.5).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(10.0, 20.0)),
+            Some(Pos2::new(30.0, 40.0)),
+        ]]);
+        assert_eq!(layout.left_stick_center, (30.0, 40.0));
+        assert_eq!(layout.right_stick_center, (10.0, 20.0));
     }
 
     #[test]
