@@ -59,7 +59,8 @@ pub trait ControllerInput: Debug {
         None
     }
     fn left_pad(&self) -> Option<(f32, f32)> {
-        self.left_pad_raw().map(|p| warp(p, config::get().stick_warp))
+        self.left_pad_raw()
+            .map(|p| warp(p, config::get().stick_warp))
     }
     fn right_pad(&self) -> Option<(f32, f32)> {
         self.right_pad_raw()

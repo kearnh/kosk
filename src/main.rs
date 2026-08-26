@@ -94,7 +94,8 @@ impl eframe::App for App {
                     StateId::Menu
                     | StateId::Mappings
                     | StateId::MoveWindow
-                    | StateId::SelectKey => cfg.ui_opacity,
+                    | StateId::SelectKey
+                    | StateId::SelectLayout => cfg.ui_opacity,
                 };
                 raw.clamp(0.0, 1.0)
             };

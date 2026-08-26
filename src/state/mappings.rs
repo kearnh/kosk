@@ -9,6 +9,7 @@ use crate::state::keyboard::display_icon::LabelCache;
 use crate::state::keyboard::{self, KeyboardAction};
 use crate::state::menu_action::MenuAction;
 use crate::state::move_window_action::MoveWindowAction;
+use crate::state::select_layout_action::SelectLayoutAction;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 use anyhow::Result;
@@ -33,9 +34,10 @@ const DELETE_CONFIRM: ControllerButton = ControllerButton::FaceTop; // Y
 const BACK_CANCEL: ControllerButton = ControllerButton::FaceRight; // B
                                                                    // ----------------------------------------------------------------------
 
-const EDITABLE_MODES: [StateId; 4] = [
+const EDITABLE_MODES: [StateId; 5] = [
     StateId::Keyboard,
     StateId::Menu,
+    StateId::SelectLayout,
     StateId::TextInput,
     StateId::MoveWindow,
 ];
@@ -232,6 +234,12 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
             rows.sort();
             rows
         }
+        StateId::SelectLayout => {
+            let mut rows = unit_names(SelectLayoutAction::VARIANTS, &["SwitchState"]);
+            rows.extend(switch_state_catalog());
+            rows.sort();
+            rows
+        }
         StateId::TextInput => {
             let mut rows = unit_names(TextInputAction::VARIANTS, &["SwitchState"]);
             rows.extend(switch_state_catalog());
@@ -252,6 +260,7 @@ fn mode_label(mode: StateId) -> &'static str {
     match mode {
         StateId::Keyboard => "Keyboard",
         StateId::Menu => "Menu",
+        StateId::SelectLayout => "SelectLayout",
         StateId::TextInput => "TextInput",
         StateId::MoveWindow => "MoveWindow",
         StateId::Mappings => "Mappings",

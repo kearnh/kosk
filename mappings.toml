@@ -52,3 +52,10 @@ quickAccess = "switchState.mappings"
 "options" = "snapTopRight"
 "l4" = "flipWindowLeftRight"
 "r4" = "flipWindowAboveBelow"
+
+[SelectLayout]
+"dpadUp" = "selectUp"
+"dpadDown" = "selectDown"
+"faceBottom" = "activate"
+"faceTop" = "togglePreview"
+"faceRight" = "switchState.menu"

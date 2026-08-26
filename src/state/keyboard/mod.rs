@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -57,13 +58,32 @@ pub struct KeyboardState {
     last_right_stick_action: Option<Instant>,
     stick_select_lock_ms: Duration,
     label_cache: display_icon::LabelCache,
+    config: Option<config::Config>,
 }
 
 impl KeyboardState {
+    fn cfg(&self) -> config::Config {
+        match &self.config {
+            Some(c) => c.clone(),
+            None => config::get(),
+        }
+    }
+
     pub fn new() -> Result<Self> {
-        let mut state: Self = Default::default();
+        Self::construct(None)
+    }
+
+    pub fn with_config(config: config::Config) -> Result<Self> {
+        Self::construct(Some(config))
+    }
+
+    fn construct(config: Option<config::Config>) -> Result<Self> {
+        let mut state = Self {
+            config,
+            ..Default::default()
+        };
         state.reload_from_config()?;
-        state.current_layout = config::get().start_layout;
+        state.current_layout = state.cfg().start_layout;
         Ok(state)
     }
 
@@ -230,7 +250,7 @@ impl KeyboardState {
     }
 
     pub(crate) fn tape_header(&self) -> Result<TapeHeader> {
-        let cfg = config::get();
+        let cfg = self.cfg();
         let mut layouts: Vec<(String, String)> = self
             .layouts
             .iter()
@@ -295,7 +315,9 @@ impl KeyboardState {
         for layout in self.layouts.values_mut() {
             layout.clear_captured_geometry();
         }
-        geometry_snap::clear();
+        if self.config.is_none() {
+            geometry_snap::clear();
+        }
         self.label_cache.clear();
     }
 
@@ -396,7 +418,7 @@ impl KeyboardState {
         Ok(())
     }
 
-    fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+    pub(crate) fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
         let session = input_record::session();
         let display_ctx = when::DisplayContext {
             shift: self.shift_state,
@@ -405,6 +427,8 @@ impl KeyboardState {
             ctrl: self.ctrl_mod,
             alt: self.alt_mod,
         };
+
+        let publish_geometry = self.config.is_none();
 
         // Split field borrows so label_cache and layouts can be used together.
         let KeyboardState {
@@ -564,23 +588,34 @@ impl KeyboardState {
             }
         });
 
-        current_layout.draw_debug(ctx, ui);
+        if publish_geometry {
+            current_layout.draw_debug(ctx, ui);
+        }
 
         if capturing_centres {
             current_layout.update_geometry(captured_data);
-            geometry_snap::publish(current_layout_name, current_layout);
+            if publish_geometry {
+                geometry_snap::publish(current_layout_name, current_layout);
+            }
         }
 
         pressed_key
     }
 
     fn reload_from_config(&mut self) -> Result<()> {
-        let cfg = config::get();
+        let cfg = self.cfg();
 
         // Reload all layouts
         self.layouts = HashMap::new();
         for (name, path) in &cfg.layouts {
-            let layout = KeyboardLayout::load_from_file(path)?;
+            let toml = fs::read_to_string(path)?;
+            let layout = KeyboardLayout::load_with_scales(
+                &toml,
+                cfg.scale_x,
+                cfg.scale_y,
+                cfg.stick_scale_x,
+                cfg.stick_scale_y,
+            )?;
             self.layouts.insert(name.clone(), layout);
         }
 
@@ -614,6 +649,13 @@ pub(crate) fn layout_names() -> Vec<String> {
     let mut names: Vec<String> = guard.layouts.keys().cloned().collect();
     names.sort();
     names
+}
+
+pub(crate) fn current_layout_name() -> String {
+    let Some(cell) = KEYBOARD.get() else {
+        return String::new();
+    };
+    cell.lock().unwrap().current_layout.clone()
 }
 
 pub fn init() -> Result<()> {

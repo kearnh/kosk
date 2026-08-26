@@ -129,7 +129,7 @@ pub struct Config {
     #[serde(default = "default_keyboard_opacity")]
     pub keyboard_opacity: f32,
 
-    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / MoveWindow / SelectKey.
+    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / MoveWindow / SelectKey / SelectLayout.
     #[serde(default = "default_ui_opacity")]
     pub ui_opacity: f32,
 

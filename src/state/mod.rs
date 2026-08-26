@@ -24,6 +24,8 @@ mod move_window;
 mod move_window_action;
 pub mod os_focus;
 mod select_key;
+mod select_layout;
+mod select_layout_action;
 mod text_input;
 mod text_input_action;
 pub mod window_pos;
@@ -36,6 +38,7 @@ pub enum StateId {
     TextInput,
     Mappings,
     SelectKey,
+    SelectLayout,
 }
 
 pub struct AppState {
@@ -56,6 +59,7 @@ impl AppState {
         keyboard::init()?;
         move_window::init()?;
         menu::init()?;
+        select_layout::init()?;
         text_input::init()?;
         select_key::init()?;
         mappings::init()?;
@@ -274,6 +278,9 @@ impl AppState {
             StateId::SelectKey => {
                 select_key::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
             }
+            StateId::SelectLayout => {
+                select_layout::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
+            }
         }
         self.process_events(ctx, None);
     }
@@ -282,6 +289,9 @@ impl AppState {
         self.call_stack.clear();
         if state == StateId::Mappings {
             mappings::with_mut(|m| m.begin_session());
+        }
+        if state == StateId::SelectLayout {
+            select_layout::with_mut(|s| s.begin());
         }
         self.state = state;
         self.reset_current_mode_controller(holdover);
@@ -334,6 +344,9 @@ impl AppState {
             StateId::TextInput => text_input::with_mut(|ti| ti.reset_controller_input(holdover)),
             StateId::Mappings => mappings::with_mut(|m| m.reset_controller_input(holdover)),
             StateId::SelectKey => select_key::with_mut(|s| s.reset_controller_input(holdover)),
+            StateId::SelectLayout => {
+                select_layout::with_mut(|s| s.reset_controller_input(holdover))
+            }
         }
     }
 
@@ -373,6 +386,9 @@ impl AppState {
             StateId::SelectKey => {
                 select_key::with_mut(|s| s.handle_controller_input(input, &mut self.events))?
             }
+            StateId::SelectLayout => select_layout::with_mut(|s| {
+                s.handle_controller_input(ctx, input, &mut self.events)
+            })?,
         }
         self.events.end_controller_tick();
         self.process_events(ctx, Some(input));

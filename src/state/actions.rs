@@ -6,6 +6,7 @@ use crate::controller::bindings::BindingEngine;
 use crate::state::keyboard::KeyboardAction;
 use crate::state::menu_action::MenuAction;
 use crate::state::move_window_action::MoveWindowAction;
+use crate::state::select_layout_action::SelectLayoutAction;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
 
@@ -39,6 +40,10 @@ pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {
         }
         StateId::MoveWindow => {
             let action = MoveWindowAction::try_from(name).ok()?;
+            Some(Box::new(action))
+        }
+        StateId::SelectLayout => {
+            let action = SelectLayoutAction::try_from(name).ok()?;
             Some(Box::new(action))
         }
         StateId::Mappings | StateId::SelectKey => None,

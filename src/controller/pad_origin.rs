@@ -239,11 +239,7 @@ mod tests {
             k,
             max_gain,
         );
-        assert_eq!(
-            capture,
-            Some((-0.4, 0.1)),
-            "capture frame stays absolute"
-        );
+        assert_eq!(capture, Some((-0.4, 0.1)), "capture frame stays absolute");
 
         let moved = pad
             .update(
@@ -270,10 +266,6 @@ mod tests {
             k,
             max_gain,
         );
-        assert_eq!(
-            again,
-            Some((0.2, -0.3)),
-            "lift+retouch starts a new origin"
-        );
+        assert_eq!(again, Some((0.2, -0.3)), "lift+retouch starts a new origin");
     }
 }

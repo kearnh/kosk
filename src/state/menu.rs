@@ -38,6 +38,10 @@ impl MenuState {
                     callback: Box::new(|| Some(StateId::Mappings)),
                 },
                 MenuButton {
+                    text: "Layouts",
+                    callback: Box::new(|| Some(StateId::SelectLayout)),
+                },
+                MenuButton {
                     text: "Back",
                     callback: Box::new(|| Some(StateId::Keyboard)),
                 },
