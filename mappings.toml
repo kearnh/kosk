@@ -27,6 +27,7 @@
 "dpadRight" = "sendKey.right"
 "dpadUp" = "sendKey.up"
 "dpadDown" = "sendKey.down"
+quickAccess = "switchState.mappings"
 
 [Menu]
 "dpadUp" = "selectUp"
