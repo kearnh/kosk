@@ -26,4 +26,7 @@
 
 - Run cargo clippy after editing and attend to any warnings
 
-- File edits: prefer hashline `edit` for existing files. Use `write` only for new files or deliberate full rewrites when you hold the complete intended contents. Never invent a whole-file `write` from a partial read window — that truncates the file.
+## Editing
+- Prefer the `edit` tool (hashline patch) for every file modification.
+- Never rewrite a whole file when a targeted edit suffices.
+- On a stale-tag/hash error or parse failure: stop, re-read, retry.
