@@ -11,10 +11,7 @@ left = [
     { min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } },
     { min = { x = 0.0, y = 5.0 }, max = { x = 1.25, y = 6.2 } },
 ]
-right = [
-    { min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } },
-    { min = { x = 10.4, y = 5.0 }, max = { x = 14.0, y = 6.2 } },
-]
+right = [{ min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } }]
 
 [[rows]]
 indent = 0.0
@@ -215,6 +212,11 @@ display = "{icon:arrow-line-right}"
 key = " "
 width = 9.1
 display_modifiers = true
+
+[[rows.keys]]
+key = "switchLayout.symbols"
+display = "*"
+width = 1.0
 
 # [[rows.keys]]
 # key = "exit"

@@ -1,6 +1,6 @@
 # Keyboard layouts (`layout.rs`, `key.rs`, `when.rs`)
 
-This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and `when.rs`. Checked-in layouts include `old_steam_controller_kb.toml` (`main`) and `symbols.toml` (`symbols`) from `config.toml`. Keyboard mode’s use of the layout is in [keyboard.md](keyboard.md).
+This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and `when.rs`. Checked-in layouts include `old_sc.toml` (`main`) and `old_sc_symbols.toml` (`symbols`) from `config.toml`. Keyboard mode’s use of the layout is in [keyboard.md](keyboard.md).
 
 ## What a layout file is
 

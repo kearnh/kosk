@@ -6,17 +6,11 @@ pad_y = 0.1
 font_size = 24.0
 # Rest on ] (left pad) and ; (right pad) in the symbol row
 stick_rest_left = [1, 2]
-stick_rest_right = [1, 6]
+stick_rest_right = { type = "position", x = 11.0, y = 2.6 }
 
 [stick_bounds]
-left = [
-    { min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } },
-    { min = { x = 0.0, y = 5.0 }, max = { x = 1.25, y = 6.2 } },
-]
-right = [
-    { min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } },
-    { min = { x = 10.4, y = 5.0 }, max = { x = 14.0, y = 6.2 } },
-]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } }]
+right = [{ min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } }]
 
 # Number row: Esc (US top-left), digits, =+ (US right of 0). Dropped 6/- (still on main).
 [[rows]]

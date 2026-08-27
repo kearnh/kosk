@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     config,
-    controller::virtual_ctl::StickSide,
+    controller::{virtual_ctl::StickSide, ControllerInput},
     debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
     state::keyboard::when::{DisplayContext, WhenExpr},
@@ -205,6 +205,30 @@ struct StickBounds {
     right: Vec<Rect>,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum StickRestTable {
+    Keys { row: usize, column: usize },
+    Position { x: f32, y: f32 },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+enum StickRest {
+    Keys((usize, usize)),
+    Table(StickRestTable),
+}
+
+impl StickRest {
+    fn key_position(&self) -> Option<(usize, usize)> {
+        match self {
+            Self::Keys(position) => Some(*position),
+            Self::Table(StickRestTable::Keys { row, column }) => Some((*row, *column)),
+            Self::Table(StickRestTable::Position { .. }) => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ReachCache {
     Stick {
@@ -230,12 +254,12 @@ struct KeyboardLayoutFile {
     font_size: f32,
     #[serde(default)]
     stick_bounds: StickBounds,
-    /// Rest centre for the left stick/pad as `[row, column]` into `rows` / `rows.keys`.
+    /// Rest centre for the left stick/pad.
     #[serde(default)]
-    stick_rest_left: Option<(usize, usize)>,
-    /// Rest centre for the right stick/pad as `[row, column]` into `rows` / `rows.keys`.
+    stick_rest_left: Option<StickRest>,
+    /// Rest centre for the right stick/pad.
     #[serde(default)]
-    stick_rest_right: Option<(usize, usize)>,
+    stick_rest_right: Option<StickRest>,
 }
 
 fn default_pad_x() -> f32 {
@@ -248,12 +272,8 @@ fn default_font_size() -> f32 {
     18.0
 }
 
-fn validate_stick_rest(
-    rows: &[KeyboardRow],
-    rest: Option<(usize, usize)>,
-    field: &str,
-) -> Result<()> {
-    let Some((row, col)) = rest else {
+fn validate_stick_rest(rows: &[KeyboardRow], rest: Option<&StickRest>, field: &str) -> Result<()> {
+    let Some((row, col)) = rest.and_then(StickRest::key_position) else {
         return Ok(());
     };
     let Some(r) = rows.get(row) else {
@@ -327,8 +347,8 @@ pub struct KeyboardLayout {
     stick_scale_y: f32,
     left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
-    stick_rest_left: Option<(usize, usize)>,
-    stick_rest_right: Option<(usize, usize)>,
+    stick_rest_left: Option<StickRest>,
+    stick_rest_right: Option<StickRest>,
 
     key_hit_boxes: Vec<Vec<Option<HitBox>>>,
 
@@ -396,8 +416,8 @@ impl KeyboardLayout {
             stick_rest_right,
         } = parsed;
 
-        validate_stick_rest(&rows, stick_rest_left, "stick_rest_left")?;
-        validate_stick_rest(&rows, stick_rest_right, "stick_rest_right")?;
+        validate_stick_rest(&rows, stick_rest_left.as_ref(), "stick_rest_left")?;
+        validate_stick_rest(&rows, stick_rest_right.as_ref(), "stick_rest_right")?;
 
         let scale: Vec2 = (scale_x, scale_y).into();
 
@@ -527,19 +547,26 @@ impl KeyboardLayout {
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
         self.left_stick_center = self
-            .centre_at_rest(self.stick_rest_left)
+            .centre_at_rest(self.stick_rest_left.as_ref())
             .unwrap_or_default();
         self.right_stick_center = self
-            .centre_at_rest(self.stick_rest_right)
+            .centre_at_rest(self.stick_rest_right.as_ref())
             .unwrap_or_default();
         self.reach_cache = self.build_reach_cache();
     }
 
-    fn centre_at_rest(&self, rest: Option<(usize, usize)>) -> Option<(f32, f32)> {
-        let (row, col) = rest?;
-        let centres = self.captured_centres.as_ref()?;
-        let pos = centres.get(row)?.get(col).copied()??;
-        Some((pos.x, pos.y))
+    fn centre_at_rest(&self, rest: Option<&StickRest>) -> Option<(f32, f32)> {
+        let rest = rest?;
+        if let Some((row, col)) = rest.key_position() {
+            let centres = self.captured_centres.as_ref()?;
+            let pos = centres.get(row)?.get(col).copied()??;
+            return Some((pos.x, pos.y));
+        }
+
+        let StickRest::Table(StickRestTable::Position { x, y }) = rest else {
+            return None;
+        };
+        Some((self.scale_x((*x).into()), self.scale_y((*y).into())))
     }
 
     /// Reset centre/hitbox/rest fields. Call sites must use this (or
@@ -744,23 +771,20 @@ impl KeyboardLayout {
             if debug.show_stick_cursors {
                 let d_lock = ctx.plugin::<DebugPlugin>();
                 let d = d_lock.lock();
-                if let Some(input) = &d.controller_input {
-                    let (x, y) = input.left_pad().unwrap_or_else(|| input.left_stick());
-                    let (cursor_x, cursor_y) = self.stick_to_cursor_left((x, y));
-                    painter.circle_filled(
-                        [cursor_x, cursor_y].into(),
-                        8.0,
-                        Color32::from_rgb(0, 0, 255),
-                    );
+                let input = d.controller_input.as_deref();
+                let (cursor_x, cursor_y) = debug_cursor(self, input, StickSide::Left);
+                painter.circle_filled(
+                    [cursor_x, cursor_y].into(),
+                    8.0,
+                    Color32::from_rgb(0, 0, 255),
+                );
 
-                    let (x, y) = input.right_pad().unwrap_or_else(|| input.right_stick());
-                    let (cursor_x, cursor_y) = self.stick_to_cursor_right((x, y));
-                    painter.circle_filled(
-                        [cursor_x, cursor_y].into(),
-                        8.0,
-                        Color32::from_rgb(0, 255, 0),
-                    );
-                }
+                let (cursor_x, cursor_y) = debug_cursor(self, input, StickSide::Right);
+                painter.circle_filled(
+                    [cursor_x, cursor_y].into(),
+                    8.0,
+                    Color32::from_rgb(0, 255, 0),
+                );
             }
 
             if debug.show_stick_bounds {
@@ -836,6 +860,22 @@ impl KeyboardLayout {
                 }
             }
         }
+    }
+}
+
+fn debug_cursor(
+    layout: &KeyboardLayout,
+    input: Option<&(dyn ControllerInput + Send + Sync)>,
+    side: StickSide,
+) -> (f32, f32) {
+    let stick = match (input, side) {
+        (Some(input), StickSide::Left) => input.left_pad().unwrap_or_else(|| input.left_stick()),
+        (Some(input), StickSide::Right) => input.right_pad().unwrap_or_else(|| input.right_stick()),
+        (None, _) => (0.0, 0.0),
+    };
+    match side {
+        StickSide::Left => layout.stick_to_cursor_left(stick),
+        StickSide::Right => layout.stick_to_cursor_right(stick),
     }
 }
 
@@ -916,11 +956,7 @@ mod tests {
     #[test]
     fn parses_repo_layout_toml() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for path in [
-            "qwerty.toml",
-            "old_steam_controller_kb.toml",
-            "symbols.toml",
-        ] {
+        for path in ["qwerty.toml", "old_sc.toml", "old_sc_symbols.toml"] {
             let s = fs::read_to_string(dir.join(path)).unwrap();
             let _: KeyboardLayoutFile = toml::from_str(&s).unwrap();
             KeyboardLayout::load_with_scales(&s, 30.0, 32.0, 3.0, 2.5).unwrap();
@@ -979,6 +1015,42 @@ keys = [
         ]]);
         assert_eq!(layout.left_stick_center, (30.0, 40.0));
         assert_eq!(layout.right_stick_center, (10.0, 20.0));
+    }
+
+    #[test]
+    fn stick_rest_supports_keys_and_unscaled_position() {
+        let toml = r#"
+stick_rest_left = { type = "position", x = 2.5, y = 3.5 }
+stick_rest_right = { type = "keys", row = 0, column = 1 }
+[[rows]]
+indent = 0.0
+keys = [
+  { key = "a", width = 1.0 },
+  { key = "=", width = 1.0 },
+]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 30.0, 32.0, 3.0, 2.5).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(10.0, 20.0)),
+            Some(Pos2::new(30.0, 40.0)),
+        ]]);
+        assert_eq!(layout.left_stick_center, (75.0, 112.0));
+        assert_eq!(layout.right_stick_center, (30.0, 40.0));
+    }
+
+    #[test]
+    fn cursor_defaults_to_configured_rest_without_input() {
+        let toml = r#"
+stick_rest_left = [0, 0]
+stick_rest_right = [0, 0]
+[[rows]]
+indent = 0.0
+keys = [{ key = "a" }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
+        assert_eq!(debug_cursor(&layout, None, StickSide::Left), (10.0, 20.0));
+        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (10.0, 20.0));
     }
 
     #[test]

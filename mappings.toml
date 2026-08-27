@@ -20,7 +20,7 @@
 "faceLeft" = "sendKey.backspace"
 "l5" = "sendKey.backspace"
 "r5" = "sendKey.space"
-"l4" = "rotateWindow"
+"l4" = "toggleShift"
 "stickLeft" = "toggleCtrl"
 "stickRight" = "toggleAlt"
 "dpadLeft" = "sendKey.left"
@@ -51,7 +51,6 @@ quickAccess = "switchState.mappings"
 "faceBottom" = "snapBottomRight"
 "options" = "snapTopRight"
 "l4" = "flipWindowLeftRight"
-"r4" = "flipWindowAboveBelow"
 
 [SelectLayout]
 "dpadUp" = "selectUp"

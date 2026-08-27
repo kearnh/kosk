@@ -1,6 +1,6 @@
 start_layout = "main"
-stick_scale_x = 3.0
-stick_scale_y = 2.5
+stick_scale_x = 3.8
+stick_scale_y = 2.8
 stick_warp = 1.0
 preferred_controller = ["sc2"]
 transparent = true
@@ -32,14 +32,14 @@ trigger_right_threshold = 40
 file = "captures/kosk-000.krec"
 
 [layouts]
-main = "old_steam_controller_kb.toml"
-symbols = "symbols.toml"
+main = "old_sc.toml"
+symbols = "old_sc_symbols.toml"
 
 [debug]
 show_stick_cursors = true
 show_hitboxes = false
-show_stick_bounds = true
-reach_overlay = "pad"
+show_stick_bounds = false
+reach_overlay = "none"
 
 [text_input]
 background_color = [255, 255, 255, 255]
