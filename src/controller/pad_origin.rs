@@ -36,7 +36,12 @@ pub fn stretch_axis(pos: f32, origin: f32, k: f32, max_gain: f32) -> f32 {
     pos * (1.0 - k) + stretched * k
 }
 
-fn stretch_stick(pos: (f32, f32), origin: (f32, f32), k: f32, max_gain: f32) -> (f32, f32) {
+pub(crate) fn stretch_stick(
+    pos: (f32, f32),
+    origin: (f32, f32),
+    k: f32,
+    max_gain: f32,
+) -> (f32, f32) {
     (
         stretch_axis(pos.0, origin.0, k, max_gain),
         stretch_axis(pos.1, origin.1, k, max_gain),

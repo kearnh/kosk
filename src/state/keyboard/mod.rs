@@ -26,6 +26,7 @@ pub(crate) mod geometry_snap;
 mod key;
 mod keyboard_action;
 mod layout;
+mod reach_extent;
 mod when;
 
 pub use crate::state::keyboard::keyboard_action::KeyboardAction;

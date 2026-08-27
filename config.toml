@@ -38,7 +38,8 @@ symbols = "symbols.toml"
 [debug]
 show_stick_cursors = true
 show_hitboxes = false
-show_stick_bounds = false
+show_stick_bounds = true
+reach_overlay = "pad"
 
 [text_input]
 background_color = [255, 255, 255, 255]

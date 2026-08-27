@@ -37,6 +37,15 @@ pub struct Args {
     pub mcp_controller: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReachOverlay {
+    Stick,
+    Pad,
+    #[default]
+    None,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct Debug {
     #[serde(default)]
@@ -47,6 +56,9 @@ pub struct Debug {
 
     #[serde(default)]
     pub show_stick_bounds: bool,
+
+    #[serde(default)]
+    pub reach_overlay: ReachOverlay,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -980,6 +992,12 @@ pub fn get() -> Config {
     config.clone()
 }
 
+pub(crate) fn try_get() -> Option<Config> {
+    CONFIG_INSTANCE
+        .get()
+        .map(|instance| instance.lock().unwrap().clone())
+}
+
 pub fn save(new_config: Config) -> Result<()> {
     let path = CONFIG_PATH
         .get()
@@ -1113,6 +1131,19 @@ mod tests {
                 file: "captures/keys.log".into()
             }
         );
+    }
+
+    #[test]
+    fn parse_reach_overlay_modes() {
+        for (value, expected) in [
+            ("stick", ReachOverlay::Stick),
+            ("pad", ReachOverlay::Pad),
+            ("none", ReachOverlay::None),
+        ] {
+            let debug: Debug = toml::from_str(&format!("reach_overlay = \"{value}\"\n")).unwrap();
+            assert_eq!(debug.reach_overlay, expected);
+        }
+        assert_eq!(Debug::default().reach_overlay, ReachOverlay::None);
     }
 
     #[test]
@@ -1424,6 +1455,7 @@ controller_map = \"mappings.toml\"\n\
             show_stick_cursors: true,
             show_hitboxes: false,
             show_stick_bounds: false,
+            reach_overlay: ReachOverlay::None,
         });
         let mut new = old.clone();
         new.window_pos = WindowPos::Absolute(12.0, 34.0);

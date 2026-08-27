@@ -2,16 +2,19 @@ use std::fmt;
 use std::{fs, path::Path};
 
 use anyhow::Result;
-use egui::{Color32, Context, Pos2, Rect, Ui, Vec2};
+use egui::{Color32, Context, Painter, Pos2, Rect, Shape, Stroke, Ui, Vec2};
 use serde::de::{self, SeqAccess, Visitor};
 use serde::Deserialize;
 
 use crate::{
     config,
+    controller::virtual_ctl::StickSide,
     debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
     state::keyboard::when::{DisplayContext, WhenExpr},
 };
+
+use super::reach_extent::ReachEnvelope;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct UnscaledPixelUnitY(f32);
@@ -202,6 +205,20 @@ struct StickBounds {
     right: Vec<Rect>,
 }
 
+#[derive(Debug)]
+enum ReachCache {
+    Stick {
+        left: ReachEnvelope,
+        right: ReachEnvelope,
+    },
+    Pad {
+        left_all: ReachEnvelope,
+        right_all: ReachEnvelope,
+        left_safe: ReachEnvelope,
+        right_safe: ReachEnvelope,
+    },
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct KeyboardLayoutFile {
     rows: Vec<KeyboardRow>,
@@ -320,8 +337,32 @@ pub struct KeyboardLayout {
 
     pub captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
 
+    reach_cache: Option<ReachCache>,
+
     /// Original TOML, for input-tape headers.
     source: String,
+}
+
+pub(crate) fn clamp_stick_cursor(cursor: (f32, f32), bounds: &[Rect]) -> (f32, f32) {
+    if bounds.is_empty() {
+        return cursor;
+    }
+
+    let (x, y) = cursor;
+    if bounds.iter().any(|r| r.contains(cursor.into())) {
+        return cursor;
+    }
+
+    bounds
+        .iter()
+        .map(|r| {
+            let clamped = (x.clamp(r.min.x, r.max.x), y.clamp(r.min.y, r.max.y));
+            let distance = (x - clamped.0).powi(2) + (y - clamped.1).powi(2);
+            (distance, clamped)
+        })
+        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(_, point)| point)
+        .unwrap_or(cursor)
 }
 
 impl KeyboardLayout {
@@ -391,6 +432,7 @@ impl KeyboardLayout {
                 })
                 .collect(),
             captured_centres: None,
+            reach_cache: None,
             source: toml.to_owned(),
         };
 
@@ -481,6 +523,7 @@ impl KeyboardLayout {
     }
 
     pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
+        self.reach_cache = None;
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
         self.left_stick_center = self
@@ -489,6 +532,7 @@ impl KeyboardLayout {
         self.right_stick_center = self
             .centre_at_rest(self.stick_rest_right)
             .unwrap_or_default();
+        self.reach_cache = self.build_reach_cache();
     }
 
     fn centre_at_rest(&self, rest: Option<(usize, usize)>) -> Option<(f32, f32)> {
@@ -499,12 +543,71 @@ impl KeyboardLayout {
     }
 
     /// Reset centre/hitbox/rest fields. Call sites must use this (or
-    /// `KeyboardState::on_layouts_changed`) — do not open-code `captured_centres = None`.
+    /// `KeyboardState::on_layouts_changed`) â€” do not open-code `captured_centres = None`.
     pub fn clear_captured_geometry(&mut self) {
         self.captured_centres = None;
         self.key_hit_boxes.clear();
         self.left_stick_center = (0.0, 0.0);
         self.right_stick_center = (0.0, 0.0);
+        self.reach_cache = None;
+    }
+
+    pub(crate) fn stick_center(&self, side: StickSide) -> (f32, f32) {
+        match side {
+            StickSide::Left => self.left_stick_center,
+            StickSide::Right => self.right_stick_center,
+        }
+    }
+
+    fn build_reach_cache(&self) -> Option<ReachCache> {
+        let cfg = config::try_get()?;
+        let overlay = cfg.debug?.reach_overlay;
+
+        match overlay {
+            config::ReachOverlay::None => None,
+            config::ReachOverlay::Stick => Some(ReachCache::Stick {
+                left: super::reach_extent::compute_stick_envelope(
+                    self,
+                    StickSide::Left,
+                    cfg.stick_warp,
+                )?,
+                right: super::reach_extent::compute_stick_envelope(
+                    self,
+                    StickSide::Right,
+                    cfg.stick_warp,
+                )?,
+            }),
+            config::ReachOverlay::Pad => Some(ReachCache::Pad {
+                left_all: super::reach_extent::compute_pad_envelope(
+                    self,
+                    StickSide::Left,
+                    cfg.stick_warp,
+                    cfg.sc2.pad_origin_stretch,
+                    cfg.sc2.pad_origin_stretch_max_gain,
+                )?,
+                right_all: super::reach_extent::compute_pad_envelope(
+                    self,
+                    StickSide::Right,
+                    cfg.stick_warp,
+                    cfg.sc2.pad_origin_stretch,
+                    cfg.sc2.pad_origin_stretch_max_gain,
+                )?,
+                left_safe: super::reach_extent::compute_safe_pad_envelope(
+                    self,
+                    StickSide::Left,
+                    cfg.stick_warp,
+                    cfg.sc2.pad_origin_stretch,
+                    cfg.sc2.pad_origin_stretch_max_gain,
+                )?,
+                right_safe: super::reach_extent::compute_safe_pad_envelope(
+                    self,
+                    StickSide::Right,
+                    cfg.stick_warp,
+                    cfg.sc2.pad_origin_stretch,
+                    cfg.sc2.pad_origin_stretch_max_gain,
+                )?,
+            }),
+        }
     }
 
     /// Copy centres/hitboxes/ids into an immutable snapshot for MCP queries.
@@ -603,31 +706,7 @@ impl KeyboardLayout {
         bounds: &[Rect],
         shift_state: bool,
     ) -> Option<RawKey> {
-        let (x, y) = cursor;
-        let mut cursor_x = x;
-        let mut cursor_y = y;
-        if !bounds.is_empty() {
-            // Check if we are already inside any of the bounds
-            let is_inside = bounds
-                .iter()
-                .any(|r| r.contains((cursor_x, cursor_y).into()));
-            if !is_inside {
-                // We are outside all bounds. Find the closest point on the closest rectangle.
-                let mut closest_point = (cursor_x, cursor_y);
-                let mut min_dist_sq = f32::MAX;
-                for r in bounds {
-                    // Clamp the cursor to the individual rectangle to find the closest point on it
-                    let clamped_x = cursor_x.clamp(r.min.x, r.max.x);
-                    let clamped_y = cursor_y.clamp(r.min.y, r.max.y);
-                    let dist_sq = (cursor_x - clamped_x).powi(2) + (cursor_y - clamped_y).powi(2);
-                    if dist_sq < min_dist_sq {
-                        min_dist_sq = dist_sq;
-                        closest_point = (clamped_x, clamped_y);
-                    }
-                }
-                (cursor_x, cursor_y) = closest_point;
-            }
-        }
+        let (cursor_x, cursor_y) = clamp_stick_cursor(cursor, bounds);
         self.get_key_at(cursor_x, cursor_y, shift_state)
     }
 
@@ -733,7 +812,85 @@ impl KeyboardLayout {
                     }
                 }
             }
+
+            if debug.reach_overlay != config::ReachOverlay::None {
+                if let Some(cache) = &self.reach_cache {
+                    match cache {
+                        ReachCache::Stick { left, right } => {
+                            draw_reach_envelope(&painter, left, side_color(StickSide::Left), 64);
+                            draw_reach_envelope(&painter, right, side_color(StickSide::Right), 64);
+                        }
+                        ReachCache::Pad {
+                            left_all,
+                            right_all,
+                            left_safe,
+                            right_safe,
+                        } => {
+                            let gray = reach_color(Color32::from_gray(210), 45);
+                            draw_reach_envelope(&painter, left_all, gray, 80);
+                            draw_reach_envelope(&painter, right_all, gray, 80);
+                            draw_dashed_reach_envelope(&painter, left_safe, StickSide::Left);
+                            draw_dashed_reach_envelope(&painter, right_safe, StickSide::Right);
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+fn side_color(side: StickSide) -> Color32 {
+    match side {
+        StickSide::Left => Color32::from_rgb(0, 0, 255),
+        StickSide::Right => Color32::from_rgb(0, 255, 0),
+    }
+}
+
+fn reach_color(color: Color32, alpha: u8) -> Color32 {
+    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+}
+
+fn draw_reach_envelope(
+    painter: &Painter,
+    envelope: &ReachEnvelope,
+    color: Color32,
+    fill_alpha: u8,
+) {
+    if envelope.fill_hull.len() >= 3 {
+        painter.add(Shape::convex_polygon(
+            envelope.fill_hull.clone(),
+            reach_color(color, fill_alpha),
+            Stroke::NONE,
+        ));
+    }
+
+    painter.add(Shape::closed_line(
+        envelope.outline.clone(),
+        Stroke::new(1.0, reach_color(color, 180)),
+    ));
+}
+
+fn draw_dashed_reach_envelope(painter: &Painter, envelope: &ReachEnvelope, side: StickSide) {
+    let color = side_color(side);
+    if envelope.fill_hull.len() >= 3 {
+        painter.add(Shape::convex_polygon(
+            envelope.fill_hull.clone(),
+            reach_color(color, 38),
+            Stroke::NONE,
+        ));
+    }
+
+    let stroke = Stroke::new(1.0, reach_color(color, 180));
+    for (index, pair) in envelope.outline.windows(2).enumerate() {
+        if index % 2 == 0 {
+            painter.line_segment([pair[0], pair[1]], stroke);
+        }
+    }
+    if envelope.outline.len() > 1 && (envelope.outline.len() - 1).is_multiple_of(2) {
+        painter.line_segment(
+            [*envelope.outline.last().unwrap(), envelope.outline[0]],
+            stroke,
+        );
     }
 }
 
@@ -768,6 +925,14 @@ mod tests {
             let _: KeyboardLayoutFile = toml::from_str(&s).unwrap();
             KeyboardLayout::load_with_scales(&s, 30.0, 32.0, 3.0, 2.5).unwrap();
         }
+    }
+
+    #[test]
+    fn translucent_reach_fill_premultiplies_rgb() {
+        let fill = reach_color(Color32::from_gray(210), 45);
+        assert!(fill.r() <= fill.a());
+        assert!(fill.g() <= fill.a());
+        assert!(fill.b() <= fill.a());
     }
 
     #[test]
