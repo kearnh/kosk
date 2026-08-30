@@ -9,14 +9,14 @@ ui_opacity = 0.92
 window_pos = "mouse pointer"
 scale_x = 30.0
 scale_y = 32.0
-event_debounce_ms = 200
+event_debounce_ms = 240
 event_debounce_repeat_ms = 55
 stick_select_lock_ms = 100
 controller_map = "mappings.toml"
 record_file = "captures/kosk-%.krec"
 
 [sc2]
-pad_origin_stretch = 0.3
+pad_origin_stretch = 0.0
 pad_origin_stretch_max_gain = 1.5
 pad_origin_settle_ms = 20
 trigger_left_threshold = 40

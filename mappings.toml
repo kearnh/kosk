@@ -15,6 +15,7 @@
 "padRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
 "options + faceRight" = "switchState.textInput"
+"options + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
 "faceBottom" = "sendKey.enter"
 "faceLeft" = "sendKey.backspace"
