@@ -16,8 +16,30 @@ controller_map = "mappings.toml"
 record_file = "captures/kosk-%.krec"
 
 [sc2]
-pad_origin_relative = 0.0
-pad_origin_stretch = 0.0
+# How a thumb on a pad aims the keyboard highlight.
+#
+# pad_origin_relative (0–1): what "rest" means when you put your thumb down.
+#   0 — pad location is the key. Landing on the upper-right of the pad
+#       highlights an upper-right key, not the home-row rest key.
+#   1 — the first contact *is* rest. Highlight starts on that pad's home-row
+#       key and only moves as you slide from where you landed.
+#   Values in between mix those, so the first highlight sits part-way between
+#   the pad spot and home-row rest. Out of range is clamped.
+#
+# pad_origin_stretch (0–1): leftover travel when rest is not the pad center.
+#   One slide direction then has less pad left. 0 keeps movement 1:1 with the
+#   thumb, so you can run out of pad before the far keys. 1 speeds up only
+#   that short leftover direction so far keys stay reachable. The long
+#   leftover side is not slowed down. Out of range is clamped.
+#
+# pad_origin_stretch_max_gain: cap on that speed-up. 1 = none; below 1 is
+#   treated as 1. A thumb on the rim still cannot cover the whole half-keyboard;
+#   this only limits how twitchy the last millimeters feel.
+#
+# pad_origin_settle_ms: wait this long after contact before freezing the start
+#   point, so the first noisy sample is not treated as rest.
+pad_origin_relative = 0.6
+pad_origin_stretch = 1.0
 pad_origin_stretch_max_gain = 1.5
 pad_origin_settle_ms = 20
 trigger_left_threshold = 40
