@@ -1,6 +1,6 @@
 # Device drivers (`ps4.rs`, `sc2.rs`, `pad_origin.rs`)
 
-This document describes the HID implementations behind `ControllerInput`: DualShock 4 in `src/controller/ps4.rs`, Steam Controller 2 in `src/controller/sc2.rs`, and the pad-origin stretch that only Steam Controller 2 uses in `src/controller/pad_origin.rs`. Discovery and the trait itself are in [controller.md](controller.md).
+This document describes the HID implementations behind `ControllerInput`: DualShock 4 in `src/controller/ps4.rs`, Steam Controller 2 in `src/controller/sc2.rs`, and the pad-origin mapping that only Steam Controller 2 uses in `src/controller/pad_origin.rs`. Discovery and the trait itself are in [controller.md](controller.md).
 
 ## DualShock 4
 
@@ -42,18 +42,21 @@ When a pad is clicked, the driver may send a one-shot haptic command (`0x82`) wh
 
 `ConnectedController::Sc2` does not yield raw `Sc2State` to the app. Each engaged poll runs `PadOriginMapper::map` and boxes the result as `MappedSc2Input`. On idle (`None`), the mapper is reset so the next touch captures a new origin.
 
-## Pad-origin stretch
+## Pad-origin mapping
 
-A finger that lands on the short side of a pad cannot travel as far in that direction as one that lands in the center. If the keyboard mapped pad position absolutely, a left-edge landing would never reach keys on the right.
+Pads map to the keyboard as a stick in −1…1. Two knobs in `[sc2]` control that mapping. Both are read every poll, so saving `config.toml` changes feel without a restart.
 
-`pad_origin.rs` records the first stable touch position after a short settle (`pad_origin_settle_ms`, default 20 ms) to skip the contact spike. Further motion is stretched toward the unused edge:
+`pad_origin_relative` (0…1) chooses where stick zero sits. The mapper stores the first stable touch `T` after `pad_origin_settle_ms` (default 20 ms). Each frame the origin is `T * relative`:
 
-- `k` (`pad_origin_stretch`, 0…1) blends between absolute pad (0) and full remaining-range stretch (1).
-- Extra gain on the short remaining side is capped by `pad_origin_stretch_max_gain`.
+- `0` — origin is pad center. Output is the absolute pad position (KOSK’s original mapping).
+- `1` — origin is `T`. First contact is stick rest; further motion is relative to that touch.
+- Values in between put origin on the line from `(0, 0)` to `T`, so contact lands part-way between rest and the absolute pad key.
 
-Lift clears the origin. `stretch_axis` is applied independently on X and Y.
+Until settle finishes there is no frozen `T`. Output is `pos * (1 - relative)`, so a full-relative landing stays on rest during the contact spike, and an absolute landing still tracks the pad.
 
-`MappedSc2Input` stores those stretched coordinates and implements `left_stick` / `right_stick` as `warp(stretched, stick_warp)`. Raw methods still report the unstretched pad, which matters for recordings: snapshots taken through `ControllerInput::left_stick` store the **stretched and warped** values, so replay must not apply origin stretch or warp a second time.
+`pad_origin_stretch` (`k`, 0…1) stretches leftover travel on the short remaining edge from that origin so a short-side landing can still approach ±1. `k = 0` is 1:1 `pos - origin`. Extra gain applies only toward the short edge and is capped by `pad_origin_stretch_max_gain`. The long edge is not compressed. Axes are independent. Lift clears `T`.
+
+`MappedSc2Input` stores those mapped coordinates and implements `left_pad` / `right_pad` as `warp(mapped, stick_warp)`. Raw pad methods still report the unstretched sample, which matters for recordings: snapshots taken through `ControllerInput::left_pad` store the **mapped and warped** values, so replay must not apply origin mapping or warp a second time.
 
 The DualShock 4 path never constructs a `PadOriginMapper`.
 
@@ -69,4 +72,4 @@ The DualShock 4 path never constructs a `PadOriginMapper`.
 
 ## Summary
 
-DualShock 4 is a straightforward HID state report with analog sticks and thresholded triggers. Steam Controller 2 is a Triton HID client that treats pads as the keyboard sticks, keeps lizard mode suppressed, optionally ticks haptics on pad click, and runs first-touch origin stretch before the shared circle-to-square warp. Replay stores the post-stretch stick values, so the mapper is a live-device concern only.
+DualShock 4 is a straightforward HID state report with analog sticks and thresholded triggers. Steam Controller 2 is a Triton HID client that treats pads as the keyboard sticks, keeps lizard mode suppressed, optionally ticks haptics on pad click, and maps first-touch origin (blended toward pad center) plus short-edge stretch before the shared circle-to-square warp. Replay stores the post-map stick values, so the mapper is a live-device concern only.

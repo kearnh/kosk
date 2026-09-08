@@ -32,7 +32,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`stick_select_lock_ms`** holds stick highlighting still after a letter is sent ([keyboard.md](keyboard.md)).
 - **`controller_map`** is either an inline table or a string path to another TOML file. The checked-in config uses `controller_map = "mappings.toml"`.
-- **`[sc2]`** and **`[ps4]`** are device feel: trigger thresholds, pad-origin stretch, haptics. They are not binding names.
+- **`[sc2]`** and **`[ps4]`** are device feel: trigger thresholds, pad-origin relative/stretch, haptics. They are not binding names.
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
@@ -83,7 +83,7 @@ Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.
 
 **Action semantics are not in this module.** Config stores `"toggleShift"` as a string. `KeyboardAction::try_from` decides what that means.
 
-**Device HID is not configured here beyond thresholds and stretch.** Button-to-action mapping is `controller_map`. Pad origin and trigger dead zones are `[sc2]` / `[ps4]`.
+**Device HID is not configured here beyond thresholds and pad origin.** Button-to-action mapping is `controller_map`. Pad origin and trigger dead zones are `[sc2]` / `[ps4]`.
 
 ## Summary
 

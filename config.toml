@@ -16,6 +16,7 @@ controller_map = "mappings.toml"
 record_file = "captures/kosk-%.krec"
 
 [sc2]
+pad_origin_relative = 0.0
 pad_origin_stretch = 0.0
 pad_origin_stretch_max_gain = 1.5
 pad_origin_settle_ms = 20

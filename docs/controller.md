@@ -12,7 +12,7 @@ The same module is also the parser for mapping keys. `mappings.toml` uses string
 
 The trait is a snapshot. One value is “this poll.” Implementations are `Debug` and cloneable through `box_clone`, because the debug plugin and the recording session need to keep a copy.
 
-Raw sticks are `left_stick_raw` / `right_stick_raw`. The default `left_stick` / `right_stick` methods apply `warp(..., config.stick_warp)` and then clamp to the square. Steam Controller 2’s mapped input overrides those methods so pad-origin stretch runs *before* warp (see [devices.md](devices.md)). Replay overrides them too: a tape already stored warped (and, for SC2, stretched) coordinates, so playing them back must not warp again.
+Raw sticks are `left_stick_raw` / `right_stick_raw`. The default `left_stick` / `right_stick` methods apply `warp(..., config.stick_warp)` and then clamp to the square. Steam Controller 2’s mapped input overrides `left_pad` / `right_pad` so pad-origin mapping runs *before* warp (see [devices.md](devices.md)). Replay overrides them too: a tape already stored warped (and, for SC2, origin-mapped) coordinates, so playing them back must not warp again.
 
 Digital controls are one method per button. Names are semantic rather than PlayStation- or Steam-specific: `face_bottom` is Cross on a DualShock 4 and A on a Steam Controller. Pads (`pad_left`, `pad_right`), paddles (`l4`, `l5`, `r4`, `r5`), and Quick Access (`btn_quick_access`) default to false so DualShock 4 does not have to mention them.
 

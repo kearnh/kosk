@@ -206,8 +206,11 @@ pub struct Config {
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Sc2Config {
-    /// Blend toward remaining-range stretch from first-touch origin.
-    /// `0` = absolute pad (current behavior), `1` = full short-edge stretch.
+    /// Where pad zero sits: `0` = pad center, `1` = first settled touch.
+    #[serde(default = "default_pad_origin_relative")]
+    pub pad_origin_relative: f32,
+
+    /// Short-edge leftover stretch from the blended origin. `0` = 1:1 delta.
     #[serde(default = "default_pad_origin_stretch")]
     pub pad_origin_stretch: f32,
 
@@ -235,6 +238,7 @@ pub struct Sc2Config {
 impl Default for Sc2Config {
     fn default() -> Self {
         Self {
+            pad_origin_relative: default_pad_origin_relative(),
             pad_origin_stretch: default_pad_origin_stretch(),
             pad_origin_stretch_max_gain: default_pad_origin_stretch_max_gain(),
             pad_origin_settle_ms: default_pad_origin_settle_ms(),
@@ -387,6 +391,10 @@ fn default_start_layout() -> String {
 
 fn default_stick_select_lock_ms() -> u64 {
     100
+}
+
+fn default_pad_origin_relative() -> f32 {
+    0.0
 }
 
 fn default_pad_origin_stretch() -> f32 {

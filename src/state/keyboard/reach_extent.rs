@@ -47,6 +47,7 @@ pub(crate) fn compute_pad_envelope(
     layout: &KeyboardLayout,
     side: StickSide,
     stick_warp: f32,
+    relative: f32,
     stretch_k: f32,
     stretch_max_gain: f32,
 ) -> Option<ReachEnvelope> {
@@ -54,10 +55,10 @@ pub(crate) fn compute_pad_envelope(
         layout,
         side,
         stick_warp,
+        relative,
         stretch_k,
         stretch_max_gain,
-        -1.0,
-        1.0,
+        false,
     )
 }
 
@@ -65,6 +66,7 @@ pub(crate) fn compute_safe_pad_envelope(
     layout: &KeyboardLayout,
     side: StickSide,
     stick_warp: f32,
+    relative: f32,
     stretch_k: f32,
     stretch_max_gain: f32,
 ) -> Option<ReachEnvelope> {
@@ -72,10 +74,10 @@ pub(crate) fn compute_safe_pad_envelope(
         layout,
         side,
         stick_warp,
+        relative,
         stretch_k,
         stretch_max_gain,
-        -SAFE_ORIGIN_LIMIT,
-        SAFE_ORIGIN_LIMIT,
+        true,
     )
 }
 
@@ -83,22 +85,26 @@ fn compute_pad_envelope_with_origin_range(
     layout: &KeyboardLayout,
     side: StickSide,
     stick_warp: f32,
+    relative: f32,
     stretch_k: f32,
     stretch_max_gain: f32,
-    origin_min: f32,
-    origin_max: f32,
+    safe: bool,
 ) -> Option<ReachEnvelope> {
     layout.captured_centres.as_ref()?;
 
-    let origins = if stretch_k == 0.0 {
+    let relative = relative.clamp(0.0, 1.0);
+    let touches = if relative == 0.0 {
         vec![(0.0, 0.0)]
+    } else if safe {
+        sample_grid(-SAFE_ORIGIN_LIMIT, SAFE_ORIGIN_LIMIT)
     } else {
-        sample_grid(origin_min, origin_max)
+        sample_grid(-1.0, 1.0)
     };
     let raw_samples = sample_domain(InputDomain::UnitSquare);
-    let mut points = Vec::with_capacity(origins.len() * raw_samples.len());
+    let mut points = Vec::with_capacity(touches.len() * raw_samples.len());
 
-    for origin in origins {
+    for touch in touches {
+        let origin = (touch.0 * relative, touch.1 * relative);
         for raw in &raw_samples {
             let stretched = stretch_stick(*raw, origin, stretch_k, stretch_max_gain);
             let warped = warp(stretched, stick_warp);
@@ -308,7 +314,7 @@ keys = [{ key = "a" }]
     #[test]
     fn pad_envelope_ignores_layout_bounds() {
         let layout = bounded_test_layout();
-        let envelope = compute_pad_envelope(&layout, StickSide::Left, 0.0, 0.0, 1.5).unwrap();
+        let envelope = compute_pad_envelope(&layout, StickSide::Left, 0.0, 0.0, 0.0, 1.5).unwrap();
         assert!(envelope.fill_hull.contains(&Pos2::new(11.0, 21.0)));
     }
 
@@ -340,7 +346,15 @@ keys = [{ key = "a" }]
     fn zero_stretch_pad_matches_square_stick_domain() {
         let layout = test_layout();
         let stick = compute_stick_envelope(&layout, StickSide::Right, 1.0).unwrap();
-        let pad = compute_pad_envelope(&layout, StickSide::Right, 1.0, 0.0, 1.5).unwrap();
+        let pad = compute_pad_envelope(&layout, StickSide::Right, 1.0, 0.0, 0.0, 1.5).unwrap();
+        assert_eq!(stick.fill_hull, pad.fill_hull);
+    }
+
+    #[test]
+    fn relative_zero_stretch_still_matches_square_stick_domain() {
+        let layout = test_layout();
+        let stick = compute_stick_envelope(&layout, StickSide::Right, 1.0).unwrap();
+        let pad = compute_pad_envelope(&layout, StickSide::Right, 1.0, 0.0, 1.0, 1.5).unwrap();
         assert_eq!(stick.fill_hull, pad.fill_hull);
     }
 

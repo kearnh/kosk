@@ -9,7 +9,7 @@ Start with [overview.md](overview.md) if you are new to the repository. After th
 1. [overview.md](overview.md) — process, window, and the two threads.
 2. [config.md](config.md) — `config.toml`, CLI flags, live reload, and saving.
 3. [controller.md](controller.md) — the `ControllerInput` trait, button names, discovery, and stick warp.
-4. [devices.md](devices.md) — DualShock 4 and Steam Controller 2 HID, including pad-origin stretch.
+4. [devices.md](devices.md) — DualShock 4 and Steam Controller 2 HID, including pad-origin mapping.
 5. [bindings.md](bindings.md) — how mappings.toml turns button holds into typed actions.
 6. [record-replay.md](record-replay.md) — `.krec` tapes, `toggleRecord`, and the replay controller.
 7. [app-state.md](app-state.md) — `AppState`, modes, and `process_events`.
