@@ -51,6 +51,16 @@ touchpad_right_haptic = "low"
 trigger_left_threshold = 40
 trigger_right_threshold = 40
 
+[battery]
+draw_button = false
+empty = [220, 50, 50, 255]
+low = [230, 140, 40, 255]
+medium = [230, 200, 60, 255]
+high = [120, 190, 80, 255]
+full = [50, 200, 90, 255]
+charging = [70, 180, 220, 255]
+unknown = [180, 180, 180, 255]
+
 [replay]
 file = "captures/kosk-000.krec"
 

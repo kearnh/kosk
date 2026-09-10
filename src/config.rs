@@ -190,6 +190,10 @@ pub struct Config {
     #[serde(default)]
     pub ps4: Ps4Config,
 
+    /// Battery indicator appearance.
+    #[serde(default)]
+    pub battery: BatteryConfig,
+
     /// Template for `toggleRecord` captures. Must contain exactly one `%` (3-digit index).
     #[serde(default)]
     pub record_file: Option<String>,
@@ -264,6 +268,75 @@ impl Default for Ps4Config {
         Self {
             trigger_left_threshold: default_trigger_threshold(),
             trigger_right_threshold: default_trigger_threshold(),
+        }
+    }
+}
+
+const BATTERY_COLOR_EMPTY: [u8; 4] = [220, 50, 50, 255];
+const BATTERY_COLOR_LOW: [u8; 4] = [230, 140, 40, 255];
+const BATTERY_COLOR_MEDIUM: [u8; 4] = [230, 200, 60, 255];
+const BATTERY_COLOR_HIGH: [u8; 4] = [120, 190, 80, 255];
+const BATTERY_COLOR_FULL: [u8; 4] = [50, 200, 90, 255];
+const BATTERY_COLOR_CHARGING: [u8; 4] = [70, 180, 220, 255];
+const BATTERY_COLOR_UNKNOWN: [u8; 4] = [180, 180, 180, 255];
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct BatteryConfig {
+    /// Draw the battery slot with the same filled key background.
+    #[serde(default = "default_battery_draw_button")]
+    pub draw_button: bool,
+    #[serde(default = "default_battery_color_empty")]
+    pub empty: [u8; 4],
+    #[serde(default = "default_battery_color_low")]
+    pub low: [u8; 4],
+    #[serde(default = "default_battery_color_medium")]
+    pub medium: [u8; 4],
+    #[serde(default = "default_battery_color_high")]
+    pub high: [u8; 4],
+    #[serde(default = "default_battery_color_full")]
+    pub full: [u8; 4],
+    #[serde(default = "default_battery_color_charging")]
+    pub charging: [u8; 4],
+    #[serde(default = "default_battery_color_unknown")]
+    pub unknown: [u8; 4],
+}
+
+fn default_battery_draw_button() -> bool {
+    false
+}
+fn default_battery_color_empty() -> [u8; 4] {
+    BATTERY_COLOR_EMPTY
+}
+fn default_battery_color_low() -> [u8; 4] {
+    BATTERY_COLOR_LOW
+}
+fn default_battery_color_medium() -> [u8; 4] {
+    BATTERY_COLOR_MEDIUM
+}
+fn default_battery_color_high() -> [u8; 4] {
+    BATTERY_COLOR_HIGH
+}
+fn default_battery_color_full() -> [u8; 4] {
+    BATTERY_COLOR_FULL
+}
+fn default_battery_color_charging() -> [u8; 4] {
+    BATTERY_COLOR_CHARGING
+}
+fn default_battery_color_unknown() -> [u8; 4] {
+    BATTERY_COLOR_UNKNOWN
+}
+
+impl Default for BatteryConfig {
+    fn default() -> Self {
+        Self {
+            draw_button: default_battery_draw_button(),
+            empty: default_battery_color_empty(),
+            low: default_battery_color_low(),
+            medium: default_battery_color_medium(),
+            high: default_battery_color_high(),
+            full: default_battery_color_full(),
+            charging: default_battery_color_charging(),
+            unknown: default_battery_color_unknown(),
         }
     }
 }
@@ -426,6 +499,14 @@ pub fn ps4() -> Ps4Config {
     CONFIG_INSTANCE
         .get()
         .map(|instance| instance.lock().unwrap().ps4.clone())
+        .unwrap_or_default()
+}
+
+/// Battery indicator settings, or defaults when config is not initialized.
+pub fn battery() -> BatteryConfig {
+    CONFIG_INSTANCE
+        .get()
+        .map(|instance| instance.lock().unwrap().battery.clone())
         .unwrap_or_default()
 }
 

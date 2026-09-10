@@ -60,6 +60,63 @@ fn battery_percent_text(status: Option<BatteryStatus>) -> String {
     }
 }
 
+fn rgba(c: [u8; 4]) -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+}
+
+fn battery_color(status: Option<BatteryStatus>, cfg: &config::BatteryConfig) -> egui::Color32 {
+    let c = match status {
+        None => cfg.unknown,
+        Some(s) if s.charging => cfg.charging,
+        Some(s) => match s.percent {
+            0..=BATTERY_PCT_EMPTY => cfg.empty,
+            p if p <= BATTERY_PCT_LOW => cfg.low,
+            p if p <= BATTERY_PCT_MEDIUM => cfg.medium,
+            p if p <= BATTERY_PCT_HIGH => cfg.high,
+            _ => cfg.full,
+        },
+    };
+    rgba(c)
+}
+
+fn draw_battery(
+    ui: &mut Ui,
+    layout: &KeyboardLayout,
+    batt: &layout::BatteryItem,
+    row_height: f32,
+    status: Option<BatteryStatus>,
+    cfg: &config::BatteryConfig,
+    label_cache: &mut display_icon::LabelCache,
+) {
+    let font_size = batt.font_size.unwrap_or(layout.font_size);
+    let color = battery_color(status, cfg);
+    let icon_name = battery_icon_name(status);
+    let icon = format!("{{icon:{icon_name}:fill}}");
+    let icon_label = label_cache.get(&icon, row_height * 0.9, color);
+    let size = egui::Vec2::new(layout.scale_x(batt.width), row_height);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+
+    if cfg.draw_button {
+        ui.painter().rect_filled(
+            rect,
+            ui.visuals().widgets.inactive.corner_radius,
+            ui.visuals().widgets.inactive.bg_fill,
+        );
+    }
+
+    let icon_size = row_height * 0.9;
+    let icon_center = egui::Pos2::new(rect.left() + icon_size * 0.5, rect.center().y);
+    let icon_rect = egui::Rect::from_center_size(icon_center, egui::Vec2::splat(icon_size));
+    ui.put(icon_rect, egui::Label::new(icon_label));
+    ui.painter().text(
+        egui::Pos2::new(icon_rect.right() + 4.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        battery_percent_text(status),
+        egui::FontId::proportional(font_size),
+        color,
+    );
+}
+
 fn stick_side_sources(left: bool) -> [EventSource; 2] {
     if left {
         [
@@ -468,6 +525,7 @@ impl KeyboardState {
         };
 
         let publish_geometry = self.config.is_none();
+        let batt_cfg = self.cfg().battery;
 
         // Split field borrows so label_cache and layouts can be used together.
         let KeyboardState {
@@ -528,19 +586,15 @@ impl KeyboardState {
                     ui.add_space(current_layout.scale_x(indent));
 
                     let row_height = current_layout.scale_y(height);
+                    let mut row_centres = vec![None; items.len()];
 
-                    let mut row_centres = Vec::new();
-
-                    for item in items {
+                    let mut draw_item = |ui: &mut Ui, col_idx: usize, item: &layout::RowItem| {
                         match item {
                             layout::RowItem::Key(key) => {
                                 // Skip rendering for SKIP keys - just add space
                                 if key.is_skip() {
                                     ui.add_space(current_layout.scale_x(key.width));
-                                    if capturing_centres {
-                                        row_centres.push(None);
-                                    }
-                                    continue;
+                                    return;
                                 }
 
                                 let appearance = key.appearance(&display_ctx);
@@ -600,7 +654,7 @@ impl KeyboardState {
                                 let response = ui.place(rect, button.truncate());
 
                                 if capturing_centres {
-                                    row_centres.push(Some(rect.center()));
+                                    row_centres[col_idx] = Some(rect.center());
                                 }
 
                                 // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
@@ -632,28 +686,34 @@ impl KeyboardState {
                                 }
                             }
                             layout::RowItem::Battery(batt) => {
-                                let font_size = batt.font_size.unwrap_or(current_layout.font_size);
-                                let color = ui.style().visuals.widgets.inactive.fg_stroke.color;
-                                let icon = format!("{{icon:{}}}", battery_icon_name(*last_battery));
-                                let label = label_cache.get(&icon, font_size, color);
-                                let button = egui::Button::new(label);
-                                let size =
-                                    egui::Vec2::new(current_layout.scale_x(batt.width), row_height);
-                                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                                let response = ui.place(rect, button.truncate());
-                                if capturing_centres {
-                                    row_centres.push(None);
-                                }
-                                ui.painter().text(
-                                    response.rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
-                                    egui::Align2::LEFT_BOTTOM,
-                                    battery_percent_text(*last_battery),
-                                    egui::FontId::proportional(font_size * 0.6),
-                                    egui::Color32::WHITE,
+                                draw_battery(
+                                    ui,
+                                    current_layout,
+                                    batt,
+                                    row_height,
+                                    *last_battery,
+                                    &batt_cfg,
+                                    label_cache,
                                 );
                             }
                         }
+                    };
+
+                    for (col_idx, item) in items.iter().enumerate() {
+                        if item.align() == layout::ItemAlign::Left {
+                            draw_item(ui, col_idx, item);
+                        }
                     }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
+                        for (col_idx, item) in items.iter().enumerate() {
+                            if item.align() == layout::ItemAlign::Right {
+                                draw_item(ui, col_idx, item);
+                            }
+                        }
+                    });
+
                     if capturing_centres {
                         captured_data.push(row_centres);
                     }
@@ -816,6 +876,42 @@ mod send_key_tests {
         assert_eq!(icon, "battery-medium");
         kb.note_battery(None);
         assert_eq!(battery_percent_text(kb.last_battery), "42%");
+    }
+
+    #[test]
+    fn battery_color_uses_config_levels() {
+        let cfg = config::BatteryConfig::default();
+        assert_eq!(battery_color(None, &cfg), rgba(cfg.unknown));
+        assert_eq!(
+            battery_color(
+                Some(BatteryStatus {
+                    percent: 5,
+                    charging: false
+                }),
+                &cfg
+            ),
+            rgba(cfg.empty)
+        );
+        assert_eq!(
+            battery_color(
+                Some(BatteryStatus {
+                    percent: 12,
+                    charging: true
+                }),
+                &cfg
+            ),
+            rgba(cfg.charging)
+        );
+        assert_eq!(
+            battery_color(
+                Some(BatteryStatus {
+                    percent: 99,
+                    charging: false
+                }),
+                &cfg
+            ),
+            rgba(cfg.full)
+        );
     }
 
     #[test]

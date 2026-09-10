@@ -246,5 +246,6 @@ font_size = 14.0
 
 [[rows.items]]
 type = "battery"
-width = 0.5
-font_size = 14.0
+align = "right"
+width = 2.0
+font_size = 16.0

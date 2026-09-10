@@ -117,6 +117,8 @@ pub struct KeyButton {
     #[serde(default = "default_key_width_unit")]
     pub width: UnscaledPixelUnitX,
     pub font_size: Option<f32>,
+    #[serde(default)]
+    pub align: ItemAlign,
 }
 
 fn default_selectable() -> bool {
@@ -125,6 +127,14 @@ fn default_selectable() -> bool {
 
 fn default_key_width_unit() -> UnscaledPixelUnitX {
     1.0.into()
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemAlign {
+    #[default]
+    Left,
+    Right,
 }
 
 impl KeyButton {
@@ -192,6 +202,8 @@ pub struct BatteryItem {
     #[serde(default = "default_key_width_unit")]
     pub width: UnscaledPixelUnitX,
     pub font_size: Option<f32>,
+    #[serde(default)]
+    pub align: ItemAlign,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -235,6 +247,13 @@ impl RowItem {
         match self {
             Self::Key(k) => k.width,
             Self::Battery(b) => b.width,
+        }
+    }
+
+    pub fn align(&self) -> ItemAlign {
+        match self {
+            Self::Key(k) => k.align,
+            Self::Battery(b) => b.align,
         }
     }
 }
@@ -1262,6 +1281,24 @@ key = "b"
         )
         .unwrap();
         assert!(matches!(alias.rows[0].items[0], RowItem::Key(_)));
+    }
+
+    #[test]
+    fn item_align_defaults_left_and_parses_right() {
+        let file: KeyboardLayoutFile = toml::from_str(
+            r#"
+[[rows]]
+indent = 0.0
+[[rows.items]]
+key = "a"
+[[rows.items]]
+type = "battery"
+align = "right"
+"#,
+        )
+        .unwrap();
+        assert_eq!(file.rows[0].items[0].align(), ItemAlign::Left);
+        assert_eq!(file.rows[0].items[1].align(), ItemAlign::Right);
     }
 
     #[test]
