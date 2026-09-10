@@ -351,6 +351,12 @@ mod tests {
             "arrow-line-right",
             "stop",
             "record",
+            "battery-empty",
+            "battery-low",
+            "battery-medium",
+            "battery-high",
+            "battery-full",
+            "battery-charging",
         ] {
             assert!(
                 Icon::from_name(name).is_some(),

@@ -395,6 +395,10 @@ impl AppState {
         Ok(())
     }
 
+    pub fn note_battery(&mut self, input: &dyn ControllerInput) {
+        keyboard::with_mut(|kb| kb.note_battery(input.battery()));
+    }
+
     /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.
     pub fn reset_controller_input(&mut self, ctx: &Context) -> Result<()> {
         self.reset_current_mode_controller(None);

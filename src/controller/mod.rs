@@ -36,6 +36,12 @@ pub(crate) fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
     (x, y)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatteryStatus {
+    pub percent: u8,
+    pub charging: bool,
+}
+
 #[allow(unused)]
 pub trait ControllerInput: Debug {
     fn left_stick_raw(&self) -> (f32, f32);
@@ -75,6 +81,11 @@ pub trait ControllerInput: Debug {
 
     /// Whether this snapshot should reach the app (vs being swallowed as idle).
     fn is_engaged(&self) -> bool;
+
+    /// Last known battery, if this device reports it.
+    fn battery(&self) -> Option<BatteryStatus> {
+        None
+    }
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
 }

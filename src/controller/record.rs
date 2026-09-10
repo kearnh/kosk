@@ -727,8 +727,8 @@ mod tests {
             },
             config_toml: None,
             layouts: vec![
-                ("other".into(), "pad_x = 1\n[[rows]]\nkeys = []\n".into()),
-                ("main".into(), "pad_x = 0.1\n[[rows]]\nkeys = []\n".into()),
+                ("other".into(), "pad_x = 1\n[[rows]]\nitems = []\n".into()),
+                ("main".into(), "pad_x = 0.1\n[[rows]]\nitems = []\n".into()),
             ],
         }
     }
@@ -939,7 +939,7 @@ mod tests {
 
     #[test]
     fn missing_version_line_is_v0() {
-        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
         let mut bytes = format!(
             "{TAPE_MAGIC}\ncurrent_layout main\nscale 30 32 3 2.5\nlayout main {}\n",
             layout.len()
@@ -964,7 +964,7 @@ mod tests {
                 stick_scale_y: 2.5,
             },
             config_toml: Some("event_debounce_ms = 123\n".into()),
-            layouts: vec![("main".into(), "pad_x = 0.1\n[[rows]]\nkeys = []\n".into())],
+            layouts: vec![("main".into(), "pad_x = 0.1\n[[rows]]\nitems = []\n".into())],
         }
     }
 
@@ -984,7 +984,7 @@ mod tests {
 
     #[test]
     fn v1_missing_config_errors() {
-        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
         let mut bytes = format!(
             "{TAPE_MAGIC}\nversion 1\ncurrent_layout main\nscale 1 1 1 1\nlayout main {}\n",
             layout.len()
@@ -1007,7 +1007,7 @@ mod tests {
     #[test]
     fn v0_must_not_contain_config_blob() {
         let cfg = "event_debounce_ms = 1\n";
-        let layout = "pad_x = 0\n[[rows]]\nkeys = []\n";
+        let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
         let mut bytes = format!(
             "{TAPE_MAGIC}\ncurrent_layout main\nscale 1 1 1 1\nconfig {}\n",
             cfg.len()

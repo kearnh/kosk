@@ -7,120 +7,120 @@ font_size = 24.0
 indent = 0.0
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "`", shift = "~" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "1", shift = "!" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "2", shift = "@" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "3", shift = "#" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "4", shift = "$" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "5", shift = "%" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "6", shift = "^" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "7", shift = "&" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "8", shift = "*" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "9", shift = "(" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "0", shift = ")" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "-", shift = "_" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "=", shift = "+" }
 
 [[rows]]
 indent = 1.0
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "q"
 
-[[rows.keys]]
+[[rows.items]]
 key = "w"
 
-[[rows.keys]]
+[[rows.items]]
 key = "e"
 
-[[rows.keys]]
+[[rows.items]]
 key = "r"
 
-[[rows.keys]]
+[[rows.items]]
 key = "t"
 
-[[rows.keys]]
+[[rows.items]]
 key = "y"
 
-[[rows.keys]]
+[[rows.items]]
 key = "u"
 
-[[rows.keys]]
+[[rows.items]]
 key = "i"
 
-[[rows.keys]]
+[[rows.items]]
 key = "o"
 
-[[rows.keys]]
+[[rows.items]]
 key = "p"
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "[", shift = "{" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "]", shift = "}" }
 
 [[rows]]
 indent = 1.5
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "a"
 
-[[rows.keys]]
+[[rows.items]]
 key = "s"
 
-[[rows.keys]]
+[[rows.items]]
 key = "d"
 
-[[rows.keys]]
+[[rows.items]]
 key = "f"
 
-[[rows.keys]]
+[[rows.items]]
 key = "g"
 
-[[rows.keys]]
+[[rows.items]]
 key = "h"
 
-[[rows.keys]]
+[[rows.items]]
 key = "j"
 
-[[rows.keys]]
+[[rows.items]]
 key = "k"
 
-[[rows.keys]]
+[[rows.items]]
 key = "l"
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = ";", shift = ":" }
 
-[[rows.keys]]
+[[rows.items]]
 key = "Return"
 width = 2.0
 
@@ -128,44 +128,44 @@ width = 2.0
 indent = 0.0
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "Shift"
 width = 2.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "z"
 
-[[rows.keys]]
+[[rows.items]]
 key = "x"
 
-[[rows.keys]]
+[[rows.items]]
 key = "c"
 
-[[rows.keys]]
+[[rows.items]]
 key = "v"
 
-[[rows.keys]]
+[[rows.items]]
 key = "b"
 
-[[rows.keys]]
+[[rows.items]]
 key = "n"
 
-[[rows.keys]]
+[[rows.items]]
 key = "m"
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = ",", shift = "<" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = ".", shift = ">" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "/", shift = "?" }
 
 [[rows]]
 indent = 3.4
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = " "
 width = 7.0

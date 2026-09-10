@@ -227,7 +227,7 @@ stick_rest_left = [0, 0]
 stick_rest_right = [0, 0]
 [[rows]]
 indent = 0.0
-keys = [{ key = "a" }]
+items = [{ key = "a" }]
 "#;
         let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
@@ -243,7 +243,7 @@ left = [{ min = { x = -0.5, y = -0.5 }, max = { x = 0.5, y = 0.5 } }]
 right = [{ min = { x = -0.5, y = -0.5 }, max = { x = 0.5, y = 0.5 } }]
 [[rows]]
 indent = 0.0
-keys = [{ key = "a" }]
+items = [{ key = "a" }]
 "#;
         let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);

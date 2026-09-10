@@ -4,12 +4,19 @@ use std::sync::RwLock;
 
 use strum::IntoEnumIterator;
 
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::{BatteryStatus, ControllerButton, ControllerInput};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
 const STICK_OFFSET: i32 = 128;
 const STICK_THRESHOLD: i32 = 10;
+const DS4_REPORT_USB: u8 = 0x01;
+const DS4_REPORT_ENHANCED: u8 = 0x11;
+const DS4_BATTERY_USB: usize = 30;
+const DS4_BATTERY_ENHANCED: usize = 32;
+const DS4_BATTERY_CABLE: u8 = 0x10;
+const DS4_BATTERY_NIBBLE: u8 = 0x0F;
+const DS4_BATTERY_BUCKETS: u16 = 10;
 
 #[allow(unused)]
 #[derive(Default, Clone, Debug)]
@@ -33,6 +40,7 @@ pub struct Ps4InputData {
     options: bool,
     share: bool,
     ps: bool,
+    battery: Option<BatteryStatus>,
 }
 
 impl Ps4InputData {
@@ -64,14 +72,14 @@ impl Ps4Input {
 
         // Determine the offset where the BasicGetStateData starts
         let state_offset = match report_id {
-            0x01 => {
+            DS4_REPORT_USB => {
                 // Standard report - state data starts at byte 1
                 if report.len() < 10 {
                     return false;
                 }
                 1
             }
-            0x11 => {
+            DS4_REPORT_ENHANCED => {
                 // Enhanced report (Steam mode) - state data starts at byte 3
                 // Report structure: [0x11, flags1, flags2, state_data...]
                 if report.len() < 12 {
@@ -187,6 +195,9 @@ impl Ps4Input {
         data.options = options;
         data.share = share;
         data.ps = ps;
+        if let Some(battery) = parse_ds4_battery(report) {
+            data.battery = Some(battery);
+        }
 
         is_active
     }
@@ -196,10 +207,34 @@ impl Ps4Input {
     }
 }
 
+pub(crate) fn parse_ds4_battery(report: &[u8]) -> Option<BatteryStatus> {
+    let offset = match *report.first()? {
+        DS4_REPORT_USB => DS4_BATTERY_USB,
+        DS4_REPORT_ENHANCED => DS4_BATTERY_ENHANCED,
+        _ => return None,
+    };
+    let status = *report.get(offset)?;
+    let raw = status & DS4_BATTERY_NIBBLE;
+    let cable = status & DS4_BATTERY_CABLE != 0;
+    let charging = cable && u16::from(raw) <= DS4_BATTERY_BUCKETS;
+    let mut capacity = u16::from(raw);
+    if !cable {
+        capacity += 1;
+    }
+    if capacity > DS4_BATTERY_BUCKETS {
+        capacity = DS4_BATTERY_BUCKETS;
+    }
+    Some(BatteryStatus {
+        percent: (capacity * DS4_BATTERY_BUCKETS) as u8,
+        charging,
+    })
+}
+
 pub struct Ps4Device {
     input: Ps4Input,
     device: HidDevice,
     was_active: bool,
+    last_battery: Option<BatteryStatus>,
 }
 
 impl Ps4Device {
@@ -208,6 +243,7 @@ impl Ps4Device {
             input: Default::default(),
             device,
             was_active: false,
+            last_battery: None,
         }
     }
 
@@ -242,10 +278,15 @@ impl Iterator for Ps4Device {
                     let data = self.input.read();
                     if data.is_engaged() {
                         self.was_active = true;
+                        self.last_battery = data.battery;
                         return Some(Some(Box::new(data)));
                     }
                     if std::mem::replace(&mut self.was_active, false) {
                         return Some(None);
+                    }
+                    if data.battery.is_some() && data.battery != self.last_battery {
+                        self.last_battery = data.battery;
+                        return Some(Some(Box::new(data)));
                     }
                     continue;
                 }
@@ -305,7 +346,63 @@ impl ControllerInput for Ps4InputData {
         ControllerButton::iter().any(|b| self.query(b)) || self.sticks_active()
     }
 
+    fn battery(&self) -> Option<BatteryStatus> {
+        self.battery
+    }
+
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usb_battery_discharging_and_charging() {
+        let mut r = [0u8; 64];
+        r[0] = DS4_REPORT_USB;
+        r[DS4_BATTERY_USB] = 4; // no cable, raw 4 → 50%
+        assert_eq!(
+            parse_ds4_battery(&r),
+            Some(BatteryStatus {
+                percent: 50,
+                charging: false
+            })
+        );
+
+        r[DS4_BATTERY_USB] = DS4_BATTERY_CABLE | 3; // charging, 30%
+        assert_eq!(
+            parse_ds4_battery(&r),
+            Some(BatteryStatus {
+                percent: 30,
+                charging: true
+            })
+        );
+
+        r[DS4_BATTERY_USB] = DS4_BATTERY_CABLE | 11; // charged
+        assert_eq!(
+            parse_ds4_battery(&r),
+            Some(BatteryStatus {
+                percent: 100,
+                charging: false
+            })
+        );
+    }
+
+    #[test]
+    fn enhanced_report_uses_offset_32() {
+        let mut r = [0u8; 64];
+        r[0] = DS4_REPORT_ENHANCED;
+        r[DS4_BATTERY_ENHANCED] = 9; // no cable, raw 9 → 100%
+        assert_eq!(
+            parse_ds4_battery(&r),
+            Some(BatteryStatus {
+                percent: 100,
+                charging: false
+            })
+        );
+        assert!(parse_ds4_battery(&[0x02]).is_none());
     }
 }

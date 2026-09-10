@@ -17,46 +17,46 @@ right = [{ min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } }]
 indent = 0.0
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "1", shift = "!" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "2", shift = "@" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "3", shift = "#" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "4", shift = "$" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "5", shift = "%" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "6", shift = "^" }
 width = 1.2
 
-[[rows.keys]]
+[[rows.items]]
 key = "Skip"
 width = 0.25
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "7", shift = "&" }
 width = 1.2
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "8", shift = "*" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "9", shift = "(" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "0", shift = ")" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "-", shift = "_" }
 
-[[rows.keys]]
+[[rows.items]]
 key = "Backspace"
 display = "{icon:backspace}"
 
@@ -64,43 +64,43 @@ display = "{icon:backspace}"
 indent = 0.0
 height = 1.3
 
-[[rows.keys]]
+[[rows.items]]
 key = "q"
 width = 1.4
 
-[[rows.keys]]
+[[rows.items]]
 key = "w"
 
-[[rows.keys]]
+[[rows.items]]
 key = "e"
 
-[[rows.keys]]
+[[rows.items]]
 key = "r"
 width = 1.3
 
-[[rows.keys]]
+[[rows.items]]
 key = "t"
 width = 1.6
 
-[[rows.keys]]
+[[rows.items]]
 key = "Skip"
 width = 0.25
 
-[[rows.keys]]
+[[rows.items]]
 key = "y"
 width = 1.6
 
-[[rows.keys]]
+[[rows.items]]
 key = "u"
 width = 1.4
 
-[[rows.keys]]
+[[rows.items]]
 key = "i"
 
-[[rows.keys]]
+[[rows.items]]
 key = "o"
 
-[[rows.keys]]
+[[rows.items]]
 key = "p"
 width = 1.4
 
@@ -108,46 +108,46 @@ width = 1.4
 indent = 0.0
 height = 1.1
 
-[[rows.keys]]
+[[rows.items]]
 key = "switchState.menu"
 display = "{icon:list}"
 width = 0.8
 font_size = 18.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "a"
 
-[[rows.keys]]
+[[rows.items]]
 key = "s"
 
-[[rows.keys]]
+[[rows.items]]
 key = "d"
 
-[[rows.keys]]
+[[rows.items]]
 key = "f"
 
-[[rows.keys]]
+[[rows.items]]
 key = "g"
 width = 1.4
 
-[[rows.keys]]
+[[rows.items]]
 key = "Skip"
 width = 0.25
 
-[[rows.keys]]
+[[rows.items]]
 key = "h"
 width = 1.5
 
-[[rows.keys]]
+[[rows.items]]
 key = "j"
 
-[[rows.keys]]
+[[rows.items]]
 key = "k"
 
-[[rows.keys]]
+[[rows.items]]
 key = "l"
 
-[[rows.keys]]
+[[rows.items]]
 key = "Return"
 display = "{icon:key-return}"
 width = 1.8
@@ -156,47 +156,47 @@ width = 1.8
 indent = 0.0
 height = 1.3
 
-[[rows.keys]]
+[[rows.items]]
 key = "toggleShift"
 display = "{icon:arrow-fat-up}"
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = ",", shift = "<" }
 
-[[rows.keys]]
+[[rows.items]]
 key = "z"
 
-[[rows.keys]]
+[[rows.items]]
 key = "x"
 
-[[rows.keys]]
+[[rows.items]]
 key = "c"
 
-[[rows.keys]]
+[[rows.items]]
 key = "v"
 width = 1.2
 
-[[rows.keys]]
+[[rows.items]]
 key = "Skip"
 width = 0.25
 
-[[rows.keys]]
+[[rows.items]]
 key = "b"
 width = 1.2
 
-[[rows.keys]]
+[[rows.items]]
 key = "n"
 
-[[rows.keys]]
+[[rows.items]]
 key = "m"
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = "?", shift = "/" }
 
-[[rows.keys]]
+[[rows.items]]
 key = { normal = ".", shift = ">" }
 
-[[rows.keys]]
+[[rows.items]]
 key = "toggleShift"
 display = "{icon:arrow-fat-up}"
 
@@ -204,21 +204,21 @@ display = "{icon:arrow-fat-up}"
 indent = 0.0
 height = 1.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "Tab"
 display = "{icon:arrow-line-right}"
 
-[[rows.keys]]
+[[rows.items]]
 key = " "
 width = 9.1
 display_modifiers = true
 
-[[rows.keys]]
+[[rows.items]]
 key = "switchLayout.symbols"
 display = "*"
 width = 1.0
 
-# [[rows.keys]]
+# [[rows.items]]
 # key = "exit"
 # display = "Done"
 # width = 3.3
@@ -227,13 +227,13 @@ width = 1.0
 indent = 0.0
 height = 0.8
 
-[[rows.keys]]
+[[rows.items]]
 key = "switchState.textInput"
 display = "i"
 width = 0.5
 font_size = 16.0
 
-[[rows.keys]]
+[[rows.items]]
 key = "toggleRecord"
 display = [
     { text = "{icon:stop:fill}", when = "recording", button_color = [
@@ -249,5 +249,10 @@ display = [
     ] },
     { text = "{icon:record:fill}" },
 ]
+width = 0.5
+font_size = 14.0
+
+[[rows.items]]
+type = "battery"
 width = 0.5
 font_size = 14.0

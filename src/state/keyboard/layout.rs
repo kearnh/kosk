@@ -187,6 +187,58 @@ impl KeyButton {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatteryItem {
+    #[serde(default = "default_key_width_unit")]
+    pub width: UnscaledPixelUnitX,
+    pub font_size: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum TypedRowItem {
+    Key(KeyButton),
+    Battery(BatteryItem),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum RowItemDe {
+    Typed(TypedRowItem),
+    Key(KeyButton),
+}
+
+#[derive(Debug, Clone)]
+pub enum RowItem {
+    Key(KeyButton),
+    Battery(BatteryItem),
+}
+
+impl<'de> Deserialize<'de> for RowItem {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match RowItemDe::deserialize(deserializer)? {
+            RowItemDe::Typed(TypedRowItem::Key(k)) | RowItemDe::Key(k) => Self::Key(k),
+            RowItemDe::Typed(TypedRowItem::Battery(b)) => Self::Battery(b),
+        })
+    }
+}
+
+impl RowItem {
+    pub fn as_key(&self) -> Option<&KeyButton> {
+        match self {
+            Self::Key(k) => Some(k),
+            Self::Battery(_) => None,
+        }
+    }
+
+    pub fn width(&self) -> UnscaledPixelUnitX {
+        match self {
+            Self::Key(k) => k.width,
+            Self::Battery(b) => b.width,
+        }
+    }
+}
+
 fn default_row_height_unit() -> UnscaledPixelUnitY {
     1.0.into()
 }
@@ -196,7 +248,8 @@ pub struct KeyboardRow {
     pub indent: UnscaledPixelUnitX,
     #[serde(default = "default_row_height_unit")]
     pub height: UnscaledPixelUnitY,
-    pub keys: Vec<KeyButton>,
+    #[serde(alias = "keys")]
+    pub items: Vec<RowItem>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -279,11 +332,14 @@ fn validate_stick_rest(rows: &[KeyboardRow], rest: Option<&StickRest>, field: &s
     let Some(r) = rows.get(row) else {
         anyhow::bail!("{field}: row {row} out of range ({} rows)", rows.len());
     };
-    let Some(key) = r.keys.get(col) else {
+    let Some(item) = r.items.get(col) else {
         anyhow::bail!(
-            "{field}: column {col} out of range (row {row} has {} keys)",
-            r.keys.len()
+            "{field}: column {col} out of range (row {row} has {} items)",
+            r.items.len()
         );
+    };
+    let Some(key) = item.as_key() else {
+        anyhow::bail!("{field}: [{row}, {col}] points at a non-key item");
     };
     if key.is_skip() {
         anyhow::bail!("{field}: [{row}, {col}] points at a Skip key");
@@ -477,7 +533,10 @@ impl KeyboardLayout {
 
     pub fn get_key_center(&self, key: &RawKey) -> Option<(f32, f32)> {
         for (row_idx, row) in self.rows.iter().enumerate() {
-            for (col_idx, key_button) in row.keys.iter().enumerate() {
+            for (col_idx, item) in row.items.iter().enumerate() {
+                let Some(key_button) = item.as_key() else {
+                    continue;
+                };
                 if key_button.key.normal == *key {
                     if let Some(centres) = &self.captured_centres {
                         let pos = centres[row_idx][col_idx]?;
@@ -499,19 +558,22 @@ impl KeyboardLayout {
 
         for (row_idx, row) in self.rows.iter().enumerate() {
             let mut hitboxes_row = Vec::new();
-            if row.keys.is_empty() {
+            if row.items.is_empty() {
                 key_hit_boxes.push(hitboxes_row);
                 continue;
             }
 
             let row_height = self.scale_y(row.height);
 
-            for (col_idx, key) in row.keys.iter().enumerate() {
+            for (col_idx, item) in row.items.iter().enumerate() {
                 if let Some(Some(pos)) = centres.get(row_idx).and_then(|r| r.get(col_idx)) {
                     let center_x = pos.x;
                     let center_y = pos.y;
 
-                    if key.key.normal != RawKey::Skip && key.selectable {
+                    let selectable_key = item
+                        .as_key()
+                        .filter(|k| k.key.normal != RawKey::Skip && k.selectable);
+                    if let Some(key) = selectable_key {
                         let width = self.scale_x(key.width);
                         if width / row_height >= 1.2 {
                             hitboxes_row.push(Some(HitBox::Ellipse {
@@ -654,7 +716,10 @@ impl KeyboardLayout {
         let centres = self.captured_centres.as_ref();
         let mut keys = Vec::new();
         for (row_idx, row) in self.rows.iter().enumerate() {
-            for (col_idx, key_button) in row.keys.iter().enumerate() {
+            for (col_idx, item) in row.items.iter().enumerate() {
+                let Some(key_button) = item.as_key() else {
+                    continue;
+                };
                 let Some(id) = wire_id(&key_button.key.normal) else {
                     continue; // Skip
                 };
@@ -758,7 +823,10 @@ impl KeyboardLayout {
                 if let Some(h) = h {
                     if let Some(d) = h.contains(x, y) {
                         if d < candidate.0 {
-                            let key_button = &self.rows[row_idx].keys[col_idx];
+                            let Some(key_button) = self.rows[row_idx].items[col_idx].as_key()
+                            else {
+                                continue;
+                            };
                             candidate = (d, Some(key_button.key.get(shifted)));
                         }
                     }
@@ -939,14 +1007,14 @@ fn draw_dashed_reach_envelope(painter: &Painter, envelope: &ReachEnvelope, side:
 }
 
 impl<'a> IntoIterator for &'a KeyboardLayout {
-    type Item = (&'a Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY);
+    type Item = (&'a Vec<RowItem>, UnscaledPixelUnitX, UnscaledPixelUnitY);
 
     type IntoIter =
         std::iter::Map<std::slice::Iter<'a, KeyboardRow>, fn(&'a KeyboardRow) -> Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        fn project(row: &KeyboardRow) -> (&Vec<KeyButton>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
-            (&row.keys, row.indent, row.height)
+        fn project(row: &KeyboardRow) -> (&Vec<RowItem>, UnscaledPixelUnitX, UnscaledPixelUnitY) {
+            (&row.items, row.indent, row.height)
         }
         self.rows.iter().map(project as fn(_) -> _)
     }
@@ -981,7 +1049,7 @@ mod tests {
 stick_rest_left = [0, 0]
 [[rows]]
 indent = 0.0
-keys = [ { key = "Skip" } ]
+items = [ { key = "Skip" } ]
 "#;
         let err = KeyboardLayout::load_with_scales(skip, 1.0, 1.0, 1.0, 1.0)
             .unwrap_err()
@@ -992,7 +1060,7 @@ keys = [ { key = "Skip" } ]
 stick_rest_right = [0, 9]
 [[rows]]
 indent = 0.0
-keys = [ { key = "a" } ]
+items = [ { key = "a" } ]
 "#;
         let err = KeyboardLayout::load_with_scales(oob, 1.0, 1.0, 1.0, 1.0)
             .unwrap_err()
@@ -1007,7 +1075,7 @@ stick_rest_left = [0, 1]
 stick_rest_right = [0, 0]
 [[rows]]
 indent = 0.0
-keys = [
+items = [
   { key = "a", width = 1.0 },
   { key = "=", width = 1.0 },
 ]
@@ -1028,7 +1096,7 @@ stick_rest_left = { type = "position", x = 2.5, y = 3.5 }
 stick_rest_right = { type = "keys", row = 0, column = 1 }
 [[rows]]
 indent = 0.0
-keys = [
+items = [
   { key = "a", width = 1.0 },
   { key = "=", width = 1.0 },
 ]
@@ -1049,7 +1117,7 @@ stick_rest_left = [0, 0]
 stick_rest_right = [0, 0]
 [[rows]]
 indent = 0.0
-keys = [{ key = "a" }]
+items = [{ key = "a" }]
 "#;
         let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
@@ -1165,5 +1233,51 @@ keys = [{ key = "a" }]
             ..DisplayContext::default()
         };
         assert_eq!(key.appearance(&shifted).text, "Q");
+    }
+
+    #[test]
+    fn items_default_to_key_and_keys_alias() {
+        let items: KeyboardLayoutFile = toml::from_str(
+            r#"
+[[rows]]
+indent = 0.0
+[[rows.items]]
+key = "a"
+[[rows.items]]
+type = "battery"
+width = 0.5
+"#,
+        )
+        .unwrap();
+        assert!(matches!(items.rows[0].items[0], RowItem::Key(_)));
+        assert!(matches!(items.rows[0].items[1], RowItem::Battery(_)));
+
+        let alias: KeyboardLayoutFile = toml::from_str(
+            r#"
+[[rows]]
+indent = 0.0
+[[rows.keys]]
+key = "b"
+"#,
+        )
+        .unwrap();
+        assert!(matches!(alias.rows[0].items[0], RowItem::Key(_)));
+    }
+
+    #[test]
+    fn stick_rest_rejects_battery() {
+        let toml = r#"
+stick_rest_left = [0, 1]
+[[rows]]
+indent = 0.0
+items = [
+  { key = "a" },
+  { type = "battery" },
+]
+"#;
+        let err = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("non-key"), "{err}");
     }
 }

@@ -12,7 +12,7 @@ use hidapi::{DeviceInfo, HidApi, HidDevice};
 use strum::IntoEnumIterator;
 
 use crate::config::HapticIntensity;
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::{BatteryStatus, ControllerButton, ControllerInput};
 
 const VALVE_VID: u16 = 0x28de;
 const PID_WIRED: u16 = 0x1302;
@@ -21,8 +21,13 @@ const PID_PROTEUS: u16 = 0x1304;
 const PID_NEREID: u16 = 0x1305;
 
 const REPORT_STATE: u8 = 0x42;
+const REPORT_BATTERY: u8 = 0x43;
 const REPORT_STATE_BLE: u8 = 0x45;
 const REPORT_STATE_TS: u8 = 0x47;
+
+const BATTERY_REPORT_LEN: usize = 15;
+const CHARGE_CHARGING: u8 = 2;
+const CHARGE_SRC_VALIDATE: u8 = 3;
 
 const BTN_A: u32 = 0x0000_0001;
 const BTN_B: u32 = 0x0000_0002;
@@ -68,6 +73,7 @@ pub struct Sc2State {
     pub right_pad: (i16, i16),
     pub pressure_left: u16,
     pub pressure_right: u16,
+    pub battery: Option<BatteryStatus>,
 }
 
 impl Sc2State {
@@ -178,6 +184,19 @@ pub fn parse_input_report(report: &[u8]) -> Option<Sc2State> {
         pressure_left: u16_at(data, pad_off + 4)?,
         right_pad: (i16_at(data, pad_off + 6)?, i16_at(data, pad_off + 8)?),
         pressure_right: u16_at(data, pad_off + 10)?,
+        battery: None,
+    })
+}
+
+pub fn parse_battery_report(report: &[u8]) -> Option<BatteryStatus> {
+    if report.len() < BATTERY_REPORT_LEN || report.first() != Some(&REPORT_BATTERY) {
+        return None;
+    }
+    let charge = *report.get(1)?;
+    let level = *report.get(2)?;
+    Some(BatteryStatus {
+        percent: level.min(100),
+        charging: matches!(charge, CHARGE_CHARGING | CHARGE_SRC_VALIDATE),
     })
 }
 
@@ -340,20 +359,31 @@ impl Iterator for Sc2Device {
             match self.device.read_timeout(&mut report, READ_TIMEOUT_MS) {
                 Ok(0) => continue,
                 Ok(_) => {
-                    if let Some(state) = parse_input_report(&report) {
+                    let mut battery_changed = false;
+                    if let Some(battery) = parse_battery_report(&report) {
+                        battery_changed = self.state.battery != Some(battery);
+                        self.state.battery = Some(battery);
+                    }
+
+                    if let Some(mut state) = parse_input_report(&report) {
+                        state.battery = self.state.battery;
                         self.last_report = Some(report.to_vec());
                         self.state = state;
                         self.has_state = true;
                         self.maybe_pad_haptic();
-                    } else if !self.has_state {
+                    } else if !self.has_state && !battery_changed {
                         continue;
                     }
+
                     if self.state.is_engaged() {
                         self.was_engaged = true;
                         return Some(Some(Box::new(self.state.clone())));
                     }
                     if std::mem::replace(&mut self.was_engaged, false) {
                         return Some(None);
+                    }
+                    if battery_changed {
+                        return Some(Some(Box::new(self.state.clone())));
                     }
                 }
                 Err(_) => return None,
@@ -426,6 +456,9 @@ impl ControllerInput for Sc2State {
             || analog_engaged(self.physical_left_stick())
             || analog_engaged(self.physical_right_stick())
             || ControllerButton::iter().any(|b| self.query(b))
+    }
+    fn battery(&self) -> Option<BatteryStatus> {
+        self.battery
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
@@ -517,6 +550,46 @@ mod tests {
         assert!(parse_input_report(&[0x40, 0, 0, 0]).is_none());
         assert!(parse_input_report(&[REPORT_STATE, 1, 2, 3]).is_none());
         assert!(parse_input_report(&[]).is_none());
+    }
+
+    #[test]
+    fn parse_0x43_charge_and_level() {
+        let mut r = [0u8; BATTERY_REPORT_LEN];
+        r[0] = REPORT_BATTERY;
+        r[1] = 1; // discharging
+        r[2] = 42;
+        let b = parse_battery_report(&r).expect("parse 0x43");
+        assert_eq!(
+            b,
+            BatteryStatus {
+                percent: 42,
+                charging: false
+            }
+        );
+
+        r[1] = CHARGE_CHARGING;
+        r[2] = 80;
+        let b = parse_battery_report(&r).expect("charging");
+        assert_eq!(
+            b,
+            BatteryStatus {
+                percent: 80,
+                charging: true
+            }
+        );
+
+        r[1] = CHARGE_SRC_VALIDATE;
+        assert!(parse_battery_report(&r).unwrap().charging);
+
+        r[1] = 4; // charged-done
+        assert!(!parse_battery_report(&r).unwrap().charging);
+
+        r[2] = 255;
+        assert_eq!(parse_battery_report(&r).unwrap().percent, 100);
+
+        assert!(parse_battery_report(&[REPORT_BATTERY, 1, 50]).is_none());
+        assert!(parse_battery_report(&[]).is_none());
+        assert!(parse_input_report(&r).is_none());
     }
 
     #[test]

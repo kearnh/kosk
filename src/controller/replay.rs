@@ -196,7 +196,7 @@ mod tests {
                     stick_scale_y: 1.0,
                 },
                 config_toml: None,
-                layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nkeys = []\n".into())],
+                layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
             },
             events: vec![
                 RecordEvent::Snapshot {

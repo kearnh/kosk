@@ -310,11 +310,20 @@ fn main() -> Result<()> {
                                 }
                             }
                             for input in device {
-                                controller::record::session().tap_input(&input);
                                 let mut s = state_clone.lock().unwrap();
                                 let result = match &input {
-                                    None => s.reset_controller_input(&ctx),
-                                    Some(snap) => s.handle_controller_input(&ctx, snap.as_ref()),
+                                    None => {
+                                        controller::record::session().tap_input(&input);
+                                        s.reset_controller_input(&ctx)
+                                    }
+                                    Some(snap) if !snap.is_engaged() => {
+                                        s.note_battery(snap.as_ref());
+                                        Ok(())
+                                    }
+                                    Some(snap) => {
+                                        controller::record::session().tap_input(&input);
+                                        s.handle_controller_input(&ctx, snap.as_ref())
+                                    }
                                 };
                                 if let Err(e) = result {
                                     eprintln!("warn: error from controller input handler: {}", e);

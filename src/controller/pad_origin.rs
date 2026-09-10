@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::config;
 use crate::controller::sc2::Sc2State;
-use crate::controller::{warp, ControllerInput};
+use crate::controller::{warp, BatteryStatus, ControllerInput};
 
 /// Map pad `pos` into stick space relative to `origin`.
 ///
@@ -183,6 +183,9 @@ impl ControllerInput for MappedSc2Input {
     }
     fn is_engaged(&self) -> bool {
         self.inner.is_engaged()
+    }
+    fn battery(&self) -> Option<BatteryStatus> {
+        self.inner.battery()
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())

@@ -391,7 +391,7 @@ mod tests {
         let toml = r#"
 [[rows]]
 indent = 0.0
-keys = [
+items = [
   { key = "d", width = 1.0 },
   { key = "e", width = 1.0 },
 ]

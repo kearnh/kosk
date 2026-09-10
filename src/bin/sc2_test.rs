@@ -156,6 +156,14 @@ fn format_line(input: &dyn ControllerInput, with_warp: bool) -> String {
     if let Some(t) = input.trigger_right() {
         let _ = write!(s, " RT={t}");
     }
+    if let Some(b) = input.battery() {
+        let _ = write!(
+            s,
+            " bat={}%{}",
+            b.percent,
+            if b.charging { "+" } else { "" }
+        );
+    }
     s
 }
 

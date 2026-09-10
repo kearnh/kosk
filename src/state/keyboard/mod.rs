@@ -7,6 +7,7 @@ use crate::config;
 use crate::controller::bindings::BindingEngine;
 use crate::controller::record as input_record;
 use crate::controller::record::{MappingScales, TapeHeader};
+use crate::controller::BatteryStatus;
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
@@ -30,6 +31,34 @@ mod reach_extent;
 mod when;
 
 pub use crate::state::keyboard::keyboard_action::KeyboardAction;
+
+const BATTERY_PCT_EMPTY: u8 = 10;
+const BATTERY_PCT_LOW: u8 = 35;
+const BATTERY_PCT_MEDIUM: u8 = 65;
+const BATTERY_PCT_HIGH: u8 = 90;
+
+fn battery_icon_name(status: Option<BatteryStatus>) -> &'static str {
+    let Some(s) = status else {
+        return "battery-empty";
+    };
+    if s.charging {
+        return "battery-charging";
+    }
+    match s.percent {
+        0..=BATTERY_PCT_EMPTY => "battery-empty",
+        p if p <= BATTERY_PCT_LOW => "battery-low",
+        p if p <= BATTERY_PCT_MEDIUM => "battery-medium",
+        p if p <= BATTERY_PCT_HIGH => "battery-high",
+        _ => "battery-full",
+    }
+}
+
+fn battery_percent_text(status: Option<BatteryStatus>) -> String {
+    match status {
+        None => "--".to_string(),
+        Some(s) => format!("{}%", s.percent),
+    }
+}
 
 fn stick_side_sources(left: bool) -> [EventSource; 2] {
     if left {
@@ -60,6 +89,7 @@ pub struct KeyboardState {
     stick_select_lock_ms: Duration,
     label_cache: display_icon::LabelCache,
     config: Option<config::Config>,
+    last_battery: Option<BatteryStatus>,
 }
 
 impl KeyboardState {
@@ -362,6 +392,8 @@ impl KeyboardState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
+        self.note_battery(input.battery());
+
         let current_layout = self
             .layouts
             .get(&self.current_layout)
@@ -419,6 +451,12 @@ impl KeyboardState {
         Ok(())
     }
 
+    pub fn note_battery(&mut self, battery: Option<BatteryStatus>) {
+        if let Some(b) = battery {
+            self.last_battery = Some(b);
+        }
+    }
+
     pub(crate) fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
         let session = input_record::session();
         let display_ctx = when::DisplayContext {
@@ -441,6 +479,7 @@ impl KeyboardState {
             shift_mod,
             ctrl_mod,
             alt_mod,
+            last_battery,
             ..
         } = self;
 
@@ -482,7 +521,7 @@ impl KeyboardState {
             let left_center = current_layout.get_nearest_key_left((0.0, 0.0), *shift_state);
             let right_center = current_layout.get_nearest_key_right((0.0, 0.0), *shift_state);
 
-            for (keys, indent, height) in &*current_layout {
+            for (items, indent, height) in &*current_layout {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
@@ -492,94 +531,127 @@ impl KeyboardState {
 
                     let mut row_centres = Vec::new();
 
-                    for key in keys {
-                        // Skip rendering for SKIP keys - just add space
-                        if key.is_skip() {
-                            ui.add_space(current_layout.scale_x(key.width));
-                            if capturing_centres {
-                                row_centres.push(None);
+                    for item in items {
+                        match item {
+                            layout::RowItem::Key(key) => {
+                                // Skip rendering for SKIP keys - just add space
+                                if key.is_skip() {
+                                    ui.add_space(current_layout.scale_x(key.width));
+                                    if capturing_centres {
+                                        row_centres.push(None);
+                                    }
+                                    continue;
+                                }
+
+                                let appearance = key.appearance(&display_ctx);
+                                let font_size = key.font_size.unwrap_or(current_layout.font_size);
+                                let color = appearance
+                                    .text_color
+                                    .unwrap_or(ui.style().visuals.widgets.inactive.fg_stroke.color);
+                                let label = label_cache.get(&appearance.text, font_size, color);
+                                let mut button = egui::Button::new(label);
+
+                                if let Some(fill) = appearance.button_color {
+                                    button = button.fill(fill);
+                                } else if key.is_key(
+                                    *shift_state,
+                                    &RawKey::Action(KeyboardAction::ToggleShift),
+                                ) && *shift_state
+                                {
+                                    button = button.selected(true);
+                                } else {
+                                    let current_key = key.key(*shift_state);
+                                    let sel0 =
+                                        selected.0.as_ref().is_some_and(|s| s == &current_key);
+                                    let sel1 =
+                                        selected.1.as_ref().is_some_and(|s| s == &current_key);
+
+                                    if sel0 && sel1 {
+                                        // Purple for both
+                                        button = button
+                                            .fill(egui::Color32::from_rgb(120, 60, 180))
+                                            .selected(true);
+                                    } else if sel0
+                                        || (selected.0.is_none()
+                                            && left_center
+                                                .as_ref()
+                                                .is_some_and(|c| c == &current_key))
+                                    {
+                                        // Blue for left stick
+                                        button = button
+                                            .fill(egui::Color32::from_rgb(50, 100, 180))
+                                            .selected(true);
+                                    } else if sel1
+                                        || (selected.1.is_none()
+                                            && right_center
+                                                .as_ref()
+                                                .is_some_and(|c| c == &current_key))
+                                    {
+                                        // Green for right stick
+                                        button = button
+                                            .fill(egui::Color32::from_rgb(50, 150, 80))
+                                            .selected(true);
+                                    }
+                                }
+
+                                let size =
+                                    egui::Vec2::new(current_layout.scale_x(key.width), row_height);
+                                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                                let response = ui.place(rect, button.truncate());
+
+                                if capturing_centres {
+                                    row_centres.push(Some(rect.center()));
+                                }
+
+                                // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
+                                if key.display_modifiers && (*ctrl_mod || *alt_mod) {
+                                    let mut mods = Vec::new();
+                                    if *ctrl_mod {
+                                        mods.push("ctrl");
+                                    }
+                                    if *shift_mod {
+                                        mods.push("shift");
+                                    }
+                                    if *alt_mod {
+                                        mods.push("alt");
+                                    }
+                                    let mod_string = mods.join("+");
+                                    let rect = response.rect;
+                                    let font_size = current_layout.font_size * 0.6;
+                                    ui.painter().text(
+                                        rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
+                                        egui::Align2::LEFT_BOTTOM,
+                                        mod_string,
+                                        egui::FontId::proportional(font_size),
+                                        egui::Color32::WHITE,
+                                    );
+                                }
+
+                                if response.clicked() {
+                                    pressed_key = Some(key.key(*shift_state));
+                                }
                             }
-                            continue;
-                        }
-
-                        let appearance = key.appearance(&display_ctx);
-                        let font_size = key.font_size.unwrap_or(current_layout.font_size);
-                        let color = appearance
-                            .text_color
-                            .unwrap_or(ui.style().visuals.widgets.inactive.fg_stroke.color);
-                        let label = label_cache.get(&appearance.text, font_size, color);
-                        let mut button = egui::Button::new(label);
-
-                        if let Some(fill) = appearance.button_color {
-                            button = button.fill(fill);
-                        } else if key
-                            .is_key(*shift_state, &RawKey::Action(KeyboardAction::ToggleShift))
-                            && *shift_state
-                        {
-                            button = button.selected(true);
-                        } else {
-                            let current_key = key.key(*shift_state);
-                            let sel0 = selected.0.as_ref().is_some_and(|s| s == &current_key);
-                            let sel1 = selected.1.as_ref().is_some_and(|s| s == &current_key);
-
-                            if sel0 && sel1 {
-                                // Purple for both
-                                button = button
-                                    .fill(egui::Color32::from_rgb(120, 60, 180))
-                                    .selected(true);
-                            } else if sel0
-                                || (selected.0.is_none()
-                                    && left_center.as_ref().is_some_and(|c| c == &current_key))
-                            {
-                                // Blue for left stick
-                                button = button
-                                    .fill(egui::Color32::from_rgb(50, 100, 180))
-                                    .selected(true);
-                            } else if sel1
-                                || (selected.1.is_none()
-                                    && right_center.as_ref().is_some_and(|c| c == &current_key))
-                            {
-                                // Green for right stick
-                                button = button
-                                    .fill(egui::Color32::from_rgb(50, 150, 80))
-                                    .selected(true);
+                            layout::RowItem::Battery(batt) => {
+                                let font_size = batt.font_size.unwrap_or(current_layout.font_size);
+                                let color = ui.style().visuals.widgets.inactive.fg_stroke.color;
+                                let icon = format!("{{icon:{}}}", battery_icon_name(*last_battery));
+                                let label = label_cache.get(&icon, font_size, color);
+                                let button = egui::Button::new(label);
+                                let size =
+                                    egui::Vec2::new(current_layout.scale_x(batt.width), row_height);
+                                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                                let response = ui.place(rect, button.truncate());
+                                if capturing_centres {
+                                    row_centres.push(None);
+                                }
+                                ui.painter().text(
+                                    response.rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
+                                    egui::Align2::LEFT_BOTTOM,
+                                    battery_percent_text(*last_battery),
+                                    egui::FontId::proportional(font_size * 0.6),
+                                    egui::Color32::WHITE,
+                                );
                             }
-                        }
-
-                        let size = egui::Vec2::new(current_layout.scale_x(key.width), row_height);
-                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                        let response = ui.place(rect, button.truncate());
-
-                        if capturing_centres {
-                            row_centres.push(Some(rect.center()));
-                        }
-
-                        // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
-                        if key.display_modifiers && (*ctrl_mod || *alt_mod) {
-                            let mut mods = Vec::new();
-                            if *ctrl_mod {
-                                mods.push("ctrl");
-                            }
-                            if *shift_mod {
-                                mods.push("shift");
-                            }
-                            if *alt_mod {
-                                mods.push("alt");
-                            }
-                            let mod_string = mods.join("+");
-                            let rect = response.rect;
-                            let font_size = current_layout.font_size * 0.6;
-                            ui.painter().text(
-                                rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
-                                egui::Align2::LEFT_BOTTOM,
-                                mod_string,
-                                egui::FontId::proportional(font_size),
-                                egui::Color32::WHITE,
-                            );
-                        }
-
-                        if response.clicked() {
-                            pressed_key = Some(key.key(*shift_state));
                         }
                     }
                     if capturing_centres {
@@ -726,6 +798,64 @@ mod send_key_tests {
                 Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
                 Event::SendKey(enigo::Key::Shift, enigo::Direction::Release),
             ]
+        );
+    }
+
+    #[test]
+    fn last_battery_survives_without_new_input() {
+        let mut kb = KeyboardState::default();
+        kb.note_battery(Some(BatteryStatus {
+            percent: 42,
+            charging: false,
+        }));
+        let first = battery_percent_text(kb.last_battery);
+        let icon = battery_icon_name(kb.last_battery);
+        let second = battery_percent_text(kb.last_battery);
+        assert_eq!(first, "42%");
+        assert_eq!(first, second);
+        assert_eq!(icon, "battery-medium");
+        kb.note_battery(None);
+        assert_eq!(battery_percent_text(kb.last_battery), "42%");
+    }
+
+    #[test]
+    fn battery_icon_thresholds_and_charging() {
+        assert_eq!(battery_icon_name(None), "battery-empty");
+        assert_eq!(battery_percent_text(None), "--");
+        assert_eq!(
+            battery_icon_name(Some(BatteryStatus {
+                percent: 5,
+                charging: false
+            })),
+            "battery-empty"
+        );
+        assert_eq!(
+            battery_icon_name(Some(BatteryStatus {
+                percent: 20,
+                charging: false
+            })),
+            "battery-low"
+        );
+        assert_eq!(
+            battery_icon_name(Some(BatteryStatus {
+                percent: 80,
+                charging: false
+            })),
+            "battery-high"
+        );
+        assert_eq!(
+            battery_icon_name(Some(BatteryStatus {
+                percent: 99,
+                charging: false
+            })),
+            "battery-full"
+        );
+        assert_eq!(
+            battery_icon_name(Some(BatteryStatus {
+                percent: 12,
+                charging: true
+            })),
+            "battery-charging"
         );
     }
 }
