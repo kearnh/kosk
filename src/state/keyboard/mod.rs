@@ -108,12 +108,13 @@ fn draw_battery(
     let icon_center = egui::Pos2::new(rect.left() + icon_size * 0.5, rect.center().y);
     let icon_rect = egui::Rect::from_center_size(icon_center, egui::Vec2::splat(icon_size));
     ui.put(icon_rect, egui::Label::new(icon_label));
+    let text_color = ui.style().visuals.widgets.inactive.fg_stroke.color;
     ui.painter().text(
         egui::Pos2::new(icon_rect.right() + 4.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         battery_percent_text(status),
         egui::FontId::proportional(font_size),
-        color,
+        text_color,
     );
 }
 
@@ -578,6 +579,7 @@ impl KeyboardState {
 
             let left_center = current_layout.get_nearest_key_left((0.0, 0.0), *shift_state);
             let right_center = current_layout.get_nearest_key_right((0.0, 0.0), *shift_state);
+            let content_width = current_layout.left_content_width(pad_x);
 
             for (items, indent, height) in &*current_layout {
                 ui.horizontal(|ui| {
@@ -705,14 +707,30 @@ impl KeyboardState {
                         }
                     }
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
-                        for (col_idx, item) in items.iter().enumerate() {
-                            if item.align() == layout::ItemAlign::Right {
-                                draw_item(ui, col_idx, item);
-                            }
-                        }
-                    });
+                    let right_w = current_layout.cluster_width(
+                        items
+                            .iter()
+                            .filter(|item| item.align() == layout::ItemAlign::Right),
+                        pad_x,
+                    );
+                    if right_w > 0.0 {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        let used = ui.min_rect().width();
+                        let gap = KeyboardLayout::rtl_leading_gap(content_width, used, right_w);
+                        ui.add_space(gap);
+                        ui.allocate_ui_with_layout(
+                            egui::Vec2::new(right_w, row_height),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
+                                for (col_idx, item) in items.iter().enumerate() {
+                                    if item.align() == layout::ItemAlign::Right {
+                                        draw_item(ui, col_idx, item);
+                                    }
+                                }
+                            },
+                        );
+                    }
 
                     if capturing_centres {
                         captured_data.push(row_centres);

@@ -550,6 +550,41 @@ impl KeyboardLayout {
         self.scale_y * val.0
     }
 
+    pub(crate) fn cluster_width<'a>(
+        &self,
+        items: impl IntoIterator<Item = &'a RowItem>,
+        pad_px: f32,
+    ) -> f32 {
+        let mut iter = items.into_iter();
+        let Some(first) = iter.next() else {
+            return 0.0;
+        };
+        iter.fold(self.scale_x(first.width()), |w, item| {
+            w + pad_px + self.scale_x(item.width())
+        })
+    }
+
+    /// Widest left-aligned row (indent + LTR items). RTL items sit against this edge.
+    pub(crate) fn left_content_width(&self, pad_px: f32) -> f32 {
+        self.rows
+            .iter()
+            .map(|row| {
+                self.scale_x(row.indent)
+                    + self.cluster_width(
+                        row.items
+                            .iter()
+                            .filter(|item| item.align() == ItemAlign::Left),
+                        pad_px,
+                    )
+            })
+            .fold(0.0, f32::max)
+    }
+
+    /// Space after LTR so an RTL cluster of `right_w` ends at `content_width`.
+    pub(crate) fn rtl_leading_gap(content_width: f32, left_used: f32, right_w: f32) -> f32 {
+        (content_width - left_used - right_w).max(0.0)
+    }
+
     pub fn get_key_center(&self, key: &RawKey) -> Option<(f32, f32)> {
         for (row_idx, row) in self.rows.iter().enumerate() {
             for (col_idx, item) in row.items.iter().enumerate() {
@@ -1299,6 +1334,52 @@ align = "right"
         .unwrap();
         assert_eq!(file.rows[0].items[0].align(), ItemAlign::Left);
         assert_eq!(file.rows[0].items[1].align(), ItemAlign::Right);
+    }
+
+    #[test]
+    fn left_content_width_ignores_right_aligned_items() {
+        let toml = r#"
+pad_x = 0.1
+[[rows]]
+indent = 0.0
+items = [
+  { key = "a", width = 1.0 },
+  { key = "b", width = 1.0 },
+]
+[[rows]]
+indent = 0.0
+items = [
+  { key = "c", width = 0.5 },
+  { type = "battery", align = "right", width = 9.0 },
+]
+"#;
+        let layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        let pad = layout.scale_x(layout.pad_x);
+        assert!((pad - 1.0).abs() < 1e-5);
+        assert!((layout.left_content_width(pad) - 21.0).abs() < 1e-4);
+
+        let left_used = layout.scale_x(layout.rows[1].indent)
+            + layout.cluster_width(
+                layout.rows[1]
+                    .items
+                    .iter()
+                    .filter(|item| item.align() == ItemAlign::Left),
+                pad,
+            );
+        let right_w = layout.cluster_width(
+            layout.rows[1]
+                .items
+                .iter()
+                .filter(|item| item.align() == ItemAlign::Right),
+            pad,
+        );
+        assert!((left_used - 5.0).abs() < 1e-4);
+        assert!((right_w - 90.0).abs() < 1e-4);
+        assert_eq!(
+            KeyboardLayout::rtl_leading_gap(21.0, left_used, right_w),
+            0.0
+        );
+        assert!((KeyboardLayout::rtl_leading_gap(21.0, 5.0, 8.0) - 8.0).abs() < 1e-4);
     }
 
     #[test]
