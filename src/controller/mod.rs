@@ -15,6 +15,25 @@ pub mod virtual_ctl;
 use hidapi::HidApi;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StickSide {
+    Left,
+    Right,
+}
+
+impl StickSide {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "left" | "l" => Ok(Self::Left),
+            "right" | "r" => Ok(Self::Right),
+            other => Err(format!(
+                "unknown stick/pad side '{other}' (expected left|right)"
+            )),
+        }
+    }
+}
+
 pub(crate) fn warp((mut x, mut y): (f32, f32), warp: f32) -> (f32, f32) {
     if warp > 0.0 {
         let u2 = x * x;

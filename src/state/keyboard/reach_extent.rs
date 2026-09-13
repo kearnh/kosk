@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use egui::Pos2;
 
 use crate::controller::pad_origin::stretch_stick;
-use crate::controller::virtual_ctl::StickSide;
 use crate::controller::warp;
+use crate::controller::StickSide;
 
 use super::layout::KeyboardLayout;
 
@@ -116,10 +116,7 @@ fn compute_pad_envelope_with_origin_range(
 }
 
 fn cursor_point(layout: &KeyboardLayout, side: StickSide, stick: (f32, f32)) -> Pos2 {
-    let (x, y) = match side {
-        StickSide::Left => layout.stick_to_cursor_left(stick),
-        StickSide::Right => layout.stick_to_cursor_right(stick),
-    };
+    let (x, y) = layout.stick_to_cursor(side, stick);
     Pos2::new(x, y)
 }
 

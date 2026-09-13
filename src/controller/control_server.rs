@@ -8,8 +8,8 @@ use std::thread;
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 
-use crate::controller::virtual_ctl::{session, StickSide};
-use crate::controller::ControllerButton;
+use crate::controller::virtual_ctl::session;
+use crate::controller::{ControllerButton, StickSide};
 use crate::state::keyboard::geometry_snap::{self, GeometrySnapshot, SnapHitBox, StickAabb};
 
 /// Spawn the accept loop on a dedicated thread. Fails if bind fails.

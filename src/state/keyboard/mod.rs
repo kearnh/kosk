@@ -8,6 +8,7 @@ use crate::controller::bindings::BindingEngine;
 use crate::controller::record as input_record;
 use crate::controller::record::{MappingScales, TapeHeader};
 use crate::controller::BatteryStatus;
+use crate::controller::StickSide;
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::{
@@ -23,6 +24,7 @@ use anyhow::Result;
 use egui::{Context, Ui};
 
 pub(crate) mod display_icon;
+mod geom;
 pub(crate) mod geometry_snap;
 mod key;
 mod keyboard_action;
@@ -480,12 +482,14 @@ impl KeyboardState {
 
         let prev_selected = self.selected;
 
-        let selected_left = current_layout.nearest_cell_left(
+        let selected_left = current_layout.nearest_cell(
+            StickSide::Left,
             input.left_pad().unwrap_or_else(|| input.left_stick()),
             prev_selected.left,
             self.stick_select_sticky,
         );
-        let selected_right = current_layout.nearest_cell_right(
+        let selected_right = current_layout.nearest_cell(
+            StickSide::Right,
             input.right_pad().unwrap_or_else(|| input.right_stick()),
             prev_selected.right,
             self.stick_select_sticky,
@@ -603,8 +607,8 @@ impl KeyboardState {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-            let left_rest = current_layout.nearest_cell_left((0.0, 0.0), None, 1.0);
-            let right_rest = current_layout.nearest_cell_right((0.0, 0.0), None, 1.0);
+            let left_rest = current_layout.nearest_cell(StickSide::Left, (0.0, 0.0), None, 1.0);
+            let right_rest = current_layout.nearest_cell(StickSide::Right, (0.0, 0.0), None, 1.0);
             let content_width = current_layout.left_content_width(pad_x);
 
             for (row_idx, (items, indent, height)) in (&*current_layout).into_iter().enumerate() {

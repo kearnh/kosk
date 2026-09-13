@@ -7,11 +7,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Serialize;
 
-use crate::controller::virtual_ctl::StickSide;
+use crate::controller::StickSide;
 use crate::state::keyboard::key::RawKey;
 use crate::state::keyboard::keyboard_action::KeyboardAction;
 use crate::state::keyboard::layout::KeyboardLayout;
 use crate::state::StateId;
+
+use super::geom;
+
+pub use super::geom::KeyHitBox as SnapHitBox;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SnapRect {
@@ -19,41 +23,6 @@ pub struct SnapRect {
     pub min_y: f32,
     pub max_x: f32,
     pub max_y: f32,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum SnapHitBox {
-    Circle { x: f32, y: f32, r: f32 },
-    Ellipse { x: f32, y: f32, rx: f32, ry: f32 },
-}
-
-impl SnapHitBox {
-    /// Rim-fraction score when `(x,y)` is inside (`0` at centre, `1` at rim).
-    /// Matches live `HitBox::contains`.
-    pub fn contains(&self, x: f32, y: f32) -> Option<f32> {
-        match self {
-            SnapHitBox::Circle {
-                x: kx,
-                y: ky,
-                r: kr,
-            } => super::layout::circle_score(x, y, *kx, *ky, *kr),
-            SnapHitBox::Ellipse {
-                x: kx,
-                y: ky,
-                rx,
-                ry,
-            } => {
-                let dx = x - kx;
-                let dy = y - ky;
-                let val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
-                if val <= 1.0 {
-                    Some(val)
-                } else {
-                    None
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -207,11 +176,13 @@ impl GeometrySnapshot {
     }
 
     pub fn stick_to_cursor(&self, side: StickSide, stick: (f32, f32)) -> (f32, f32) {
-        let (rx, ry) = self.rest(side);
-        let (sx, sy) = stick;
-        (
-            rx + sx * self.scale_x * self.stick_scale_x,
-            ry + sy * self.scale_y * self.stick_scale_y,
+        geom::stick_to_cursor(
+            self.rest(side),
+            self.scale_x,
+            self.scale_y,
+            self.stick_scale_x,
+            self.stick_scale_y,
+            stick,
         )
     }
 
@@ -269,27 +240,11 @@ impl GeometrySnapshot {
     }
 
     fn clamp_cursor_to_bounds(x: f32, y: f32, bounds: &[SnapRect]) -> (f32, f32) {
-        if bounds.is_empty() {
-            return (x, y);
-        }
-        let inside = bounds
+        let aabbs: Vec<_> = bounds
             .iter()
-            .any(|r| x >= r.min_x && x <= r.max_x && y >= r.min_y && y <= r.max_y);
-        if inside {
-            return (x, y);
-        }
-        let mut closest = (x, y);
-        let mut min_dist_sq = f32::MAX;
-        for r in bounds {
-            let clamped_x = x.clamp(r.min_x, r.max_x);
-            let clamped_y = y.clamp(r.min_y, r.max_y);
-            let dist_sq = (x - clamped_x).powi(2) + (y - clamped_y).powi(2);
-            if dist_sq < min_dist_sq {
-                min_dist_sq = dist_sq;
-                closest = (clamped_x, clamped_y);
-            }
-        }
-        closest
+            .map(|r| (r.min_x, r.min_y, r.max_x, r.max_y))
+            .collect();
+        geom::clamp_cursor_to_aabbs((x, y), &aabbs)
     }
 
     pub fn nearest_key(&self, side: StickSide, stick: (f32, f32)) -> Option<&SnapKey> {

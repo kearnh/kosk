@@ -3,32 +3,12 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::controller::record::{InputSnapshot, PostMapInput, BUTTON_ORDER};
 use strum::EnumCount;
 
-use crate::controller::ControllerButton;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum StickSide {
-    Left,
-    Right,
-}
-
-impl StickSide {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "left" | "l" => Ok(Self::Left),
-            "right" | "r" => Ok(Self::Right),
-            other => Err(format!(
-                "unknown stick/pad side '{other}' (expected left|right)"
-            )),
-        }
-    }
-}
+use crate::controller::{ControllerButton, StickSide};
 
 #[derive(Debug, Clone, Default)]
 struct VirtualExpires {

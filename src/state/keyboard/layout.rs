@@ -8,12 +8,13 @@ use serde::Deserialize;
 
 use crate::{
     config,
-    controller::{virtual_ctl::StickSide, ControllerInput},
+    controller::{ControllerInput, StickSide},
     debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
     state::keyboard::when::{DisplayContext, WhenExpr},
 };
 
+use super::geom::{self, KeyHitBox};
 use super::reach_extent::ReachEnvelope;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -367,51 +368,6 @@ fn validate_stick_rest(rows: &[KeyboardRow], rest: Option<&StickRest>, field: &s
 }
 
 #[derive(Debug)]
-enum HitBox {
-    Circle { x: f32, y: f32, r: f32 },
-    Ellipse { x: f32, y: f32, rx: f32, ry: f32 },
-}
-
-impl HitBox {
-    fn contains(&self, x: f32, y: f32) -> Option<f32> {
-        match self {
-            HitBox::Circle {
-                x: kx,
-                y: ky,
-                r: kr,
-            } => circle_score(x, y, *kx, *ky, *kr),
-            HitBox::Ellipse {
-                x: kx,
-                y: ky,
-                rx,
-                ry,
-            } => {
-                let dx = x - kx;
-                let dy = y - ky;
-                let val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
-                if val <= 1.0 {
-                    Some(val)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
-pub(crate) fn circle_score(x: f32, y: f32, kx: f32, ky: f32, r: f32) -> Option<f32> {
-    let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
-    let r_sq = r * r;
-    if distance_sq > r_sq {
-        return None;
-    }
-    if r_sq <= f32::EPSILON {
-        return Some(0.0);
-    }
-    Some(distance_sq / r_sq)
-}
-
-#[derive(Debug)]
 pub struct KeyboardLayout {
     pub rows: Vec<KeyboardRow>,
 
@@ -430,7 +386,7 @@ pub struct KeyboardLayout {
     stick_rest_left: Option<StickRest>,
     stick_rest_right: Option<StickRest>,
 
-    key_hit_boxes: Vec<Vec<Option<HitBox>>>,
+    key_hit_boxes: Vec<Vec<Option<KeyHitBox>>>,
 
     pub left_stick_bounds: Vec<Rect>,
     pub right_stick_bounds: Vec<Rect>,
@@ -444,25 +400,11 @@ pub struct KeyboardLayout {
 }
 
 pub(crate) fn clamp_stick_cursor(cursor: (f32, f32), bounds: &[Rect]) -> (f32, f32) {
-    if bounds.is_empty() {
-        return cursor;
-    }
-
-    let (x, y) = cursor;
-    if bounds.iter().any(|r| r.contains(cursor.into())) {
-        return cursor;
-    }
-
-    bounds
+    let aabbs: Vec<_> = bounds
         .iter()
-        .map(|r| {
-            let clamped = (x.clamp(r.min.x, r.max.x), y.clamp(r.min.y, r.max.y));
-            let distance = (x - clamped.0).powi(2) + (y - clamped.1).powi(2);
-            (distance, clamped)
-        })
-        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(_, point)| point)
-        .unwrap_or(cursor)
+        .map(|r| (r.min.x, r.min.y, r.max.x, r.max.y))
+        .collect();
+    geom::clamp_cursor_to_aabbs(cursor, &aabbs)
 }
 
 impl KeyboardLayout {
@@ -635,7 +577,7 @@ impl KeyboardLayout {
                     if let Some(key) = selectable_key {
                         let width = self.scale_x(key.width);
                         if width / row_height >= 1.2 {
-                            hitboxes_row.push(Some(HitBox::Ellipse {
+                            hitboxes_row.push(Some(KeyHitBox::Ellipse {
                                 x: center_x,
                                 y: center_y,
                                 rx: (width / 2.0) * std::f32::consts::SQRT_2,
@@ -643,7 +585,7 @@ impl KeyboardLayout {
                             }));
                         } else {
                             let radius = self.scale_x * 1.125;
-                            hitboxes_row.push(Some(HitBox::Circle {
+                            hitboxes_row.push(Some(KeyHitBox::Circle {
                                 x: center_x,
                                 y: center_y,
                                 r: radius,
@@ -768,9 +710,7 @@ impl KeyboardLayout {
         layout_name: &str,
         revision: u64,
     ) -> crate::state::keyboard::geometry_snap::GeometrySnapshot {
-        use crate::state::keyboard::geometry_snap::{
-            wire_id, GeometrySnapshot, SnapHitBox, SnapKey, SnapRect,
-        };
+        use crate::state::keyboard::geometry_snap::{wire_id, GeometrySnapshot, SnapKey, SnapRect};
 
         let centres = self.captured_centres.as_ref();
         let mut keys = Vec::new();
@@ -790,21 +730,7 @@ impl KeyboardLayout {
                     .key_hit_boxes
                     .get(row_idx)
                     .and_then(|r| r.get(col_idx))
-                    .and_then(|h| {
-                        h.as_ref().map(|hb| match hb {
-                            HitBox::Circle { x, y, r } => SnapHitBox::Circle {
-                                x: *x,
-                                y: *y,
-                                r: *r,
-                            },
-                            HitBox::Ellipse { x, y, rx, ry } => SnapHitBox::Ellipse {
-                                x: *x,
-                                y: *y,
-                                rx: *rx,
-                                ry: *ry,
-                            },
-                        })
-                    });
+                    .and_then(|h| h.clone());
                 keys.push(SnapKey {
                     row: row_idx,
                     col: col_idx,
@@ -838,29 +764,24 @@ impl KeyboardLayout {
         }
     }
 
-    pub fn stick_to_cursor_left(&self, stick: (f32, f32)) -> (f32, f32) {
-        let (x, y) = stick;
-        let dx = self.scale_x(x.into()) * self.stick_scale_x;
-        let dy = self.scale_y(y.into()) * self.stick_scale_y;
-        (self.left_stick_center.0 + dx, self.left_stick_center.1 + dy)
-    }
-
-    pub fn stick_to_cursor_right(&self, stick: (f32, f32)) -> (f32, f32) {
-        let (x, y) = stick;
-        let dx = self.scale_x(x.into()) * self.stick_scale_x;
-        let dy = self.scale_y(y.into()) * self.stick_scale_y;
-        (
-            self.right_stick_center.0 + dx,
-            self.right_stick_center.1 + dy,
+    pub fn stick_to_cursor(&self, side: StickSide, stick: (f32, f32)) -> (f32, f32) {
+        geom::stick_to_cursor(
+            self.stick_center(side),
+            self.scale_x,
+            self.scale_y,
+            self.stick_scale_x,
+            self.stick_scale_y,
+            stick,
         )
     }
 
-    pub fn get_nearest_key_left(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        self.key_at_cell(self.nearest_cell_left(stick, None, 1.0)?, shift_state)
-    }
-
-    pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        self.key_at_cell(self.nearest_cell_right(stick, None, 1.0)?, shift_state)
+    pub fn get_nearest_key(
+        &self,
+        side: StickSide,
+        stick: (f32, f32),
+        shift_state: bool,
+    ) -> Option<RawKey> {
+        self.key_at_cell(self.nearest_cell(side, stick, None, 1.0)?, shift_state)
     }
 
     pub fn get_key_at(&self, x: f32, y: f32, shifted: bool) -> Option<RawKey> {
@@ -917,35 +838,23 @@ impl KeyboardLayout {
         Some((row, col))
     }
 
-    fn nearest_cell_with_bounds(
+    fn stick_bounds(&self, side: StickSide) -> &[Rect] {
+        match side {
+            StickSide::Left => &self.left_stick_bounds,
+            StickSide::Right => &self.right_stick_bounds,
+        }
+    }
+
+    pub(crate) fn nearest_cell(
         &self,
-        cursor: (f32, f32),
-        bounds: &[Rect],
+        side: StickSide,
+        stick: (f32, f32),
         sticky: Option<(usize, usize)>,
         k: f32,
     ) -> Option<(usize, usize)> {
-        let (x, y) = clamp_stick_cursor(cursor, bounds);
+        let cursor = self.stick_to_cursor(side, stick);
+        let (x, y) = clamp_stick_cursor(cursor, self.stick_bounds(side));
         self.pick_cell_at(x, y, sticky, k)
-    }
-
-    pub(crate) fn nearest_cell_left(
-        &self,
-        stick: (f32, f32),
-        sticky: Option<(usize, usize)>,
-        k: f32,
-    ) -> Option<(usize, usize)> {
-        let cursor = self.stick_to_cursor_left(stick);
-        self.nearest_cell_with_bounds(cursor, &self.left_stick_bounds, sticky, k)
-    }
-
-    pub(crate) fn nearest_cell_right(
-        &self,
-        stick: (f32, f32),
-        sticky: Option<(usize, usize)>,
-        k: f32,
-    ) -> Option<(usize, usize)> {
-        let cursor = self.stick_to_cursor_right(stick);
-        self.nearest_cell_with_bounds(cursor, &self.right_stick_bounds, sticky, k)
     }
 
     pub fn draw_debug(&self, ctx: &Context, _: &mut Ui) {
@@ -996,7 +905,7 @@ impl KeyboardLayout {
                 for row in &self.key_hit_boxes {
                     for hitbox in row.iter().flatten() {
                         match hitbox {
-                            HitBox::Circle { x, y, r } => {
+                            KeyHitBox::Circle { x, y, r } => {
                                 painter.circle_stroke(
                                     [*x, *y].into(),
                                     *r,
@@ -1006,7 +915,7 @@ impl KeyboardLayout {
                                     ),
                                 );
                             }
-                            HitBox::Ellipse { x, y, rx, ry } => {
+                            KeyHitBox::Ellipse { x, y, rx, ry } => {
                                 painter.add(egui::epaint::EllipseShape::stroke(
                                     [*x, *y].into(),
                                     Vec2::new(*rx, *ry),
@@ -1057,10 +966,7 @@ fn debug_cursor(
         (Some(input), StickSide::Right) => input.right_pad().unwrap_or_else(|| input.right_stick()),
         (None, _) => (0.0, 0.0),
     };
-    match side {
-        StickSide::Left => layout.stick_to_cursor_left(stick),
-        StickSide::Right => layout.stick_to_cursor_right(stick),
-    }
+    layout.stick_to_cursor(side, stick)
 }
 
 fn side_color(side: StickSide) -> Color32 {
