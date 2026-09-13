@@ -41,6 +41,13 @@ pub enum StateId {
     SelectLayout,
 }
 
+impl StateId {
+    pub(crate) fn wire_id(self) -> String {
+        let pascal = serde_plain::to_string(&self).unwrap_or_else(|_| format!("{self:?}"));
+        actions::to_camel(&pascal)
+    }
+}
+
 pub struct AppState {
     state: StateId,
     /// Modes pushed by `CallState`, most-recent callee's caller at the end.

@@ -172,11 +172,7 @@ fn validate_binding_candidate(
 }
 
 fn to_camel(pascal: &str) -> String {
-    let mut chars = pascal.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_lowercase().chain(chars).collect(),
-    }
+    crate::state::actions::to_camel(pascal)
 }
 
 fn unit_names(variants: &[&str], skip: &[&str]) -> Vec<String> {

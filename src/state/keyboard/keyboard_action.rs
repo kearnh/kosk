@@ -102,6 +102,49 @@ impl TryFrom<&str> for KeyboardAction {
     }
 }
 
+impl KeyboardAction {
+    /// Stable wire id for mappings / MCP geometry (`sendKey.space`, `toggleShift`, …).
+    pub fn wire_id(&self) -> String {
+        use KeyboardAction::*;
+        match self {
+            SendKeyUnderLeftStick => "sendKeyUnderLeftStick".into(),
+            SendKeyUnderRightStick => "sendKeyUnderRightStick".into(),
+            SendKey(c) => {
+                let payload = match *c {
+                    ' ' => "space".to_owned(),
+                    '\n' => "enter".to_owned(),
+                    '\t' => "tab".to_owned(),
+                    other => other.to_string(),
+                };
+                format!("sendKey.{payload}")
+            }
+            SendEnigoKey(k) => {
+                let payload = match k {
+                    enigo::Key::Backspace => "backspace".to_owned(),
+                    enigo::Key::Delete => "delete".to_owned(),
+                    enigo::Key::LeftArrow => "left".to_owned(),
+                    enigo::Key::RightArrow => "right".to_owned(),
+                    enigo::Key::UpArrow => "up".to_owned(),
+                    enigo::Key::DownArrow => "down".to_owned(),
+                    other => serde_plain::to_string(other).unwrap_or_else(|_| format!("{other:?}")),
+                };
+                format!("sendKey.{payload}")
+            }
+            ToggleShift => "toggleShift".into(),
+            ToggleCtrl => "toggleCtrl".into(),
+            ToggleAlt => "toggleAlt".into(),
+            Paste => "paste".into(),
+            SwitchState(s) => format!("switchState.{}", s.wire_id()),
+            SwitchLayout(name) => format!("switchLayout.{name}"),
+            FlipWindowLeftRight => "flipWindowLeftRight".into(),
+            FlipWindowAboveBelow => "flipWindowAboveBelow".into(),
+            RotateWindow => "rotateWindow".into(),
+            Exit => "exit".into(),
+            ToggleRecord => "toggleRecord".into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +171,26 @@ mod tests {
             KeyboardAction::try_from("RotateWindow").unwrap(),
             KeyboardAction::RotateWindow
         );
+    }
+
+    #[test]
+    fn wire_id_round_trips() {
+        let cases = [
+            KeyboardAction::ToggleShift,
+            KeyboardAction::ToggleRecord,
+            KeyboardAction::RotateWindow,
+            KeyboardAction::SendKey('a'),
+            KeyboardAction::SendKey(' '),
+            KeyboardAction::SendKey('\n'),
+            KeyboardAction::SendEnigoKey(enigo::Key::Backspace),
+            KeyboardAction::SwitchState(StateId::Menu),
+            KeyboardAction::SwitchLayout("main".into()),
+            KeyboardAction::SendKeyUnderLeftStick,
+        ];
+        for action in cases {
+            let wire = action.wire_id();
+            let parsed = KeyboardAction::try_from(wire.as_str()).unwrap();
+            assert_eq!(parsed, action, "wire={wire}");
+        }
     }
 }

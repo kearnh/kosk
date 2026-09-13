@@ -67,3 +67,12 @@ pub fn load_bindings<A: Action + Clone + 'static>(
     BindingEngine::try_from_raw(raw_bindings)
         .map_err(|e| anyhow::anyhow!("{state_id:?} controller_map: {e}"))
 }
+
+/// PascalCase / serde_plain name → camelCase wire id (`ToggleShift` → `toggleShift`).
+pub(crate) fn to_camel(pascal: &str) -> String {
+    let mut chars = pascal.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_lowercase().chain(chars).collect(),
+    }
+}

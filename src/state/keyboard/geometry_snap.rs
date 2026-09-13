@@ -9,9 +9,7 @@ use serde::Serialize;
 
 use crate::controller::StickSide;
 use crate::state::keyboard::key::RawKey;
-use crate::state::keyboard::keyboard_action::KeyboardAction;
 use crate::state::keyboard::layout::KeyboardLayout;
-use crate::state::StateId;
 
 use super::geom;
 
@@ -83,59 +81,6 @@ pub fn clear() {
     *guard = None;
 }
 
-fn to_camel(pascal: &str) -> String {
-    let mut chars = pascal.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_lowercase().chain(chars).collect(),
-    }
-}
-
-fn state_wire_id(state: StateId) -> String {
-    let pascal = serde_plain::to_string(&state).unwrap_or_else(|_| format!("{state:?}"));
-    to_camel(&pascal)
-}
-
-fn action_wire_id(action: &KeyboardAction) -> String {
-    use KeyboardAction::*;
-    match action {
-        SendKeyUnderLeftStick => "sendKeyUnderLeftStick".into(),
-        SendKeyUnderRightStick => "sendKeyUnderRightStick".into(),
-        SendKey(c) => {
-            let payload = match *c {
-                ' ' => "space".to_owned(),
-                '\n' => "enter".to_owned(),
-                '\t' => "tab".to_owned(),
-                other => other.to_string(),
-            };
-            format!("sendKey.{payload}")
-        }
-        SendEnigoKey(k) => {
-            let payload = match k {
-                enigo::Key::Backspace => "backspace".to_owned(),
-                enigo::Key::Delete => "delete".to_owned(),
-                enigo::Key::LeftArrow => "left".to_owned(),
-                enigo::Key::RightArrow => "right".to_owned(),
-                enigo::Key::UpArrow => "up".to_owned(),
-                enigo::Key::DownArrow => "down".to_owned(),
-                other => serde_plain::to_string(other).unwrap_or_else(|_| format!("{other:?}")),
-            };
-            format!("sendKey.{payload}")
-        }
-        ToggleShift => "toggleShift".into(),
-        ToggleCtrl => "toggleCtrl".into(),
-        ToggleAlt => "toggleAlt".into(),
-        Paste => "paste".into(),
-        SwitchState(s) => format!("switchState.{}", state_wire_id(*s)),
-        SwitchLayout(name) => format!("switchLayout.{name}"),
-        FlipWindowLeftRight => "flipWindowLeftRight".into(),
-        FlipWindowAboveBelow => "flipWindowAboveBelow".into(),
-        RotateWindow => "rotateWindow".into(),
-        Exit => "exit".into(),
-        ToggleRecord => "toggleRecord".into(),
-    }
-}
-
 /// Stable wire id for agents; `None` for `Skip` (omit from snapshot keys).
 pub(crate) fn wire_id(key: &RawKey) -> Option<String> {
     match key {
@@ -143,7 +88,7 @@ pub(crate) fn wire_id(key: &RawKey) -> Option<String> {
         RawKey::Key(c) => Some(c.to_string()),
         RawKey::Text(s) => Some(s.clone()),
         RawKey::Enigo(k) => Some(serde_plain::to_string(k).unwrap_or_else(|_| format!("{k:?}"))),
-        RawKey::Action(a) => Some(action_wire_id(a)),
+        RawKey::Action(a) => Some(a.wire_id()),
     }
 }
 
