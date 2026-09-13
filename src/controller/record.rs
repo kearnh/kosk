@@ -84,6 +84,95 @@ impl InputSnapshot {
             .position(|b| *b == btn)
             .is_some_and(|i| self.buttons & (1 << i) != 0)
     }
+
+    pub fn any_nonzero(&self) -> bool {
+        self.lx != 0.0
+            || self.ly != 0.0
+            || self.rx != 0.0
+            || self.ry != 0.0
+            || self.lpad.is_some()
+            || self.rpad.is_some()
+            || self.buttons != 0
+            || self.lt.is_some()
+            || self.rt.is_some()
+    }
+}
+
+/// How [`PostMapInput::is_engaged`] treats an empty snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngagedPolicy {
+    /// Always deliver (replay tape frames).
+    Always,
+    /// Deliver only when any axis/button/pad is active (MCP virtual).
+    AnyNonZero,
+}
+
+/// Stored post-map coordinates — no re-warp / pad-origin (replay + MCP).
+#[derive(Debug, Clone)]
+pub struct PostMapInput {
+    pub snap: InputSnapshot,
+    engaged: EngagedPolicy,
+}
+
+impl PostMapInput {
+    pub fn always(snap: InputSnapshot) -> Self {
+        Self {
+            snap,
+            engaged: EngagedPolicy::Always,
+        }
+    }
+
+    pub fn any_nonzero(snap: InputSnapshot) -> Self {
+        Self {
+            snap,
+            engaged: EngagedPolicy::AnyNonZero,
+        }
+    }
+}
+
+impl ControllerInput for PostMapInput {
+    fn left_stick_raw(&self) -> (f32, f32) {
+        (self.snap.lx, self.snap.ly)
+    }
+    fn right_stick_raw(&self) -> (f32, f32) {
+        (self.snap.rx, self.snap.ry)
+    }
+    fn left_stick(&self) -> (f32, f32) {
+        (self.snap.lx, self.snap.ly)
+    }
+    fn right_stick(&self) -> (f32, f32) {
+        (self.snap.rx, self.snap.ry)
+    }
+    fn left_pad_raw(&self) -> Option<(f32, f32)> {
+        self.snap.lpad
+    }
+    fn right_pad_raw(&self) -> Option<(f32, f32)> {
+        self.snap.rpad
+    }
+    fn left_pad(&self) -> Option<(f32, f32)> {
+        self.snap.lpad
+    }
+    fn right_pad(&self) -> Option<(f32, f32)> {
+        self.snap.rpad
+    }
+    fn trigger_left(&self) -> Option<u8> {
+        self.snap.lt
+    }
+    fn trigger_right(&self) -> Option<u8> {
+        self.snap.rt
+    }
+    fn query(&self, button: ControllerButton) -> bool {
+        self.snap.button(button)
+    }
+    fn is_engaged(&self) -> bool {
+        match self.engaged {
+            EngagedPolicy::Always => true,
+            EngagedPolicy::AnyNonZero => self.snap.any_nonzero(),
+        }
+    }
+    fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
+        Box::new(self.clone())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

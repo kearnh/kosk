@@ -8,8 +8,10 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 
 use crate::config;
-use crate::controller::record::{parse_tape, InputSnapshot, RecordEvent, Tape, TapeHeader};
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::record::{
+    parse_tape, InputSnapshot, PostMapInput, RecordEvent, Tape, TapeHeader,
+};
+use crate::controller::ControllerInput;
 
 /// Wall clock of playback start, shared so a keys log uses the same `t_us` epoch as the tape.
 static PLAYBACK_ORIGIN: Mutex<Option<Instant>> = Mutex::new(None);
@@ -27,50 +29,8 @@ pub fn clear_playback_origin() {
     *PLAYBACK_ORIGIN.lock().expect("playback origin lock") = None;
 }
 
-#[derive(Debug, Clone)]
-pub struct ReplayInput(pub InputSnapshot);
-
-impl ControllerInput for ReplayInput {
-    fn left_stick_raw(&self) -> (f32, f32) {
-        (self.0.lx, self.0.ly)
-    }
-    fn right_stick_raw(&self) -> (f32, f32) {
-        (self.0.rx, self.0.ry)
-    }
-    fn left_stick(&self) -> (f32, f32) {
-        (self.0.lx, self.0.ly)
-    }
-    fn right_stick(&self) -> (f32, f32) {
-        (self.0.rx, self.0.ry)
-    }
-    fn left_pad_raw(&self) -> Option<(f32, f32)> {
-        self.0.lpad
-    }
-    fn right_pad_raw(&self) -> Option<(f32, f32)> {
-        self.0.rpad
-    }
-    fn left_pad(&self) -> Option<(f32, f32)> {
-        self.0.lpad
-    }
-    fn right_pad(&self) -> Option<(f32, f32)> {
-        self.0.rpad
-    }
-    fn trigger_left(&self) -> Option<u8> {
-        self.0.lt
-    }
-    fn trigger_right(&self) -> Option<u8> {
-        self.0.rt
-    }
-    fn query(&self, button: ControllerButton) -> bool {
-        self.0.button(button)
-    }
-    fn is_engaged(&self) -> bool {
-        true
-    }
-    fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
-        Box::new(self.clone())
-    }
-}
+/// Post-map tape frame (`EngagedPolicy::Always`).
+pub type ReplayInput = PostMapInput;
 
 #[derive(Debug, Clone)]
 enum TimedItem {
@@ -144,7 +104,7 @@ impl ReplayDevice {
         }
         Some(match item {
             TimedItem::Idle(_) => ReplayStep::Idle,
-            TimedItem::Snapshot(_, snap) => ReplayStep::Snapshot(ReplayInput(snap)),
+            TimedItem::Snapshot(_, snap) => ReplayStep::Snapshot(PostMapInput::always(snap)),
             TimedItem::Layout(_, name) => ReplayStep::Layout(name),
         })
     }
@@ -183,6 +143,7 @@ impl Iterator for ReplayDevice {
 mod tests {
     use super::*;
     use crate::controller::record::{encode_event, encode_header, MappingScales};
+    use crate::controller::{ControllerButton, ControllerInput};
 
     fn sample_tape() -> Tape {
         Tape {
@@ -248,7 +209,7 @@ mod tests {
         let mut dev = ReplayDevice::from_tape(sample_tape(), false);
         match dev.next_immediate() {
             Some(ReplayStep::Snapshot(s)) => {
-                assert_eq!(s.0.lx, 0.5);
+                assert_eq!(s.snap.lx, 0.5);
                 assert!(s.query(ControllerButton::FaceBottom));
             }
             other => panic!("expected snapshot, got {other:?}"),
@@ -263,7 +224,7 @@ mod tests {
         }
         match dev.next_immediate() {
             Some(ReplayStep::Snapshot(s)) => {
-                assert_eq!(s.0.rx, 1.0);
+                assert_eq!(s.snap.rx, 1.0);
                 assert_eq!(s.trigger_left(), Some(40));
             }
             other => panic!("expected second snapshot, got {other:?}"),

@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::controller::record::BUTTON_ORDER;
+use crate::controller::record::{InputSnapshot, PostMapInput, BUTTON_ORDER};
 use strum::EnumCount;
 
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::ControllerButton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -30,13 +30,6 @@ impl StickSide {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PadState {
-    pub touching: bool,
-    pub x: f32,
-    pub y: f32,
-}
-
 #[derive(Debug, Clone, Default)]
 struct VirtualExpires {
     left_stick: Option<Instant>,
@@ -48,119 +41,9 @@ struct VirtualExpires {
     rt: Option<Instant>,
 }
 
-#[derive(Debug, Clone)]
-pub struct VirtualState {
-    pub lx: f32,
-    pub ly: f32,
-    pub rx: f32,
-    pub ry: f32,
-    pub left_pad: PadState,
-    pub right_pad: PadState,
-    pub buttons: u32,
-    pub lt: Option<u8>,
-    pub rt: Option<u8>,
-}
-
-impl Default for VirtualState {
-    fn default() -> Self {
-        Self {
-            lx: 0.0,
-            ly: 0.0,
-            rx: 0.0,
-            ry: 0.0,
-            left_pad: PadState::default(),
-            right_pad: PadState::default(),
-            buttons: 0,
-            lt: None,
-            rt: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct VirtualInput {
-    lx: f32,
-    ly: f32,
-    rx: f32,
-    ry: f32,
-    left_pad: PadState,
-    right_pad: PadState,
-    buttons: u32,
-    lt: Option<u8>,
-    rt: Option<u8>,
-}
-
-impl VirtualInput {
-    fn button(&self, btn: ControllerButton) -> bool {
-        BUTTON_ORDER
-            .iter()
-            .position(|b| *b == btn)
-            .is_some_and(|i| self.buttons & (1 << i) != 0)
-    }
-
-    fn pad_xy(pad: &PadState) -> Option<(f32, f32)> {
-        if pad.touching {
-            Some((pad.x, pad.y))
-        } else {
-            None
-        }
-    }
-}
-
-impl ControllerInput for VirtualInput {
-    fn left_stick_raw(&self) -> (f32, f32) {
-        (self.lx, self.ly)
-    }
-    fn right_stick_raw(&self) -> (f32, f32) {
-        (self.rx, self.ry)
-    }
-    // No re-warp / pad-origin — MCP supplies post-map coordinates (same as ReplayInput).
-    fn left_stick(&self) -> (f32, f32) {
-        (self.lx, self.ly)
-    }
-    fn right_stick(&self) -> (f32, f32) {
-        (self.rx, self.ry)
-    }
-    fn left_pad_raw(&self) -> Option<(f32, f32)> {
-        Self::pad_xy(&self.left_pad)
-    }
-    fn right_pad_raw(&self) -> Option<(f32, f32)> {
-        Self::pad_xy(&self.right_pad)
-    }
-    fn left_pad(&self) -> Option<(f32, f32)> {
-        Self::pad_xy(&self.left_pad)
-    }
-    fn right_pad(&self) -> Option<(f32, f32)> {
-        Self::pad_xy(&self.right_pad)
-    }
-    fn trigger_left(&self) -> Option<u8> {
-        self.lt
-    }
-    fn trigger_right(&self) -> Option<u8> {
-        self.rt
-    }
-    fn query(&self, button: ControllerButton) -> bool {
-        self.button(button)
-    }
-    fn is_engaged(&self) -> bool {
-        self.lx != 0.0
-            || self.ly != 0.0
-            || self.rx != 0.0
-            || self.ry != 0.0
-            || self.left_pad.touching
-            || self.right_pad.touching
-            || self.buttons != 0
-            || self.lt.is_some()
-            || self.rt.is_some()
-    }
-    fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
-        Box::new(self.clone())
-    }
-}
-
 #[derive(Default)]
 pub struct VirtualController {
-    state: VirtualState,
+    state: InputSnapshot,
     expires: VirtualExpires,
 }
 
@@ -179,6 +62,13 @@ fn button_bit(btn: ControllerButton) -> Option<usize> {
     BUTTON_ORDER.iter().position(|b| *b == btn)
 }
 
+fn pad_json(pad: Option<(f32, f32)>) -> Value {
+    match pad {
+        Some((x, y)) => json!({ "touching": true, "x": x, "y": y }),
+        None => json!({ "touching": false, "x": 0.0, "y": 0.0 }),
+    }
+}
+
 impl VirtualController {
     fn apply_expiry(&mut self) {
         let now = Instant::now();
@@ -193,11 +83,11 @@ impl VirtualController {
             self.expires.right_stick = None;
         }
         if self.expires.left_pad.is_some_and(|t| now >= t) {
-            self.state.left_pad = PadState::default();
+            self.state.lpad = None;
             self.expires.left_pad = None;
         }
         if self.expires.right_pad.is_some_and(|t| now >= t) {
-            self.state.right_pad = PadState::default();
+            self.state.rpad = None;
             self.expires.right_pad = None;
         }
         for (i, exp) in self.expires.buttons.iter_mut().enumerate() {
@@ -221,23 +111,13 @@ impl VirtualController {
     }
 
     pub fn neutral(&mut self) {
-        self.state = VirtualState::default();
+        self.state = InputSnapshot::default();
         self.expires = VirtualExpires::default();
     }
 
-    pub fn snapshot(&mut self) -> VirtualInput {
+    pub fn snapshot(&mut self) -> PostMapInput {
         self.apply_expiry();
-        VirtualInput {
-            lx: self.state.lx,
-            ly: self.state.ly,
-            rx: self.state.rx,
-            ry: self.state.ry,
-            left_pad: self.state.left_pad,
-            right_pad: self.state.right_pad,
-            buttons: self.state.buttons,
-            lt: self.state.lt,
-            rt: self.state.rt,
-        }
+        PostMapInput::any_nonzero(self.state)
     }
 
     pub fn set_stick(&mut self, side: StickSide, x: f32, y: f32, duration_ms: Option<u64>) {
@@ -281,19 +161,15 @@ impl VirtualController {
         touching: bool,
         duration_ms: Option<u64>,
     ) {
-        let pad = PadState {
-            touching,
-            x: clamp_axis(x),
-            y: clamp_axis(y),
-        };
+        let pad = touching.then_some((clamp_axis(x), clamp_axis(y)));
         let until = Self::deadline(duration_ms);
         match side {
             StickSide::Left => {
-                self.state.left_pad = pad;
+                self.state.lpad = pad;
                 self.expires.left_pad = until;
             }
             StickSide::Right => {
-                self.state.right_pad = pad;
+                self.state.rpad = pad;
                 self.expires.right_pad = until;
             }
         }
@@ -302,11 +178,11 @@ impl VirtualController {
     pub fn release_pad(&mut self, side: StickSide) {
         match side {
             StickSide::Left => {
-                self.state.left_pad = PadState::default();
+                self.state.lpad = None;
                 self.expires.left_pad = None;
             }
             StickSide::Right => {
-                self.state.right_pad = PadState::default();
+                self.state.rpad = None;
                 self.expires.right_pad = None;
             }
         }
@@ -341,31 +217,24 @@ impl VirtualController {
 
     pub fn get_state_json(&mut self) -> Value {
         let snap = self.snapshot();
+        let s = &snap.snap;
         let mut pressed = Vec::new();
         for btn in BUTTON_ORDER {
-            if snap.button(*btn) {
+            if s.button(*btn) {
                 pressed.push(format!("{btn:?}"));
             }
         }
         json!({
-            "lx": snap.lx,
-            "ly": snap.ly,
-            "rx": snap.rx,
-            "ry": snap.ry,
-            "left_pad": {
-                "touching": snap.left_pad.touching,
-                "x": snap.left_pad.x,
-                "y": snap.left_pad.y,
-            },
-            "right_pad": {
-                "touching": snap.right_pad.touching,
-                "x": snap.right_pad.x,
-                "y": snap.right_pad.y,
-            },
-            "buttons": snap.buttons,
+            "lx": s.lx,
+            "ly": s.ly,
+            "rx": s.rx,
+            "ry": s.ry,
+            "left_pad": pad_json(s.lpad),
+            "right_pad": pad_json(s.rpad),
+            "buttons": s.buttons,
             "pressed": pressed,
-            "lt": snap.lt,
-            "rt": snap.rt,
+            "lt": s.lt,
+            "rt": s.rt,
         })
     }
 }
@@ -373,6 +242,7 @@ impl VirtualController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controller::ControllerInput;
     use std::thread;
 
     #[test]
@@ -425,7 +295,7 @@ mod tests {
         let s = ctl.snapshot();
         assert!(!s.is_engaged());
         assert_eq!(s.left_stick(), (0.0, 0.0));
-        assert!(!s.right_pad.touching);
+        assert!(s.right_pad().is_none());
         assert!(!s.query(ControllerButton::FaceBottom));
         assert!(s.trigger_left().is_none());
     }
