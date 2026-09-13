@@ -283,13 +283,21 @@ impl KeyboardState {
         use KeyboardAction::*;
         match action {
             SendKeyUnderLeftStick => {
-                if let Some(key) = self.raw_key_at_selected(true) {
+                if let Some(key) = self
+                    .selected
+                    .left
+                    .and_then(|cell| self.raw_key_at_selected(cell))
+                {
                     self.last_left_stick_action = Some(Instant::now());
                     self.send_key(&key, events, source)?;
                 }
             }
             SendKeyUnderRightStick => {
-                if let Some(key) = self.raw_key_at_selected(false) {
+                if let Some(key) = self
+                    .selected
+                    .right
+                    .and_then(|cell| self.raw_key_at_selected(cell))
+                {
                     self.last_right_stick_action = Some(Instant::now());
                     self.send_key(&key, events, source)?;
                 }
@@ -452,12 +460,7 @@ impl KeyboardState {
         self.bindings.reset(holdover);
     }
 
-    fn raw_key_at_selected(&self, left: bool) -> Option<RawKey> {
-        let cell = if left {
-            self.selected.left
-        } else {
-            self.selected.right
-        }?;
+    fn raw_key_at_selected(&self, cell: (usize, usize)) -> Option<RawKey> {
         self.layouts
             .get(&self.current_layout)?
             .key_at_cell(cell, self.shift_state)
