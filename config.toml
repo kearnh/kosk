@@ -12,6 +12,8 @@ scale_y = 32.0
 event_debounce_ms = 240
 event_debounce_repeat_ms = 55
 stick_select_lock_ms = 100
+# Current key keeps the highlight until a neighbor is this times closer (1 = off).
+stick_select_sticky = 1.25
 controller_map = "mappings.toml"
 record_file = "captures/kosk-%.krec"
 

@@ -51,7 +51,7 @@ Stick rest positions come from optional top-level `stick_rest_left` / `stick_res
 
 Optional `stick_bounds.left` / `right` are lists of rectangles in unscaled units. They are scaled at load. If they are present and the cursor is outside all of them, the cursor is clamped to the nearest point on the nearest rectangle before hit-testing. That keeps the left stick from highlighting keys on the right half of a split keyboard when you push to the edge.
 
-`get_key_at` walks hitboxes and picks the containing shape with the smallest “distance” value (squared radius for circles, ellipse implicit value for ellipses). Overlapping hitboxes therefore resolve to the nearer center, not to draw order alone.
+`get_key_at` walks hitboxes and picks the containing shape with the smallest rim-fraction score: `0` at that key’s centre and `1` on its rim (`distance² / r²` for circles; the usual ellipse implicit value for wide keys). Overlapping hitboxes therefore resolve to the key whose centre you are closer to relative to that key’s own size, not to draw order, and not to raw pixel distance (which would let a wide ellipse beat a letter almost everywhere they overlap). Keyboard mode can pass the previous cell and `stick_select_sticky` into the same picker so that cell keeps winning until a neighbor is clearly closer; `get_key_at` itself does not apply that margin.
 
 ## Debug drawing
 
@@ -65,4 +65,4 @@ When `[debug]` is set, `draw_debug` can paint the warped stick positions (`show_
 
 ## Summary
 
-A layout TOML is a scaled grid of keys, each of which names a `RawKey` (character, text, Enigo key, action, or skip) and optionally a richer display with `when` clauses. Pixel centers come from the first egui pass; hitboxes and optional bound rectangles then turn analog samples into the same keys the user sees. Recordings store the TOML source and the scales so replay can rebuild that geometry.
+A layout TOML is a scaled grid of keys, each of which names a `RawKey` (character, text, Enigo key, action, or skip) and optionally a richer display with `when` clauses. Pixel centers come from the first egui pass; hitboxes and optional bound rectangles then turn analog samples into the same keys the user sees, ranking overlaps by rim-fraction. Recordings store the TOML source and the scales so replay can rebuild that geometry.

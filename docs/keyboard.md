@@ -10,11 +10,13 @@ Keyboard mode is the default `StateId`. It draws the current layout as a grid of
 
 ## Stick selection
 
-Each poll, `handle_controller_input` asks the current `KeyboardLayout` for the nearest selectable key to the left stick and to the right stick, given `shift_state` (so the highlighted glyph matches the shifted layer).
+Each poll, `handle_controller_input` asks the current `KeyboardLayout` which selectable **cell** (row and column) is under the left stick and which is under the right stick. The glyph that cell sends is looked up later with `shift_state`, when the key is drawn or typed.
 
-Those answers are not always applied immediately. After a stick-send action succeeds, that stick’s selection is frozen for `stick_select_lock_ms` (100 ms in the checked-in config). The lock exists so a small pad twitch right after a press does not slide onto a neighbor and type a different letter while the trigger is still down. When the lock expires, highlighting follows the stick again.
+Among hitboxes that contain the cursor, the layout ranks keys by how far the cursor is from that key’s centre toward that key’s own rim (`0` at the centre, `1` on the rim). That unit is the same for letter circles and wide-key ellipses. The nearest rim-fraction wins, unless this stick already had a cell: that cell stays selected while it still contains the cursor and its score is at most `stick_select_sticky` times the next-best score (`1` turns the margin off; the checked-in default is `1.25`). A committed move onto a neighbor, or leaving the old hitbox, switches immediately. Idle rest highlight uses the unbiased pick at stick `(0, 0)`, not the sticky cell.
 
-If the selected key on a side **does** change (lock not holding, or lock expired), the keyboard calls `events.clear_toggle_suppress` for that side’s usual sources (`triggerLeft` and `padLeft`, or the right pair). That is how you can hold a trigger, toggle Shift, then slide onto Ctrl and toggle Ctrl without releasing. Details are in the event-queue doc.
+Those answers are not always applied immediately. After a stick-send action succeeds, that stick’s selection is frozen for `stick_select_lock_ms` (100 ms in the checked-in config). The lock exists so a small pad twitch right after a press does not slide onto a neighbor and type a different letter while the trigger is still down. When the lock expires, highlighting follows the stick again. The sticky margin is what stops a twitch from changing the key *before* send; the lock still runs after send.
+
+If the selected **cell** on a side **does** change (lock not holding, or lock expired), the keyboard calls `events.clear_toggle_suppress` for that side’s usual sources (`triggerLeft` and `padLeft`, or the right pair). That is how you can hold a trigger, toggle Shift, then slide onto Ctrl and toggle Ctrl without releasing. Details are in the event-queue doc. Toggling Shift on the same cell is not a selection change.
 
 When the device yields `None` (idle), selection is cleared and the binding engine is reset.
 
@@ -28,7 +30,7 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 
 `do_action` is the keyboard’s interpreter:
 
-- **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the highlighted `RawKey` if any.
+- **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the `RawKey` of the highlighted cell if any.
 - **SendKey / SendEnigoKey** call `send_key` with a synthetic `RawKey`.
 - **ToggleShift / Ctrl / Alt** enqueue the corresponding `Event`; they do not flip state here.
 - **Paste** enqueues Control-press, `v` click, Control-release as one `push_seq`.
@@ -64,7 +66,7 @@ Caps-style layer Shift is what you use to type `A`. Sticky Shift is what you use
 
 ## Drawing
 
-`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt). Left highlight is blue, right is green, both sticks on one key is purple. Idle sticks still show the center keys (`d` / `k` by convention in geometry) as a resting highlight.
+`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt). Left highlight is blue, right is green, both sticks on one key is purple. The highlight is the selected **cell**, not every button that happens to show the same glyph. Idle sticks still show the rest cell (home-row `d` / `k` by convention in geometry) as a resting highlight.
 
 The first frame captures button centers from egui’s layout and stores them on the `KeyboardLayout` so hitboxes match what was drawn. Debug overlays (cursors, hitboxes, bounds) are painted when `[debug]` is on.
 
@@ -78,4 +80,4 @@ A mouse click returns that key’s `RawKey` to `draw_ui`, which calls `send_key`
 
 ## Summary
 
-Keyboard mode maps two analog samples onto two highlighted keys, optionally freezes that highlight after a send, and turns bindings into `Event`s. Characters without modifiers go out as Unicode text; anything involving Ctrl, Alt, or sticky Shift goes out as a virtual-key chord in one `push_seq`. Layout Shift and sticky Shift are different flags so you can capitalize and chord without fighting the glyphs on screen.
+Keyboard mode maps two analog samples onto two highlighted layout cells, prefers the current cell until a neighbor is clearly closer, optionally freezes that highlight after a send, and turns bindings into `Event`s. Characters without modifiers go out as Unicode text; anything involving Ctrl, Alt, or sticky Shift goes out as a virtual-key chord in one `push_seq`. Layout Shift and sticky Shift are different flags so you can capitalize and chord without fighting the glyphs on screen.

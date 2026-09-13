@@ -28,21 +28,15 @@ pub enum SnapHitBox {
 }
 
 impl SnapHitBox {
-    /// Distance-like score when `(x,y)` is inside, matching live `HitBox::contains`.
+    /// Rim-fraction score when `(x,y)` is inside (`0` at centre, `1` at rim).
+    /// Matches live `HitBox::contains`.
     pub fn contains(&self, x: f32, y: f32) -> Option<f32> {
         match self {
             SnapHitBox::Circle {
                 x: kx,
                 y: ky,
                 r: kr,
-            } => {
-                let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
-                if distance_sq <= kr.powi(2) {
-                    Some(distance_sq)
-                } else {
-                    None
-                }
-            }
+            } => super::layout::circle_score(x, y, *kx, *ky, *kr),
             SnapHitBox::Ellipse {
                 x: kx,
                 y: ky,
@@ -384,6 +378,20 @@ mod tests {
             .expect("aabb");
         assert!(aabb.min_x <= ex && ex <= aabb.max_x);
         assert!(aabb.min_y <= ey && ey <= aabb.max_y);
+    }
+
+    #[test]
+    fn circle_score_is_zero_at_centre_and_one_at_rim() {
+        let hb = SnapHitBox::Circle {
+            x: 0.0,
+            y: 0.0,
+            r: 10.0,
+        };
+        assert_eq!(hb.contains(0.0, 0.0), Some(0.0));
+        assert_eq!(hb.contains(10.0, 0.0), Some(1.0));
+        let mid = hb.contains(6.0, 0.0).unwrap();
+        assert!((mid - 0.36).abs() < 1e-5);
+        assert_eq!(hb.contains(11.0, 0.0), None);
     }
 
     #[test]

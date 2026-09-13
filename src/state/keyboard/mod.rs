@@ -132,11 +132,17 @@ fn stick_side_sources(left: bool) -> [EventSource; 2] {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct StickCells {
+    left: Option<(usize, usize)>,
+    right: Option<(usize, usize)>,
+}
+
 #[derive(Default)]
 pub struct KeyboardState {
     layouts: HashMap<String, KeyboardLayout>,
     current_layout: String,
-    selected: (Option<RawKey>, Option<RawKey>),
+    selected: StickCells,
     shift_state: bool,
     shift_mod: bool,
     ctrl_mod: bool,
@@ -145,6 +151,7 @@ pub struct KeyboardState {
     last_left_stick_action: Option<Instant>,
     last_right_stick_action: Option<Instant>,
     stick_select_lock_ms: Duration,
+    stick_select_sticky: f32,
     label_cache: display_icon::LabelCache,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
@@ -276,15 +283,15 @@ impl KeyboardState {
         use KeyboardAction::*;
         match action {
             SendKeyUnderLeftStick => {
-                if let (Some(left), _) = &self.selected {
+                if let Some(key) = self.raw_key_at_selected(true) {
                     self.last_left_stick_action = Some(Instant::now());
-                    self.send_key(&left.clone(), events, source)?;
+                    self.send_key(&key, events, source)?;
                 }
             }
             SendKeyUnderRightStick => {
-                if let (_, Some(right)) = &self.selected {
+                if let Some(key) = self.raw_key_at_selected(false) {
                     self.last_right_stick_action = Some(Instant::now());
-                    self.send_key(&right.clone(), events, source)?;
+                    self.send_key(&key, events, source)?;
                 }
             }
             SendKey(key) => {
@@ -382,7 +389,7 @@ impl KeyboardState {
         }
         self.layouts = map;
         self.current_layout = header.current_layout.clone();
-        self.selected = (None, None);
+        self.selected = StickCells::default();
         self.on_layouts_changed();
         Ok(())
     }
@@ -395,7 +402,7 @@ impl KeyboardState {
             self.current_layout = name.to_string();
             self.on_layouts_changed();
         }
-        self.selected = (None, None);
+        self.selected = StickCells::default();
         Ok(())
     }
 
@@ -440,9 +447,20 @@ impl KeyboardState {
 
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         if holdover.is_none() {
-            self.selected = (None, None);
+            self.selected = StickCells::default();
         }
         self.bindings.reset(holdover);
+    }
+
+    fn raw_key_at_selected(&self, left: bool) -> Option<RawKey> {
+        let cell = if left {
+            self.selected.left
+        } else {
+            self.selected.right
+        }?;
+        self.layouts
+            .get(&self.current_layout)?
+            .key_at_cell(cell, self.shift_state)
     }
 
     pub fn handle_controller_input(
@@ -457,15 +475,17 @@ impl KeyboardState {
             .get(&self.current_layout)
             .ok_or_else(|| anyhow::anyhow!("Current layout '{}' not found", self.current_layout))?;
 
-        let prev_selected = self.selected.clone();
+        let prev_selected = self.selected;
 
-        let selected_left = current_layout.get_nearest_key_left(
+        let selected_left = current_layout.nearest_cell_left(
             input.left_pad().unwrap_or_else(|| input.left_stick()),
-            self.shift_state,
+            prev_selected.left,
+            self.stick_select_sticky,
         );
-        let selected_right = current_layout.get_nearest_key_right(
+        let selected_right = current_layout.nearest_cell_right(
             input.right_pad().unwrap_or_else(|| input.right_stick()),
-            self.shift_state,
+            prev_selected.right,
+            self.stick_select_sticky,
         );
 
         let lock_left = self
@@ -476,24 +496,27 @@ impl KeyboardState {
             .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
 
         let new_left = if lock_left {
-            prev_selected.0.clone()
+            prev_selected.left
         } else {
             selected_left
         };
         let new_right = if lock_right {
-            prev_selected.1.clone()
+            prev_selected.right
         } else {
             selected_right
         };
 
-        if prev_selected.0 != new_left {
+        if prev_selected.left != new_left {
             events.clear_toggle_suppress(stick_side_sources(true));
         }
-        if prev_selected.1 != new_right {
+        if prev_selected.right != new_right {
             events.clear_toggle_suppress(stick_side_sources(false));
         }
 
-        self.selected = (new_left, new_right);
+        self.selected = StickCells {
+            left: new_left,
+            right: new_right,
+        };
         if !lock_left {
             self.last_left_stick_action = None;
         }
@@ -577,11 +600,11 @@ impl KeyboardState {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
-            let left_center = current_layout.get_nearest_key_left((0.0, 0.0), *shift_state);
-            let right_center = current_layout.get_nearest_key_right((0.0, 0.0), *shift_state);
+            let left_rest = current_layout.nearest_cell_left((0.0, 0.0), None, 1.0);
+            let right_rest = current_layout.nearest_cell_right((0.0, 0.0), None, 1.0);
             let content_width = current_layout.left_content_width(pad_x);
 
-            for (items, indent, height) in &*current_layout {
+            for (row_idx, (items, indent, height)) in (&*current_layout).into_iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::Vec2::new(pad_x, pad_y);
 
@@ -616,11 +639,9 @@ impl KeyboardState {
                                 {
                                     button = button.selected(true);
                                 } else {
-                                    let current_key = key.key(*shift_state);
-                                    let sel0 =
-                                        selected.0.as_ref().is_some_and(|s| s == &current_key);
-                                    let sel1 =
-                                        selected.1.as_ref().is_some_and(|s| s == &current_key);
+                                    let cell = (row_idx, col_idx);
+                                    let sel0 = selected.left == Some(cell);
+                                    let sel1 = selected.right == Some(cell);
 
                                     if sel0 && sel1 {
                                         // Purple for both
@@ -628,20 +649,14 @@ impl KeyboardState {
                                             .fill(egui::Color32::from_rgb(120, 60, 180))
                                             .selected(true);
                                     } else if sel0
-                                        || (selected.0.is_none()
-                                            && left_center
-                                                .as_ref()
-                                                .is_some_and(|c| c == &current_key))
+                                        || (selected.left.is_none() && left_rest == Some(cell))
                                     {
                                         // Blue for left stick
                                         button = button
                                             .fill(egui::Color32::from_rgb(50, 100, 180))
                                             .selected(true);
                                     } else if sel1
-                                        || (selected.1.is_none()
-                                            && right_center
-                                                .as_ref()
-                                                .is_some_and(|c| c == &current_key))
+                                        || (selected.right.is_none() && right_rest == Some(cell))
                                     {
                                         // Green for right stick
                                         button = button
@@ -773,6 +788,7 @@ impl KeyboardState {
         self.bindings = load_bindings(StateId::Keyboard)?;
 
         self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
+        self.stick_select_sticky = cfg.stick_select_sticky;
 
         self.on_layouts_changed();
 

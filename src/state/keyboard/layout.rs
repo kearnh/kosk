@@ -379,14 +379,7 @@ impl HitBox {
                 x: kx,
                 y: ky,
                 r: kr,
-            } => {
-                let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
-                if distance_sq <= kr.powi(2) {
-                    Some(distance_sq)
-                } else {
-                    None
-                }
-            }
+            } => circle_score(x, y, *kx, *ky, *kr),
             HitBox::Ellipse {
                 x: kx,
                 y: ky,
@@ -397,13 +390,25 @@ impl HitBox {
                 let dy = y - ky;
                 let val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
                 if val <= 1.0 {
-                    Some(val) // Return a value proportional to distance for the nearest-key logic
+                    Some(val)
                 } else {
                     None
                 }
             }
         }
     }
+}
+
+pub(crate) fn circle_score(x: f32, y: f32, kx: f32, ky: f32, r: f32) -> Option<f32> {
+    let distance_sq = (x - kx).powi(2) + (y - ky).powi(2);
+    let r_sq = r * r;
+    if distance_sq > r_sq {
+        return None;
+    }
+    if r_sq <= f32::EPSILON {
+        return Some(0.0);
+    }
+    Some(distance_sq / r_sq)
 }
 
 #[derive(Debug)]
@@ -850,44 +855,97 @@ impl KeyboardLayout {
         )
     }
 
-    fn get_nearest_key_with_bounds(
-        &self,
-        cursor: (f32, f32),
-        bounds: &[Rect],
-        shift_state: bool,
-    ) -> Option<RawKey> {
-        let (cursor_x, cursor_y) = clamp_stick_cursor(cursor, bounds);
-        self.get_key_at(cursor_x, cursor_y, shift_state)
-    }
-
     pub fn get_nearest_key_left(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        let cursor = self.stick_to_cursor_left(stick);
-        self.get_nearest_key_with_bounds(cursor, &self.left_stick_bounds, shift_state)
+        self.key_at_cell(self.nearest_cell_left(stick, None, 1.0)?, shift_state)
     }
 
     pub fn get_nearest_key_right(&self, stick: (f32, f32), shift_state: bool) -> Option<RawKey> {
-        let cursor = self.stick_to_cursor_right(stick);
-        self.get_nearest_key_with_bounds(cursor, &self.right_stick_bounds, shift_state)
+        self.key_at_cell(self.nearest_cell_right(stick, None, 1.0)?, shift_state)
     }
 
     pub fn get_key_at(&self, x: f32, y: f32, shifted: bool) -> Option<RawKey> {
-        let mut candidate = (f32::MAX, None);
+        self.key_at_cell(self.pick_cell_at(x, y, None, 1.0)?, shifted)
+    }
+
+    pub(crate) fn key_at_cell(&self, cell: (usize, usize), shifted: bool) -> Option<RawKey> {
+        self.rows
+            .get(cell.0)?
+            .items
+            .get(cell.1)?
+            .as_key()
+            .map(|key_button| key_button.key.get(shifted))
+    }
+
+    fn pick_cell_at(
+        &self,
+        x: f32,
+        y: f32,
+        sticky: Option<(usize, usize)>,
+        k: f32,
+    ) -> Option<(usize, usize)> {
+        let k = k.max(1.0);
+        let mut best: Option<(f32, usize, usize)> = None;
+        let mut sticky_score = None;
+
         for (row_idx, row) in self.key_hit_boxes.iter().enumerate() {
             for (col_idx, h) in row.iter().enumerate() {
-                if let Some(h) = h {
-                    if let Some(d) = h.contains(x, y) {
-                        if d < candidate.0 {
-                            let Some(key_button) = self.rows[row_idx].items[col_idx].as_key()
-                            else {
-                                continue;
-                            };
-                            candidate = (d, Some(key_button.key.get(shifted)));
-                        }
-                    }
+                let Some(h) = h else {
+                    continue;
+                };
+                let Some(score) = h.contains(x, y) else {
+                    continue;
+                };
+
+                if sticky == Some((row_idx, col_idx)) {
+                    sticky_score = Some(score);
+                }
+
+                if best.is_none_or(|(best_score, _, _)| score < best_score) {
+                    best = Some((score, row_idx, col_idx));
                 }
             }
         }
-        candidate.1
+
+        let (other_score, row, col) = best?;
+
+        if let Some(s_sticky) = sticky_score {
+            if s_sticky <= other_score * k {
+                return sticky;
+            }
+        }
+
+        Some((row, col))
+    }
+
+    fn nearest_cell_with_bounds(
+        &self,
+        cursor: (f32, f32),
+        bounds: &[Rect],
+        sticky: Option<(usize, usize)>,
+        k: f32,
+    ) -> Option<(usize, usize)> {
+        let (x, y) = clamp_stick_cursor(cursor, bounds);
+        self.pick_cell_at(x, y, sticky, k)
+    }
+
+    pub(crate) fn nearest_cell_left(
+        &self,
+        stick: (f32, f32),
+        sticky: Option<(usize, usize)>,
+        k: f32,
+    ) -> Option<(usize, usize)> {
+        let cursor = self.stick_to_cursor_left(stick);
+        self.nearest_cell_with_bounds(cursor, &self.left_stick_bounds, sticky, k)
+    }
+
+    pub(crate) fn nearest_cell_right(
+        &self,
+        stick: (f32, f32),
+        sticky: Option<(usize, usize)>,
+        k: f32,
+    ) -> Option<(usize, usize)> {
+        let cursor = self.stick_to_cursor_right(stick);
+        self.nearest_cell_with_bounds(cursor, &self.right_stick_bounds, sticky, k)
     }
 
     pub fn draw_debug(&self, ctx: &Context, _: &mut Ui) {
@@ -1397,5 +1455,89 @@ items = [
             .unwrap_err()
             .to_string();
         assert!(err.contains("non-key"), "{err}");
+    }
+
+    fn two_letter_circles() -> KeyboardLayout {
+        let toml = r#"
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [
+  { key = "a", width = 1.0 },
+  { key = "s", width = 1.0 },
+]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(0.0, 0.0)),
+            Some(Pos2::new(20.0, 0.0)),
+        ]]);
+        layout
+    }
+
+    fn letter_and_wide() -> KeyboardLayout {
+        let toml = r#"
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [
+  { key = "a", width = 1.0 },
+  { key = "b", width = 2.0 },
+]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(0.0, 0.0)),
+            Some(Pos2::new(15.0, 0.0)),
+        ]]);
+        layout
+    }
+
+    #[test]
+    fn overlapping_letter_beats_wide_key_when_nearer_rim() {
+        let layout = letter_and_wide();
+        assert_eq!(
+            layout.get_key_at(2.0, 0.0, false),
+            Some(RawKey::Key('a')),
+            "letter rim-fraction is smaller than the wide key's"
+        );
+    }
+
+    #[test]
+    fn sticky_holds_across_midpoint_noise() {
+        let layout = two_letter_circles();
+        let a = (0, 0);
+        let s = (0, 1);
+        let noisy = (10.5, 0.0);
+        assert_eq!(
+            layout.pick_cell_at(noisy.0, noisy.1, Some(a), 1.25),
+            Some(a)
+        );
+        assert_eq!(layout.pick_cell_at(noisy.0, noisy.1, Some(a), 1.0), Some(s));
+        assert_eq!(layout.pick_cell_at(noisy.0, noisy.1, None, 1.25), Some(s));
+    }
+
+    #[test]
+    fn sticky_yields_when_neighbor_is_clearly_nearer() {
+        let layout = two_letter_circles();
+        assert_eq!(
+            layout.pick_cell_at(10.8, 0.0, Some((0, 0)), 1.25),
+            Some((0, 1))
+        );
+    }
+
+    #[test]
+    fn sticky_does_not_keep_a_key_after_leaving_its_hitbox() {
+        let layout = two_letter_circles();
+        assert_eq!(layout.pick_cell_at(10.0, 50.0, Some((0, 0)), 1.25), None);
+    }
+
+    #[test]
+    fn sticky_survives_a_brief_pulse_toward_the_neighbor() {
+        let layout = two_letter_circles();
+        let a = (0, 0);
+        assert_eq!(layout.pick_cell_at(5.0, 0.0, Some(a), 1.25), Some(a));
+        assert_eq!(layout.pick_cell_at(10.5, 0.0, Some(a), 1.25), Some(a));
+        assert_eq!(layout.pick_cell_at(5.0, 0.0, Some(a), 1.25), Some(a));
     }
 }

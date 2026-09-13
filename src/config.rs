@@ -182,6 +182,10 @@ pub struct Config {
     #[serde(default = "default_stick_select_lock_ms")]
     pub stick_select_lock_ms: u64,
 
+    /// Extra hit-test margin for the currently selected key (`1` = off).
+    #[serde(default = "default_stick_select_sticky")]
+    pub stick_select_sticky: f32,
+
     /// Steam Controller 2 pad mapping and feel. Omitted → defaults.
     #[serde(default)]
     pub sc2: Sc2Config,
@@ -464,6 +468,10 @@ fn default_start_layout() -> String {
 
 fn default_stick_select_lock_ms() -> u64 {
     100
+}
+
+fn default_stick_select_sticky() -> f32 {
+    1.25
 }
 
 fn default_pad_origin_relative() -> f32 {
