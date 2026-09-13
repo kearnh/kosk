@@ -10,6 +10,8 @@ pub mod ps4;
 pub mod record;
 pub mod replay;
 pub mod sc2;
+#[cfg(test)]
+pub(crate) mod test_input;
 pub mod virtual_ctl;
 
 use hidapi::HidApi;
