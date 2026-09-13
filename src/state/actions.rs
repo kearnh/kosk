@@ -76,3 +76,43 @@ pub(crate) fn to_camel(pascal: &str) -> String {
         Some(c) => c.to_lowercase().chain(chars).collect(),
     }
 }
+
+pub(crate) fn parse_state_id(data: &str) -> Result<StateId, anyhow::Error> {
+    use strum::VariantNames;
+    let canon = StateId::VARIANTS
+        .iter()
+        .find(|v| data.eq_ignore_ascii_case(v))
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
+    serde_plain::from_str(canon).map_err(|e: serde_plain::Error| anyhow::anyhow!(e))
+}
+
+/// Unit variants via serde_plain, or `SwitchState.<state>` via `make_switch`.
+pub(crate) fn parse_unit_or_switch_state<T>(
+    value: &str,
+    variants: &[&'static str],
+    kind: &str,
+    make_switch: impl FnOnce(StateId) -> T,
+) -> Result<T, anyhow::Error>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let (head, tail_opt) = match value.split_once('.') {
+        Some((h, t)) => (h, Some(t)),
+        None => (value, None),
+    };
+
+    let variant = variants
+        .iter()
+        .find(|v| head.eq_ignore_ascii_case(v))
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("unknown {kind} action '{value}'"))?;
+
+    match (variant, tail_opt) {
+        ("SwitchState", Some(data)) => Ok(make_switch(parse_state_id(data)?)),
+        (_, Some(_)) => Err(anyhow::anyhow!(
+            "{kind} action '{variant}' does not take a '.' payload"
+        )),
+        (v, None) => serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e)),
+    }
+}

@@ -79,17 +79,9 @@ impl TryFrom<&str> for KeyboardAction {
                     }
                 }
             }
-            ("SwitchState", Some(data)) => {
-                let canon = StateId::VARIANTS
-                    .iter()
-                    .find(|v| data.eq_ignore_ascii_case(v))
-                    .copied()
-                    .ok_or_else(|| anyhow::anyhow!("unknown state '{}'", data))?;
-                Ok(KeyboardAction::SwitchState(
-                    serde_plain::from_str(canon)
-                        .map_err(|e: serde_plain::Error| anyhow::anyhow!(e))?,
-                ))
-            }
+            ("SwitchState", Some(data)) => Ok(KeyboardAction::SwitchState(
+                crate::state::actions::parse_state_id(data)?,
+            )),
             ("SwitchLayout", Some(data)) => Ok(KeyboardAction::SwitchLayout(data.to_owned())),
             (_, Some(_)) => Err(anyhow::anyhow!(
                 "keyboard action '{}' does not take a '.' payload",

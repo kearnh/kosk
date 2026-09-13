@@ -202,6 +202,13 @@ fn max_focus_col(n_pills: usize) -> usize {
     n_pills // index of [+]
 }
 
+fn unit_and_switch_rows(variants: &[&str]) -> Vec<String> {
+    let mut rows = unit_names(variants, &["SwitchState"]);
+    rows.extend(switch_state_catalog());
+    rows.sort();
+    rows
+}
+
 fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) -> Vec<String> {
     match mode {
         StateId::Keyboard => {
@@ -224,30 +231,10 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
             rows.extend(concrete);
             rows
         }
-        StateId::Menu => {
-            let mut rows = unit_names(MenuAction::VARIANTS, &["SwitchState"]);
-            rows.extend(switch_state_catalog());
-            rows.sort();
-            rows
-        }
-        StateId::SelectLayout => {
-            let mut rows = unit_names(SelectLayoutAction::VARIANTS, &["SwitchState"]);
-            rows.extend(switch_state_catalog());
-            rows.sort();
-            rows
-        }
-        StateId::TextInput => {
-            let mut rows = unit_names(TextInputAction::VARIANTS, &["SwitchState"]);
-            rows.extend(switch_state_catalog());
-            rows.sort();
-            rows
-        }
-        StateId::MoveWindow => {
-            let mut rows = unit_names(MoveWindowAction::VARIANTS, &["SwitchState"]);
-            rows.extend(switch_state_catalog());
-            rows.sort();
-            rows
-        }
+        StateId::Menu => unit_and_switch_rows(MenuAction::VARIANTS),
+        StateId::SelectLayout => unit_and_switch_rows(SelectLayoutAction::VARIANTS),
+        StateId::TextInput => unit_and_switch_rows(TextInputAction::VARIANTS),
+        StateId::MoveWindow => unit_and_switch_rows(MoveWindowAction::VARIANTS),
         StateId::Mappings | StateId::SelectKey => Vec::new(),
     }
 }
