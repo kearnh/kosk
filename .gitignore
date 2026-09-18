@@ -7,4 +7,6 @@ steam-2020-01-17.exe
 captures/
 docs/plans/OpenRouter Chat Thu Sep 03 2026.md
 data/completion/**/*.bin
+data/completion/**/vocab.txt
+data/completion/**/manifest.toml
 completion-cache.bin
