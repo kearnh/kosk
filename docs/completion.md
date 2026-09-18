@@ -22,7 +22,7 @@ Green / gray dot on the chip strip shows armed vs disarmed.
 - **Keyboard** default `accept_via = "suffix"`: typed `hel`, chip `hello` → inject `lo` plus optional space. `backspace_replace` deletes the token then sends the full word.
 - **TextInput** splices `token_range` with the candidate (mid-word replaces the whole word).
 - Highlight does not inject. `enterOrAcceptSuggestion` (Edge): highlight set → accept; else Enter / submit. Triggers use `sendKeyUnderLeftStickOrAcceptSuggestion` / `Right` (WhileHeld): highlight set → accept once then ignore the hold; else type the key under that stick. Pads stay type-only.
-- Bumpers: `cycleSuggestion` highlights slot 0 from none; `cycleSuggestionPrev` highlights the last slot. `preselect = "none"`.
+- Bumpers: `cycleSuggestion` highlights slot 0 from none; `cycleSuggestionPrev` highlights the last slot. `preselect = "none"`. Typing keeps the highlight if that chip is still in the new list (even in another column); otherwise `reset_highlight_on_refresh` clears it.
 
 ## Backends
 

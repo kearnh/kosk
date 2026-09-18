@@ -220,21 +220,37 @@ impl Session {
                     if batch.gen != self.current_gen {
                         continue;
                     }
-                    self.candidates = batch.candidates;
-                    if self.cfg.reset_highlight_on_refresh {
-                        self.highlight = match self.cfg.preselect {
-                            Preselect::None => None,
-                            Preselect::First if !self.candidates.is_empty() => Some(0),
-                            Preselect::First => None,
-                        };
-                    } else if let Some(h) = self.highlight {
-                        if h >= self.candidates.len() {
-                            self.highlight = None;
-                        }
-                    }
+                    self.apply_candidates(batch.candidates);
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    fn apply_candidates(&mut self, candidates: Vec<Candidate>) {
+        let prev = self
+            .highlight
+            .and_then(|i| self.candidates.get(i).map(|c| c.text.clone()));
+
+        self.candidates = candidates;
+
+        if let Some(text) = prev {
+            if let Some(i) = self.candidates.iter().position(|c| c.text == text) {
+                self.highlight = Some(i);
+                return;
+            }
+        }
+
+        if self.cfg.reset_highlight_on_refresh {
+            self.highlight = match self.cfg.preselect {
+                Preselect::None => None,
+                Preselect::First if !self.candidates.is_empty() => Some(0),
+                Preselect::First => None,
+            };
+        } else if let Some(h) = self.highlight {
+            if h >= self.candidates.len() {
+                self.highlight = None;
             }
         }
     }
@@ -480,6 +496,20 @@ mod tests {
         }
     }
 
+    fn cand(text: &str) -> Candidate {
+        Candidate {
+            text: text.into(),
+            score: 1.0,
+            source: crate::completion::backend::Source::Dictionary,
+        }
+    }
+
+    fn session_with(cfg: CompletionConfig) -> Session {
+        let dict = DictionaryEngine::embedded_demo(&cfg);
+        let notify = Arc::new(|| {}) as Arc<dyn Fn() + Send + Sync>;
+        Session::spawn_for_test(Arc::new(dict), cfg, notify)
+    }
+
     #[test]
     fn stale_batch_dropped() {
         let cfg = CompletionConfig::default();
@@ -544,5 +574,42 @@ mod tests {
         assert_eq!(s.highlight(), Some(0));
         s.cycle(false);
         assert_eq!(s.highlight(), Some(2));
+    }
+
+    #[test]
+    fn highlight_follows_candidate_when_column_changes() {
+        let mut s = session_with(CompletionConfig::default());
+        s.candidates = vec![cand("hello"), cand("help"), cand("heat")];
+        s.highlight = Some(1);
+        s.apply_candidates(vec![cand("hello"), cand("helmet"), cand("help")]);
+        assert_eq!(s.highlight(), Some(2));
+        assert_eq!(s.highlighted().map(|c| c.text.as_str()), Some("help"));
+    }
+
+    #[test]
+    fn highlight_stays_when_candidate_keeps_column() {
+        let mut s = session_with(CompletionConfig::default());
+        s.candidates = vec![cand("hello"), cand("help")];
+        s.highlight = Some(1);
+        s.apply_candidates(vec![cand("hello"), cand("help"), cand("helmet")]);
+        assert_eq!(s.highlight(), Some(1));
+    }
+
+    #[test]
+    fn highlight_clears_when_candidate_leaves() {
+        let mut s = session_with(CompletionConfig::default());
+        s.candidates = vec![cand("hello"), cand("help")];
+        s.highlight = Some(1);
+        s.apply_candidates(vec![cand("hello"), cand("heat")]);
+        assert_eq!(s.highlight(), None);
+    }
+
+    #[test]
+    fn no_highlight_stays_none_on_refresh() {
+        let mut s = session_with(CompletionConfig::default());
+        s.candidates = vec![cand("hello"), cand("help")];
+        s.highlight = None;
+        s.apply_candidates(vec![cand("hello"), cand("help"), cand("heat")]);
+        assert_eq!(s.highlight(), None);
     }
 }
