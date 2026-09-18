@@ -72,7 +72,7 @@ pub struct CompletionConfig {
     #[serde(default)]
     pub backend: CompletionBackendKind,
 
-    #[serde(default)]
+    #[serde(default = "default_fallback")]
     pub fallback: CompletionBackendKind,
 
     #[serde(default = "default_locale")]
@@ -455,6 +455,9 @@ impl Default for CompletionUserCacheConfig {
 fn default_true() -> bool {
     true
 }
+fn default_fallback() -> CompletionBackendKind {
+    CompletionBackendKind::Dictionary
+}
 fn default_locale() -> String {
     "en".into()
 }
@@ -589,8 +592,10 @@ mod tests {
             toml::from_str("[completion]\n").unwrap_or_else(|_| toml::from_str("").unwrap());
         let parsed: CompletionConfig = toml::from_str("").unwrap();
         assert_eq!(parsed.backend, CompletionBackendKind::Ngram);
+        assert_eq!(parsed.fallback, CompletionBackendKind::Dictionary);
         assert_eq!(parsed.preselect, Preselect::None);
         assert_eq!(parsed.max_suggestions, 3);
         assert_eq!(cfg.max_suggestions, 3);
+        assert!(parsed.capitalization);
     }
 }
