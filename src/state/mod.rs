@@ -12,8 +12,10 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Rect, Ui};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 pub mod actions;
+mod completion_ui;
 mod event;
 pub(crate) mod key_sink;
 pub(crate) mod keyboard;
@@ -70,6 +72,7 @@ impl AppState {
         text_input::init()?;
         select_key::init()?;
         mappings::init()?;
+        crate::completion::init()?;
 
         Ok(Self {
             state: StateId::Keyboard,
@@ -250,6 +253,18 @@ impl AppState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
+        let ctx_notify = ctx.clone();
+        if let Err(e) = crate::completion::ensure(Arc::new(move || {
+            ctx_notify.request_repaint();
+        })) {
+            eprintln!("completion ensure: {e:#}");
+        }
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.tick();
+            }
+        });
+
         let cfg = config::get();
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);

@@ -4,8 +4,8 @@ stick_scale_y = 2.8
 stick_warp = 1.0
 preferred_controller = ["sc2"]
 transparent = true
-keyboard_opacity = 0.3
-ui_opacity = 0.92
+keyboard_opacity = 1.00
+ui_opacity = 1.00
 window_pos = "mouse pointer"
 scale_x = 30.0
 scale_y = 32.0
@@ -81,3 +81,93 @@ background_color = [255, 255, 255, 255]
 text_color = [0, 0, 0, 255]
 cursor_color = [0, 0, 0, 255]
 font_size = 22.0
+
+[completion]
+enabled = true
+show_in_keyboard = true
+show_in_text_input = true
+backend = "ngram"
+fallback = "dictionary"
+locale = "en"
+max_suggestions = 3
+min_prefix_len = 1
+debounce_ms = 16
+suggest_next_word = true
+insert_space_on_accept = true
+mix_unmatched_next_word = false
+preselect = "none"
+reset_highlight_on_refresh = true
+highlight_wraps = true
+learn_on_accept = true
+learn_on_submit = true
+unicode_letters = true
+extra_word_chars = "_'"
+normalize_nfc = true
+
+[completion.ui]
+placement = "between"
+columns = 3
+rows = 1
+reserve_slots = true
+chip_width = "fill"
+max_chip_width = 200.0
+min_chip_width = 48.0
+font_size = 18.0
+corner_radius = 6.0
+background_color = [40, 40, 40, 255]
+text_color = [230, 230, 230, 255]
+selected_background_color = [50, 100, 180, 255]
+selected_text_color = [255, 255, 255, 255]
+selected_outline_width = 2.0
+padding_x = 10.0
+padding_y = 4.0
+gap = 6.0
+label = "full"
+dim_typed_prefix = true
+empty_slot_background = [30, 30, 30, 255]
+show_debug_scores = false
+armed_dot = true
+armed_dot_radius = 4.0
+armed_dot_placement = "chips_leading"
+armed_color = [50, 200, 90, 255]
+disarmed_color = [128, 128, 128, 255]
+
+[completion.text_input]
+preview_on_highlight = false
+
+[completion.keyboard]
+accept_via = "suffix"
+retract_last_accept = true
+track_backspace = true
+clear_on_enter = true
+ignore_ctrl_alt = true
+start_armed = true
+latch_off_on_arrow = true
+latch_off_on_paste = true
+clear_log_on_arm = true
+max_chars = 2048
+idle_reset_ms = 0
+
+[completion.dictionary]
+wordlist = "data/completion/en/unigrams.tsv"
+
+[completion.ngram]
+model_dir = "data/completion/en"
+order = 3
+backoff_alpha = 0.4
+lambda_trigram = 1.0
+lambda_bigram = 0.3
+lambda_unigram = 0.2
+lambda_user = 0.8
+lambda_exact = 0.1
+prefix_scan_limit = 8192
+abort_check_every = 64
+precomputed_prefix_depth = 2
+
+[completion.user_cache]
+enabled = true
+path = "completion-cache.bin"
+decay_tau_hours = 2.0
+max_unigrams = 20000
+max_bigrams = 50000
+persist_interval_s = 30

@@ -214,7 +214,13 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
         StateId::Keyboard => {
             let mut rows = unit_names(
                 KeyboardAction::VARIANTS,
-                &["SendKey", "SendEnigoKey", "SwitchState", "SwitchLayout"],
+                &[
+                    "SendKey",
+                    "SendEnigoKey",
+                    "SwitchState",
+                    "SwitchLayout",
+                    "AcceptSuggestion",
+                ],
             );
             rows.extend(switch_state_catalog());
             for layout in keyboard::layout_names() {
@@ -233,7 +239,15 @@ fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) 
         }
         StateId::Menu => unit_and_switch_rows(MenuAction::VARIANTS),
         StateId::SelectLayout => unit_and_switch_rows(SelectLayoutAction::VARIANTS),
-        StateId::TextInput => unit_and_switch_rows(TextInputAction::VARIANTS),
+        StateId::TextInput => {
+            let mut rows = unit_names(
+                TextInputAction::VARIANTS,
+                &["SwitchState", "AcceptSuggestion"],
+            );
+            rows.extend(switch_state_catalog());
+            rows.sort();
+            rows
+        }
         StateId::MoveWindow => unit_and_switch_rows(MoveWindowAction::VARIANTS),
         StateId::Mappings | StateId::SelectKey => Vec::new(),
     }

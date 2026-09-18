@@ -15,6 +15,11 @@ path = "src/bin/sc2_test.rs"
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
+memmap2 = "0.9"
+postcard = { version = "1.1", default-features = false, features = ["use-std", "alloc"] }
+rayon = "1.10"
+unicode-normalization = "0.1"
+unicode-segmentation = "1.12"
 eframe = { version = "0.36.1", default-features = false, features = ["glow", "inspection"] }
 egui = { version = "0.36.1", features = ["serde"] }
 egui_phosphor_icons = "0.5"

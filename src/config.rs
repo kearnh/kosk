@@ -171,6 +171,9 @@ pub struct Config {
     #[serde(default)]
     pub text_input: TextInputStyle,
 
+    #[serde(default)]
+    pub completion: crate::completion::CompletionConfig,
+
     /// Per-app-state mapping from controller buttons to action names (interpreted by each state).
     ///
     /// Either an inline table, or a string path to a TOML file whose root is the same map shape
@@ -542,6 +545,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "ui_opacity",
     "window_pos",
     "text_input",
+    "completion",
 ];
 
 /// Config TOML stored in a recording: live config minus [`TAPE_CONFIG_SKIP`].
@@ -1271,6 +1275,7 @@ mod tests {
         assert!(!toml.contains("window_pos"), "{toml}");
         assert!(!toml.contains("key_sink"), "{toml}");
         assert!(!toml.contains("text_input"), "{toml}");
+        assert!(!toml.contains("completion"), "{toml}");
         assert!(toml.contains("event_debounce_ms"), "{toml}");
     }
 

@@ -21,6 +21,12 @@ pub enum KeyboardAction {
     RotateWindow,
     Exit,
     ToggleRecord,
+    CycleSuggestion,
+    CycleSuggestionPrev,
+    EnterOrAcceptSuggestion,
+    CancelSuggestion,
+    ToggleCompletion,
+    AcceptSuggestion(Option<usize>),
 }
 
 impl Action for KeyboardAction {
@@ -34,10 +40,23 @@ impl Action for KeyboardAction {
             SendKeyUnderLeftStick | SendKeyUnderRightStick | SendKey(_) | SendEnigoKey(_) => {
                 TriggerMode::WhileHeld
             }
-            ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
-            | FlipWindowLeftRight | FlipWindowAboveBelow | RotateWindow | Exit | ToggleRecord => {
-                TriggerMode::Edge
-            }
+            ToggleShift
+            | ToggleCtrl
+            | ToggleAlt
+            | Paste
+            | SwitchState(_)
+            | SwitchLayout(_)
+            | FlipWindowLeftRight
+            | FlipWindowAboveBelow
+            | RotateWindow
+            | Exit
+            | ToggleRecord
+            | CycleSuggestion
+            | CycleSuggestionPrev
+            | EnterOrAcceptSuggestion
+            | CancelSuggestion
+            | ToggleCompletion
+            | AcceptSuggestion(_) => TriggerMode::Edge,
         }
     }
 }
@@ -83,6 +102,13 @@ impl TryFrom<&str> for KeyboardAction {
                 crate::state::actions::parse_state_id(data)?,
             )),
             ("SwitchLayout", Some(data)) => Ok(KeyboardAction::SwitchLayout(data.to_owned())),
+            ("AcceptSuggestion", Some(data)) => {
+                let i: usize = data
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("acceptSuggestion index '{data}'"))?;
+                Ok(KeyboardAction::AcceptSuggestion(Some(i)))
+            }
+            ("AcceptSuggestion", None) => Ok(KeyboardAction::AcceptSuggestion(None)),
             (_, Some(_)) => Err(anyhow::anyhow!(
                 "keyboard action '{}' does not take a '.' payload",
                 variant
@@ -133,6 +159,13 @@ impl KeyboardAction {
             RotateWindow => "rotateWindow".into(),
             Exit => "exit".into(),
             ToggleRecord => "toggleRecord".into(),
+            CycleSuggestion => "cycleSuggestion".into(),
+            CycleSuggestionPrev => "cycleSuggestionPrev".into(),
+            EnterOrAcceptSuggestion => "enterOrAcceptSuggestion".into(),
+            CancelSuggestion => "cancelSuggestion".into(),
+            ToggleCompletion => "toggleCompletion".into(),
+            AcceptSuggestion(None) => "acceptSuggestion".into(),
+            AcceptSuggestion(Some(i)) => format!("acceptSuggestion.{i}"),
         }
     }
 }
@@ -178,6 +211,10 @@ mod tests {
             KeyboardAction::SwitchState(StateId::Menu),
             KeyboardAction::SwitchLayout("main".into()),
             KeyboardAction::SendKeyUnderLeftStick,
+            KeyboardAction::CycleSuggestion,
+            KeyboardAction::EnterOrAcceptSuggestion,
+            KeyboardAction::ToggleCompletion,
+            KeyboardAction::AcceptSuggestion(Some(2)),
         ];
         for action in cases {
             let wire = action.wire_id();

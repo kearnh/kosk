@@ -12,7 +12,7 @@ That split — “we draw here, we type elsewhere” — is the reason the windo
 
 `src/lib.rs` only declares modules:
 
-- `completion` — prefix word suggestions, used by a standalone binary today.
+- `completion` — word/next-token prediction for Keyboard and TextInput (worker + chips). Also `completion_dev` / `completion_build`.
 - `config` — TOML load, watch, and save.
 - `controller` — HID devices, bindings, recording.
 - `debug` — a tiny egui plugin that holds the latest controller snapshot for overlays.

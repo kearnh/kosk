@@ -49,7 +49,10 @@ impl SelectLayoutState {
             cfg.start_layout = name.clone();
         }
         match keyboard::KeyboardState::with_config(cfg) {
-            Ok(kb) => self.preview_kb = Some(kb),
+            Ok(mut kb) => {
+                kb.set_feed_completion_log(false);
+                self.preview_kb = Some(kb);
+            }
             Err(e) => {
                 eprintln!("select layout preview: {e:#}");
                 self.preview_kb = None;
@@ -105,7 +108,7 @@ impl SelectLayoutState {
             });
             if self.preview {
                 if let Some(kb) = self.preview_kb.as_mut() {
-                    let _ = kb.draw_keyboard_ui(ctx, ui);
+                    let _ = kb.draw_keyboard_ui(ctx, ui, events);
                 }
             }
         });

@@ -20,7 +20,7 @@ Start with [overview.md](overview.md) if you are new to the repository. After th
 12. [keyboard-layout.md](keyboard-layout.md) — layout TOML, hitboxes, and `when` display clauses.
 13. [menu.md](menu.md) — the current two-item menu.
 14. [text-input.md](text-input.md) — the single-line field that intercepts typing.
-15. [completion.md](completion.md) — the prefix dictionary engine (not wired into the keyboard UI yet).
+15. [completion.md](completion.md) — ngram/dictionary prediction, chips, and `completion_dev`.
 
 ## Plans
 

@@ -39,6 +39,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`[key_sink]`** chooses Enigo injection or a log file.
 - **`[debug]`**, when present at all, enables debug overlays. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
 - **`[text_input]`** styles the single-line field in text-input mode.
+- **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md).
 
 Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file.
 
@@ -76,7 +77,7 @@ Until that is fixed, treat `config::save` as “persist window position, possibl
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, and `text_input`. On replay, `overlay_tape_config` merges the blob onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` merges the blob onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

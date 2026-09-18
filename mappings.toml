@@ -17,7 +17,7 @@
 "options + faceRight" = "switchState.textInput"
 "options + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
-"faceBottom" = "sendKey.enter"
+"faceBottom" = "enterOrAcceptSuggestion"
 "faceLeft" = "sendKey.backspace"
 "l5" = "sendKey.backspace"
 "r5" = "sendKey.space"
@@ -28,6 +28,9 @@
 "dpadRight" = "sendKey.right"
 "dpadUp" = "sendKey.up"
 "dpadDown" = "sendKey.down"
+"shoulderLeft" = "cycleSuggestionPrev"
+"shoulderRight" = "cycleSuggestion"
+"options + faceLeft" = "toggleCompletion"
 quickAccess = "switchState.mappings"
 
 [Menu]
@@ -40,6 +43,10 @@ quickAccess = "switchState.mappings"
 "dpadLeft" = "moveCursorLeft"
 "dpadRight" = "moveCursorRight"
 "dpadUp" = "switchState.keyboard"
+"shoulderLeft" = "cycleSuggestionPrev"
+"shoulderRight" = "cycleSuggestion"
+"faceBottom" = "enterOrAcceptSuggestion"
+"options + faceLeft" = "toggleCompletion"
 
 [MoveWindow]
 "faceRight" = "switchState.menu"

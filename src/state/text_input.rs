@@ -3,6 +3,7 @@ use crate::{
     controller::ControllerInput,
     state::{
         actions::load_bindings,
+        completion_ui,
         event::{Event, EventQueue, EventSource},
         keyboard, StateId,
     },
@@ -17,11 +18,66 @@ use crate::controller::bindings::BindingEngine;
 
 use crate::state::text_input_action::TextInputAction;
 
+fn clamp_cursor(text: &str, cursor: usize) -> usize {
+    if cursor > text.len() {
+        return text.len();
+    }
+    if text.is_char_boundary(cursor) {
+        cursor
+    } else {
+        text.len()
+    }
+}
+
+fn insert_char_at(text: &mut String, cursor: &mut usize, ch: char) {
+    *cursor = clamp_cursor(text, *cursor);
+    text.insert(*cursor, ch);
+    *cursor += ch.len_utf8();
+}
+
+fn backspace_at(text: &mut String, cursor: &mut usize) {
+    *cursor = clamp_cursor(text, *cursor);
+    if *cursor == 0 || text.is_empty() {
+        return;
+    }
+    let prev = text
+        .char_indices()
+        .rev()
+        .find(|(i, _)| *i < *cursor)
+        .map(|(i, _)| i);
+    let Some(start) = prev else {
+        return;
+    };
+    text.replace_range(start..*cursor, "");
+    *cursor = start;
+}
+
+fn move_cursor_left(text: &str, cursor: &mut usize) {
+    *cursor = clamp_cursor(text, *cursor);
+    if *cursor == 0 {
+        return;
+    }
+    if let Some((i, _)) = text.char_indices().rev().find(|(i, _)| *i < *cursor) {
+        *cursor = i;
+    }
+}
+
+fn move_cursor_right(text: &str, cursor: &mut usize) {
+    *cursor = clamp_cursor(text, *cursor);
+    if *cursor >= text.len() {
+        return;
+    }
+    if let Some(ch) = text[*cursor..].chars().next() {
+        *cursor += ch.len_utf8();
+    }
+}
+
 pub struct TextInputState {
     text: String,
     cursor_pos: usize,
     kb_events: EventQueue,
     bindings: BindingEngine<TextInputAction>,
+    undo_accept: Option<(String, usize)>,
 }
 
 impl TextInputState {
@@ -31,37 +87,132 @@ impl TextInputState {
             cursor_pos: 0,
             kb_events: EventQueue::new(),
             bindings: load_bindings(StateId::TextInput)?,
+            undo_accept: None,
         })
     }
 
     fn insert_char(&mut self, ch: char) {
-        if self.cursor_pos > self.text.len() {
-            self.cursor_pos = self.text.len();
-        }
-        self.text.insert(self.cursor_pos, ch);
-        self.cursor_pos += 1;
+        insert_char_at(&mut self.text, &mut self.cursor_pos, ch);
+        self.refresh_completion();
     }
 
     fn backspace(&mut self) {
-        if self.cursor_pos > 0 && !self.text.is_empty() {
-            self.cursor_pos -= 1;
-            self.text.remove(self.cursor_pos);
-        }
+        backspace_at(&mut self.text, &mut self.cursor_pos);
+        self.refresh_completion();
     }
 
     fn move_cursor_left(&mut self) {
-        if self.cursor_pos > 0 {
-            self.cursor_pos -= 1;
-        }
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.note_log(crate::completion::LogEvent::Arrow, "");
+            }
+        });
+        move_cursor_left(&self.text, &mut self.cursor_pos);
+        self.refresh_completion();
     }
 
     fn move_cursor_right(&mut self) {
-        if self.cursor_pos < self.text.len() {
-            self.cursor_pos += 1;
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.note_log(crate::completion::LogEvent::Arrow, "");
+            }
+        });
+        move_cursor_right(&self.text, &mut self.cursor_pos);
+        self.refresh_completion();
+    }
+
+    fn refresh_completion(&mut self) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.request_from_buffer(&self.text, self.cursor_pos);
+            }
+        });
+    }
+
+    fn completion_cycle(&mut self, forward: bool) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.cycle(forward);
+            }
+        });
+    }
+
+    fn completion_toggle(&mut self) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.toggle_armed();
+            }
+        });
+        self.refresh_completion();
+    }
+
+    fn completion_accept(&mut self, index: Option<usize>) -> bool {
+        let cfg = config::get().completion;
+        if !cfg.enabled || !cfg.show_in_text_input {
+            return false;
+        }
+        let Some(cand) = crate::completion::with_mut(|s| {
+            let s = s?;
+            if !s.armed() {
+                return None;
+            }
+            match index {
+                Some(i) => s.accept_index(i).cloned(),
+                None => s.highlighted().cloned(),
+            }
+        }) else {
+            return false;
+        };
+        let Some(ctx) =
+            crate::completion::CompletionContext::from_buffer(&self.text, self.cursor_pos, &cfg)
+        else {
+            return false;
+        };
+        self.undo_accept = Some((self.text.clone(), self.cursor_pos));
+        let (new_text, new_cursor) = crate::completion::splice(
+            &self.text,
+            ctx.token_range,
+            &cand.text,
+            cfg.insert_space_on_accept,
+        );
+        self.text = new_text;
+        self.cursor_pos = new_cursor;
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                if s.cfg().learn_on_accept {
+                    let mut words = ctx.prev_words.clone();
+                    words.push(cand.text.clone());
+                    s.learn(&words);
+                }
+                s.clear_highlight();
+                s.request_from_buffer(&self.text, self.cursor_pos);
+            }
+        });
+        true
+    }
+
+    fn completion_cancel(&mut self) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.clear_highlight();
+            }
+        });
+        if let Some((text, cursor)) = self.undo_accept.take() {
+            self.text = text;
+            self.cursor_pos = cursor;
+            self.refresh_completion();
         }
     }
 
     fn submit_text(&mut self, events: &mut EventQueue, source: &EventSource) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                if s.cfg().learn_on_submit {
+                    let words = crate::completion::tokens_in(&self.text, s.cfg());
+                    s.learn(&words);
+                }
+            }
+        });
         let mut steps = Vec::new();
         if !self.text.is_empty() {
             steps.push(Event::SendText(self.text.to_string()));
@@ -109,12 +260,25 @@ impl TextInputState {
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
             }
+            CycleSuggestion => self.completion_cycle(true),
+            CycleSuggestionPrev => self.completion_cycle(false),
+            ToggleCompletion => self.completion_toggle(),
+            CancelSuggestion => self.completion_cancel(),
+            AcceptSuggestion(i) => {
+                let _ = self.completion_accept(*i);
+            }
+            EnterOrAcceptSuggestion => {
+                if !self.completion_accept(None) {
+                    self.submit_text(events, source);
+                }
+            }
         }
         Ok(())
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
-        let ti = &config::get().text_input;
+        let cfg = config::get();
+        let ti = &cfg.text_input;
         let bg = Color32::from_rgba_unmultiplied(
             ti.background_color[0],
             ti.background_color[1],
@@ -135,13 +299,28 @@ impl TextInputState {
         );
         let font_size = ti.font_size.max(1.0);
         let font_id = FontId::proportional(font_size);
+        let show_chips = cfg.completion.enabled && cfg.completion.show_in_text_input;
+        let placement = cfg.completion.ui.placement;
+        let strip_w = keyboard::with_mut(|kb| kb.content_width());
+        let token = crate::completion::CompletionContext::from_buffer(
+            &self.text,
+            self.cursor_pos,
+            &cfg.completion,
+        )
+        .map(|c| c.token)
+        .unwrap_or_default();
+        let mut chip_click = None;
 
         ui.vertical(|ui| {
+            if show_chips && placement == crate::completion::settings::ChipPlacement::AboveField {
+                chip_click = completion_ui::draw_session_strip(ui, strip_w, &token);
+            }
+
             let output = TextEdit::singleline(&mut self.text)
                 .background_color(bg)
                 .text_color(fg)
                 .font(font_id.clone())
-                .desired_width(400.0)
+                .desired_width(strip_w.max(1.0))
                 .interactive(false)
                 .show(ui);
 
@@ -160,10 +339,23 @@ impl TextInputState {
                 ],
                 (stroke_width, cursor_color),
             );
+
+            if show_chips && placement != crate::completion::settings::ChipPlacement::AboveField {
+                chip_click = completion_ui::draw_session_strip(ui, strip_w, &token);
+            }
         });
 
+        if let Some(i) = chip_click {
+            let _ = self.completion_accept(Some(i));
+        }
+
         keyboard::with_mut(|keyboard_state| {
-            keyboard_state.draw_ui(ctx, ui, &mut self.kb_events);
+            keyboard_state.set_feed_completion_log(false);
+            if let Some(key) = keyboard_state.draw_keyboard_ui(ctx, ui, &mut self.kb_events) {
+                keyboard_state
+                    .send_key(&key, &mut self.kb_events, &EventSource::MouseClick)
+                    .expect("send key");
+            }
         });
         self.process_events(events);
     }
@@ -228,4 +420,48 @@ pub(crate) fn with_mut<R>(f: impl FnOnce(&mut TextInputState) -> R) -> R {
         .lock()
         .unwrap();
     f(&mut guard)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_emoji_advances_full_char() {
+        let mut text = String::new();
+        let mut cursor = 0;
+        insert_char_at(&mut text, &mut cursor, '😀');
+        assert_eq!(text, "😀");
+        assert_eq!(cursor, "😀".len());
+        insert_char_at(&mut text, &mut cursor, 'b');
+        assert_eq!(text, "😀b");
+        assert_eq!(cursor, text.len());
+    }
+
+    #[test]
+    fn backspace_deletes_emoji_not_one_byte() {
+        let mut text = String::from("a😀b");
+        let mut cursor = text.len();
+        backspace_at(&mut text, &mut cursor);
+        assert_eq!(text, "a😀");
+        backspace_at(&mut text, &mut cursor);
+        assert_eq!(text, "a");
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn cursor_skips_whole_chars() {
+        let text = String::from("a😀b");
+        let mut cursor = text.len();
+        move_cursor_left(&text, &mut cursor);
+        assert_eq!(cursor, "a😀".len());
+        move_cursor_left(&text, &mut cursor);
+        assert_eq!(cursor, 1);
+        move_cursor_left(&text, &mut cursor);
+        assert_eq!(cursor, 0);
+        move_cursor_right(&text, &mut cursor);
+        assert_eq!(cursor, 1);
+        move_cursor_right(&text, &mut cursor);
+        assert_eq!(cursor, "a😀".len());
+    }
 }

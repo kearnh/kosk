@@ -1,62 +1,50 @@
 # Text completion (`completion/`)
 
-This document describes the completion library as it exists in `src/completion/`. The module can suggest words from a sorted dictionary given the text around a caret. Nothing in the on-screen keyboard or in [text-input mode](text-input.md) calls it yet. Intended UI (suggestion chips, controller accept/cancel) is sketched in [plans/completion.md](plans/completion.md), not here.
+Word and next-token prediction for Keyboard and TextInput. UI talks only to the session. Backends never see egui, HID, or `config::get()`.
 
-## What this module is
+## Layers
 
-`kosk::completion` is a synchronous, in-process prefix matcher. You give it the string before the caret, the string after the caret, and a maximum number of results. It returns whole-word `Suggestion` values whose text is meant to replace the token currently being typed.
+1. **Context** — `(text, cursor_byte)` → current token, `token_range`, previous words, case flags (`context.rs`). Keyboard uses a session-scoped log of keys kosk actually sent; TextInput uses the local buffer and caret.
+2. **Session** — debounce, latest-wins worker slot, generation filter, highlight, armed latch (`session.rs`). `None` from a backend means abort (stale generation), not “no suggestions.”
+3. **`CompletionBackend`** — `suggest(ctx, abort) -> Option<Vec<Candidate>>`. Factory: `backend_from_config`. Default `ngram`; `fallback = "dictionary"` if model files are missing.
+4. **Chips** — reserved strip above the keys (`state/completion_ui.rs`). Cycle never injects. Accept injects.
 
-The public surface is small:
+Config lives in `[completion]` (`src/completion/settings.rs`). Relative paths resolve against the config directory. `completion` is in `TAPE_CONFIG_SKIP`.
 
-- `CompletionEngine` — a trait with `suggest(&CompletionContext) -> Vec<Suggestion>`.
-- `DictionaryEngine` — the only implementation, backed by a `Vec<String>`.
-- `CompletionContext` — `prefix`, `suffix`, `max_results`.
-- `split_at_cursor` and `word_prefix_token` — helpers for turning a buffer plus byte index into that context.
+## Armed latch (Keyboard)
 
-`src/completion/mod.rs` re-exports those types. There is no UI, no threading, and no file format beyond “newline-separated words.”
+Starts armed (`start_armed`). Arrow / Home / End / Delete and paste **disarm**: stop logging, hide chips, stop predicting. Stays off until `toggleCompletion`. Re-arm clears the log (`clear_log_on_arm`). Enter does not re-arm. Ctrl/Alt chords are ignored (`ignore_ctrl_alt`), not a latch-off.
 
-## Splitting at the caret
+Green / gray dot on the chip strip shows armed vs disarmed.
 
-`split_at_cursor(text, cursor_byte)` returns `(prefix, suffix)` if `cursor_byte` is on a UTF-8 character boundary and not past the end of the string. Splitting inside a multi-byte character returns `None`. That is the same convention text-input mode uses for `cursor_pos`.
+## Accept
 
-`completion_dev` calls this first. A production UI would do the same from the field’s buffer and caret.
+- **Keyboard** default `accept_via = "suffix"`: typed `hel`, chip `hello` → inject `lo` plus optional space. `backspace_replace` deletes the token then sends the full word.
+- **TextInput** splices `token_range` with the candidate (mid-word replaces the whole word).
+- Highlight does not inject. `enterOrAcceptSuggestion` (Edge): highlight set → accept that chip; else Enter / submit.
+- Bumpers: `cycleSuggestion` highlights slot 0 from none; `cycleSuggestionPrev` highlights the last slot. `preselect = "none"`.
 
-## The current token
+## Backends
 
-`DictionaryEngine` does not search using the entire prefix. It calls `word_prefix_token(prefix)`, which walks backward from the end of `prefix` while characters are ASCII-style alphanumeric or `_`. If the last character is whitespace or punctuation, the token is empty.
+**Ngram** (default): prefix scan of the frequency dictionary, then stupid backoff over prev words, blended with user-cache counts. Unigrams alone are enough for prefix completion. Packed 21-bit ids in `bigrams.bin` / `trigrams.bin` if present.
 
-So `"hello wor"` with the caret after `r` yields token `wor`. `"hello "` with the caret after the space yields `""`. Empty tokens produce no suggestions. There is no “frequent words when idle” list.
+**Dictionary**: sorted `word` or `word<TAB>count`; rank by frequency, then length. Used for tests, `completion_dev` without a model dir, and fallback.
 
-The suffix is stored on `CompletionContext` for future engines (closing a quote, morphology that cares about what follows). `DictionaryEngine::suggest` never reads it.
+**User cache**: postcard file next to config (`completion-cache.bin`). Decayed unigram/bigram of accepted / submitted words. Novel words complete without rewriting the mmap tables.
 
-## `DictionaryEngine`
-
-`from_wordlist_text` splits on lines, trims, drops empties, sorts, and deduplicates. `embedded_demo` loads `src/completion/test_words.txt` at compile time for tests and for `completion_dev` when no file is passed.
-
-`suggest` finds the first word not lexicographically less than the token (`partition_point`), then scans forward while `starts_with(token)`, stopping at `max_results` (at least 1). Order is dictionary order, not frequency or keyboard distance. Matching is exact prefix, case-sensitive, with no edit-distance fallback.
-
-That is the whole ranking model. Replacing it later is the reason the trait exists: a fuzzy engine can implement `CompletionEngine` without changing callers.
-
-## The `completion_dev` binary
-
-`src/bin/completion_dev.rs` is a clap tool that does not open a window or a controller. From the repository root:
+English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Large `*.bin` n-gram tables are gitignored. Rebuild:
 
 ```text
-cargo run --bin completion_dev -- --text "hello wor" --cursor 9
+cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --corpus sentences.txt --out data/completion/en
 ```
 
-`--cursor` is a byte index. `--max` defaults to 8. `--wordlist PATH` loads a UTF-8 file; otherwise the embedded demo list is used. Suggestions print as a numbered list, or `(no suggestions)`.
+## Headless
 
-Unit tests live next to the library (`cargo test completion`). They cover prefix hits, empty tokens, the max cap, and cursor splitting including emoji boundaries.
+```text
+cargo run --bin completion_dev -- --text "hel" --cursor 3 --backend dictionary
+cargo run --bin completion_dev -- --eval src/completion/fixtures/eval.txt --backend ngram
+```
 
-## What this does not cover
+`--eval` replays a corpus as keystrokes, accepts a chip only on an exact upcoming match, and prints KSR plus next-word top-1/top-3.
 
-**The engine is not consulted when you type in text-input mode.** Wiring would mean, on buffer change, building a `CompletionContext` and drawing the returned strings. That work is not in `text_input.rs`.
-
-**There is no user wordlist in the config directory, and no network.** Privacy of the planned UI (offline lists only) is already true of this library because it never fetches.
-
-**Typo correction, n-grams, and morphological completion are not implemented.** The plan file records why they were deferred.
-
-## Summary
-
-Completion is a pluggable `suggest` trait and one dictionary implementation that binary-searches a sorted word list for exact prefixes of the alphanumeric token at the caret. You can exercise it with `completion_dev`. The overlay does not show suggestions yet; when it does, this module is the piece that should stay synchronous and UI-agnostic, with the plan file describing the chips and controller actions around it.
+Tests: `cargo test --lib completion`.

@@ -157,6 +157,7 @@ pub struct KeyboardState {
     label_cache: display_icon::LabelCache,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
+    feed_completion_log: bool,
 }
 
 impl KeyboardState {
@@ -182,6 +183,7 @@ impl KeyboardState {
         };
         state.reload_from_config()?;
         state.current_layout = state.cfg().start_layout;
+        state.feed_completion_log = true;
         Ok(state)
     }
 
@@ -231,6 +233,7 @@ impl KeyboardState {
                     self.shift_mod = false;
                     self.ctrl_mod = false;
                     self.alt_mod = false;
+                    self.note_outgoing(key);
                 }
             }
             RawKey::Enigo(k) => {
@@ -262,18 +265,158 @@ impl KeyboardState {
                     self.shift_mod = false;
                     self.ctrl_mod = false;
                     self.alt_mod = false;
+                    self.note_outgoing(key);
                 }
             }
             RawKey::Action(action) => {
                 self.do_action(action, events, source)?;
             }
             RawKey::Text(text) => {
-                events.push(Event::SendText(text.to_owned()), source);
+                if events.push(Event::SendText(text.to_owned()), source) {
+                    self.note_outgoing(key);
+                }
             }
             _ => return Ok(()),
         }
 
         Ok(())
+    }
+
+    pub fn set_feed_completion_log(&mut self, feed: bool) {
+        self.feed_completion_log = feed;
+    }
+
+    fn note_outgoing(&mut self, key: &RawKey) {
+        if !self.feed_completion_log {
+            return;
+        }
+        crate::completion::with_mut(|sess| {
+            let Some(sess) = sess else {
+                return;
+            };
+            if self.ctrl_mod || self.alt_mod {
+                sess.note_log(crate::completion::LogEvent::CtrlAlt, "");
+                return;
+            }
+            match key {
+                RawKey::Key('\n') | RawKey::Enigo(enigo::Key::Return) => {
+                    if sess.cfg().learn_on_submit && sess.armed() {
+                        let words = crate::completion::tokens_in(sess.typed_text(), sess.cfg());
+                        sess.learn(&words);
+                    }
+                    sess.note_log(crate::completion::LogEvent::Enter, "");
+                }
+                RawKey::Key(c) => sess.note_log(crate::completion::LogEvent::Char(*c), ""),
+                RawKey::Text(t) => sess.note_log(crate::completion::LogEvent::Text, t),
+                RawKey::Enigo(enigo::Key::Backspace) => {
+                    sess.note_log(crate::completion::LogEvent::Backspace, "")
+                }
+                RawKey::Enigo(
+                    enigo::Key::LeftArrow
+                    | enigo::Key::RightArrow
+                    | enigo::Key::UpArrow
+                    | enigo::Key::DownArrow
+                    | enigo::Key::Home
+                    | enigo::Key::End
+                    | enigo::Key::Delete,
+                ) => sess.note_log(crate::completion::LogEvent::Arrow, ""),
+                _ => {}
+            }
+            if sess.armed() {
+                let text = sess.typed_text().to_string();
+                let n = text.len();
+                sess.request_from_buffer(&text, n);
+            }
+        });
+    }
+
+    fn completion_cycle(&mut self, forward: bool) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.cycle(forward);
+            }
+        });
+    }
+
+    fn completion_toggle(&mut self) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.toggle_armed();
+            }
+        });
+    }
+
+    fn completion_accept(
+        events: &mut EventQueue,
+        source: &EventSource,
+        index: Option<usize>,
+    ) -> bool {
+        use crate::completion::settings::AcceptVia;
+        let Some(out) = crate::completion::with_mut(|s| s.and_then(|s| s.take_accept(index)))
+        else {
+            return false;
+        };
+        match out.via {
+            AcceptVia::Suffix => {
+                if !out.inject.is_empty() {
+                    let _ = events.push(Event::SendText(out.inject.clone()), source);
+                    crate::completion::with_mut(|s| {
+                        if let Some(s) = s {
+                            s.note_log(crate::completion::LogEvent::Text, &out.inject);
+                            let t = s.typed_text().to_string();
+                            let n = t.len();
+                            s.request_from_buffer(&t, n);
+                        }
+                    });
+                }
+            }
+            AcceptVia::BackspaceReplace => {
+                for _ in 0..out.token_char_len {
+                    let _ = events.push(
+                        Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
+                        source,
+                    );
+                }
+                if !out.inject.is_empty() {
+                    let _ = events.push(Event::SendText(out.inject.clone()), source);
+                    crate::completion::with_mut(|s| {
+                        if let Some(s) = s {
+                            for _ in 0..out.token_char_len {
+                                s.note_log(crate::completion::LogEvent::Backspace, "");
+                            }
+                            s.note_log(crate::completion::LogEvent::Text, &out.inject);
+                            let t = s.typed_text().to_string();
+                            let n = t.len();
+                            s.request_from_buffer(&t, n);
+                        }
+                    });
+                }
+            }
+        }
+        true
+    }
+
+    fn completion_cancel(&mut self, events: &mut EventQueue, source: &EventSource) {
+        crate::completion::with_mut(|s| {
+            let Some(s) = s else {
+                return;
+            };
+            if !s.cfg().keyboard.retract_last_accept {
+                s.clear_highlight();
+                return;
+            }
+            if let Some(inj) = s.last_injected().map(str::to_string) {
+                for _ in inj.chars() {
+                    let _ = events.push(
+                        Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
+                        source,
+                    );
+                    s.note_log(crate::completion::LogEvent::Backspace, "");
+                }
+                s.set_last_injected(None);
+            }
+            s.clear_highlight();
+        });
     }
 
     fn do_action(
@@ -320,14 +463,32 @@ impl KeyboardState {
                 let _ = events.push(Event::ToggleAlt, source);
             }
             Paste => {
-                let _ = events.push_seq(
+                if events.push_seq(
                     vec![
                         Event::SendKey(enigo::Key::Control, enigo::Direction::Press),
                         Event::SendKey(enigo::Key::Unicode('v'), enigo::Direction::Click),
                         Event::SendKey(enigo::Key::Control, enigo::Direction::Release),
                     ],
                     source,
-                );
+                ) {
+                    crate::completion::with_mut(|s| {
+                        if let Some(s) = s {
+                            s.note_log(crate::completion::LogEvent::Paste, "");
+                        }
+                    });
+                }
+            }
+            CycleSuggestion => self.completion_cycle(true),
+            CycleSuggestionPrev => self.completion_cycle(false),
+            ToggleCompletion => self.completion_toggle(),
+            CancelSuggestion => self.completion_cancel(events, source),
+            AcceptSuggestion(i) => {
+                let _ = Self::completion_accept(events, source, *i);
+            }
+            EnterOrAcceptSuggestion => {
+                if !Self::completion_accept(events, source, None) {
+                    self.send_key(&RawKey::Key('\n'), events, source)?;
+                }
             }
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
@@ -449,10 +610,19 @@ impl KeyboardState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
-        if let Some(key) = self.draw_keyboard_ui(ctx, ui) {
+        self.feed_completion_log = true;
+        if let Some(key) = self.draw_keyboard_ui(ctx, ui, events) {
             self.send_key(&key, events, &EventSource::MouseClick)
                 .expect("send key");
         }
+    }
+
+    pub fn content_width(&self) -> f32 {
+        let Some(layout) = self.layouts.get(&self.current_layout) else {
+            return 400.0;
+        };
+        let pad_x = layout.scale_x(layout.pad_x);
+        layout.left_content_width(pad_x)
     }
 
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
@@ -545,15 +715,29 @@ impl KeyboardState {
         }
     }
 
-    pub(crate) fn draw_keyboard_ui(&mut self, ctx: &Context, ui: &mut Ui) -> Option<RawKey> {
+    pub(crate) fn draw_keyboard_ui(
+        &mut self,
+        ctx: &Context,
+        ui: &mut Ui,
+        events: &mut EventQueue,
+    ) -> Option<RawKey> {
         let session = input_record::session();
+        let suggestion = crate::completion::with_mut(|s| {
+            s.map(|s| s.armed() && s.highlight().is_some())
+                .unwrap_or(false)
+        });
         let display_ctx = when::DisplayContext {
             shift: self.shift_state,
             recording: session.is_recording(),
             replay: session.is_replay(),
             ctrl: self.ctrl_mod,
             alt: self.alt_mod,
+            suggestion,
         };
+
+        let show_chips = self.feed_completion_log
+            && self.cfg().completion.enabled
+            && self.cfg().completion.show_in_keyboard;
 
         let publish_geometry = self.config.is_none();
         let batt_cfg = self.cfg().battery;
@@ -610,6 +794,25 @@ impl KeyboardState {
             let left_rest = current_layout.nearest_cell(StickSide::Left, (0.0, 0.0), None, 1.0);
             let right_rest = current_layout.nearest_cell(StickSide::Right, (0.0, 0.0), None, 1.0);
             let content_width = current_layout.left_content_width(pad_x);
+
+            if show_chips {
+                let token = crate::completion::with_mut(|s| {
+                    s.and_then(|s| {
+                        crate::completion::CompletionContext::from_buffer(
+                            s.typed_text(),
+                            s.typed_text().len(),
+                            s.cfg(),
+                        )
+                        .map(|c| c.token)
+                    })
+                    .unwrap_or_default()
+                });
+                if let Some(i) =
+                    crate::state::completion_ui::draw_session_strip(ui, content_width, &token)
+                {
+                    Self::completion_accept(events, &EventSource::MouseClick, Some(i));
+                }
+            }
 
             for (row_idx, (items, indent, height)) in (&*current_layout).into_iter().enumerate() {
                 ui.horizontal(|ui| {

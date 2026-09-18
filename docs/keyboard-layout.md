@@ -32,7 +32,7 @@ What is printed on a key is independent of what it sends. `display` may be:
 - a shifted pair of strings.
 - a list of **rules**. Each rule has `text`, optional `when`, and optional button/text colors (British spellings `button_colour` / `text_colour` are accepted). The first rule whose `when` is missing or true wins.
 
-`when` strings parse in `when.rs` into a small boolean AST. Flags are `shift`, `recording`, `replay`, `ctrl`, and `alt`. You can combine them with `&&`, `||`, `!`, and parentheses. `DisplayContext` is filled each frame from keyboard state and the record/replay session. That is how a Rec/Stop key can change label while a tape is running without being a different `RawKey`.
+`when` strings parse in `when.rs` into a small boolean AST. Flags are `shift`, `recording`, `replay`, `ctrl`, `alt`, and `suggestion` (a chip is highlighted). You can combine them with `&&`, `||`, `!`, and parentheses. `DisplayContext` is filled each frame from keyboard state and the record/replay session. That is how a Rec/Stop key can change label while a tape is running without being a different `RawKey`. Layout `when` is display-only; it does not choose which binding fires.
 
 ## Geometry and hitboxes
 

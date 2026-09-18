@@ -11,6 +11,7 @@ pub struct DisplayContext {
     pub replay: bool,
     pub ctrl: bool,
     pub alt: bool,
+    pub suggestion: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub enum Flag {
     Replay,
     Ctrl,
     Alt,
+    Suggestion,
 }
 
 impl Flag {
@@ -34,6 +36,8 @@ impl Flag {
             Some(Self::Ctrl)
         } else if s.eq_ignore_ascii_case("alt") {
             Some(Self::Alt)
+        } else if s.eq_ignore_ascii_case("suggestion") {
+            Some(Self::Suggestion)
         } else {
             None
         }
@@ -46,6 +50,7 @@ impl Flag {
             Self::Replay => ctx.replay,
             Self::Ctrl => ctx.ctrl,
             Self::Alt => ctx.alt,
+            Self::Suggestion => ctx.suggestion,
         }
     }
 }
@@ -263,6 +268,7 @@ mod tests {
             replay,
             ctrl,
             alt,
+            suggestion: false,
         }
     }
 

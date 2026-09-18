@@ -26,14 +26,18 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 
 `sendKey.space`, `sendKey.enter`, `sendKey.tab` become character sends. `sendKey.backspace` and arrows become `SendEnigoKey` because they are not Unicode characters Enigo will type as text.
 
-`TriggerMode` is WhileHeld for the send-key family (including send-under-stick) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, and `toggleRecord`.
+`TriggerMode` is WhileHeld for the send-key family (including send-under-stick) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, `toggleRecord`, and completion actions (`cycleSuggestion`, `enterOrAcceptSuggestion`, …).
 
 `do_action` is the keyboard’s interpreter:
 
 - **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the `RawKey` of the highlighted cell if any.
 - **SendKey / SendEnigoKey** call `send_key` with a synthetic `RawKey`.
 - **ToggleShift / Ctrl / Alt** enqueue the corresponding `Event`; they do not flip state here.
-- **Paste** enqueues Control-press, `v` click, Control-release as one `push_seq`.
+- **Paste** enqueues Control-press, `v` click, Control-release as one `push_seq`, then disarms completion.
+- **CycleSuggestion / CycleSuggestionPrev** move chip highlight (RB from none → slot 0; LB from none → last). No inject.
+- **EnterOrAcceptSuggestion** accepts the highlighted chip (suffix inject) or sends Enter.
+- **ToggleCompletion** arms/disarms the typed log. Re-arm clears the log.
+- **CancelSuggestion** retracts the last injected suffix if `retract_last_accept`.
 - **SwitchState / Flip / Rotate / Exit / ToggleRecord** enqueue the matching event.
 - **SwitchLayout** changes `current_layout` immediately (not via the queue), clears selection, and taps the recorder. A missing name is an error.
 
@@ -51,7 +55,7 @@ If any sticky mod is on, the queue gets a `push_seq`: press each held modifier, 
 
 `RawKey::Text` pushes `SendText` of the whole string (used when a layout entry is a multi-character literal).
 
-If `push_seq` / `push` accepts the work, sticky mods and `shift_state` are cleared. If the queue drops the commit, modifiers stay so a later accept still applies them. That is why `send_key` checks the boolean from the queue.
+If `push_seq` / `push` accepts the work, sticky mods and `shift_state` are cleared and the character is appended to the completion typed log (caret always at end). Arrows and paste disarm that log. If the queue drops the commit, modifiers stay so a later accept still applies them. That is why `send_key` checks the boolean from the queue.
 
 ## Shift versus sticky Shift
 
@@ -66,7 +70,9 @@ Caps-style layer Shift is what you use to type `A`. Sticky Shift is what you use
 
 ## Drawing
 
-`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt). Left highlight is blue, right is green, both sticks on one key is purple. The highlight is the selected **cell**, not every button that happens to show the same glyph. Idle sticks still show the rest cell (home-row `d` / `k` by convention in geometry) as a resting highlight.
+`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt, suggestion). Left highlight is blue, right is green, both sticks on one key is purple. The highlight is the selected **cell**, not every button that happens to show the same glyph. Idle sticks still show the rest cell (home-row `d` / `k` by convention in geometry) as a resting highlight.
+
+When `[completion].enabled` and `show_in_keyboard`, a reserved chip strip is drawn **above** the keys (not stick-hittable, not in layout TOML) so key centres do not jump. See [completion.md](completion.md).
 
 The first frame captures button centers from egui’s layout and stores them on the `KeyboardLayout` so hitboxes match what was drawn. Debug overlays (cursors, hitboxes, bounds) are painted when `[debug]` is on.
 
@@ -76,7 +82,7 @@ A mouse click returns that key’s `RawKey` to `draw_ui`, which calls `send_key`
 
 **Hitbox math and TOML schema** are the layout document.
 
-**The keyboard does not call the completion engine.** Suggestions are a separate crate module; text-input mode is the intended UI, and it is not wired yet.
+Completion is documented in [completion.md](completion.md). Chips sit above the keyboard and do not participate in stick hit-test.
 
 ## Summary
 
