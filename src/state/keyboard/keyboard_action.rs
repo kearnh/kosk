@@ -8,6 +8,8 @@ use crate::state::{actions::Action, actions::TriggerMode, StateId};
 pub enum KeyboardAction {
     SendKeyUnderLeftStick,
     SendKeyUnderRightStick,
+    SendKeyUnderLeftStickOrAcceptSuggestion,
+    SendKeyUnderRightStickOrAcceptSuggestion,
     SendKey(char),
     SendEnigoKey(enigo::Key),
     ToggleShift,
@@ -37,9 +39,12 @@ impl Action for KeyboardAction {
     fn trigger_mode(&self) -> TriggerMode {
         use KeyboardAction::*;
         match self {
-            SendKeyUnderLeftStick | SendKeyUnderRightStick | SendKey(_) | SendEnigoKey(_) => {
-                TriggerMode::WhileHeld
-            }
+            SendKeyUnderLeftStick
+            | SendKeyUnderRightStick
+            | SendKeyUnderLeftStickOrAcceptSuggestion
+            | SendKeyUnderRightStickOrAcceptSuggestion
+            | SendKey(_)
+            | SendEnigoKey(_) => TriggerMode::WhileHeld,
             ToggleShift
             | ToggleCtrl
             | ToggleAlt
@@ -127,6 +132,12 @@ impl KeyboardAction {
         match self {
             SendKeyUnderLeftStick => "sendKeyUnderLeftStick".into(),
             SendKeyUnderRightStick => "sendKeyUnderRightStick".into(),
+            SendKeyUnderLeftStickOrAcceptSuggestion => {
+                "sendKeyUnderLeftStickOrAcceptSuggestion".into()
+            }
+            SendKeyUnderRightStickOrAcceptSuggestion => {
+                "sendKeyUnderRightStickOrAcceptSuggestion".into()
+            }
             SendKey(c) => {
                 let payload = match *c {
                     ' ' => "space".to_owned(),
@@ -211,6 +222,8 @@ mod tests {
             KeyboardAction::SwitchState(StateId::Menu),
             KeyboardAction::SwitchLayout("main".into()),
             KeyboardAction::SendKeyUnderLeftStick,
+            KeyboardAction::SendKeyUnderLeftStickOrAcceptSuggestion,
+            KeyboardAction::SendKeyUnderRightStickOrAcceptSuggestion,
             KeyboardAction::CycleSuggestion,
             KeyboardAction::EnterOrAcceptSuggestion,
             KeyboardAction::ToggleCompletion,
@@ -221,5 +234,17 @@ mod tests {
             let parsed = KeyboardAction::try_from(wire.as_str()).unwrap();
             assert_eq!(parsed, action, "wire={wire}");
         }
+    }
+
+    #[test]
+    fn send_under_stick_or_accept_is_while_held() {
+        assert_eq!(
+            KeyboardAction::SendKeyUnderLeftStickOrAcceptSuggestion.trigger_mode(),
+            TriggerMode::WhileHeld
+        );
+        assert_eq!(
+            KeyboardAction::SendKeyUnderRightStickOrAcceptSuggestion.trigger_mode(),
+            TriggerMode::WhileHeld
+        );
     }
 }

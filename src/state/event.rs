@@ -132,6 +132,10 @@ struct SourceState {
     /// After a sticky modifier toggle accept, drop further toggles until release or
     /// selection change clears this flag.
     suppress_until_release: bool,
+    /// After accepting a completion on a WhileHeld send binding, drop further
+    /// sends from this source until the button is released. Stick selection
+    /// change does not clear this.
+    block_hold_until_release: bool,
 }
 
 /// Queues outgoing events with optional time-based debouncing by [`EventSource`].
@@ -237,6 +241,7 @@ impl EventQueue {
                 state.released = true;
                 state.repeat_armed = false;
                 state.suppress_until_release = false;
+                state.block_hold_until_release = false;
             }
         }
         self.held_this_tick.clear();
@@ -250,6 +255,36 @@ impl EventQueue {
                 state.suppress_until_release = false;
             }
         }
+    }
+
+    /// After accepting a suggestion on a WhileHeld binding, drop further sends
+    /// from this source until the button is released.
+    pub fn suppress_until_release(&mut self, source: &EventSource) {
+        self.touch(source);
+        let now = self.now();
+        self.last_commit
+            .entry(source.clone())
+            .and_modify(|s| {
+                s.block_hold_until_release = true;
+            })
+            .or_insert(SourceState {
+                last: now,
+                repeat_armed: false,
+                released: false,
+                suppress_until_release: false,
+                block_hold_until_release: true,
+            });
+    }
+
+    pub fn is_suppressed(&self, source: &EventSource) -> bool {
+        self.last_commit
+            .get(source)
+            .is_some_and(|s| s.block_hold_until_release && !s.released)
+    }
+
+    /// Keep a controller source in the held set without committing an event.
+    pub fn note_held(&mut self, source: &EventSource) {
+        self.touch(source);
     }
 
     /// Takes queued events for processing. Groups are flattened when accepted, so
@@ -339,6 +374,10 @@ impl EventQueue {
     fn record_toggle_accepted(&mut self, source: EventSource) {
         let now = self.now();
         let is_mouse = matches!(source, EventSource::MouseClick);
+        let block_hold_until_release = self
+            .last_commit
+            .get(&source)
+            .is_some_and(|s| s.block_hold_until_release);
         self.last_commit.insert(
             source,
             SourceState {
@@ -346,6 +385,7 @@ impl EventQueue {
                 repeat_armed: false,
                 released: is_mouse,
                 suppress_until_release: true,
+                block_hold_until_release,
             },
         );
     }
@@ -378,6 +418,7 @@ impl EventQueue {
         // A controller accept means the binding is down, so clear `released`.
         let is_mouse = matches!(source, EventSource::MouseClick);
         let suppress_until_release = prev.is_some_and(|s| s.suppress_until_release);
+        let block_hold_until_release = prev.is_some_and(|s| s.block_hold_until_release);
         self.last_commit.insert(
             source,
             SourceState {
@@ -385,6 +426,7 @@ impl EventQueue {
                 repeat_armed,
                 released: is_mouse,
                 suppress_until_release,
+                block_hold_until_release,
             },
         );
     }
@@ -484,6 +526,33 @@ mod tests {
         assert!(commit_toggle(&mut q, &src));
         q.end_controller_tick();
         assert_eq!(accepted_toggles(&mut q), 1);
+    }
+
+    #[test]
+    fn suppress_until_release_survives_held_ticks() {
+        let mut q = queue();
+        let src = pad_right();
+        q.suppress_until_release(&src);
+        q.end_controller_tick();
+        assert!(q.is_suppressed(&src));
+
+        q.note_held(&src);
+        q.end_controller_tick();
+        assert!(q.is_suppressed(&src));
+
+        q.end_controller_tick();
+        assert!(!q.is_suppressed(&src));
+    }
+
+    #[test]
+    fn suppress_until_release_survives_clear_toggle_suppress() {
+        let mut q = queue();
+        let src = pad_right();
+        q.suppress_until_release(&src);
+        q.clear_toggle_suppress([src.clone()]);
+        q.note_held(&src);
+        q.end_controller_tick();
+        assert!(q.is_suppressed(&src));
     }
 
     #[test]

@@ -26,11 +26,12 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 
 `sendKey.space`, `sendKey.enter`, `sendKey.tab` become character sends. `sendKey.backspace` and arrows become `SendEnigoKey` because they are not Unicode characters Enigo will type as text.
 
-`TriggerMode` is WhileHeld for the send-key family (including send-under-stick) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, `toggleRecord`, and completion actions (`cycleSuggestion`, `enterOrAcceptSuggestion`, …).
+`TriggerMode` is WhileHeld for the send-key family (including send-under-stick and send-under-stick-or-accept) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, `toggleRecord`, and completion actions (`cycleSuggestion`, `enterOrAcceptSuggestion`, …).
 
 `do_action` is the keyboard’s interpreter:
 
 - **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the `RawKey` of the highlighted cell if any.
+- **Send under stick or accept** (`sendKeyUnderLeftStickOrAcceptSuggestion` / `Right`): if a chip is highlighted, suffix-inject it and ignore further holds until release; otherwise the same as send under stick. Default on the triggers. Pads stay send-under-stick.
 - **SendKey / SendEnigoKey** call `send_key` with a synthetic `RawKey`.
 - **ToggleShift / Ctrl / Alt** enqueue the corresponding `Event`; they do not flip state here.
 - **Paste** enqueues Control-press, `v` click, Control-release as one `push_seq`, then disarms completion.

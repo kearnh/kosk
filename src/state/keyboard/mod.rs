@@ -419,6 +419,45 @@ impl KeyboardState {
         });
     }
 
+    fn send_under_stick(
+        &mut self,
+        left: bool,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) -> Result<()> {
+        let cell = if left {
+            self.selected.left
+        } else {
+            self.selected.right
+        };
+        let Some(key) = cell.and_then(|cell| self.raw_key_at_selected(cell)) else {
+            return Ok(());
+        };
+        if left {
+            self.last_left_stick_action = Some(Instant::now());
+        } else {
+            self.last_right_stick_action = Some(Instant::now());
+        }
+        self.send_key(&key, events, source)
+    }
+
+    fn send_under_stick_or_accept(
+        &mut self,
+        left: bool,
+        events: &mut EventQueue,
+        source: &EventSource,
+    ) -> Result<()> {
+        if events.is_suppressed(source) {
+            events.note_held(source);
+            return Ok(());
+        }
+        if Self::completion_accept(events, source, None) {
+            events.suppress_until_release(source);
+            return Ok(());
+        }
+        self.send_under_stick(left, events, source)
+    }
+
     fn do_action(
         &mut self,
         action: &KeyboardAction,
@@ -427,25 +466,13 @@ impl KeyboardState {
     ) -> Result<()> {
         use KeyboardAction::*;
         match action {
-            SendKeyUnderLeftStick => {
-                if let Some(key) = self
-                    .selected
-                    .left
-                    .and_then(|cell| self.raw_key_at_selected(cell))
-                {
-                    self.last_left_stick_action = Some(Instant::now());
-                    self.send_key(&key, events, source)?;
-                }
+            SendKeyUnderLeftStick => self.send_under_stick(true, events, source)?,
+            SendKeyUnderRightStick => self.send_under_stick(false, events, source)?,
+            SendKeyUnderLeftStickOrAcceptSuggestion => {
+                self.send_under_stick_or_accept(true, events, source)?;
             }
-            SendKeyUnderRightStick => {
-                if let Some(key) = self
-                    .selected
-                    .right
-                    .and_then(|cell| self.raw_key_at_selected(cell))
-                {
-                    self.last_right_stick_action = Some(Instant::now());
-                    self.send_key(&key, events, source)?;
-                }
+            SendKeyUnderRightStickOrAcceptSuggestion => {
+                self.send_under_stick_or_accept(false, events, source)?;
             }
             SendKey(key) => {
                 self.send_key(&RawKey::Key(*key), events, source)?;

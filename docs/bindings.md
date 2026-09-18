@@ -4,7 +4,7 @@ This document describes how a controller snapshot becomes a list of typed action
 
 ## What problem does this solve?
 
-`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStick"` and `"options + faceTop" = "switchState.menu"`. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
+`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStickOrAcceptSuggestion"` and `"options + faceTop" = "switchState.menu"`. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
 
 Two complications sit in that sentence. Some actions should run on the rising edge only (open the menu once). Others should run on every poll while the button is held (type the highlighted letter, with debounce later). And two-button chords have to coexist with single-button mappings on the follower without firing both.
 

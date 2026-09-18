@@ -155,7 +155,7 @@ A later letter or key on the same binding does not clear the flag. `record_hold_
 
 In code, a lone `push` goes through `commit_allows`, which sends toggles to `toggle_allows` / `record_toggle_accepted` and everything else to the hold-repeat functions above. A `push_seq` of two or more events always goes through `hold_repeat_allows` / `record_hold_repeat_accepted`.
 
-The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths.
+The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths. Accepting a chip on a WhileHeld send (`sendKeyUnderLeftStickOrAcceptSuggestion`) sets `block_hold_until_release` instead; `clear_toggle_suppress` must not lift that, or a stick twitch after accept would type a letter. `note_held` keeps the source in `held_this_tick` so release detection still works. `suppress_until_release_survives_held_ticks` and `suppress_until_release_survives_clear_toggle_suppress` cover that.
 
 ### `SourceState`
 
@@ -167,12 +167,13 @@ The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cle
 | `repeat_armed` | Next wait should use the short repeat interval |
 | `released` | The binding went up since `last`, so the next accept is a new first press |
 | `suppress_until_release` | Further sticky modifier toggles from this source should be dropped |
+| `block_hold_until_release` | Further WhileHeld sends from this source should be dropped (completion accept) |
 
 ### How the queue notices a release
 
 Each controller poll, WhileHeld bindings may call `push` or `push_seq`. Every such call, even a dropped one, records the source in `held_this_tick`.
 
-After all controller handlers have run, `end_controller_tick` walks every controller source in `last_commit`. If a source is missing from `held_this_tick`, the button is treated as up: `released` is set, and both `repeat_armed` and `suppress_until_release` are cleared. Then `held_this_tick` is emptied for the next poll.
+After all controller handlers have run, `end_controller_tick` walks every controller source in `last_commit`. If a source is missing from `held_this_tick`, the button is treated as up: `released` is set, and `repeat_armed`, `suppress_until_release`, and `block_hold_until_release` are cleared. Then `held_this_tick` is emptied for the next poll.
 
 That is what makes a quick tap-release-tap of `l` produce two letters instead of a first letter plus a 55 ms repeat. After the release, the next tap must wait the full initial interval again. The same pass is what lets a second tap of Shift toggle it back off. See `hello_ll_two_taps_are_two_letters`.
 

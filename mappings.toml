@@ -9,8 +9,9 @@
 # Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.
 
 [Keyboard]
-"triggerLeft" = "sendKeyUnderLeftStick"
-"triggerRight" = "sendKeyUnderRightStick"
+# Triggers: type the key under that stick, or accept a highlighted chip.
+"triggerLeft" = "sendKeyUnderLeftStickOrAcceptSuggestion"
+"triggerRight" = "sendKeyUnderRightStickOrAcceptSuggestion"
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
