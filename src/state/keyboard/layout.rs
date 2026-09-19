@@ -418,7 +418,18 @@ fn point_in_rects(pos: Pos2, rects: &[Rect]) -> bool {
 }
 
 fn first_centre(centres: &[Vec<Option<Pos2>>]) -> Option<Pos2> {
-    centres.iter().flatten().copied().find_map(|p| p)
+    first_centre_cell(centres).map(|(_, _, p)| p)
+}
+
+fn first_centre_cell(centres: &[Vec<Option<Pos2>>]) -> Option<(usize, usize, Pos2)> {
+    for (ri, row) in centres.iter().enumerate() {
+        for (ci, p) in row.iter().enumerate() {
+            if let Some(pos) = p {
+                return Some((ri, ci, *pos));
+            }
+        }
+    }
+    None
 }
 
 pub(crate) fn clamp_stick_cursor(cursor: (f32, f32), bounds: &[Rect]) -> (f32, f32) {
@@ -619,12 +630,16 @@ impl KeyboardLayout {
     }
 
     pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
-        if let (Some(old), Some(new)) = (
-            self.captured_centres.as_ref().and_then(|c| first_centre(c)),
-            first_centre(&captured_centres),
-        ) {
-            self.geometry_shift += new - old;
-            self.refresh_shifted_bounds();
+        if let Some((ri, ci, new)) = first_centre_cell(&captured_centres) {
+            let old = self
+                .captured_centres
+                .as_ref()
+                .and_then(|c| first_centre(c))
+                .or_else(|| self.layout_local_centre(ri, ci));
+            if let Some(old) = old {
+                self.geometry_shift += new - old;
+                self.refresh_shifted_bounds();
+            }
         }
 
         self.reach_cache = None;
@@ -696,6 +711,29 @@ impl KeyboardLayout {
             map.entry(*ch).or_default().extend(neigh);
         }
         map
+    }
+
+    fn layout_local_centre(&self, row: usize, col: usize) -> Option<Pos2> {
+        let pad_x = self.scale_x(self.pad_x);
+        let pad_y = self.scale_y(self.pad_y);
+        let mut y = 0.0;
+        for (ri, row_data) in self.rows.iter().enumerate() {
+            let h = self.scale_y(row_data.height);
+            if ri != row {
+                y += h + pad_y;
+                continue;
+            }
+            let mut x = self.scale_x(row_data.indent);
+            for (ci, item) in row_data.items.iter().enumerate() {
+                let w = self.scale_x(item.width());
+                if ci == col {
+                    return Some(Pos2::new(x + w * 0.5, y + h * 0.5));
+                }
+                x += w + pad_x;
+            }
+            return None;
+        }
+        None
     }
 
     fn refresh_shifted_bounds(&mut self) {
@@ -1225,7 +1263,8 @@ items = [
             Some(Pos2::new(10.0, 20.0)),
             Some(Pos2::new(30.0, 40.0)),
         ]]);
-        assert_eq!(layout.left_stick_center, (75.0, 112.0));
+        let shift = Pos2::new(10.0, 20.0) - Pos2::new(15.0, 16.0);
+        assert_eq!(layout.left_stick_center, (75.0 + shift.x, 112.0 + shift.y));
         assert_eq!(layout.right_stick_center, (30.0, 40.0));
     }
 
@@ -1298,6 +1337,36 @@ items = [{ key = "a" }]
         assert_eq!(
             layout.right_stick_bounds[0].min.y,
             right_bounds[0].min.y + dy
+        );
+    }
+
+    #[test]
+    fn first_capture_shifts_bounds_so_bottom_row_stays_reachable() {
+        let toml = r#"
+pad_x = 0.0
+pad_y = 0.0
+stick_rest_left = [0, 0]
+[stick_bounds]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 1.0, y = 2.0 } }]
+right = []
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [{ key = "a", width = 1.0 }]
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [{ key = "z", width = 1.0 }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        let chrome = 80.0;
+        layout.update_geometry(vec![
+            vec![Some(Pos2::new(5.0, 5.0 + chrome))],
+            vec![Some(Pos2::new(5.0, 15.0 + chrome))],
+        ]);
+        assert_eq!(
+            layout.get_nearest_key(StickSide::Left, (0.0, 1.0), false),
+            Some(RawKey::Key('z'))
         );
     }
 
