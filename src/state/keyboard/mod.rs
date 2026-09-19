@@ -40,6 +40,9 @@ const BATTERY_PCT_LOW: u8 = 35;
 const BATTERY_PCT_MEDIUM: u8 = 65;
 const BATTERY_PCT_HIGH: u8 = 90;
 
+/// Max-abs analog delta that still counts as "thumb has not moved" after a layout switch.
+const LAYOUT_SWITCH_ANALOG_HOLD: f32 = 0.1;
+
 fn battery_icon_name(status: Option<BatteryStatus>) -> &'static str {
     let Some(s) = status else {
         return "battery-empty";
@@ -135,6 +138,24 @@ fn stick_side_sources(left: bool) -> [EventSource; 2] {
     }
 }
 
+fn analog_unmoved(hold: (f32, f32), now: (f32, f32)) -> bool {
+    (hold.0 - now.0).abs().max((hold.1 - now.1).abs()) <= LAYOUT_SWITCH_ANALOG_HOLD
+}
+
+fn cell_after_layout_hold(
+    hold: &mut Option<(f32, f32)>,
+    now: (f32, f32),
+    prev: Option<(usize, usize)>,
+    nearest: Option<(usize, usize)>,
+) -> Option<(usize, usize)> {
+    if hold.is_some_and(|h| analog_unmoved(h, now)) {
+        return prev;
+    }
+
+    *hold = None;
+    nearest
+}
+
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct StickCells {
     left: Option<(usize, usize)>,
@@ -161,6 +182,8 @@ pub struct KeyboardState {
     feed_completion_log: bool,
     /// After `switchLayout`, ignore further sends from that source until it is released.
     suppress_send_until_release: HashSet<EventSource>,
+    layout_hold_left: Option<(f32, f32)>,
+    layout_hold_right: Option<(f32, f32)>,
 }
 
 impl KeyboardState {
@@ -627,13 +650,25 @@ impl KeyboardState {
         }
         if self.current_layout != name {
             self.current_layout = name.to_string();
-            self.on_layouts_changed();
+            self.drop_unselectable_cells();
         }
-        self.selected = StickCells::default();
         Ok(())
     }
 
-    /// Bookkeeping after layouts are replaced or the current layout name changes.
+    fn drop_unselectable_cells(&mut self) {
+        let Some(layout) = self.layouts.get(&self.current_layout) else {
+            return;
+        };
+        let selectable = |c: (usize, usize)| layout.key_at_cell(c, self.shift_state).is_some();
+        if self.selected.left.is_some_and(|c| !selectable(c)) {
+            self.selected.left = None;
+        }
+        if self.selected.right.is_some_and(|c| !selectable(c)) {
+            self.selected.right = None;
+        }
+    }
+
+    /// Bookkeeping after layouts are replaced.
     fn on_layouts_changed(&mut self) {
         for layout in self.layouts.values_mut() {
             layout.clear_captured_geometry();
@@ -685,6 +720,8 @@ impl KeyboardState {
         if holdover.is_none() {
             self.selected = StickCells::default();
             self.suppress_send_until_release.clear();
+            self.layout_hold_left = None;
+            self.layout_hold_right = None;
         }
         self.bindings.reset(holdover);
     }
@@ -712,17 +749,21 @@ impl KeyboardState {
             .get(&self.current_layout)
             .ok_or_else(|| anyhow::anyhow!("Current layout '{}' not found", self.current_layout))?;
 
+        let analog_left = input.left_pad().unwrap_or_else(|| input.left_stick());
+        let analog_right = input.right_pad().unwrap_or_else(|| input.right_stick());
+
         let prev_selected = self.selected;
+        let layout_before = self.current_layout.clone();
 
         let selected_left = current_layout.nearest_cell(
             StickSide::Left,
-            input.left_pad().unwrap_or_else(|| input.left_stick()),
+            analog_left,
             prev_selected.left,
             self.stick_select_sticky,
         );
         let selected_right = current_layout.nearest_cell(
             StickSide::Right,
-            input.right_pad().unwrap_or_else(|| input.right_stick()),
+            analog_right,
             prev_selected.right,
             self.stick_select_sticky,
         );
@@ -734,16 +775,29 @@ impl KeyboardState {
             .last_right_stick_action
             .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
 
-        let new_left = if lock_left {
+        let nearest_left = if lock_left {
             prev_selected.left
         } else {
             selected_left
         };
-        let new_right = if lock_right {
+        let nearest_right = if lock_right {
             prev_selected.right
         } else {
             selected_right
         };
+
+        let new_left = cell_after_layout_hold(
+            &mut self.layout_hold_left,
+            analog_left,
+            prev_selected.left,
+            nearest_left,
+        );
+        let new_right = cell_after_layout_hold(
+            &mut self.layout_hold_right,
+            analog_right,
+            prev_selected.right,
+            nearest_right,
+        );
 
         if prev_selected.left != new_left {
             events.clear_toggle_suppress(stick_side_sources(true));
@@ -773,6 +827,11 @@ impl KeyboardState {
         for (binding, action) in evaluated {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
+        }
+
+        if self.current_layout != layout_before {
+            self.layout_hold_left = Some(analog_left);
+            self.layout_hold_right = Some(analog_right);
         }
 
         Ok(())
@@ -1396,5 +1455,40 @@ items = [{ key = "a" }]
         )
         .unwrap();
         assert_eq!(drain_events(&mut events), vec![Event::ToggleShift]);
+    }
+
+    #[test]
+    fn set_current_layout_keeps_selection() {
+        let mut kb = stub_kb();
+        kb.selected.right = Some((0, 0));
+        kb.set_current_layout("symbols").unwrap();
+        assert_eq!(kb.selected.right, Some((0, 0)));
+    }
+
+    #[test]
+    fn set_current_layout_drops_missing_cell() {
+        let mut kb = stub_kb();
+        kb.selected.right = Some((0, 5));
+        kb.set_current_layout("symbols").unwrap();
+        assert_eq!(kb.selected.right, None);
+    }
+
+    #[test]
+    fn layout_hold_keeps_cell_until_analog_moves() {
+        let mut hold = Some((0.5, -0.2));
+        let prev = Some((4, 11));
+        let nearest = Some((3, 10));
+
+        assert_eq!(
+            cell_after_layout_hold(&mut hold, (0.52, -0.19), prev, nearest),
+            prev
+        );
+        assert!(hold.is_some());
+
+        assert_eq!(
+            cell_after_layout_hold(&mut hold, (0.9, 0.9), prev, nearest),
+            nearest
+        );
+        assert!(hold.is_none());
     }
 }
