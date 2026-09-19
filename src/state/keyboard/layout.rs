@@ -390,6 +390,9 @@ pub struct KeyboardLayout {
 
     pub left_stick_bounds: Vec<Rect>,
     pub right_stick_bounds: Vec<Rect>,
+    left_stick_bounds_local: Vec<Rect>,
+    right_stick_bounds_local: Vec<Rect>,
+    geometry_shift: Vec2,
 
     pub captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
 
@@ -397,6 +400,20 @@ pub struct KeyboardLayout {
 
     /// Original TOML, for input-tape headers.
     source: String,
+}
+
+fn scale_stick_bounds(rects: Vec<Rect>, scale: Vec2) -> Vec<Rect> {
+    rects
+        .into_iter()
+        .map(|r| {
+            r.translate(r.center().to_vec2() * scale)
+                .scale_from_center2(scale)
+        })
+        .collect()
+}
+
+fn first_centre(centres: &[Vec<Option<Pos2>>]) -> Option<Pos2> {
+    centres.iter().flatten().copied().find_map(|p| p)
 }
 
 pub(crate) fn clamp_stick_cursor(cursor: (f32, f32), bounds: &[Rect]) -> (f32, f32) {
@@ -442,6 +459,8 @@ impl KeyboardLayout {
         validate_stick_rest(&rows, stick_rest_right.as_ref(), "stick_rest_right")?;
 
         let scale: Vec2 = (scale_x, scale_y).into();
+        let left_stick_bounds_local = scale_stick_bounds(stick_bounds.left, scale);
+        let right_stick_bounds_local = scale_stick_bounds(stick_bounds.right, scale);
 
         let layout = KeyboardLayout {
             rows,
@@ -457,22 +476,11 @@ impl KeyboardLayout {
             stick_rest_left,
             stick_rest_right,
             key_hit_boxes: Default::default(),
-            left_stick_bounds: stick_bounds
-                .left
-                .into_iter()
-                .map(|r| {
-                    r.translate(r.center().to_vec2() * scale)
-                        .scale_from_center2(scale)
-                })
-                .collect(),
-            right_stick_bounds: stick_bounds
-                .right
-                .into_iter()
-                .map(|r| {
-                    r.translate(r.center().to_vec2() * scale)
-                        .scale_from_center2(scale)
-                })
-                .collect(),
+            left_stick_bounds: left_stick_bounds_local.clone(),
+            right_stick_bounds: right_stick_bounds_local.clone(),
+            left_stick_bounds_local,
+            right_stick_bounds_local,
+            geometry_shift: Vec2::ZERO,
             captured_centres: None,
             reach_cache: None,
             source: toml.to_owned(),
@@ -606,6 +614,14 @@ impl KeyboardLayout {
     }
 
     pub fn update_geometry(&mut self, captured_centres: Vec<Vec<Option<Pos2>>>) {
+        if let (Some(old), Some(new)) = (
+            self.captured_centres.as_ref().and_then(|c| first_centre(c)),
+            first_centre(&captured_centres),
+        ) {
+            self.geometry_shift += new - old;
+            self.refresh_shifted_bounds();
+        }
+
         self.reach_cache = None;
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
@@ -616,6 +632,22 @@ impl KeyboardLayout {
             .centre_at_rest(self.stick_rest_right.as_ref())
             .unwrap_or_default();
         self.reach_cache = self.build_reach_cache();
+    }
+
+    fn refresh_shifted_bounds(&mut self) {
+        let shift = self.geometry_shift;
+        self.left_stick_bounds = self
+            .left_stick_bounds_local
+            .iter()
+            .copied()
+            .map(|r| r.translate(shift))
+            .collect();
+        self.right_stick_bounds = self
+            .right_stick_bounds_local
+            .iter()
+            .copied()
+            .map(|r| r.translate(shift))
+            .collect();
     }
 
     fn centre_at_rest(&self, rest: Option<&StickRest>) -> Option<(f32, f32)> {
@@ -629,7 +661,10 @@ impl KeyboardLayout {
         let StickRest::Table(StickRestTable::Position { x, y }) = rest else {
             return None;
         };
-        Some((self.scale_x((*x).into()), self.scale_y((*y).into())))
+        Some((
+            self.scale_x((*x).into()) + self.geometry_shift.x,
+            self.scale_y((*y).into()) + self.geometry_shift.y,
+        ))
     }
 
     /// Reset centre/hitbox/rest fields. Call sites must use this (or
@@ -639,6 +674,8 @@ impl KeyboardLayout {
         self.key_hit_boxes.clear();
         self.left_stick_center = (0.0, 0.0);
         self.right_stick_center = (0.0, 0.0);
+        self.geometry_shift = Vec2::ZERO;
+        self.refresh_shifted_bounds();
         self.reach_cache = None;
     }
 
@@ -1141,6 +1178,63 @@ items = [{ key = "a" }]
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
         assert_eq!(debug_cursor(&layout, None, StickSide::Left), (10.0, 20.0));
         assert_eq!(debug_cursor(&layout, None, StickSide::Right), (10.0, 20.0));
+    }
+
+    #[test]
+    fn recapture_translates_debug_cursor_bounds_and_position_rest() {
+        let toml = r#"
+stick_rest_left = { type = "position", x = 1.0, y = 2.0 }
+stick_rest_right = [0, 0]
+[stick_bounds]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 2.0, y = 2.0 } }]
+right = [{ min = { x = 2.0, y = 0.0 }, max = { x = 4.0, y = 2.0 } }]
+[[rows]]
+indent = 0.0
+items = [{ key = "a" }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![vec![Some(Pos2::new(5.0, 10.0))]]);
+
+        let left_bounds = layout.left_stick_bounds.clone();
+        let right_bounds = layout.right_stick_bounds.clone();
+        let position_rest = layout.left_stick_center;
+        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (5.0, 10.0));
+
+        layout.update_geometry(vec![vec![Some(Pos2::new(5.0, 50.0))]]);
+
+        let dy = 40.0;
+        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (5.0, 50.0));
+        assert_eq!(
+            layout.left_stick_center,
+            (position_rest.0, position_rest.1 + dy)
+        );
+        assert_eq!(layout.left_stick_bounds[0].min.y, left_bounds[0].min.y + dy);
+        assert_eq!(layout.left_stick_bounds[0].max.y, left_bounds[0].max.y + dy);
+        assert_eq!(layout.left_stick_bounds[0].min.x, left_bounds[0].min.x);
+        assert_eq!(
+            layout.right_stick_bounds[0].min.y,
+            right_bounds[0].min.y + dy
+        );
+    }
+
+    #[test]
+    fn clear_geometry_restores_unshifted_bounds() {
+        let toml = r#"
+stick_rest_left = [0, 0]
+[stick_bounds]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 2.0, y = 2.0 } }]
+right = []
+[[rows]]
+indent = 0.0
+items = [{ key = "a" }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        let original = layout.left_stick_bounds.clone();
+        layout.update_geometry(vec![vec![Some(Pos2::new(5.0, 10.0))]]);
+        layout.update_geometry(vec![vec![Some(Pos2::new(5.0, 50.0))]]);
+        layout.clear_captured_geometry();
+        assert_eq!(layout.left_stick_bounds, original);
+        assert_eq!(layout.left_stick_center, (0.0, 0.0));
     }
 
     #[test]

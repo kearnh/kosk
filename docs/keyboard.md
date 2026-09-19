@@ -75,7 +75,7 @@ Caps-style layer Shift is what you use to type `A`. Sticky Shift is what you use
 
 When `[completion].enabled` and `show_in_keyboard`, a reserved chip strip is drawn **above** the keys (not stick-hittable, not in layout TOML) so key centres do not jump. See [completion.md](completion.md).
 
-The first frame captures button centers from egui’s layout and stores them on the `KeyboardLayout` so hitboxes match what was drawn. Debug overlays (cursors, hitboxes, bounds) are painted when `[debug]` is on.
+The first frame captures button centers from egui’s layout and stores them on the `KeyboardLayout` so hitboxes match what was drawn. Later frames recapture when those centers move (text-input chrome above the keys). Debug overlays (cursors, hitboxes, bounds) are painted from the current geometry when `[debug]` is on.
 
 A mouse click returns that key’s `RawKey` to `draw_ui`, which calls `send_key` with `MouseClick`.
 

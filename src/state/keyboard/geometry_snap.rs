@@ -1,6 +1,6 @@
 //! Immutable keyboard geometry snapshot for MCP / control-server queries.
 //!
-//! Published from the UI path after first-draw centre capture. Control threads
+//! Published from the UI path after centre capture. Control threads
 //! must read this session only — never `keyboard::with_mut`.
 
 use std::sync::{Arc, Mutex, OnceLock};

@@ -812,7 +812,6 @@ impl KeyboardState {
         let pad_x = current_layout.scale_x(current_layout.pad_x);
         let pad_y = current_layout.scale_y(current_layout.pad_y);
 
-        let capturing_centres = current_layout.captured_centres.is_none();
         let mut captured_data = Vec::new();
 
         ui.vertical(|ui| {
@@ -907,9 +906,7 @@ impl KeyboardState {
                                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                                 let response = ui.place(rect, button.truncate());
 
-                                if capturing_centres {
-                                    row_centres[col_idx] = Some(rect.center());
-                                }
+                                row_centres[col_idx] = Some(rect.center());
 
                                 // Overlay small indicator for Ctrl/Alt on the Space key in the bottom left
                                 if key.display_modifiers && (*ctrl_mod || *alt_mod) {
@@ -984,22 +981,20 @@ impl KeyboardState {
                         );
                     }
 
-                    if capturing_centres {
-                        captured_data.push(row_centres);
-                    }
+                    captured_data.push(row_centres);
                 });
             }
         });
 
-        if publish_geometry {
-            current_layout.draw_debug(ctx, ui);
-        }
-
-        if capturing_centres {
+        if current_layout.captured_centres.as_ref() != Some(&captured_data) {
             current_layout.update_geometry(captured_data);
             if publish_geometry {
                 geometry_snap::publish(current_layout_name, current_layout);
             }
+        }
+
+        if publish_geometry {
+            current_layout.draw_debug(ctx, ui);
         }
 
         pressed_key

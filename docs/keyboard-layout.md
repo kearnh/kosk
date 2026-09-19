@@ -6,7 +6,7 @@ This document describes how a layout TOML file becomes an on-screen keyboard: ke
 
 A layout is TOML with global padding and font size, optional stick bounds, and a list of rows. Each row has an indent, a height, and a list of keys. Distances in the file are **unscaled units**. At load time they are multiplied by `config.scale_x` and `config.scale_y` so one file can be enlarged without rewriting every width.
 
-`KeyboardLayout::load_from_file` reads the file, keeps the original TOML string for recording headers, and fills scale fields from config (or from a tape’s captured scales during replay). Hitboxes are not computed at load. They wait until the first draw captures each button’s center from egui, because the true pixel position depends on how egui laid out that frame.
+`KeyboardLayout::load_from_file` reads the file, keeps the original TOML string for recording headers, and fills scale fields from config (or from a tape’s captured scales during replay). Hitboxes are not computed at load. They wait until a draw captures each button’s center from egui, because the true pixel position depends on how egui laid out that frame. If a later draw places the keys elsewhere (the text-input field and chip strip sit above the board), those centers, stick rest, and stick bounds are shifted to match.
 
 ## Keys: `RawKey` and `Key<T>`
 
@@ -49,7 +49,7 @@ Stick rest positions come from optional top-level `stick_rest_left` / `stick_res
 
 ## Stick bounds
 
-Optional `stick_bounds.left` / `right` are lists of rectangles in unscaled units. They are scaled at load. If they are present and the cursor is outside all of them, the cursor is clamped to the nearest point on the nearest rectangle before hit-testing. That keeps the left stick from highlighting keys on the right half of a split keyboard when you push to the edge.
+Optional `stick_bounds.left` / `right` are lists of rectangles in unscaled units. They are scaled at load. When key centers later move, the same translation is applied so clamping stays on the keys. If they are present and the cursor is outside all of them, the cursor is clamped to the nearest point on the nearest rectangle before hit-testing. That keeps the left stick from highlighting keys on the right half of a split keyboard when you push to the edge.
 
 `get_key_at` walks hitboxes and picks the containing shape with the smallest rim-fraction score: `0` at that key’s centre and `1` on its rim (`distance² / r²` for circles; the usual ellipse implicit value for wide keys). Overlapping hitboxes therefore resolve to the key whose centre you are closer to relative to that key’s own size, not to draw order, and not to raw pixel distance (which would let a wide ellipse beat a letter almost everywhere they overlap). Keyboard mode can pass the previous cell and `stick_select_sticky` into the same picker so that cell keeps winning until a neighbor is clearly closer; `get_key_at` itself does not apply that margin.
 
@@ -65,4 +65,4 @@ When `[debug]` is set, `draw_debug` can paint the warped stick positions (`show_
 
 ## Summary
 
-A layout TOML is a scaled grid of keys, each of which names a `RawKey` (character, text, Enigo key, action, or skip) and optionally a richer display with `when` clauses. Pixel centers come from the first egui pass; hitboxes and optional bound rectangles then turn analog samples into the same keys the user sees, ranking overlaps by rim-fraction. Recordings store the TOML source and the scales so replay can rebuild that geometry.
+A layout TOML is a scaled grid of keys, each of which names a `RawKey` (character, text, Enigo key, action, or skip) and optionally a richer display with `when` clauses. Pixel centers come from egui; hitboxes and optional bound rectangles then turn analog samples into the same keys the user sees, ranking overlaps by rim-fraction. Recordings store the TOML source and the scales so replay can rebuild that geometry.
