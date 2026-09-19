@@ -14,8 +14,8 @@
 # One button can do different things in different situations. Write a list; the
 # first entry whose when condition is true (or that has no when) is used. Put
 # the default last, with no when. A single { action, when } with no fallback
-# does nothing when the condition is false. The condition language is in
-# docs/bindings.md.
+# does nothing when the condition is false. Button names, action names, and
+# when conditions are listed in MAPPINGS.md.
 #
 # The Steam Controller 2 has extra buttons: paddles l4, r4, l5, r5, and Quick
 # Access (quickAccess / qam, the ⋯ between the pads). A DualShock 4 does not,

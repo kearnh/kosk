@@ -14,6 +14,10 @@ cargo run -- config.toml
 
 Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them.
 
+## Controller mappings
+
+What each button does is in `mappings.toml`. Button names, action names, and `when` conditions are listed in [MAPPINGS.md](MAPPINGS.md).
+
 ## Word suggestions
 
 While you type, kosk can show a few guesses above the keyboard.
