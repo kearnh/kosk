@@ -1,6 +1,7 @@
 # Symbols layout (Steam Controller geometry)
-# US ANSI punctuation missing from `main`, plus Escape/Delete.
-# Digits stay for muscle memory; letter rows are punctuation.
+# US ANSI punctuation missing from `main`, plus Escape/Delete/nav.
+# Digits stay for muscle memory; letter rows are punctuation and nav.
+# `abc` (bottom-right) returns to `main`.
 pad_x = 0.125
 pad_y = 0.1
 font_size = 24.0
@@ -102,13 +103,13 @@ width = 1.4
 key = { normal = "/", shift = "?" }
 
 [[rows.items]]
-key = "Skip"
+key = "_"
 
 [[rows.items]]
-key = "Skip"
+key = "|"
 width = 1.4
 
-# Home row chrome (menu / return); skips keep SC widths for stick_bounds
+# Home row: nav cluster (left) and unshifted brackets (right)
 [[rows]]
 indent = 0.0
 height = 1.1
@@ -120,37 +121,47 @@ width = 0.8
 font_size = 18.0
 
 [[rows.items]]
-key = "Skip"
+key = "Home"
+display = "Home"
+font_size = 14.0
 
 [[rows.items]]
-key = "Skip"
+key = "End"
+display = "End"
+font_size = 14.0
 
 [[rows.items]]
-key = "Skip"
+key = "PageUp"
+display = "PgUp"
+font_size = 14.0
 
 [[rows.items]]
-key = "Skip"
+key = "PageDown"
+display = "PgDn"
+font_size = 14.0
 
 [[rows.items]]
-key = "Skip"
+key = "Insert"
+display = "Ins"
 width = 1.4
+font_size = 14.0
 
 [[rows.items]]
 key = "Skip"
 width = 0.25
 
 [[rows.items]]
-key = "Skip"
+key = "{"
 width = 1.5
 
 [[rows.items]]
-key = "Skip"
+key = "}"
 
 [[rows.items]]
-key = "Skip"
+key = "("
 
 [[rows.items]]
-key = "Skip"
+key = ")"
 
 [[rows.items]]
 key = "Return"
@@ -169,16 +180,16 @@ display = "{icon:arrow-fat-up}"
 key = { normal = ",", shift = "<" }
 
 [[rows.items]]
-key = "Skip"
+key = "!"
 
 [[rows.items]]
-key = "Skip"
+key = "@"
 
 [[rows.items]]
-key = "Skip"
+key = "#"
 
 [[rows.items]]
-key = "Skip"
+key = "+"
 width = 1.2
 
 [[rows.items]]
@@ -186,14 +197,14 @@ key = "Skip"
 width = 0.25
 
 [[rows.items]]
-key = "Skip"
+key = "*"
 width = 1.2
 
 [[rows.items]]
-key = "Skip"
+key = "&"
 
 [[rows.items]]
-key = "Skip"
+key = "~"
 
 [[rows.items]]
 key = { normal = ".", shift = ">" }
@@ -214,6 +225,11 @@ display = "{icon:arrow-line-right}"
 key = " "
 width = 9.1
 display_modifiers = true
+
+[[rows.items]]
+key = "switchLayout.main"
+display = "abc"
+width = 1.0
 
 [[rows]]
 indent = 0.0

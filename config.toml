@@ -207,7 +207,7 @@ clear_on_enter = true
 ignore_ctrl_alt = true
 # Process start: log empty and predicting.
 start_armed = true
-# Arrow / Home / End / Delete: stop logging, hide chips, until toggleCompletion.
+# Arrow / Home / End / PageUp / PageDown / Insert / Delete: stop logging, hide chips, until toggleCompletion.
 latch_off_on_arrow = true
 # Paste (Ctrl+V sequence): same latch-off.
 latch_off_on_paste = true

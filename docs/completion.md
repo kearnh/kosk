@@ -13,7 +13,7 @@ Config lives in `[completion]` (`src/completion/settings.rs`). Relative paths re
 
 ## Armed latch (Keyboard)
 
-Starts armed (`start_armed`). Arrow / Home / End / Delete and paste **disarm**: stop logging, hide chips, stop predicting. Stays off until `toggleCompletion`. Re-arm clears the log (`clear_log_on_arm`). Enter does not re-arm. Ctrl/Alt chords are ignored (`ignore_ctrl_alt`), not a latch-off.
+Starts armed (`start_armed`). Arrow / Home / End / PageUp / PageDown / Insert / Delete and paste **disarm**: stop logging, hide chips, stop predicting. Stays off until `toggleCompletion`. Re-arm clears the log (`clear_log_on_arm`). Enter does not re-arm. Ctrl/Alt chords are ignored (`ignore_ctrl_alt`), not a latch-off.
 
 Green / gray dot on the chip strip shows armed vs disarmed.
 

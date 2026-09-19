@@ -159,6 +159,8 @@ pub struct KeyboardState {
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
     feed_completion_log: bool,
+    /// After `switchLayout`, ignore controller key sends until the device is idle.
+    suppress_send_until_idle: bool,
 }
 
 impl KeyboardState {
@@ -319,6 +321,9 @@ impl KeyboardState {
                     | enigo::Key::DownArrow
                     | enigo::Key::Home
                     | enigo::Key::End
+                    | enigo::Key::PageUp
+                    | enigo::Key::PageDown
+                    | enigo::Key::Insert
                     | enigo::Key::Delete,
                 ) => sess.note_log(crate::completion::LogEvent::Arrow, ""),
                 _ => {}
@@ -492,6 +497,9 @@ impl KeyboardState {
         source: &EventSource,
     ) -> Result<()> {
         use KeyboardAction::*;
+        if self.suppress_send_until_idle && matches!(source, EventSource::Controller(_)) {
+            return Ok(());
+        }
         match action {
             SendKeyUnderLeftStick => self.send_under_stick(true, events, source)?,
             SendKeyUnderRightStick => self.send_under_stick(false, events, source)?,
@@ -538,6 +546,7 @@ impl KeyboardState {
             }
             SwitchLayout(layout_name) => {
                 self.set_current_layout(layout_name)?;
+                self.suppress_send_until_idle = true;
                 input_record::session().tap_layout(layout_name);
             }
             FlipWindowLeftRight => {
@@ -671,6 +680,7 @@ impl KeyboardState {
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         if holdover.is_none() {
             self.selected = StickCells::default();
+            self.suppress_send_until_idle = false;
         }
         self.bindings.reset(holdover);
     }
@@ -1262,5 +1272,89 @@ mod send_key_tests {
             })),
             "battery-charging"
         );
+    }
+}
+
+#[cfg(test)]
+mod layout_switch_idle_tests {
+    use super::*;
+    use crate::state::event::{Event, EventQueue, EventSource};
+
+    fn stub_layout() -> KeyboardLayout {
+        KeyboardLayout::load_with_scales(
+            r#"
+[[rows]]
+indent = 0.0
+items = [{ key = "a" }]
+"#,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+        )
+        .unwrap()
+    }
+
+    fn stub_kb() -> KeyboardState {
+        let mut kb = KeyboardState::default();
+        kb.layouts.insert("main".into(), stub_layout());
+        kb.layouts.insert("symbols".into(), stub_layout());
+        kb.current_layout = "main".into();
+        kb
+    }
+
+    fn pad_right() -> EventSource {
+        EventSource::Controller(ControllerBinding::Single(ControllerButton::PadRight))
+    }
+
+    #[test]
+    fn layout_switch_suppresses_controller_keys_until_idle() {
+        let mut kb = stub_kb();
+        let mut events = EventQueue::passthrough();
+        let src = pad_right();
+
+        kb.do_action(
+            &KeyboardAction::SwitchLayout("symbols".into()),
+            &mut events,
+            &src,
+        )
+        .unwrap();
+        assert_eq!(kb.current_layout, "symbols");
+
+        kb.do_action(&KeyboardAction::ToggleShift, &mut events, &src)
+            .unwrap();
+        assert!(
+            events.drain_pending().is_empty(),
+            "held send after layout switch must not fire until idle"
+        );
+
+        kb.reset_controller_input(None);
+
+        kb.do_action(&KeyboardAction::ToggleShift, &mut events, &src)
+            .unwrap();
+        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
+        assert_eq!(got, vec![Event::ToggleShift]);
+    }
+
+    #[test]
+    fn layout_switch_does_not_suppress_mouse() {
+        let mut kb = stub_kb();
+        let mut events = EventQueue::passthrough();
+
+        kb.do_action(
+            &KeyboardAction::SwitchLayout("symbols".into()),
+            &mut events,
+            &pad_right(),
+        )
+        .unwrap();
+
+        kb.do_action(
+            &KeyboardAction::ToggleShift,
+            &mut events,
+            &EventSource::MouseClick,
+        )
+        .unwrap();
+        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
+        assert_eq!(got, vec![Event::ToggleShift]);
     }
 }
