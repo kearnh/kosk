@@ -795,66 +795,68 @@ impl KeyboardState {
         let prev_selected = self.selected;
         let layout_before = self.current_layout.clone();
 
-        let selected_left = current_layout.nearest_cell(
-            StickSide::Left,
-            analog_left,
-            prev_selected.left,
-            self.stick_select_sticky,
-        );
-        let selected_right = current_layout.nearest_cell(
-            StickSide::Right,
-            analog_right,
-            prev_selected.right,
-            self.stick_select_sticky,
-        );
+        if current_layout.captured_centres.is_some() {
+            let selected_left = current_layout.nearest_cell(
+                StickSide::Left,
+                analog_left,
+                prev_selected.left,
+                self.stick_select_sticky,
+            );
+            let selected_right = current_layout.nearest_cell(
+                StickSide::Right,
+                analog_right,
+                prev_selected.right,
+                self.stick_select_sticky,
+            );
 
-        let lock_left = self
-            .last_left_stick_action
-            .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
-        let lock_right = self
-            .last_right_stick_action
-            .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+            let lock_left = self
+                .last_left_stick_action
+                .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+            let lock_right = self
+                .last_right_stick_action
+                .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
 
-        let nearest_left = if lock_left {
-            prev_selected.left
-        } else {
-            selected_left
-        };
-        let nearest_right = if lock_right {
-            prev_selected.right
-        } else {
-            selected_right
-        };
+            let nearest_left = if lock_left {
+                prev_selected.left
+            } else {
+                selected_left
+            };
+            let nearest_right = if lock_right {
+                prev_selected.right
+            } else {
+                selected_right
+            };
 
-        let new_left = cell_after_layout_hold(
-            &mut self.layout_hold_left,
-            analog_left,
-            prev_selected.left,
-            nearest_left,
-        );
-        let new_right = cell_after_layout_hold(
-            &mut self.layout_hold_right,
-            analog_right,
-            prev_selected.right,
-            nearest_right,
-        );
+            let new_left = cell_after_layout_hold(
+                &mut self.layout_hold_left,
+                analog_left,
+                prev_selected.left,
+                nearest_left,
+            );
+            let new_right = cell_after_layout_hold(
+                &mut self.layout_hold_right,
+                analog_right,
+                prev_selected.right,
+                nearest_right,
+            );
 
-        if prev_selected.left != new_left {
-            events.clear_toggle_suppress(stick_side_sources(true));
-        }
-        if prev_selected.right != new_right {
-            events.clear_toggle_suppress(stick_side_sources(false));
-        }
+            if prev_selected.left != new_left {
+                events.clear_toggle_suppress(stick_side_sources(true));
+            }
+            if prev_selected.right != new_right {
+                events.clear_toggle_suppress(stick_side_sources(false));
+            }
 
-        self.selected = StickCells {
-            left: new_left,
-            right: new_right,
-        };
-        if !lock_left {
-            self.last_left_stick_action = None;
-        }
-        if !lock_right {
-            self.last_right_stick_action = None;
+            self.selected = StickCells {
+                left: new_left,
+                right: new_right,
+            };
+            if !lock_left {
+                self.last_left_stick_action = None;
+            }
+            if !lock_right {
+                self.last_right_stick_action = None;
+            }
         }
 
         let evaluated = self.bindings.evaluate(input, &self.when_context());
@@ -1579,6 +1581,13 @@ items = [{items}]
         kb.selected.right = Some((0, 1));
 
         kb.set_current_layout("symbols").unwrap();
+        kb.layouts
+            .get_mut("symbols")
+            .unwrap()
+            .update_geometry(vec![vec![
+                Some(egui::Pos2::new(80.0, 20.0)),
+                Some(egui::Pos2::new(10.0, 20.0)),
+            ]]);
         kb.reselect_at_pixels((0.0, 0.0), (80.0, 20.0));
 
         assert_eq!(

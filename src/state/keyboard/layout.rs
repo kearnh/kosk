@@ -810,56 +810,20 @@ impl KeyboardLayout {
         }
     }
 
-    /// Copy rest centres from another layout until this one has captured geometry.
-    pub(crate) fn adopt_provisional_rest(
-        &mut self,
-        shift: egui::Vec2,
-        left: (f32, f32),
-        right: (f32, f32),
-    ) {
-        if self.captured_centres.is_some() {
-            return;
-        }
-        self.geometry_shift = shift;
-        self.left_stick_center = left;
-        self.right_stick_center = right;
-        self.refresh_shifted_bounds();
-    }
-
-    /// Keep analog→pixel continuous when rest centres differ (`bias += origin1 - origin2`).
+    /// Bias analog mapping by the previous layout's rest. Recapture on next draw.
     pub(crate) fn continue_origin_from(&mut self, from: &Self) {
-        let (shift, from_left, from_right) = from.rest_shift_and_centres();
-        let from_bias_left = from.cursor_bias_left;
-        let from_bias_right = from.cursor_bias_right;
-        if self.captured_centres.is_none() {
-            self.adopt_provisional_rest(shift, from_left, from_right);
-            self.cursor_bias_left = from_bias_left;
-            self.cursor_bias_right = from_bias_right;
-            self.compensate_rest_on_capture = true;
-            return;
-        }
-        self.cursor_bias_left = (
-            from_bias_left.0 + from_left.0 - self.left_stick_center.0,
-            from_bias_left.1 + from_left.1 - self.left_stick_center.1,
-        );
-        self.cursor_bias_right = (
-            from_bias_right.0 + from_right.0 - self.right_stick_center.0,
-            from_bias_right.1 + from_right.1 - self.right_stick_center.1,
-        );
+        let left = from.mapping_rest(StickSide::Left);
+        let right = from.mapping_rest(StickSide::Right);
+        self.clear_captured_geometry();
+        self.cursor_bias_left = left;
+        self.cursor_bias_right = right;
+        self.compensate_rest_on_capture = true;
     }
 
     pub(crate) fn clear_cursor_bias(&mut self) {
         self.cursor_bias_left = (0.0, 0.0);
         self.cursor_bias_right = (0.0, 0.0);
         self.compensate_rest_on_capture = false;
-    }
-
-    pub(crate) fn rest_shift_and_centres(&self) -> (egui::Vec2, (f32, f32), (f32, f32)) {
-        (
-            self.geometry_shift,
-            self.left_stick_center,
-            self.right_stick_center,
-        )
     }
 
     fn build_reach_cache(&self) -> Option<ReachCache> {
@@ -1365,25 +1329,14 @@ items = [
         assert_eq!(layout.right_stick_center, (10.0, 20.0));
     }
 
-    #[test]
-    fn adopt_provisional_rest_fills_centres_before_capture() {
-        let toml = r#"
-[[rows]]
-indent = 0.0
-items = [{ key = "a" }]
-"#;
-        let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
-        assert_eq!(layout.stick_center(StickSide::Left), (0.0, 0.0));
-        layout.adopt_provisional_rest(Vec2::new(5.0, 6.0), (10.0, 20.0), (30.0, 40.0));
-        assert_eq!(layout.stick_center(StickSide::Left), (10.0, 20.0));
-        assert_eq!(layout.stick_center(StickSide::Right), (30.0, 40.0));
-    }
-
     fn two_key_layout(rest_col: usize) -> KeyboardLayout {
         let toml = format!(
             r#"
 stick_rest_left = [0, {rest_col}]
 stick_rest_right = [0, {rest_col}]
+[stick_bounds]
+left = [{{ min = {{ x = 0.0, y = 0.0 }}, max = {{ x = 4.0, y = 2.0 }} }}]
+right = [{{ min = {{ x = 0.0, y = 0.0 }}, max = {{ x = 4.0, y = 2.0 }} }}]
 [[rows]]
 indent = 0.0
 items = [
@@ -1411,6 +1364,44 @@ items = [
         assert!(
             (old.0 - new.0).abs() < 0.01 && (old.1 - new.1).abs() < 0.01,
             "old={old:?} new={new:?}"
+        );
+    }
+
+    #[test]
+    fn layout_switch_discards_geometry_then_recaptures() {
+        let analog = (0.4, -0.2);
+        let from = two_key_layout(0);
+        let mut to = two_key_layout(1);
+        let old = from.stick_to_cursor(StickSide::Left, analog);
+
+        to.continue_origin_from(&from);
+
+        assert!(to.captured_centres.is_none());
+        assert_eq!(to.geometry_shift, Vec2::ZERO);
+        let held = to.stick_to_cursor(StickSide::Left, analog);
+        assert!(
+            (old.0 - held.0).abs() < 0.01 && (old.1 - held.1).abs() < 0.01,
+            "old={old:?} held={held:?}"
+        );
+
+        let centres = vec![vec![
+            Some(Pos2::new(10.0, 100.0)),
+            Some(Pos2::new(80.0, 100.0)),
+        ]];
+        to.update_geometry(centres.clone());
+
+        let mut cold = two_key_layout(1);
+        cold.clear_captured_geometry();
+        cold.update_geometry(centres);
+
+        assert_eq!(to.left_stick_bounds, cold.left_stick_bounds);
+        assert_eq!(to.right_stick_bounds, cold.right_stick_bounds);
+        assert_eq!(to.geometry_shift, cold.geometry_shift);
+
+        let after = to.stick_to_cursor(StickSide::Left, analog);
+        assert!(
+            (old.0 - after.0).abs() < 0.01 && (old.1 - after.1).abs() < 0.01,
+            "old={old:?} after={after:?}"
         );
     }
 
@@ -1563,47 +1554,6 @@ items = [{ key = "z", width = 1.0 }]
         assert_eq!(
             layout.get_nearest_key(StickSide::Left, (0.0, 1.0), false),
             Some(RawKey::Key('z'))
-        );
-    }
-
-    #[test]
-    fn first_capture_after_adopted_shift_does_not_double_bounds() {
-        let toml = r#"
-pad_x = 0.0
-pad_y = 0.0
-stick_rest_left = [0, 0]
-[stick_bounds]
-left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 1.0, y = 2.0 } }]
-right = []
-[[rows]]
-indent = 0.0
-height = 1.0
-items = [{ key = "a", width = 1.0 }]
-[[rows]]
-indent = 0.0
-height = 1.0
-items = [{ key = "z", width = 1.0 }]
-"#;
-        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
-        let chrome = 80.0;
-        layout.adopt_provisional_rest(
-            Vec2::new(0.0, chrome),
-            (5.0, 5.0 + chrome),
-            (5.0, 5.0 + chrome),
-        );
-        layout.update_geometry(vec![
-            vec![Some(Pos2::new(5.0, 5.0 + chrome))],
-            vec![Some(Pos2::new(5.0, 15.0 + chrome))],
-        ]);
-        let top = 5.0 + chrome;
-        assert!(
-            layout.left_stick_bounds[0].min.y <= top,
-            "bounds min y {} leaves top key at {top} unselectable",
-            layout.left_stick_bounds[0].min.y
-        );
-        assert_eq!(
-            layout.get_nearest_key(StickSide::Left, (0.0, -1.0), false),
-            Some(RawKey::Key('a'))
         );
     }
 
