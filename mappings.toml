@@ -1,18 +1,26 @@
-# What each controller button does. config.toml names this file as controller_map.
+# This file tells kosk what each controller button should do. You point at it
+# from config.toml with controller_map; the path is relative to that file.
 #
-# Each [Heading] is a screen (the on-screen keyboard, the menu, and so on).
-# Left of = is a button. Right of = is what that button does on that screen.
-# Names ignore case: faceBottom and face-bottom are the same button.
+# Each [Heading] is a screen of the app: the on-screen keyboard, the menu, and
+# so on. Each line maps a button (left of =) to an action on that screen (right
+# of =). Action names match that screen's actions, and are the same strings used
+# as keyboard layout keys. Button names ignore case, so faceBottom and
+# face-bottom are the same.
 #
-# Two buttons with + is a chord: hold the first, then press the second.
-# The first button cannot also have its own line here; the second can.
+# Two buttons joined with + are a chord. Hold the first, then press the second.
+# The first button cannot also have a mapping of its own in this table; the
+# second one can.
 #
-# Same button, two jobs: a list. The first line whose when is true (or omitted)
-# wins. Put the default last, with no when. A lone { action, when } does
-# nothing when the condition is false. Condition names: docs/bindings.md.
+# One button can do different things in different situations. Write a list; the
+# first entry whose when condition is true (or that has no when) is used. Put
+# the default last, with no when. A single { action, when } with no fallback
+# does nothing when the condition is false. The condition language is in
+# docs/bindings.md.
 #
-# Steam Controller 2 extra buttons (l4, r5, quickAccess / qam) do nothing on a
-# DualShock 4. How far you pull a trigger is [ps4] / [sc2] in config.toml.
+# The Steam Controller 2 has extra buttons: paddles l4, r4, l5, r5, and Quick
+# Access (quickAccess / qam, the ⋯ between the pads). A DualShock 4 does not,
+# so those bindings sit idle. How far you pull a trigger, and how the pads
+# rumble, are set in [ps4] / [sc2] in config.toml.
 
 [Keyboard]
 "triggerLeft" = [
