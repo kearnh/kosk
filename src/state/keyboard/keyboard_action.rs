@@ -8,8 +8,6 @@ use crate::state::{actions::Action, actions::TriggerMode, StateId};
 pub enum KeyboardAction {
     SendKeyUnderLeftStick,
     SendKeyUnderRightStick,
-    SendKeyUnderLeftStickOrAcceptSuggestion,
-    SendKeyUnderRightStickOrAcceptSuggestion,
     SendKey(char),
     SendEnigoKey(enigo::Key),
     ToggleShift,
@@ -25,7 +23,6 @@ pub enum KeyboardAction {
     ToggleRecord,
     CycleSuggestion,
     CycleSuggestionPrev,
-    EnterOrAcceptSuggestion,
     CancelSuggestion,
     ToggleCompletion,
     AcceptSuggestion(Option<usize>),
@@ -39,28 +36,12 @@ impl Action for KeyboardAction {
     fn trigger_mode(&self) -> TriggerMode {
         use KeyboardAction::*;
         match self {
-            SendKeyUnderLeftStick
-            | SendKeyUnderRightStick
-            | SendKeyUnderLeftStickOrAcceptSuggestion
-            | SendKeyUnderRightStickOrAcceptSuggestion
-            | SendKey(_)
-            | SendEnigoKey(_) => TriggerMode::WhileHeld,
-            ToggleShift
-            | ToggleCtrl
-            | ToggleAlt
-            | Paste
-            | SwitchState(_)
-            | SwitchLayout(_)
-            | FlipWindowLeftRight
-            | FlipWindowAboveBelow
-            | RotateWindow
-            | Exit
-            | ToggleRecord
-            | CycleSuggestion
-            | CycleSuggestionPrev
-            | EnterOrAcceptSuggestion
-            | CancelSuggestion
-            | ToggleCompletion
+            SendKeyUnderLeftStick | SendKeyUnderRightStick | SendKey(_) | SendEnigoKey(_) => {
+                TriggerMode::WhileHeld
+            }
+            ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
+            | FlipWindowLeftRight | FlipWindowAboveBelow | RotateWindow | Exit | ToggleRecord
+            | CycleSuggestion | CycleSuggestionPrev | CancelSuggestion | ToggleCompletion
             | AcceptSuggestion(_) => TriggerMode::Edge,
         }
     }
@@ -132,12 +113,6 @@ impl KeyboardAction {
         match self {
             SendKeyUnderLeftStick => "sendKeyUnderLeftStick".into(),
             SendKeyUnderRightStick => "sendKeyUnderRightStick".into(),
-            SendKeyUnderLeftStickOrAcceptSuggestion => {
-                "sendKeyUnderLeftStickOrAcceptSuggestion".into()
-            }
-            SendKeyUnderRightStickOrAcceptSuggestion => {
-                "sendKeyUnderRightStickOrAcceptSuggestion".into()
-            }
             SendKey(c) => {
                 let payload = match *c {
                     ' ' => "space".to_owned(),
@@ -172,7 +147,6 @@ impl KeyboardAction {
             ToggleRecord => "toggleRecord".into(),
             CycleSuggestion => "cycleSuggestion".into(),
             CycleSuggestionPrev => "cycleSuggestionPrev".into(),
-            EnterOrAcceptSuggestion => "enterOrAcceptSuggestion".into(),
             CancelSuggestion => "cancelSuggestion".into(),
             ToggleCompletion => "toggleCompletion".into(),
             AcceptSuggestion(None) => "acceptSuggestion".into(),
@@ -222,10 +196,7 @@ mod tests {
             KeyboardAction::SwitchState(StateId::Menu),
             KeyboardAction::SwitchLayout("main".into()),
             KeyboardAction::SendKeyUnderLeftStick,
-            KeyboardAction::SendKeyUnderLeftStickOrAcceptSuggestion,
-            KeyboardAction::SendKeyUnderRightStickOrAcceptSuggestion,
             KeyboardAction::CycleSuggestion,
-            KeyboardAction::EnterOrAcceptSuggestion,
             KeyboardAction::ToggleCompletion,
             KeyboardAction::AcceptSuggestion(Some(2)),
         ];
@@ -237,13 +208,13 @@ mod tests {
     }
 
     #[test]
-    fn send_under_stick_or_accept_is_while_held() {
+    fn send_under_stick_is_while_held() {
         assert_eq!(
-            KeyboardAction::SendKeyUnderLeftStickOrAcceptSuggestion.trigger_mode(),
+            KeyboardAction::SendKeyUnderLeftStick.trigger_mode(),
             TriggerMode::WhileHeld
         );
         assert_eq!(
-            KeyboardAction::SendKeyUnderRightStickOrAcceptSuggestion.trigger_mode(),
+            KeyboardAction::SendKeyUnderRightStick.trigger_mode(),
             TriggerMode::WhileHeld
         );
     }

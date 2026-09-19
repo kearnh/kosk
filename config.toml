@@ -104,7 +104,7 @@ locale = "en"
 # Engine cap. UI shows at most columns * rows of these.
 # Raise together with columns/rows to show a correction plus completions
 # (e.g. max_suggestions = 6 with columns = 3 and rows = 2).
-max_suggestions = 3
+max_suggestions = 6
 # Ignore tokens shorter than this (unicode scalars). 0 allows next-word only.
 min_prefix_len = 1
 # Collapse buffer changes into one worker request (ms).
@@ -150,7 +150,7 @@ placement = "between"
 # Correction + completions: raise rows (e.g. 2) and max_suggestions together.
 # reserve_slots sizes the strip to this grid even when empty (key centres stay put).
 columns = 3
-rows = 1
+rows = 2
 # Allocate the full grid (and armed dot) even with 0 suggestions / disarmed.
 reserve_slots = true
 # fill = equal share of keyboard content width (minus dot + gaps).

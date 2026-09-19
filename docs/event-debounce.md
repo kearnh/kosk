@@ -155,7 +155,7 @@ A later letter or key on the same binding does not clear the flag. `record_hold_
 
 In code, a lone `push` goes through `commit_allows`, which sends toggles to `toggle_allows` / `record_toggle_accepted` and everything else to the hold-repeat functions above. A `push_seq` of two or more events always goes through `hold_repeat_allows` / `record_hold_repeat_accepted`.
 
-The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths. Accepting a chip on a WhileHeld send (`sendKeyUnderLeftStickOrAcceptSuggestion`) sets `block_hold_until_release` instead; `clear_toggle_suppress` must not lift that, or a stick twitch after accept would type a letter. `note_held` keeps the source in `held_this_tick` so release detection still works. `suppress_until_release_survives_held_ticks` and `suppress_until_release_survives_clear_toggle_suppress` cover that.
+The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths. Accepting a chip is an Edge `acceptSuggestion` latched for the hold in the [binding engine](bindings.md); that is why a still-held trigger does not then type a letter. `suppress_until_release` remains for toggle-style holds. `note_held` keeps the source in `held_this_tick` so release detection still works. `suppress_until_release_survives_held_ticks` and `suppress_until_release_survives_clear_toggle_suppress` cover that.
 
 ### `SourceState`
 

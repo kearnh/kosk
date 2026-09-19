@@ -6,19 +6,30 @@
 # DualShock 4 has neither paddles nor Quick Access (those bindings stay idle).
 # Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
 # also have a standalone mapping in this table; the follower may.
+# A value may be a string, { action, when }, or an array of those (first matching when wins;
+# the entry without when is the fallback and must be last). when language: docs/bindings.md.
 # Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.
 
 [Keyboard]
-# Triggers: type the key under that stick, or accept a highlighted chip.
-"triggerLeft" = "sendKeyUnderLeftStickOrAcceptSuggestion"
-"triggerRight" = "sendKeyUnderRightStickOrAcceptSuggestion"
+"triggerLeft" = [
+  { action = "acceptSuggestion", when = "suggestionSelected" },
+  { action = "sendKeyUnderLeftStick" },
+]
+"triggerRight" = [
+  { action = "acceptSuggestion", when = "suggestionSelected" },
+  { action = "sendKeyUnderRightStick" },
+]
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
 "options + faceTop" = "switchState.menu"
 "options + faceRight" = "switchState.textInput"
 "options + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
-"faceBottom" = "enterOrAcceptSuggestion"
+"faceBottom" = [
+  { action = "acceptSuggestion", when = "suggestionSelected" },
+  { action = "sendKey.enter" },
+]
+"faceRight" = { action = "cancelSuggestion", when = "suggestionSelected" }
 "faceLeft" = "sendKey.backspace"
 "l5" = "sendKey.backspace"
 "r5" = "sendKey.space"
@@ -46,7 +57,11 @@ quickAccess = "switchState.mappings"
 "dpadUp" = "switchState.keyboard"
 "shoulderLeft" = "cycleSuggestionPrev"
 "shoulderRight" = "cycleSuggestion"
-"faceBottom" = "enterOrAcceptSuggestion"
+"faceBottom" = [
+  { action = "acceptSuggestion", when = "suggestionSelected" },
+  { action = "submit" },
+]
+"faceRight" = { action = "cancelSuggestion", when = "suggestionSelected" }
 "options + faceLeft" = "toggleCompletion"
 
 [MoveWindow]

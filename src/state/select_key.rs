@@ -1,4 +1,5 @@
 use crate::{
+    controller::mapping::MappingPill,
     controller::{ControllerBinding, ControllerButton, ControllerInput},
     state::actions::get_action,
     state::event::{Event, EventQueue, EventSource, ReturnStateResult},
@@ -21,9 +22,9 @@ pub struct SelectKeyState {
     /// Mode whose action catalog validates `action`; set by `begin`.
     mode: StateId,
     /// Snapshot of the caller's tab draft (action → bindings) for the reactive list.
-    draft_mode: HashMap<String, Vec<ControllerBinding>>,
+    draft_mode: HashMap<String, Vec<MappingPill>>,
     /// Pill being replaced; omitted from the reactive list under the typed action.
-    editing: Option<ControllerBinding>,
+    editing: Option<MappingPill>,
     status: String,
     prev_ok: bool,
     prev_cancel: bool,
@@ -51,8 +52,8 @@ impl SelectKeyState {
         binding: String,
         action: String,
         mode: StateId,
-        draft_mode: HashMap<String, Vec<ControllerBinding>>,
-        editing: Option<ControllerBinding>,
+        draft_mode: HashMap<String, Vec<MappingPill>>,
+        editing: Option<MappingPill>,
     ) {
         self.binding = binding;
         self.action = action;
@@ -87,8 +88,8 @@ impl SelectKeyState {
                 .map(|bindings| {
                     bindings
                         .iter()
-                        .filter(|b| self.editing.as_ref() != Some(*b))
-                        .map(|b| format!("[{b}]"))
+                        .filter(|p| self.editing.as_ref() != Some(*p))
+                        .map(|p| format!("[{}]", p.label()))
                         .collect()
                 })
                 .unwrap_or_default();

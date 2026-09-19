@@ -109,7 +109,10 @@ impl MenuState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        for (binding, action) in self.bindings.evaluate(input) {
+        for (binding, action) in self
+            .bindings
+            .evaluate(input, &crate::when::WhenContext::default())
+        {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }

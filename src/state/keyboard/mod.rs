@@ -11,6 +11,7 @@ use crate::controller::BatteryStatus;
 use crate::controller::StickSide;
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
+use crate::when::WhenContext;
 use crate::{
     controller::ControllerInput,
     controller::{ControllerBinding, ControllerButton},
@@ -467,21 +468,21 @@ impl KeyboardState {
         self.send_key(&key, events, source)
     }
 
-    fn send_under_stick_or_accept(
-        &mut self,
-        left: bool,
-        events: &mut EventQueue,
-        source: &EventSource,
-    ) -> Result<()> {
-        if events.is_suppressed(source) {
-            events.note_held(source);
-            return Ok(());
+    pub(crate) fn when_context(&self) -> WhenContext {
+        let session = input_record::session();
+        let (suggestion_selected, completion_active) = crate::completion::with_mut(|s| {
+            s.map(|s| (s.highlight().is_some(), s.armed()))
+                .unwrap_or((false, false))
+        });
+        WhenContext {
+            shift: self.shift_state,
+            recording: session.is_recording(),
+            replay: session.is_replay(),
+            ctrl: self.ctrl_mod,
+            alt: self.alt_mod,
+            suggestion_selected,
+            completion_active,
         }
-        if Self::completion_accept(events, source, None) {
-            events.suppress_until_release(source);
-            return Ok(());
-        }
-        self.send_under_stick(left, events, source)
     }
 
     fn do_action(
@@ -494,12 +495,6 @@ impl KeyboardState {
         match action {
             SendKeyUnderLeftStick => self.send_under_stick(true, events, source)?,
             SendKeyUnderRightStick => self.send_under_stick(false, events, source)?,
-            SendKeyUnderLeftStickOrAcceptSuggestion => {
-                self.send_under_stick_or_accept(true, events, source)?;
-            }
-            SendKeyUnderRightStickOrAcceptSuggestion => {
-                self.send_under_stick_or_accept(false, events, source)?;
-            }
             SendKey(key) => {
                 self.send_key(&RawKey::Key(*key), events, source)?;
             }
@@ -537,11 +532,6 @@ impl KeyboardState {
             CancelSuggestion => self.completion_cancel(events, source),
             AcceptSuggestion(i) => {
                 let _ = Self::completion_accept(events, source, *i);
-            }
-            EnterOrAcceptSuggestion => {
-                if !Self::completion_accept(events, source, None) {
-                    self.send_key(&RawKey::Key('\n'), events, source)?;
-                }
             }
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
@@ -754,7 +744,7 @@ impl KeyboardState {
             self.last_right_stick_action = None;
         }
 
-        for (binding, action) in self.bindings.evaluate(input) {
+        for (binding, action) in self.bindings.evaluate(input, &self.when_context()) {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }
@@ -774,19 +764,7 @@ impl KeyboardState {
         ui: &mut Ui,
         events: &mut EventQueue,
     ) -> Option<RawKey> {
-        let session = input_record::session();
-        let suggestion = crate::completion::with_mut(|s| {
-            s.map(|s| s.armed() && s.highlight().is_some())
-                .unwrap_or(false)
-        });
-        let display_ctx = when::DisplayContext {
-            shift: self.shift_state,
-            recording: session.is_recording(),
-            replay: session.is_replay(),
-            ctrl: self.ctrl_mod,
-            alt: self.alt_mod,
-            suggestion,
-        };
+        let display_ctx = self.when_context();
 
         let show_chips = self.feed_completion_log
             && self.cfg().completion.enabled

@@ -12,10 +12,10 @@ pub enum TextInputAction {
     SwitchState(StateId),
     CycleSuggestion,
     CycleSuggestionPrev,
-    EnterOrAcceptSuggestion,
     CancelSuggestion,
     ToggleCompletion,
     AcceptSuggestion(Option<usize>),
+    Submit,
 }
 
 impl Action for TextInputAction {

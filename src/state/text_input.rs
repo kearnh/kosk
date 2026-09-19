@@ -15,7 +15,6 @@ use egui::{Color32, Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
 
 use crate::controller::bindings::BindingEngine;
-
 use crate::state::text_input_action::TextInputAction;
 
 fn clamp_cursor(text: &str, cursor: usize) -> usize {
@@ -267,11 +266,7 @@ impl TextInputState {
             AcceptSuggestion(i) => {
                 let _ = self.completion_accept(*i);
             }
-            EnterOrAcceptSuggestion => {
-                if !self.completion_accept(None) {
-                    self.submit_text(events, source);
-                }
-            }
+            Submit => self.submit_text(events, source),
         }
         Ok(())
     }
@@ -370,7 +365,8 @@ impl TextInputState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let fired = self.bindings.evaluate(input);
+        let ctx = keyboard::with_mut(|kb| kb.when_context());
+        let fired = self.bindings.evaluate(input, &ctx);
         for (binding, action) in &fired {
             let src = EventSource::Controller(binding.clone());
             self.do_action(action, events, &src)?;

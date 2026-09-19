@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::{Action, TriggerMode};
+use crate::when::{WhenContext, WhenExpr};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DpadDir {
@@ -68,12 +69,44 @@ impl StickDpad {
 struct ChordEntry<A> {
     leader: ControllerButton,
     follower: ControllerButton,
-    action: A,
+    action: BindingTarget<A>,
+}
+
+/// One compiled mapping: a single action, or `when` arms plus an optional fallback.
+#[derive(Clone, Debug)]
+pub enum BindingTarget<A> {
+    Always(A),
+    Conditional {
+        arms: Vec<(WhenExpr, A)>,
+        otherwise: Option<A>,
+    },
+}
+
+impl<A> From<A> for BindingTarget<A> {
+    fn from(action: A) -> Self {
+        Self::Always(action)
+    }
+}
+
+impl<A: Clone> BindingTarget<A> {
+    pub fn resolve(&self, ctx: &WhenContext) -> Option<&A> {
+        match self {
+            Self::Always(action) => Some(action),
+            Self::Conditional { arms, otherwise } => {
+                for (expr, action) in arms {
+                    if expr.eval(ctx) {
+                        return Some(action);
+                    }
+                }
+                otherwise.as_ref()
+            }
+        }
+    }
 }
 
 /// Resolves single-button and two-button chord mappings with leader-first chord semantics.
 pub struct BindingEngine<A> {
-    singles: HashMap<ControllerButton, A>,
+    singles: HashMap<ControllerButton, BindingTarget<A>>,
     chords: Vec<ChordEntry<A>>,
     buttons: Vec<ControllerButton>,
     prev_held: HashSet<ControllerButton>,
@@ -83,6 +116,8 @@ pub struct BindingEngine<A> {
     chords_fired: HashSet<(ControllerButton, ControllerButton)>,
     /// Leaders currently held, for chord completion.
     leaders_active: HashSet<ControllerButton>,
+    /// Resolved `Conditional` action for the current hold (`None` = clause missed, stay idle).
+    latched_singles: HashMap<ControllerButton, Option<A>>,
     stick_dpad: Option<StickDpad>,
 }
 
@@ -96,13 +131,14 @@ impl<A> Default for BindingEngine<A> {
             suppress_single: HashSet::new(),
             chords_fired: HashSet::new(),
             leaders_active: HashSet::new(),
+            latched_singles: HashMap::new(),
             stick_dpad: None,
         }
     }
 }
 
 impl<A: Action + Clone> BindingEngine<A> {
-    pub fn try_from_raw(raw: HashMap<ControllerBinding, A>) -> Result<Self, String> {
+    pub fn try_from_raw(raw: HashMap<ControllerBinding, BindingTarget<A>>) -> Result<Self, String> {
         let mut singles = HashMap::new();
         let mut chords = Vec::new();
         let mut chord_leaders = HashSet::new();
@@ -146,8 +182,17 @@ impl<A: Action + Clone> BindingEngine<A> {
             suppress_single: HashSet::new(),
             chords_fired: HashSet::new(),
             leaders_active: HashSet::new(),
+            latched_singles: HashMap::new(),
             stick_dpad: None,
         })
+    }
+
+    pub fn try_from_always(raw: HashMap<ControllerBinding, A>) -> Result<Self, String> {
+        Self::try_from_raw(
+            raw.into_iter()
+                .map(|(k, v)| (k, BindingTarget::Always(v)))
+                .collect(),
+        )
     }
 
     pub fn with_left_stick_dpad(mut self) -> Self {
@@ -166,6 +211,7 @@ impl<A: Action + Clone> BindingEngine<A> {
         self.suppress_single.clear();
         self.chords_fired.clear();
         self.leaders_active.clear();
+        self.latched_singles.clear();
         if let Some(sd) = &mut self.stick_dpad {
             sd.reset();
             if let Some(input) = holdover {
@@ -178,7 +224,11 @@ impl<A: Action + Clone> BindingEngine<A> {
         }
     }
 
-    pub fn evaluate(&mut self, input: &dyn ControllerInput) -> Vec<(ControllerBinding, A)> {
+    pub fn evaluate(
+        &mut self,
+        input: &dyn ControllerInput,
+        ctx: &WhenContext,
+    ) -> Vec<(ControllerBinding, A)> {
         if let Some(sd) = &mut self.stick_dpad {
             sd.update(input.left_stick_raw());
         }
@@ -186,8 +236,9 @@ impl<A: Action + Clone> BindingEngine<A> {
         let newly_down: HashSet<_> = held.difference(&self.prev_held).cloned().collect();
         let newly_up: HashSet<_> = self.prev_held.difference(&held).cloned().collect();
 
-        for b in newly_up {
-            self.suppress_single.remove(&b);
+        for b in &newly_up {
+            self.suppress_single.remove(b);
+            self.latched_singles.remove(b);
         }
 
         for chord in &self.chords {
@@ -209,33 +260,66 @@ impl<A: Action + Clone> BindingEngine<A> {
                 continue;
             }
             if newly_down.contains(&chord.follower) && self.leaders_active.contains(&chord.leader) {
+                let Some(action) = chord.action.resolve(ctx) else {
+                    continue;
+                };
                 fired.push((
                     ControllerBinding::Chord {
                         leader: chord.leader,
                         follower: chord.follower,
                     },
-                    chord.action.clone(),
+                    action.clone(),
                 ));
                 self.chords_fired.insert(key);
                 self.suppress_single.insert(chord.follower);
             }
         }
 
-        for (button, action) in &self.singles {
+        for (button, target) in &self.singles {
             if self.suppress_single.contains(button) {
                 continue;
             }
+            let Some(action) = Self::resolve_single(
+                *button,
+                target,
+                ctx,
+                newly_down.contains(button),
+                &mut self.latched_singles,
+            ) else {
+                continue;
+            };
             let should_fire = match action.trigger_mode() {
                 TriggerMode::Edge => newly_down.contains(button),
                 TriggerMode::WhileHeld => held.contains(button),
             };
             if should_fire {
-                fired.push((ControllerBinding::Single(*button), action.clone()));
+                fired.push((ControllerBinding::Single(*button), action));
             }
         }
 
         self.prev_held = held;
         fired
+    }
+
+    fn resolve_single(
+        button: ControllerButton,
+        target: &BindingTarget<A>,
+        ctx: &WhenContext,
+        newly_down: bool,
+        latched: &mut HashMap<ControllerButton, Option<A>>,
+    ) -> Option<A> {
+        match target {
+            BindingTarget::Always(action) => Some(action.clone()),
+            BindingTarget::Conditional { .. } => {
+                if newly_down {
+                    let resolved = target.resolve(ctx).cloned();
+                    latched.insert(button, resolved.clone());
+                    resolved
+                } else {
+                    latched.get(&button).cloned().flatten()
+                }
+            }
+        }
     }
 
     fn compute_held(&self, input: &dyn ControllerInput) -> HashSet<ControllerButton> {
@@ -267,6 +351,8 @@ mod tests {
         EdgeFaceBottom,
         SingleOptions,
         EdgeDpadUp,
+        Accept,
+        Type,
     }
 
     impl Action for TestAction {
@@ -276,12 +362,13 @@ mod tests {
 
         fn trigger_mode(&self) -> TriggerMode {
             match self {
-                TestAction::RepeatFaceBottom => TriggerMode::WhileHeld,
+                TestAction::RepeatFaceBottom | TestAction::Type => TriggerMode::WhileHeld,
                 TestAction::Chord
                 | TestAction::SingleFaceTop
                 | TestAction::EdgeFaceBottom
                 | TestAction::SingleOptions
-                | TestAction::EdgeDpadUp => TriggerMode::Edge,
+                | TestAction::EdgeDpadUp
+                | TestAction::Accept => TriggerMode::Edge,
             }
         }
     }
@@ -299,7 +386,7 @@ mod tests {
             ControllerBinding::Single(ControllerButton::FaceTop),
             TestAction::SingleFaceTop,
         );
-        BindingEngine::try_from_raw(raw).expect("valid map")
+        BindingEngine::try_from_always(raw).expect("valid map")
     }
 
     use crate::controller::test_input::ButtonSetInput;
@@ -315,7 +402,7 @@ mod tests {
     ) -> Vec<TestAction> {
         engine.prev_held = prev.clone();
         engine
-            .evaluate(&ButtonSetInput(now.clone()))
+            .evaluate(&ButtonSetInput(now.clone()), &WhenContext::default())
             .into_iter()
             .map(|(_, a)| a)
             .collect()
@@ -367,7 +454,7 @@ mod tests {
             ControllerBinding::Single(ControllerButton::FaceBottom),
             TestAction::RepeatFaceBottom,
         );
-        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let mut e = BindingEngine::try_from_always(raw).unwrap();
         let empty = held(&[]);
         let held_bottom = held(&[ControllerButton::FaceBottom]);
         assert_eq!(
@@ -406,7 +493,7 @@ mod tests {
             ControllerBinding::Single(ControllerButton::Options),
             TestAction::SingleOptions,
         );
-        assert!(BindingEngine::try_from_raw(raw).is_err());
+        assert!(BindingEngine::try_from_always(raw).is_err());
     }
 
     #[test]
@@ -416,26 +503,26 @@ mod tests {
             ControllerBinding::Single(ControllerButton::FaceBottom),
             TestAction::EdgeFaceBottom,
         );
-        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let mut e = BindingEngine::try_from_always(raw).unwrap();
         let held_bottom = ButtonSetInput(held(&[ControllerButton::FaceBottom]));
         let empty = ButtonSetInput(held(&[]));
 
         e.reset(Some(&held_bottom));
         assert!(e
-            .evaluate(&held_bottom)
+            .evaluate(&held_bottom, &WhenContext::default())
             .into_iter()
             .map(|(_, a)| a)
             .collect::<Vec<_>>()
             .is_empty());
 
         assert!(e
-            .evaluate(&empty)
+            .evaluate(&empty, &WhenContext::default())
             .into_iter()
             .map(|(_, a)| a)
             .collect::<Vec<_>>()
             .is_empty());
         assert_eq!(
-            e.evaluate(&held_bottom)
+            e.evaluate(&held_bottom, &WhenContext::default())
                 .into_iter()
                 .map(|(_, a)| a)
                 .collect::<Vec<_>>(),
@@ -450,12 +537,12 @@ mod tests {
             ControllerBinding::Single(ControllerButton::FaceBottom),
             TestAction::EdgeFaceBottom,
         );
-        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let mut e = BindingEngine::try_from_always(raw).unwrap();
         let held_bottom = ButtonSetInput(held(&[ControllerButton::FaceBottom]));
 
         e.reset(None);
         assert_eq!(
-            e.evaluate(&held_bottom)
+            e.evaluate(&held_bottom, &WhenContext::default())
                 .into_iter()
                 .map(|(_, a)| a)
                 .collect::<Vec<_>>(),
@@ -490,7 +577,7 @@ mod tests {
             ControllerBinding::Single(ControllerButton::FaceBottom),
             TestAction::EdgeFaceBottom,
         );
-        let e = BindingEngine::try_from_raw(raw).unwrap();
+        let e = BindingEngine::try_from_always(raw).unwrap();
         if stick {
             e.with_left_stick_dpad()
         } else {
@@ -513,10 +600,13 @@ mod tests {
             stick: (0.0, -0.8),
             buttons: HashSet::new(),
         };
-        assert!(actions(e.evaluate(&center)).is_empty());
-        assert_eq!(actions(e.evaluate(&tilted)), vec![TestAction::EdgeDpadUp]);
-        assert!(actions(e.evaluate(&tilted)).is_empty());
-        assert!(actions(e.evaluate(&tilted)).is_empty());
+        assert!(actions(e.evaluate(&center, &WhenContext::default())).is_empty());
+        assert_eq!(
+            actions(e.evaluate(&tilted, &WhenContext::default())),
+            vec![TestAction::EdgeDpadUp]
+        );
+        assert!(actions(e.evaluate(&tilted, &WhenContext::default())).is_empty());
+        assert!(actions(e.evaluate(&tilted, &WhenContext::default())).is_empty());
     }
 
     #[test]
@@ -526,7 +616,7 @@ mod tests {
             stick: (0.0, -0.8),
             buttons: HashSet::new(),
         };
-        assert!(actions(e.evaluate(&tilted)).is_empty());
+        assert!(actions(e.evaluate(&tilted, &WhenContext::default())).is_empty());
     }
 
     #[test]
@@ -537,7 +627,7 @@ mod tests {
             buttons: HashSet::new(),
         };
         e.reset(Some(&tilted));
-        assert!(actions(e.evaluate(&tilted)).is_empty());
+        assert!(actions(e.evaluate(&tilted, &WhenContext::default())).is_empty());
     }
 
     #[test]
@@ -547,8 +637,93 @@ mod tests {
             stick: (0.0, -0.8),
             buttons: HashSet::new(),
         };
-        let fired = actions(e.evaluate(&tilted));
+        let fired = actions(e.evaluate(&tilted, &WhenContext::default()));
         assert_eq!(fired, vec![TestAction::EdgeDpadUp]);
         assert!(!fired.contains(&TestAction::EdgeFaceBottom));
+    }
+
+    fn suggestion_ctx(selected: bool) -> WhenContext {
+        WhenContext {
+            suggestion_selected: selected,
+            ..WhenContext::default()
+        }
+    }
+
+    fn accept_or_type_engine() -> BindingEngine<TestAction> {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::TriggerLeft),
+            BindingTarget::Conditional {
+                arms: vec![(
+                    WhenExpr::parse("suggestionSelected").unwrap(),
+                    TestAction::Accept,
+                )],
+                otherwise: Some(TestAction::Type),
+            },
+        );
+        BindingEngine::try_from_raw(raw).unwrap()
+    }
+
+    #[test]
+    fn conditional_first_match_accept_else_type() {
+        let mut e = accept_or_type_engine();
+        let empty = ButtonSetInput(held(&[]));
+        let held_t = ButtonSetInput(held(&[ControllerButton::TriggerLeft]));
+        e.evaluate(&empty, &suggestion_ctx(true));
+        assert_eq!(
+            actions(e.evaluate(&held_t, &suggestion_ctx(true))),
+            vec![TestAction::Accept]
+        );
+        assert!(actions(e.evaluate(&held_t, &suggestion_ctx(true))).is_empty());
+    }
+
+    #[test]
+    fn latch_survives_suggestion_selected_flip_mid_hold() {
+        let mut e = accept_or_type_engine();
+        let empty = ButtonSetInput(held(&[]));
+        let held_t = ButtonSetInput(held(&[ControllerButton::TriggerLeft]));
+        e.evaluate(&empty, &suggestion_ctx(true));
+        assert_eq!(
+            actions(e.evaluate(&held_t, &suggestion_ctx(true))),
+            vec![TestAction::Accept]
+        );
+        assert!(
+            actions(e.evaluate(&held_t, &suggestion_ctx(false))).is_empty(),
+            "must not switch to WhileHeld Type after Accept cleared the highlight"
+        );
+        e.evaluate(&empty, &suggestion_ctx(false));
+        assert_eq!(
+            actions(e.evaluate(&held_t, &suggestion_ctx(false))),
+            vec![TestAction::Type]
+        );
+        assert_eq!(
+            actions(e.evaluate(&held_t, &suggestion_ctx(false))),
+            vec![TestAction::Type]
+        );
+    }
+
+    #[test]
+    fn inline_when_without_fallback_is_idle_when_false() {
+        let mut raw = HashMap::new();
+        raw.insert(
+            ControllerBinding::Single(ControllerButton::FaceRight),
+            BindingTarget::Conditional {
+                arms: vec![(
+                    WhenExpr::parse("suggestionSelected").unwrap(),
+                    TestAction::Accept,
+                )],
+                otherwise: None,
+            },
+        );
+        let mut e = BindingEngine::try_from_raw(raw).unwrap();
+        let empty = ButtonSetInput(held(&[]));
+        let held_b = ButtonSetInput(held(&[ControllerButton::FaceRight]));
+        e.evaluate(&empty, &suggestion_ctx(false));
+        assert!(actions(e.evaluate(&held_b, &suggestion_ctx(false))).is_empty());
+        e.evaluate(&empty, &suggestion_ctx(true));
+        assert_eq!(
+            actions(e.evaluate(&held_b, &suggestion_ctx(true))),
+            vec![TestAction::Accept]
+        );
     }
 }

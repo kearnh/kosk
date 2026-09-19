@@ -2,13 +2,15 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use crate::config;
-use crate::controller::bindings::BindingEngine;
+use crate::controller::bindings::{BindingEngine, BindingTarget};
+use crate::controller::mapping::{validate_rule_order, MappingRule, MappingValue};
 use crate::state::keyboard::KeyboardAction;
 use crate::state::menu_action::MenuAction;
 use crate::state::move_window_action::MoveWindowAction;
 use crate::state::select_layout_action::SelectLayoutAction;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
+use crate::when::WhenExpr;
 
 /// How a controller mapping should fire while its button is held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,16 +58,100 @@ pub fn load_bindings<A: Action + Clone + 'static>(
     let cfg = config::get();
     let mut raw_bindings = HashMap::new();
     if let Some(raw_mapping) = cfg.controller_map.get(&state_id).cloned() {
-        for (binding, action_name) in raw_mapping {
-            if let Some(action) = get_action(state_id, &action_name) {
-                if let Some(action) = action.as_ref().as_any().downcast_ref::<A>() {
-                    raw_bindings.insert(binding, action.clone());
+        for (binding, value) in raw_mapping {
+            match compile_mapping_value::<A>(state_id, &value) {
+                Ok(Some(target)) => {
+                    raw_bindings.insert(binding, target);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "{state_id:?} controller_map {binding}: {e}"
+                    ));
                 }
             }
         }
     }
     BindingEngine::try_from_raw(raw_bindings)
         .map_err(|e| anyhow::anyhow!("{state_id:?} controller_map: {e}"))
+}
+
+fn parse_typed<A: Action + Clone + 'static>(state: StateId, name: &str) -> Option<A> {
+    let action = get_action(state, name)?;
+    action.as_ref().as_any().downcast_ref::<A>().cloned()
+}
+
+fn expand_or_accept(state: StateId, name: &str) -> Option<(&'static str, &'static str)> {
+    match name {
+        "sendKeyUnderLeftStickOrAcceptSuggestion" => {
+            Some(("acceptSuggestion", "sendKeyUnderLeftStick"))
+        }
+        "sendKeyUnderRightStickOrAcceptSuggestion" => {
+            Some(("acceptSuggestion", "sendKeyUnderRightStick"))
+        }
+        "enterOrAcceptSuggestion" => {
+            let otherwise = match state {
+                StateId::Keyboard => "sendKey.enter",
+                StateId::TextInput => "submit",
+                _ => return None,
+            };
+            Some(("acceptSuggestion", otherwise))
+        }
+        _ => None,
+    }
+}
+
+fn compile_mapping_value<A: Action + Clone + 'static>(
+    state: StateId,
+    value: &MappingValue,
+) -> Result<Option<BindingTarget<A>>, String> {
+    if let MappingValue::Action(name) = value {
+        if let Some((when_action, otherwise)) = expand_or_accept(state, name) {
+            return compile_rules::<A>(
+                state,
+                &[
+                    MappingRule {
+                        action: when_action.to_owned(),
+                        when: Some("suggestionSelected".to_owned()),
+                    },
+                    MappingRule {
+                        action: otherwise.to_owned(),
+                        when: None,
+                    },
+                ],
+            );
+        }
+    }
+
+    let rules = value.rules()?;
+    compile_rules::<A>(state, &rules)
+}
+
+fn compile_rules<A: Action + Clone + 'static>(
+    state: StateId,
+    rules: &[MappingRule],
+) -> Result<Option<BindingTarget<A>>, String> {
+    validate_rule_order(rules)?;
+
+    let mut arms = Vec::new();
+    let mut otherwise = None;
+    for rule in rules {
+        let Some(action) = parse_typed::<A>(state, &rule.action) else {
+            continue;
+        };
+        match &rule.when {
+            Some(src) => {
+                let expr = WhenExpr::parse(src)?;
+                arms.push((expr, action));
+            }
+            None => otherwise = Some(action),
+        }
+    }
+
+    if arms.is_empty() {
+        return Ok(otherwise.map(BindingTarget::Always));
+    }
+    Ok(Some(BindingTarget::Conditional { arms, otherwise }))
 }
 
 /// PascalCase / serde_plain name → camelCase wire id (`ToggleShift` → `toggleShift`).

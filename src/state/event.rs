@@ -1,4 +1,5 @@
 use crate::config;
+use crate::controller::mapping::MappingPill;
 use crate::controller::record as input_record;
 use crate::controller::ControllerBinding;
 use crate::state::{StateId, WindowPos};
@@ -48,9 +49,9 @@ pub enum CallRequest {
         binding: String,
         action: String,
         mode: StateId,
-        draft_mode: HashMap<String, Vec<ControllerBinding>>,
+        draft_mode: HashMap<String, Vec<MappingPill>>,
         /// Pill being replaced; omit from the reactive list when shown under the typed action.
-        editing: Option<ControllerBinding>,
+        editing: Option<MappingPill>,
     },
 }
 
@@ -257,8 +258,8 @@ impl EventQueue {
         }
     }
 
-    /// After accepting a suggestion on a WhileHeld binding, drop further sends
-    /// from this source until the button is released.
+    /// Drop further sends from this source until the button is released.
+    #[cfg(test)]
     pub fn suppress_until_release(&mut self, source: &EventSource) {
         self.touch(source);
         let now = self.now();
@@ -276,6 +277,7 @@ impl EventQueue {
             });
     }
 
+    #[cfg(test)]
     pub fn is_suppressed(&self, source: &EventSource) -> bool {
         self.last_commit
             .get(source)
@@ -283,6 +285,7 @@ impl EventQueue {
     }
 
     /// Keep a controller source in the held set without committing an event.
+    #[cfg(test)]
     pub fn note_held(&mut self, source: &EventSource) {
         self.touch(source);
     }

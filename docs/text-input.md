@@ -26,9 +26,9 @@ Submit builds a `push_seq` on the **outer** queue: `SendText` of the buffer, a R
 
 ## Controller handling
 
-`TextInputAction` is caret moves (WhileHeld), `switchState.*`, and the same completion Edge actions as Keyboard: bumpers cycle chips, `faceBottom` is `enterOrAcceptSuggestion` (accept if a chip is highlighted, else submit), `options + faceLeft` toggles completion. D-pad left/right move the caret and latch completion off.
+`TextInputAction` is caret moves (WhileHeld), `switchState.*`, `submit`, and the same completion Edge actions as Keyboard: bumpers cycle chips, `faceBottom` is `acceptSuggestion` when a chip is highlighted else `submit`, `faceRight` cancels a highlight, `options + faceLeft` toggles completion. D-pad left/right move the caret and latch completion off.
 
-If **any** text-input binding fires on a poll, the keyboard is not given that snapshot. That keeps a d-pad left that means “caret” from also meaning “arrow key” on the keyboard layer, and keeps `enterOrAcceptSuggestion` from being forwarded as Keyboard Enter. If nothing in the text-input map fires, the snapshot is forwarded to `KeyboardState::handle_controller_input` with `kb_events`, so triggers still type into the buffer through the same path as mouse clicks.
+If **any** text-input binding fires on a poll, the keyboard is not given that snapshot. That keeps a d-pad left that means “caret” from also meaning “arrow key” on the keyboard layer, and keeps `submit` from being forwarded as Keyboard Enter. If nothing in the text-input map fires, the snapshot is forwarded to `KeyboardState::handle_controller_input` with `kb_events`, so triggers still type into the buffer through the same path as mouse clicks.
 
 After that, `kb_events.end_controller_tick()` runs. `process_events` runs on this path only when the text-input map did not fire, so a cursor move does not also drain a stick-send from the same poll. `AppState` still ends and drains the **outer** queue, which is where submit and forwarded events live.
 

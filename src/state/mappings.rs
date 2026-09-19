@@ -2,6 +2,7 @@
 
 use crate::config;
 use crate::controller::bindings::StickDpad;
+use crate::controller::mapping::{validate_rule_order, MappingPill, MappingRule, MappingValue};
 use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
 use crate::state::actions::get_action;
 use crate::state::event::{CallRequest, Event, EventQueue, EventSource, ReturnStateResult};
@@ -43,6 +44,8 @@ const EDITABLE_MODES: [StateId; 5] = [
 ];
 
 const SEND_KEY_GATEWAY: &str = "sendKey";
+
+type ModeDraft = HashMap<String, Vec<MappingPill>>;
 
 const ACTION_COL_WIDTH: f32 = 200.0;
 const BINDING_COL_GAP: f32 = 16.0;
@@ -116,9 +119,10 @@ enum DeleteModalFocus {
 /// Shared conflict check used by `on_return` and Save.
 /// `ignore` = binding currently on the pill being replaced (treated as absent).
 fn validate_binding_candidate(
-    draft_mode: &HashMap<String, Vec<ControllerBinding>>,
+    draft_mode: &ModeDraft,
     candidate: &ControllerBinding,
-    ignore: Option<&ControllerBinding>,
+    candidate_when: Option<&str>,
+    ignore: Option<&MappingPill>,
 ) -> Result<(), String> {
     if let ControllerBinding::Chord { leader, follower } = candidate {
         if leader == follower {
@@ -126,17 +130,17 @@ fn validate_binding_candidate(
         }
     }
 
-    let mut occupied: HashMap<ControllerBinding, String> = HashMap::new();
+    let mut occupied: HashMap<(ControllerBinding, Option<String>), String> = HashMap::new();
     let mut singles: HashSet<ControllerButton> = HashSet::new();
     let mut leaders: HashSet<ControllerButton> = HashSet::new();
 
     for (action, bindings) in draft_mode {
-        for binding in bindings {
-            if ignore.is_some_and(|ig| ig == binding) {
+        for pill in bindings {
+            if ignore.is_some_and(|ig| ig == pill) {
                 continue;
             }
-            occupied.insert(binding.clone(), action.clone());
-            match binding {
+            occupied.insert((pill.binding.clone(), pill.when.clone()), action.clone());
+            match &pill.binding {
                 ControllerBinding::Single(b) => {
                     singles.insert(*b);
                 }
@@ -147,7 +151,8 @@ fn validate_binding_candidate(
         }
     }
 
-    if let Some(action) = occupied.get(candidate) {
+    let cand_when = candidate_when.map(str::to_owned);
+    if let Some(action) = occupied.get(&(candidate.clone(), cand_when)) {
         return Err(format!("conflict: {candidate} already bound to {action}"));
     }
 
@@ -190,7 +195,7 @@ fn switch_state_catalog() -> Vec<String> {
         .collect()
 }
 
-fn pill_count(action: &str, draft: &HashMap<String, Vec<ControllerBinding>>) -> usize {
+fn pill_count(action: &str, draft: &ModeDraft) -> usize {
     if action == SEND_KEY_GATEWAY {
         0
     } else {
@@ -209,7 +214,7 @@ fn unit_and_switch_rows(variants: &[&str]) -> Vec<String> {
     rows
 }
 
-fn catalog_rows(mode: StateId, draft: &HashMap<String, Vec<ControllerBinding>>) -> Vec<String> {
+fn catalog_rows(mode: StateId, draft: &ModeDraft) -> Vec<String> {
     match mode {
         StateId::Keyboard => {
             let mut rows = unit_names(
@@ -269,6 +274,41 @@ fn tab_index(mode: StateId) -> usize {
     EDITABLE_MODES.iter().position(|m| *m == mode).unwrap_or(0)
 }
 
+fn mapping_values_from_draft(
+    draft: &ModeDraft,
+) -> Result<HashMap<ControllerBinding, MappingValue>, String> {
+    let mut grouped: HashMap<ControllerBinding, Vec<(Option<String>, String)>> = HashMap::new();
+    for (action, pills) in draft {
+        for pill in pills {
+            grouped
+                .entry(pill.binding.clone())
+                .or_default()
+                .push((pill.when.clone(), action.clone()));
+        }
+    }
+
+    let mut out = HashMap::new();
+    for (binding, mut rows) in grouped {
+        rows.sort_by(|a, b| match (&a.0, &b.0) {
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (sa, sb) => sa.cmp(sb).then_with(|| a.1.cmp(&b.1)),
+        });
+        let rules: Vec<MappingRule> = rows
+            .into_iter()
+            .map(|(when, action)| MappingRule { action, when })
+            .collect();
+        validate_rule_order(&rules)?;
+        let value = match rules.as_slice() {
+            [one] if one.when.is_none() => MappingValue::Action(one.action.clone()),
+            [one] => MappingValue::Rule(one.clone()),
+            _ => MappingValue::Rules(rules),
+        };
+        out.insert(binding, value);
+    }
+    Ok(out)
+}
+
 fn held_set(input: &dyn ControllerInput) -> HashSet<ControllerButton> {
     ControllerButton::VARIANTS
         .iter()
@@ -290,7 +330,7 @@ fn source_for(button: ControllerButton) -> EventSource {
 }
 
 pub struct MappingsState {
-    draft: HashMap<StateId, HashMap<String, Vec<ControllerBinding>>>,
+    draft: HashMap<StateId, ModeDraft>,
     dirty: bool,
     status: String,
     tab: StateId,
@@ -350,7 +390,7 @@ impl MappingsState {
 
     fn load_draft_from_config(&mut self) {
         let cfg = config::get();
-        let mut draft: HashMap<StateId, HashMap<String, Vec<ControllerBinding>>> = HashMap::new();
+        let mut draft: HashMap<StateId, ModeDraft> = HashMap::new();
         for mode in EDITABLE_MODES {
             draft.insert(mode, HashMap::new());
         }
@@ -360,15 +400,27 @@ impl MappingsState {
                 continue;
             };
             let mode_draft = draft.get_mut(&mode).expect("mode present");
-            for (binding, action_name) in raw {
-                if get_action(mode, action_name).is_none() {
-                    unknown += 1;
-                    continue;
+            for (binding, value) in raw {
+                let rules = match value.rules() {
+                    Ok(r) => r,
+                    Err(_) => {
+                        unknown += 1;
+                        continue;
+                    }
+                };
+                for rule in rules {
+                    if get_action(mode, &rule.action).is_none() {
+                        unknown += 1;
+                        continue;
+                    }
+                    mode_draft
+                        .entry(rule.action)
+                        .or_default()
+                        .push(MappingPill {
+                            binding: binding.clone(),
+                            when: rule.when,
+                        });
                 }
-                mode_draft
-                    .entry(action_name.clone())
-                    .or_default()
-                    .push(binding.clone());
             }
         }
         self.draft = draft;
@@ -379,11 +431,11 @@ impl MappingsState {
         }
     }
 
-    fn current_draft(&self) -> &HashMap<String, Vec<ControllerBinding>> {
+    fn current_draft(&self) -> &ModeDraft {
         self.draft.get(&self.tab).expect("editable tab draft")
     }
 
-    fn current_draft_mut(&mut self) -> &mut HashMap<String, Vec<ControllerBinding>> {
+    fn current_draft_mut(&mut self) -> &mut ModeDraft {
         self.draft.get_mut(&self.tab).expect("editable tab draft")
     }
 
@@ -445,17 +497,25 @@ impl MappingsState {
                     .get(&old_action)
                     .and_then(|v| v.get(pill))
                     .cloned();
-                if let Err(err) =
-                    validate_binding_candidate(self.current_draft(), &candidate, ignore.as_ref())
-                {
+                let keep_when = ignore.as_ref().and_then(|p| p.when.clone());
+                if let Err(err) = validate_binding_candidate(
+                    self.current_draft(),
+                    &candidate,
+                    keep_when.as_deref(),
+                    ignore.as_ref(),
+                ) {
                     self.status = err;
                     let _ = out.push(Event::Repaint, &EventSource::FollowUp);
                     return;
                 }
+                let new_pill = MappingPill {
+                    binding: candidate,
+                    when: keep_when,
+                };
                 if action == old_action {
                     if let Some(vec) = self.current_draft_mut().get_mut(&old_action) {
                         if pill < vec.len() {
-                            vec[pill] = candidate;
+                            vec[pill] = new_pill;
                             self.dirty = true;
                             self.status = "ready".to_owned();
                         }
@@ -471,7 +531,7 @@ impl MappingsState {
                             }
                         }
                     }
-                    draft.entry(action.clone()).or_default().push(candidate);
+                    draft.entry(action.clone()).or_default().push(new_pill);
                     self.dirty = true;
                     self.status = "ready".to_owned();
                     let last = self
@@ -484,7 +544,8 @@ impl MappingsState {
                 }
             }
             PendingSelect::Add => {
-                if let Err(err) = validate_binding_candidate(self.current_draft(), &candidate, None)
+                if let Err(err) =
+                    validate_binding_candidate(self.current_draft(), &candidate, None, None)
                 {
                     self.status = err;
                     let _ = out.push(Event::Repaint, &EventSource::FollowUp);
@@ -493,7 +554,7 @@ impl MappingsState {
                 self.current_draft_mut()
                     .entry(action.clone())
                     .or_default()
-                    .push(candidate);
+                    .push(MappingPill::always(candidate));
                 self.dirty = true;
                 self.status = "ready".to_owned();
                 let last = self
@@ -522,7 +583,7 @@ impl MappingsState {
         &self,
         binding: String,
         action: String,
-        editing: Option<ControllerBinding>,
+        editing: Option<MappingPill>,
         events: &mut EventQueue,
         source: &EventSource,
     ) {
@@ -549,17 +610,17 @@ impl MappingsState {
             PendingSelect::Replace { action, pill } => (action.clone(), *pill),
             PendingSelect::Add => return,
         };
-        let pill_binding = self
+        let pill = self
             .current_draft()
             .get(&action)
             .and_then(|v| v.get(pill))
             .cloned();
-        let binding = pill_binding
+        let binding = pill
             .as_ref()
-            .map(ToString::to_string)
+            .map(|p| p.binding.to_string())
             .unwrap_or_default();
         self.pending_select = Some(pending);
-        self.push_select_key_call(binding, action, pill_binding, events, source);
+        self.push_select_key_call(binding, action, pill, events, source);
     }
 
     /// Add flow: A (or click) on a row's `+`. `row_action` guides the Action
@@ -665,14 +726,16 @@ impl MappingsState {
                     self.tab = mode;
                     return;
                 }
-                for (i, binding) in bindings.iter().enumerate() {
+                for (i, pill) in bindings.iter().enumerate() {
                     let mut temp = draft_mode.clone();
                     if let Some(vec) = temp.get_mut(action) {
                         if i < vec.len() {
                             vec.remove(i);
                         }
                     }
-                    if let Err(err) = validate_binding_candidate(&temp, binding, None) {
+                    if let Err(err) =
+                        validate_binding_candidate(&temp, &pill.binding, pill.when.as_deref(), None)
+                    {
                         self.status = err;
                         self.tab = mode;
                         return;
@@ -681,16 +744,20 @@ impl MappingsState {
             }
         }
 
-        let mut new_map: HashMap<StateId, HashMap<ControllerBinding, String>> = HashMap::new();
+        let mut new_map: HashMap<StateId, HashMap<ControllerBinding, MappingValue>> =
+            HashMap::new();
         for mode in EDITABLE_MODES {
-            let mut inverted = HashMap::new();
-            if let Some(draft_mode) = self.draft.get(&mode) {
-                for (action, bindings) in draft_mode {
-                    for binding in bindings {
-                        inverted.insert(binding.clone(), action.clone());
+            let inverted = match self.draft.get(&mode) {
+                Some(draft_mode) => match mapping_values_from_draft(draft_mode) {
+                    Ok(m) => m,
+                    Err(err) => {
+                        self.status = err;
+                        self.tab = mode;
+                        return;
                     }
-                }
-            }
+                },
+                None => HashMap::new(),
+            };
             new_map.insert(mode, inverted);
         }
 
@@ -980,11 +1047,11 @@ impl MappingsState {
 
                                             ui.add_space(BINDING_COL_GAP);
 
-                                            for (pill_idx, binding) in pills.iter().enumerate() {
+                                            for (pill_idx, pill) in pills.iter().enumerate() {
                                                 let col = pill_idx;
                                                 let selected = row_focused && focus_col == col;
                                                 let resp = ui.add(
-                                                    Button::new(format!("[{binding}]"))
+                                                    Button::new(format!("[{}]", pill.label()))
                                                         .selected(selected),
                                                 );
                                                 if resp.clicked() {
@@ -1069,7 +1136,7 @@ impl MappingsState {
                 .current_draft()
                 .get(&action)
                 .and_then(|v| v.get(pill))
-                .map(|b| format!("[{b}]"))
+                .map(|p| format!("[{}]", p.label()))
                 .unwrap_or_else(|| "[?]".to_owned());
             let mut confirm = false;
             let mut cancel = false;
@@ -1168,15 +1235,20 @@ mod tests {
         ControllerBinding::Chord { leader, follower }
     }
 
+    fn pill(b: ControllerBinding) -> MappingPill {
+        MappingPill::always(b)
+    }
+
     #[test]
     fn rejects_duplicate_binding() {
         let mut draft = HashMap::new();
         draft.insert(
             "toggleShift".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
-        let err = validate_binding_candidate(&draft, &single(ControllerButton::FaceTop), None)
-            .unwrap_err();
+        let err =
+            validate_binding_candidate(&draft, &single(ControllerButton::FaceTop), None, None)
+                .unwrap_err();
         assert_eq!(err, "conflict: faceTop already bound to toggleShift");
     }
 
@@ -1185,10 +1257,14 @@ mod tests {
         let mut draft = HashMap::new();
         draft.insert(
             "switchState.menu".to_owned(),
-            vec![chord(ControllerButton::Options, ControllerButton::FaceTop)],
+            vec![pill(chord(
+                ControllerButton::Options,
+                ControllerButton::FaceTop,
+            ))],
         );
-        let err = validate_binding_candidate(&draft, &single(ControllerButton::Options), None)
-            .unwrap_err();
+        let err =
+            validate_binding_candidate(&draft, &single(ControllerButton::Options), None, None)
+                .unwrap_err();
         assert_eq!(
             err,
             "conflict: options is a chord leader and cannot also be a single"
@@ -1200,11 +1276,12 @@ mod tests {
         let mut draft = HashMap::new();
         draft.insert(
             "activate".to_owned(),
-            vec![single(ControllerButton::Options)],
+            vec![pill(single(ControllerButton::Options))],
         );
         let err = validate_binding_candidate(
             &draft,
             &chord(ControllerButton::Options, ControllerButton::FaceTop),
+            None,
             None,
         )
         .unwrap_err();
@@ -1221,6 +1298,7 @@ mod tests {
             &draft,
             &chord(ControllerButton::FaceTop, ControllerButton::FaceTop),
             None,
+            None,
         )
         .unwrap_err();
         assert_eq!(err, "conflict: chord leader and follower must differ");
@@ -1229,11 +1307,16 @@ mod tests {
     #[test]
     fn replace_ignores_old_pill_binding() {
         let mut draft = HashMap::new();
-        let old = single(ControllerButton::FaceTop);
+        let old = pill(single(ControllerButton::FaceTop));
         draft.insert("toggleShift".to_owned(), vec![old.clone()]);
-        validate_binding_candidate(&draft, &old, Some(&old)).unwrap();
-        validate_binding_candidate(&draft, &single(ControllerButton::FaceBottom), Some(&old))
-            .unwrap();
+        validate_binding_candidate(&draft, &old.binding, None, Some(&old)).unwrap();
+        validate_binding_candidate(
+            &draft,
+            &single(ControllerButton::FaceBottom),
+            None,
+            Some(&old),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1241,9 +1324,26 @@ mod tests {
         let mut draft = HashMap::new();
         draft.insert(
             "switchState.menu".to_owned(),
-            vec![chord(ControllerButton::Options, ControllerButton::FaceTop)],
+            vec![pill(chord(
+                ControllerButton::Options,
+                ControllerButton::FaceTop,
+            ))],
         );
-        validate_binding_candidate(&draft, &single(ControllerButton::FaceTop), None).unwrap();
+        validate_binding_candidate(&draft, &single(ControllerButton::FaceTop), None, None).unwrap();
+    }
+
+    #[test]
+    fn allows_same_button_with_different_when() {
+        let mut draft = HashMap::new();
+        draft.insert(
+            "acceptSuggestion".to_owned(),
+            vec![MappingPill {
+                binding: single(ControllerButton::FaceBottom),
+                when: Some("suggestionSelected".to_owned()),
+            }],
+        );
+        validate_binding_candidate(&draft, &single(ControllerButton::FaceBottom), None, None)
+            .unwrap();
     }
 
     #[test]
@@ -1265,7 +1365,7 @@ mod tests {
             .and_then(|d| d.get("sendKey.enter"))
             .cloned()
             .unwrap_or_default();
-        assert_eq!(pills, vec![single(ControllerButton::Share)]);
+        assert_eq!(pills, vec![pill(single(ControllerButton::Share))]);
         assert!(m.dirty);
         assert!(m.pending_select.is_none());
         let drained = out.drain_pending();
@@ -1337,7 +1437,7 @@ mod tests {
             StateId::Keyboard,
             HashMap::from([(
                 "toggleShift".to_owned(),
-                vec![single(ControllerButton::FaceTop)],
+                vec![pill(single(ControllerButton::FaceTop))],
             )]),
         );
         m.pending_select = Some(PendingSelect::Replace {
@@ -1358,7 +1458,7 @@ mod tests {
             .and_then(|d| d.get("toggleShift"))
             .cloned()
             .unwrap_or_default();
-        assert_eq!(pills, vec![single(ControllerButton::FaceLeft)]);
+        assert_eq!(pills, vec![pill(single(ControllerButton::FaceLeft))]);
         assert!(m.dirty);
         assert_eq!(m.status, "ready");
         let rows = m.rows();
@@ -1374,11 +1474,11 @@ mod tests {
             HashMap::from([
                 (
                     "toggleShift".to_owned(),
-                    vec![single(ControllerButton::FaceTop)],
+                    vec![pill(single(ControllerButton::FaceTop))],
                 ),
                 (
                     "toggleCtrl".to_owned(),
-                    vec![single(ControllerButton::FaceBottom)],
+                    vec![pill(single(ControllerButton::FaceBottom))],
                 ),
             ]),
         );
@@ -1399,8 +1499,8 @@ mod tests {
         assert_eq!(
             draft.get("toggleCtrl").cloned().unwrap_or_default(),
             vec![
-                single(ControllerButton::FaceBottom),
-                single(ControllerButton::FaceTop)
+                pill(single(ControllerButton::FaceBottom)),
+                pill(single(ControllerButton::FaceTop))
             ]
         );
         assert!(m.dirty);
@@ -1417,11 +1517,11 @@ mod tests {
             HashMap::from([
                 (
                     "toggleShift".to_owned(),
-                    vec![single(ControllerButton::FaceTop)],
+                    vec![pill(single(ControllerButton::FaceTop))],
                 ),
                 (
                     "toggleCtrl".to_owned(),
-                    vec![single(ControllerButton::FaceLeft)],
+                    vec![pill(single(ControllerButton::FaceLeft))],
                 ),
             ]),
         );
@@ -1442,11 +1542,11 @@ mod tests {
         let draft = m.draft.get(&StateId::Keyboard).expect("keyboard draft");
         assert_eq!(
             draft.get("toggleShift").cloned().unwrap_or_default(),
-            vec![single(ControllerButton::FaceTop)]
+            vec![pill(single(ControllerButton::FaceTop))]
         );
         assert_eq!(
             draft.get("toggleCtrl").cloned().unwrap_or_default(),
-            vec![single(ControllerButton::FaceLeft)]
+            vec![pill(single(ControllerButton::FaceLeft))]
         );
     }
 
@@ -1457,7 +1557,7 @@ mod tests {
             StateId::Keyboard,
             HashMap::from([(
                 "toggleShift".to_owned(),
-                vec![single(ControllerButton::FaceTop)],
+                vec![pill(single(ControllerButton::FaceTop))],
             )]),
         );
         m.pending_select = Some(PendingSelect::Add);
@@ -1483,11 +1583,11 @@ mod tests {
         let mut draft = HashMap::new();
         draft.insert(
             "sendKey.z".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
         draft.insert(
             "sendKey.a".to_owned(),
-            vec![single(ControllerButton::FaceBottom)],
+            vec![pill(single(ControllerButton::FaceBottom))],
         );
         let rows = catalog_rows(StateId::Keyboard, &draft);
         let gateway = rows
@@ -1603,7 +1703,7 @@ mod tests {
         enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
         m.focus_row = m
             .rows()
@@ -1626,9 +1726,9 @@ mod tests {
                 mode: StateId::Keyboard,
                 draft_mode: HashMap::from([(
                     "toggleShift".to_owned(),
-                    vec![single(ControllerButton::FaceTop)]
+                    vec![pill(single(ControllerButton::FaceTop))]
                 )]),
-                editing: Some(single(ControllerButton::FaceTop)),
+                editing: Some(pill(single(ControllerButton::FaceTop))),
             }))
         );
     }
@@ -1639,7 +1739,7 @@ mod tests {
         enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
         m.focus_row = m
             .rows()
@@ -1677,7 +1777,7 @@ mod tests {
         enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
         m.focus_row = m
             .rows()
@@ -1699,7 +1799,7 @@ mod tests {
         assert!(m.delete_confirm.is_none());
         assert_eq!(
             m.current_draft().get("toggleShift").cloned(),
-            Some(vec![single(ControllerButton::FaceTop)])
+            Some(vec![pill(single(ControllerButton::FaceTop))])
         );
         assert!(!m.dirty);
     }
@@ -1710,7 +1810,7 @@ mod tests {
         enter_table_cells(&mut m);
         m.current_draft_mut().insert(
             "toggleShift".to_owned(),
-            vec![single(ControllerButton::FaceTop)],
+            vec![pill(single(ControllerButton::FaceTop))],
         );
         m.focus_row = m
             .rows()

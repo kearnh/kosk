@@ -5,6 +5,7 @@ use crate::config;
 
 pub mod bindings;
 pub mod control_server;
+pub mod mapping;
 pub mod pad_origin;
 pub mod ps4;
 pub mod record;

@@ -1,3 +1,4 @@
+use crate::controller::mapping::MappingValue;
 use crate::controller::ControllerBinding;
 use crate::state::window_pos::WindowPos;
 use crate::state::StateId;
@@ -179,7 +180,7 @@ pub struct Config {
     /// Either an inline table, or a string path to a TOML file whose root is the same map shape
     /// (relative paths are resolved against the main config file's directory).
     #[serde(default, deserialize_with = "deserialize_controller_map")]
-    pub controller_map: HashMap<StateId, HashMap<ControllerBinding, String>>,
+    pub controller_map: HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
 
     /// Milliseconds for the stick selection to be locked after key under stick is pressed.
     #[serde(default = "default_stick_select_lock_ms")]
@@ -383,12 +384,12 @@ enum ControllerMapSource {
     /// `controller_map = "mappings.toml"`
     File(String),
     /// `[controller_map]` / nested tables
-    Inline(HashMap<StateId, HashMap<ControllerBinding, String>>),
+    Inline(HashMap<StateId, HashMap<ControllerBinding, MappingValue>>),
 }
 
 fn deserialize_controller_map<'de, D>(
     deserializer: D,
-) -> Result<HashMap<StateId, HashMap<ControllerBinding, String>>, D::Error>
+) -> Result<HashMap<StateId, HashMap<ControllerBinding, MappingValue>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -1309,11 +1310,13 @@ mod tests {
         assert_eq!(merged.key_sink, KeySinkConfig::Enigo);
     }
 
-    fn keyboard_face_top_map(action: &str) -> HashMap<StateId, HashMap<ControllerBinding, String>> {
+    fn keyboard_face_top_map(
+        action: &str,
+    ) -> HashMap<StateId, HashMap<ControllerBinding, MappingValue>> {
         let mut keyboard = HashMap::new();
         keyboard.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
-            action.to_string(),
+            MappingValue::from_action(action),
         );
         let mut map = HashMap::new();
         map.insert(StateId::Keyboard, keyboard);
@@ -1442,11 +1445,11 @@ controller_map = \"mappings.toml\"\n\
         let mut keyboard = HashMap::new();
         keyboard.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
-            "toggleShift".to_string(),
+            MappingValue::from_action("toggleShift"),
         );
         keyboard.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
-            "sendKey.enter".to_string(),
+            MappingValue::from_action("sendKey.enter"),
         );
         let mut map = HashMap::new();
         map.insert(StateId::Keyboard, keyboard);
@@ -1460,7 +1463,7 @@ controller_map = \"mappings.toml\"\n\
             .unwrap()
             .insert(
                 ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
-                "toggleCtrl".to_string(),
+                MappingValue::from_action("toggleCtrl"),
             );
 
         write_config_preserving(&config_path, &old, &new, Some("mappings.toml")).unwrap();
@@ -1533,16 +1536,16 @@ controller_map = \"mappings.toml\"\n\
         let mut keyboard = HashMap::new();
         keyboard.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceTop),
-            "toggleShift".to_string(),
+            MappingValue::from_action("toggleShift"),
         );
         keyboard.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
-            "sendKey.enter".to_string(),
+            MappingValue::from_action("sendKey.enter"),
         );
         let mut menu = HashMap::new();
         menu.insert(
             ControllerBinding::from(crate::controller::ControllerButton::FaceBottom),
-            "activate".to_string(),
+            MappingValue::from_action("activate"),
         );
         let mut map = HashMap::new();
         map.insert(StateId::Keyboard, keyboard);

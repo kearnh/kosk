@@ -26,19 +26,18 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 
 `sendKey.space`, `sendKey.enter`, `sendKey.tab` become character sends. `sendKey.backspace` and arrows become `SendEnigoKey` because they are not Unicode characters Enigo will type as text.
 
-`TriggerMode` is WhileHeld for the send-key family (including send-under-stick and send-under-stick-or-accept) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, `toggleRecord`, and completion actions (`cycleSuggestion`, `enterOrAcceptSuggestion`, …).
+`TriggerMode` is WhileHeld for the send-key family (send-under-stick, `sendKey.*`) and Edge for toggles, paste, mode switches, layout switches, window flips/rotate, exit, `toggleRecord`, and completion actions (`cycleSuggestion`, `acceptSuggestion`, `cancelSuggestion`, …).
 
 `do_action` is the keyboard’s interpreter:
 
-- **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the `RawKey` of the highlighted cell if any.
-- **Send under stick or accept** (`sendKeyUnderLeftStickOrAcceptSuggestion` / `Right`): if a chip is highlighted, suffix-inject it and ignore further holds until release; otherwise the same as send under stick. Default on the triggers. Pads stay send-under-stick.
+- **Send under stick** records `last_*_stick_action` for the lock, then `send_key` on the `RawKey` of the highlighted cell if any. Default on the pads. Triggers use the same action when no chip is highlighted (`when` on the binding; see [bindings.md](bindings.md)).
 - **SendKey / SendEnigoKey** call `send_key` with a synthetic `RawKey`.
 - **ToggleShift / Ctrl / Alt** enqueue the corresponding `Event`; they do not flip state here.
 - **Paste** enqueues Control-press, `v` click, Control-release as one `push_seq`, then disarms completion.
 - **CycleSuggestion / CycleSuggestionPrev** move chip highlight (RB from none → slot 0; LB from none → last). No inject.
-- **EnterOrAcceptSuggestion** accepts the highlighted chip (suffix inject) or sends Enter.
+- **AcceptSuggestion** suffix-injects (or backspace-replaces) the highlighted or indexed chip.
 - **ToggleCompletion** arms/disarms the typed log. Re-arm clears the log.
-- **CancelSuggestion** retracts the last injected suffix if `retract_last_accept`.
+- **CancelSuggestion** clears highlight; with `retract_last_accept` also undoes the last injected suffix. Default on `faceRight` when `suggestionSelected`.
 - **SwitchState / Flip / Rotate / Exit / ToggleRecord** enqueue the matching event.
 - **SwitchLayout** changes `current_layout` immediately (not via the queue), clears selection, and taps the recorder. A missing name is an error.
 

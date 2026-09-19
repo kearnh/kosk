@@ -148,7 +148,10 @@ impl MoveWindowState {
         coords: (f32, f32),
         events: &mut EventQueue,
     ) -> Result<()> {
-        for (binding, action) in self.bindings.evaluate(input) {
+        for (binding, action) in self
+            .bindings
+            .evaluate(input, &crate::when::WhenContext::default())
+        {
             let src = EventSource::Controller(binding);
             self.do_action(&action, coords, events, &src)?;
         }
