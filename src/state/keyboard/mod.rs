@@ -346,6 +346,35 @@ impl KeyboardState {
         });
     }
 
+    fn enqueue_accept(
+        events: &mut EventQueue,
+        source: &EventSource,
+        out: &crate::completion::AcceptOutcome,
+    ) -> bool {
+        use crate::completion::settings::AcceptVia;
+        match out.via {
+            AcceptVia::Suffix => {
+                if out.inject.is_empty() {
+                    return true;
+                }
+                events.push(Event::SendText(out.inject.clone()), source)
+            }
+            AcceptVia::BackspaceReplace => {
+                let mut steps = Vec::with_capacity(out.token_char_len.saturating_add(1));
+                for _ in 0..out.token_char_len {
+                    steps.push(Event::SendKey(
+                        enigo::Key::Backspace,
+                        enigo::Direction::Click,
+                    ));
+                }
+                if !out.inject.is_empty() {
+                    steps.push(Event::SendText(out.inject.clone()));
+                }
+                events.push_seq(steps, source)
+            }
+        }
+    }
+
     fn completion_accept(
         events: &mut EventQueue,
         source: &EventSource,
@@ -356,10 +385,12 @@ impl KeyboardState {
         else {
             return false;
         };
+        if !Self::enqueue_accept(events, source, &out) {
+            return true;
+        }
         match out.via {
             AcceptVia::Suffix => {
                 if !out.inject.is_empty() {
-                    let _ = events.push(Event::SendText(out.inject.clone()), source);
                     crate::completion::with_mut(|s| {
                         if let Some(s) = s {
                             s.note_log(crate::completion::LogEvent::Text, &out.inject);
@@ -371,14 +402,7 @@ impl KeyboardState {
                 }
             }
             AcceptVia::BackspaceReplace => {
-                for _ in 0..out.token_char_len {
-                    let _ = events.push(
-                        Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
-                        source,
-                    );
-                }
                 if !out.inject.is_empty() {
-                    let _ = events.push(Event::SendText(out.inject.clone()), source);
                     crate::completion::with_mut(|s| {
                         if let Some(s) = s {
                             for _ in 0..out.token_char_len {
@@ -406,12 +430,14 @@ impl KeyboardState {
                 return;
             }
             if let Some(inj) = s.last_injected().map(str::to_string) {
-                for _ in inj.chars() {
-                    let _ = events.push(
-                        Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
-                        source,
-                    );
-                    s.note_log(crate::completion::LogEvent::Backspace, "");
+                let steps: Vec<Event> = inj
+                    .chars()
+                    .map(|_| Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click))
+                    .collect();
+                if events.push_seq(steps, source) {
+                    for _ in inj.chars() {
+                        s.note_log(crate::completion::LogEvent::Backspace, "");
+                    }
                 }
                 s.set_last_injected(None);
             }
@@ -1099,6 +1125,35 @@ mod send_key_tests {
     fn letter_without_mods_uses_send_text() {
         let mut kb = KeyboardState::default();
         assert_eq!(drain_char(&mut kb, 'c'), vec![Event::SendText("c".into())]);
+    }
+
+    #[test]
+    fn typo_replace_survives_debounce() {
+        use crate::completion::settings::AcceptVia;
+        use crate::completion::AcceptOutcome;
+        use enigo::Direction;
+
+        let mut events = EventQueue::passthrough();
+        events.set_debounce_ms(240, 55);
+        let src = EventSource::MouseClick;
+        let out = AcceptOutcome {
+            inject: "people ".into(),
+            via: AcceptVia::BackspaceReplace,
+            token_char_len: 4,
+        };
+        assert!(KeyboardState::enqueue_accept(&mut events, &src, &out));
+        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
+        let backspace = Event::SendKey(enigo::Key::Backspace, Direction::Click);
+        assert_eq!(
+            got,
+            vec![
+                backspace.clone(),
+                backspace.clone(),
+                backspace.clone(),
+                backspace,
+                Event::SendText("people ".into()),
+            ]
+        );
     }
 
     #[test]
