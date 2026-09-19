@@ -1,14 +1,18 @@
-# Controller bindings per app state (paths are relative to the main config file).
-# Action names match each state's action enum (same strings as keyboard layout keys).
-# Button names are case-insensitive; use camelCase or kebab-case (e.g. stick-left, stickLeft).
-# SC2 paddles: l4/r4 flip the OSK around the pointer (left/right, above/below);
-# l5, r5 as below. SC2 Quick Access (⋯ between pads): quickAccess / qam.
-# DualShock 4 has neither paddles nor Quick Access (those bindings stay idle).
-# Chords are exactly two buttons: leader + follower (press leader first). The leader cannot
-# also have a standalone mapping in this table; the follower may.
-# A value may be a string, { action, when }, or an array of those (first matching when wins;
-# the entry without when is the fallback and must be last). when language: docs/bindings.md.
-# Trigger thresholds and pad haptics are device feel: set them in [ps4] / [sc2] in config.toml.
+# What each controller button does. config.toml names this file as controller_map.
+#
+# Each [Heading] is a screen (the on-screen keyboard, the menu, and so on).
+# Left of = is a button. Right of = is what that button does on that screen.
+# Names ignore case: faceBottom and face-bottom are the same button.
+#
+# Two buttons with + is a chord: hold the first, then press the second.
+# The first button cannot also have its own line here; the second can.
+#
+# Same button, two jobs: a list. The first line whose when is true (or omitted)
+# wins. Put the default last, with no when. A lone { action, when } does
+# nothing when the condition is false. Condition names: docs/bindings.md.
+#
+# Steam Controller 2 extra buttons (l4, r5, quickAccess / qam) do nothing on a
+# DualShock 4. How far you pull a trigger is [ps4] / [sc2] in config.toml.
 
 [Keyboard]
 "triggerLeft" = [
