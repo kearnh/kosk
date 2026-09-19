@@ -123,6 +123,15 @@ pub struct CompletionConfig {
     #[serde(default = "default_true")]
     pub capitalization: bool,
 
+    #[serde(default = "default_true")]
+    pub typo_tolerance: bool,
+
+    #[serde(default = "default_min_fuzzy_len")]
+    pub min_fuzzy_len: usize,
+
+    #[serde(default)]
+    pub transpose_neighbors_only: bool,
+
     #[serde(default)]
     pub ui: CompletionUiConfig,
 
@@ -166,6 +175,9 @@ impl Default for CompletionConfig {
             extra_word_chars: default_extra_word_chars(),
             normalize_nfc: true,
             capitalization: true,
+            typo_tolerance: true,
+            min_fuzzy_len: default_min_fuzzy_len(),
+            transpose_neighbors_only: false,
             ui: CompletionUiConfig::default(),
             text_input: CompletionTextInputConfig::default(),
             keyboard: CompletionKeyboardConfig::default(),
@@ -390,6 +402,9 @@ pub struct CompletionNgramConfig {
     #[serde(default = "default_lambda_exact")]
     pub lambda_exact: f32,
 
+    #[serde(default = "default_lambda_typo")]
+    pub lambda_typo: f32,
+
     #[serde(default = "default_prefix_scan_limit")]
     pub prefix_scan_limit: usize,
 
@@ -411,6 +426,7 @@ impl Default for CompletionNgramConfig {
             lambda_unigram: default_lambda_uni(),
             lambda_user: default_lambda_user(),
             lambda_exact: default_lambda_exact(),
+            lambda_typo: default_lambda_typo(),
             prefix_scan_limit: default_prefix_scan_limit(),
             abort_check_every: default_abort_every(),
             precomputed_prefix_depth: default_prefix_depth(),
@@ -556,6 +572,12 @@ fn default_lambda_user() -> f32 {
 }
 fn default_lambda_exact() -> f32 {
     0.1
+}
+fn default_lambda_typo() -> f32 {
+    -2.0
+}
+fn default_min_fuzzy_len() -> usize {
+    3
 }
 fn default_prefix_scan_limit() -> usize {
     8192

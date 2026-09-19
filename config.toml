@@ -102,6 +102,8 @@ fallback = "dictionary"
 # Locale tag for model paths / docs. Not used to pick a dictionary at runtime.
 locale = "en"
 # Engine cap. UI shows at most columns * rows of these.
+# Raise together with columns/rows to show a correction plus completions
+# (e.g. max_suggestions = 6 with columns = 3 and rows = 2).
 max_suggestions = 3
 # Ignore tokens shorter than this (unicode scalars). 0 allows next-word only.
 min_prefix_len = 1
@@ -133,12 +135,20 @@ extra_word_chars = "_'"
 normalize_nfc = true
 # Restore model lowercase to HEL / Hel / sentence-start. Default true; omit ok.
 # capitalization = true
+# Distance-1 typos: neighbor subst, adjacent transpose, omitted/extra key.
+typo_tolerance = true
+# Min token length (unicode scalars) for subst / omit / extra-key. Transpose still at length 2.
+min_fuzzy_len = 3
+# If true, only transpose keys that are layout neighbors. false allows wehn → when.
+transpose_neighbors_only = false
 
 [completion.ui]
 # Keyboard: always above the keys. TextInput: between = field, strip, keys;
 # above_field = strip, field, keys; above_keyboard = same as between.
 placement = "between"
 # Chips per row (row-major). Extra engine hits past columns*rows are dropped.
+# Correction + completions: raise rows (e.g. 2) and max_suggestions together.
+# reserve_slots sizes the strip to this grid even when empty (key centres stay put).
 columns = 3
 rows = 1
 # Allocate the full grid (and armed dot) even with 0 suggestions / disarmed.
@@ -185,6 +195,7 @@ preview_on_highlight = false
 [completion.keyboard]
 # How accept injects into the focused app: suffix = send the untyped tail
 # (hel + hello → lo). backspace_replace = delete the token, then send the word.
+# Non-prefix chips (typo corrections) always use backspace_replace.
 accept_via = "suffix"
 # cancelSuggestion after accept undoes last_injected only (not chip cycling).
 retract_last_accept = true
@@ -214,7 +225,8 @@ wordlist = "data/completion/en/unigrams.tsv"
 
 [completion.ngram]
 # Packed tables from completion_build: vocab.txt, unigrams.bin, optional
-# bigrams.bin / trigrams.bin. Missing tables → unigram-only wrap of wordlist.
+# bigrams.bin / trigrams.bin. Unigrams-only pack writes 0 bigrams; next-word
+# then stays you/i/the. See README "Completion next-word setup".
 model_dir = "data/completion/en"
 # Prev-word context length (trigrams need 3).
 order = 3
@@ -222,11 +234,13 @@ order = 3
 backoff_alpha = 0.4
 # Blend weights (log space): score = λ_tri·S3 + λ_bi·S2 + λ_uni·P + λ_user·cache
 # + λ_exact if the candidate equals the token.
+# λ_typo is added when the candidate is not an exact prefix (corrections / fuzzy).
 lambda_trigram = 1.0
 lambda_bigram = 0.3
 lambda_unigram = 0.2
 lambda_user = 0.8
 lambda_exact = 0.1
+lambda_typo = -2.0
 # Cap prefix-range scan / abort granularity inside the worker.
 prefix_scan_limit = 8192
 abort_check_every = 64

@@ -141,6 +141,11 @@ fn main() -> Result<()> {
         tri_rows.len(),
         args.out.display()
     );
+    if bi_rows.is_empty() {
+        eprintln!(
+            "warning: 0 bigrams; next-word will stay top unigrams. Pass --bigrams FILE or --corpus FILE."
+        );
+    }
     Ok(())
 }
 

@@ -36,6 +36,17 @@ pub fn remainder(token: &str, candidate: &str) -> String {
     c[t.len()..].iter().collect()
 }
 
+pub fn is_case_insensitive_prefix(token: &str, candidate: &str) -> bool {
+    let t: Vec<char> = token.chars().collect();
+    let c: Vec<char> = candidate.chars().collect();
+    if t.len() > c.len() {
+        return false;
+    }
+    t.iter()
+        .zip(c.iter())
+        .all(|(a, b)| a.eq_ignore_ascii_case(b) || a.to_lowercase().eq(b.to_lowercase()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,5 +79,13 @@ mod tests {
     #[test]
     fn remainder_mismatch_is_empty() {
         assert_eq!(remainder("xyz", "hello"), "");
+    }
+
+    #[test]
+    fn prefix_detects_match_and_typo() {
+        assert!(is_case_insensitive_prefix("hel", "hello"));
+        assert!(is_case_insensitive_prefix("the", "the"));
+        assert!(!is_case_insensitive_prefix("thr", "the"));
+        assert!(!is_case_insensitive_prefix("xyz", "hello"));
     }
 }

@@ -39,7 +39,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`[key_sink]`** chooses Enigo injection or a log file.
 - **`[debug]`**, when present at all, enables debug overlays. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
 - **`[text_input]`** styles the single-line field in text-input mode.
-- **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md).
+- **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../README.md#completion-next-word-setup).
 
 Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file.
 

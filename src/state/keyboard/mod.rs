@@ -988,6 +988,16 @@ impl KeyboardState {
 
         if current_layout.captured_centres.as_ref() != Some(&captured_data) {
             current_layout.update_geometry(captured_data);
+            let neighbors = current_layout.typo_neighbors();
+            const MIN_LETTERS_FOR_TYPO_NEIGHBORS: usize = 10;
+            let letter_n = neighbors.keys().filter(|c| c.is_alphabetic()).count();
+            if letter_n >= MIN_LETTERS_FOR_TYPO_NEIGHBORS {
+                crate::completion::with_mut(|s| {
+                    if let Some(s) = s {
+                        s.set_neighbors(neighbors);
+                    }
+                });
+            }
             if publish_geometry {
                 geometry_snap::publish(current_layout_name, current_layout);
             }

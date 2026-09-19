@@ -178,10 +178,20 @@ fn draw_chip(
 
     let label = match cfg.label {
         ChipLabel::Full => cand.text.clone(),
-        ChipLabel::Remainder => crate::completion::remainder(token, &cand.text),
+        ChipLabel::Remainder => {
+            if crate::completion::is_case_insensitive_prefix(token, &cand.text) {
+                crate::completion::remainder(token, &cand.text)
+            } else {
+                cand.text.clone()
+            }
+        }
     };
     let text_pos = Pos2::new(rect.left() + cfg.padding_x, rect.center().y);
-    if cfg.dim_typed_prefix && cfg.label == ChipLabel::Full && !token.is_empty() {
+    let dim_prefix = cfg.dim_typed_prefix
+        && cfg.label == ChipLabel::Full
+        && !token.is_empty()
+        && crate::completion::is_case_insensitive_prefix(token, &cand.text);
+    if dim_prefix {
         let rest = crate::completion::remainder(token, &cand.text);
         let prefix_w = ui.fonts_mut(|f| {
             f.layout_no_wrap(token.to_string(), font.clone(), fg)

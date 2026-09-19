@@ -1,5 +1,5 @@
 use memmap2::Mmap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 
-use super::backend::{Abort, Candidate, CompletionBackend, Source};
+use super::backend::{Abort, Candidate, CompletionBackend, MatchKind, Source};
 use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
-use super::dictionary::DictionaryEngine;
+use super::dictionary::{mix_candidate_slots, DictionaryEngine};
 use super::settings::CompletionConfig;
 use super::user_cache::UserCache;
 
@@ -98,9 +98,11 @@ pub struct NgramEngine {
     lambda_uni: f32,
     lambda_user: f32,
     lambda_exact: f32,
+    lambda_typo: f32,
     user: Option<Arc<Mutex<UserCache>>>,
     nfc: bool,
     abort_every: usize,
+    suggest_next_word: bool,
 }
 
 impl NgramEngine {
@@ -123,9 +125,11 @@ impl NgramEngine {
             lambda_uni: cfg.ngram.lambda_unigram,
             lambda_user: cfg.ngram.lambda_user,
             lambda_exact: cfg.ngram.lambda_exact,
+            lambda_typo: cfg.ngram.lambda_typo,
             user,
             nfc: cfg.normalize_nfc,
             abort_every: cfg.ngram.abort_check_every.max(1),
+            suggest_next_word: cfg.suggest_next_word,
         }
     }
 
@@ -170,6 +174,13 @@ impl NgramEngine {
             Vec::new()
         };
 
+        if bigrams.is_empty() {
+            eprintln!(
+                "completion: no bigrams in {}; next-word falls back to unigrams. Pack with --bigrams or --corpus.",
+                dir.display()
+            );
+        }
+
         Ok(Self {
             dict,
             vocab,
@@ -184,9 +195,11 @@ impl NgramEngine {
             lambda_uni: cfg.ngram.lambda_unigram,
             lambda_user: cfg.ngram.lambda_user,
             lambda_exact: cfg.ngram.lambda_exact,
+            lambda_typo: cfg.ngram.lambda_typo,
             user: Some(user),
             nfc: cfg.normalize_nfc,
             abort_every: cfg.ngram.abort_check_every.max(1),
+            suggest_next_word: cfg.suggest_next_word,
         })
     }
 
@@ -271,6 +284,11 @@ impl NgramEngine {
         }
         if normalize_word(&ctx.token, self.nfc) == lower {
             score += self.lambda_exact;
+        } else if !ctx.token.is_empty() {
+            let token_lower = normalize_word(&ctx.token, self.nfc);
+            if !lower.starts_with(&token_lower) {
+                score += self.lambda_typo;
+            }
         }
         score
     }
@@ -280,8 +298,13 @@ impl NgramEngine {
         ctx: &CompletionContext,
         abort: &Abort<'_>,
     ) -> Option<Vec<Candidate>> {
+        if !self.suggest_next_word {
+            return Some(Vec::new());
+        }
+
         let ids = self.prev_ids(ctx);
         let mut scored: Vec<(String, f32, Source)> = Vec::new();
+        let mut seen = HashSet::new();
 
         if ids.len() >= 2 {
             let a = ids[ids.len() - 2];
@@ -299,8 +322,10 @@ impl NgramEngine {
                 }
                 let w = (*key & ID_MASK) as u32;
                 if let Some(word) = self.vocab.get(w as usize) {
-                    let s = self.blend(ctx, word);
-                    scored.push((word.clone(), s, Source::Ngram));
+                    if seen.insert(word.clone()) {
+                        let s = self.blend(ctx, word);
+                        scored.push((word.clone(), s, Source::Ngram));
+                    }
                 }
             }
         }
@@ -320,9 +345,27 @@ impl NgramEngine {
                     }
                     let w = (*key & ID_MASK) as u32;
                     if let Some(word) = self.vocab.get(w as usize) {
-                        let s = self.blend(ctx, word);
-                        scored.push((word.clone(), s, Source::Ngram));
+                        if seen.insert(word.clone()) {
+                            let s = self.blend(ctx, word);
+                            scored.push((word.clone(), s, Source::Ngram));
+                        }
                     }
+                }
+            }
+        }
+
+        if let Some(prev) = ctx.prev_words.last() {
+            if let Some(cache) = &self.user {
+                let cont = cache.lock().unwrap().continuations(prev);
+                for (word, _) in cont {
+                    if abort.stale() {
+                        return None;
+                    }
+                    if !seen.insert(word.clone()) {
+                        continue;
+                    }
+                    let s = self.blend(ctx, &word);
+                    scored.push((word, s, Source::UserCache));
                 }
             }
         }
@@ -340,6 +383,7 @@ impl NgramEngine {
                     text: restore_case(&ctx.token, &w, ctx.capitalize_sentence),
                     score,
                     source,
+                    kind: MatchKind::ExactPrefix,
                 })
                 .collect(),
         )
@@ -369,7 +413,7 @@ impl CompletionBackend for NgramEngine {
                 .total_cmp(&a.score)
                 .then_with(|| a.text.cmp(&b.text))
         });
-        Some(cands)
+        Some(mix_candidate_slots(cands, ctx.max_results.max(1)))
     }
 }
 
@@ -426,5 +470,77 @@ mod tests {
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
+    }
+
+    #[test]
+    fn table_bigram_beats_top_unigram() {
+        let cfg = CompletionConfig::default();
+        let dict = DictionaryEngine::from_wordlist_text(
+            "you\t1000\ni\t900\nthe\t800\ncat\t10\nsat\t5\n",
+            &cfg,
+        );
+        let mut eng = NgramEngine::from_dictionary(dict, &cfg, None);
+        eng.vocab = vec![
+            "you".into(),
+            "i".into(),
+            "the".into(),
+            "cat".into(),
+            "sat".into(),
+        ];
+        for (i, w) in ["you", "i", "the", "cat", "sat"].iter().enumerate() {
+            eng.vocab_ids.insert((*w).into(), i as u32);
+        }
+        eng.unigrams = vec![1000, 900, 800, 10, 5];
+        eng.unigram_total = 2715;
+        eng.bigrams = vec![(pack2(3, 4), 8)];
+        let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert_eq!(out[0].text, "sat");
+    }
+
+    #[test]
+    fn cache_continuation_without_tables() {
+        let cfg = CompletionConfig::default();
+        let dict = DictionaryEngine::from_wordlist_text(
+            "you\t1000\ni\t900\nthe\t800\ncat\t10\nsat\t1\n",
+            &cfg,
+        );
+        let mut cache = UserCache::load(
+            &cfg.user_cache,
+            std::path::PathBuf::from("target/kosk-ngram-cache.bin"),
+        );
+        cache.learn_words(&["cat".into(), "sat".into()]);
+        let user = Arc::new(Mutex::new(cache));
+        let eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
+        let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert_eq!(out[0].text, "sat");
+    }
+
+    #[test]
+    fn empty_token_honors_suggest_next_word() {
+        let cfg = CompletionConfig {
+            suggest_next_word: false,
+            ..CompletionConfig::default()
+        };
+        let dict = DictionaryEngine::from_wordlist_text("the\t10\ncat\t10\n", &cfg);
+        let eng = NgramEngine::from_dictionary(dict, &cfg, None);
+        let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        assert!(eng.suggest(&ctx, &abort).unwrap().is_empty());
     }
 }

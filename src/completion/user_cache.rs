@@ -128,6 +128,18 @@ impl UserCache {
             .unwrap_or(0.0)
     }
 
+    pub fn continuations(&self, prev: &str) -> Vec<(String, f32)> {
+        let mut out: Vec<(String, f32)> = self
+            .bigrams
+            .iter()
+            .filter(|((a, _), _)| a == prev)
+            .map(|((_, b), t)| (b.clone(), self.decay(t.count, t.last)))
+            .filter(|(_, c)| *c > 0.0)
+            .collect();
+        out.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
     fn trim(&mut self) {
         trim_map(&mut self.unigrams, self.cfg.max_unigrams);
         trim_map(&mut self.bigrams, self.cfg.max_bigrams);
@@ -238,5 +250,17 @@ mod tests {
         c.learn_words(&["foo".into(), "bar".into()]);
         assert!(c.unigram("foo") > 0.0);
         assert!(c.bigram("foo", "bar") > 0.0);
+    }
+
+    #[test]
+    fn continuations_lists_learned_pair() {
+        let cfg = CompletionUserCacheConfig::default();
+        let mut c = UserCache::load(&cfg, PathBuf::from("target/kosk-test-cache-cont.bin"));
+        c.unigrams.clear();
+        c.bigrams.clear();
+        c.learn_words(&["cat".into(), "sat".into()]);
+        let next = c.continuations("cat");
+        assert_eq!(next[0].0, "sat");
+        assert!(c.continuations("the").is_empty());
     }
 }

@@ -19,24 +19,30 @@ Green / gray dot on the chip strip shows armed vs disarmed.
 
 ## Accept
 
-- **Keyboard** default `accept_via = "suffix"`: typed `hel`, chip `hello` → inject `lo` plus optional space. `backspace_replace` deletes the token then sends the full word.
+- **Keyboard** default `accept_via = "suffix"`: typed `hel`, chip `hello` → inject `lo` plus optional space. `backspace_replace` deletes the token then sends the full word. If the chip is not a case-insensitive prefix of the token (a typo correction such as `thr` → `the`), accept always uses backspace-replace for that injection, even when the config is suffix.
 - **TextInput** splices `token_range` with the candidate (mid-word replaces the whole word).
+- Chip `dim_typed_prefix` and `label = remainder` apply only when the token is a prefix of the chip. A correction paints the full word.
 - Highlight does not inject. `enterOrAcceptSuggestion` (Edge): highlight set → accept; else Enter / submit. Triggers use `sendKeyUnderLeftStickOrAcceptSuggestion` / `Right` (WhileHeld): highlight set → accept once then ignore the hold; else type the key under that stick. Pads stay type-only.
 - Bumpers: `cycleSuggestion` highlights slot 0 from none; `cycleSuggestionPrev` highlights the last slot. `preselect = "none"`. Typing keeps the highlight if that chip is still in the new list (even in another column); otherwise `reset_highlight_on_refresh` clears it.
+- The engine returns at most `max_suggestions`. The strip shows at most `columns * rows` and drops the rest. Raise both to show a reserved full-word correction plus prefix completions. `reserve_slots` sizes the strip to that grid even when empty so key centres do not jump.
 
 ## Backends
 
-**Ngram** (default): prefix scan of the frequency dictionary, then stupid backoff over prev words, blended with user-cache counts. Unigrams alone are enough for prefix completion. Packed 21-bit ids in `bigrams.bin` / `trigrams.bin` if present.
+**Ngram** (default): prefix scan of the frequency dictionary, then stupid backoff over prev words, blended with user-cache counts. Unigrams alone are enough for prefix completion. Packed 21-bit ids in `bigrams.bin` / `trigrams.bin` if present. Empty pair tables still load; next-word then falls back to top unigrams (`you` / `i` / `the`) and the process prints a warning. User-cache continuations of the previous word are merged into next-word candidates before that fallback.
 
-**Dictionary**: sorted `word` or `word<TAB>count`; rank by frequency, then length. Used for tests, `completion_dev` without a model dir, and fallback.
+**Dictionary**: sorted `word` or `word<TAB>count`; rank by frequency, then length. Used for tests, `completion_dev` without a model dir, and fallback. With `typo_tolerance`, a distance-1 fuzzy prefix scan runs after the exact prefix range: neighbor substitution (layout map injected by the keyboard), adjacent transposition (length ≥ 2), omitted key, extra key. Identity (`the` after typing `the`) is never chipped; longer prefixes (`there`) still are. One slot is reserved for the best full-word correction (`thr` → `the`); remaining slots are exact prefixes, then other fuzzy hits.
 
-**User cache**: postcard file next to config (`completion-cache.bin`). Decayed unigram/bigram of accepted / submitted words. Novel words complete without rewriting the mmap tables.
+**User cache**: postcard file next to config (`completion-cache.bin`). Decayed unigram/bigram of accepted / submitted words. Novel words complete without rewriting the mmap tables. Learned pairs also generate next-word chips when tables are empty.
 
-English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Large `*.bin` n-gram tables are gitignored. Rebuild:
+Neighbor keys are precomputed from letter-key centres when keyboard geometry updates, filtered to keys reachable from the same stick bounds. The last letter-layout map is kept when the current board has fewer than ten letters (symbols layout). Backends see only `HashMap<char, Vec<char>>` on the context; they do not call layout code.
+
+English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Large `*.bin` n-gram tables and `vocab.txt` are gitignored. Pair counts are required for context next-word. Unigrams-only pack is not enough:
 
 ```text
-cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --corpus sentences.txt --out data/completion/en
+cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --out data/completion/en
 ```
+
+That command writes empty `bigrams.bin` and still succeeds. Download [count_2w.txt](https://norvig.com/ngrams/count_2w.txt) and pack with `--bigrams`, then confirm the printed bigram count is not zero. Full commands and a `completion_dev` check are in the [README](../README.md#completion-next-word-setup).
 
 ## Headless
 

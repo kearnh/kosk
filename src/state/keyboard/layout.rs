@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::{fs, path::Path};
 
@@ -412,6 +413,10 @@ fn scale_stick_bounds(rects: Vec<Rect>, scale: Vec2) -> Vec<Rect> {
         .collect()
 }
 
+fn point_in_rects(pos: Pos2, rects: &[Rect]) -> bool {
+    rects.iter().any(|r| r.contains(pos))
+}
+
 fn first_centre(centres: &[Vec<Option<Pos2>>]) -> Option<Pos2> {
     centres.iter().flatten().copied().find_map(|p| p)
 }
@@ -632,6 +637,65 @@ impl KeyboardLayout {
             .centre_at_rest(self.stick_rest_right.as_ref())
             .unwrap_or_default();
         self.reach_cache = self.build_reach_cache();
+    }
+
+    pub(crate) fn typo_neighbors(&self) -> HashMap<char, Vec<char>> {
+        const K: usize = 6;
+        let Some(centres) = &self.captured_centres else {
+            return HashMap::new();
+        };
+
+        let bounds_empty = self.left_stick_bounds.is_empty() && self.right_stick_bounds.is_empty();
+        let mut letters: Vec<(char, Pos2, bool, bool)> = Vec::new();
+
+        for (ri, row) in self.rows.iter().enumerate() {
+            for (ci, item) in row.items.iter().enumerate() {
+                let Some(key) = item.as_key() else {
+                    continue;
+                };
+                if !key.selectable {
+                    continue;
+                }
+                let RawKey::Key(ch) = key.key.get(false) else {
+                    continue;
+                };
+                let Some(Some(pos)) = centres.get(ri).and_then(|r| r.get(ci)) else {
+                    continue;
+                };
+                let folded = ch.to_lowercase().next().unwrap_or(ch);
+                if !folded.is_alphanumeric() && folded != '\'' && folded != '_' {
+                    continue;
+                }
+                let left = bounds_empty || point_in_rects(*pos, &self.left_stick_bounds);
+                let right = bounds_empty || point_in_rects(*pos, &self.right_stick_bounds);
+                if !left && !right {
+                    letters.push((folded, *pos, true, true));
+                } else {
+                    letters.push((folded, *pos, left, right));
+                }
+            }
+        }
+
+        let mut map: HashMap<char, Vec<char>> = HashMap::new();
+        for (i, (ch, pos, left, right)) in letters.iter().enumerate() {
+            let mut dists: Vec<(f32, char)> = letters
+                .iter()
+                .enumerate()
+                .filter(|(j, (other, _, ol, or))| {
+                    *j != i && *other != *ch && ((*left && *ol) || (*right && *or))
+                })
+                .map(|(_, (other, op, _, _))| (pos.distance(*op), *other))
+                .collect();
+            dists.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut neigh = Vec::new();
+            for (_, nch) in dists.into_iter().take(K) {
+                if !neigh.contains(&nch) {
+                    neigh.push(nch);
+                }
+            }
+            map.entry(*ch).or_default().extend(neigh);
+        }
+        map
     }
 
     fn refresh_shifted_bounds(&mut self) {
@@ -1178,6 +1242,26 @@ items = [{ key = "a" }]
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
         assert_eq!(debug_cursor(&layout, None, StickSide::Left), (10.0, 20.0));
         assert_eq!(debug_cursor(&layout, None, StickSide::Right), (10.0, 20.0));
+    }
+
+    #[test]
+    fn typo_neighbors_knn_same_row() {
+        let toml = r#"
+[[rows]]
+indent = 0.0
+items = [{ key = "q" }, { key = "w" }, { key = "e" }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(0.0, 0.0)),
+            Some(Pos2::new(10.0, 0.0)),
+            Some(Pos2::new(20.0, 0.0)),
+        ]]);
+        let n = layout.typo_neighbors();
+        assert!(n.get(&'q').unwrap().contains(&'w'));
+        assert!(n.get(&'w').unwrap().contains(&'q'));
+        assert!(n.get(&'w').unwrap().contains(&'e'));
+        assert_eq!(n.get(&'q').unwrap()[0], 'w');
     }
 
     #[test]

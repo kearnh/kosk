@@ -4,14 +4,15 @@ mod backend;
 mod case;
 mod context;
 mod dictionary;
+mod fuzzy;
 mod ngram;
 mod session;
 pub mod settings;
 mod typed_log;
 mod user_cache;
 
-pub use apply::{remainder, splice};
-pub use backend::{backend_from_config, Abort, Candidate, CompletionBackend, Source};
+pub use apply::{is_case_insensitive_prefix, remainder, splice};
+pub use backend::{backend_from_config, Abort, Candidate, CompletionBackend, MatchKind, Source};
 pub use case::restore_case;
 pub use context::{split_at_cursor, tokens_in, word_prefix_token, CompletionContext};
 pub use dictionary::DictionaryEngine;

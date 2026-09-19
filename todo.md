@@ -17,8 +17,9 @@ navigation in move window
 Input Text Prediction
 ---------------------
 
-Shipped: ngram/dictionary backends, chips, bumper cycle, enter-or-accept.
-See [docs/completion.md](docs/completion.md). Left: typo model, neural rerank,
+Shipped: ngram/dictionary backends, chips, bumper cycle, enter-or-accept,
+typo tolerance, next-word from packed bigrams or the user cache.
+See [docs/completion.md](docs/completion.md). Left: neural rerank,
 OS caret scrape.
 
 Mappings UI

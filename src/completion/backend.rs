@@ -15,11 +15,20 @@ pub enum Source {
     Dictionary,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MatchKind {
+    #[default]
+    ExactPrefix,
+    Correction,
+    Fuzzy,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidate {
     pub text: String,
     pub score: f32,
     pub source: Source,
+    pub kind: MatchKind,
 }
 
 pub struct Abort<'a> {

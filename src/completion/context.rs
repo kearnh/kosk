@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
@@ -61,6 +62,7 @@ pub struct CompletionContext {
     pub prev_words: Vec<String>,
     pub max_results: usize,
     pub capitalize_sentence: bool,
+    pub neighbors: HashMap<char, Vec<char>>,
 }
 
 impl CompletionContext {
@@ -93,6 +95,7 @@ impl CompletionContext {
             prev_words,
             max_results: cfg.max_suggestions.max(1),
             capitalize_sentence,
+            neighbors: HashMap::new(),
         })
     }
 }

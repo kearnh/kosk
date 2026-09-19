@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Condvar, Mutex};
@@ -48,6 +49,7 @@ pub struct Session {
     notify: Arc<dyn Fn() + Send + Sync>,
     cfg: CompletionConfig,
     user: Arc<Mutex<UserCache>>,
+    neighbors: HashMap<char, Vec<char>>,
 }
 
 impl Session {
@@ -96,6 +98,7 @@ impl Session {
             notify,
             cfg,
             user,
+            neighbors: HashMap::new(),
         })
     }
 
@@ -143,11 +146,16 @@ impl Session {
             notify,
             cfg,
             user,
+            neighbors: HashMap::new(),
         }
     }
 
     pub fn cfg(&self) -> &CompletionConfig {
         &self.cfg
+    }
+
+    pub fn set_neighbors(&mut self, neighbors: HashMap<char, Vec<char>>) {
+        self.neighbors = neighbors;
     }
 
     pub fn armed(&self) -> bool {
@@ -195,9 +203,10 @@ impl Session {
         if !self.cfg.enabled || !self.typed.armed() {
             return;
         }
-        let Some(ctx) = CompletionContext::from_buffer(text, cursor, &self.cfg) else {
+        let Some(mut ctx) = CompletionContext::from_buffer(text, cursor, &self.cfg) else {
             return;
         };
+        ctx.neighbors = self.neighbors.clone();
         self.pending_ctx = Some(ctx);
         self.pending_at = Some(Instant::now());
     }
@@ -331,9 +340,14 @@ impl Session {
         let ctx =
             CompletionContext::from_buffer(self.typed_text(), self.typed_text().len(), &self.cfg)?;
         use super::settings::AcceptVia;
-        let rem = super::apply::remainder(&ctx.token, &cand.text);
-        let mut inject = match self.cfg.keyboard.accept_via {
-            AcceptVia::Suffix => rem,
+        let prefix = super::apply::is_case_insensitive_prefix(&ctx.token, &cand.text);
+        let via = if prefix {
+            self.cfg.keyboard.accept_via
+        } else {
+            AcceptVia::BackspaceReplace
+        };
+        let mut inject = match via {
+            AcceptVia::Suffix => super::apply::remainder(&ctx.token, &cand.text),
             AcceptVia::BackspaceReplace => cand.text.clone(),
         };
         if self.cfg.insert_space_on_accept && !inject.ends_with(' ') {
@@ -348,7 +362,7 @@ impl Session {
         self.clear_highlight();
         Some(AcceptOutcome {
             inject,
-            via: self.cfg.keyboard.accept_via,
+            via,
             token_char_len: ctx.token.chars().count(),
         })
     }
@@ -501,6 +515,7 @@ mod tests {
             text: text.into(),
             score: 1.0,
             source: crate::completion::backend::Source::Dictionary,
+            kind: crate::completion::MatchKind::ExactPrefix,
         }
     }
 
@@ -551,16 +566,19 @@ mod tests {
                 text: "a".into(),
                 score: 1.0,
                 source: crate::completion::backend::Source::Dictionary,
+                kind: crate::completion::MatchKind::ExactPrefix,
             },
             Candidate {
                 text: "b".into(),
                 score: 1.0,
                 source: crate::completion::backend::Source::Dictionary,
+                kind: crate::completion::MatchKind::ExactPrefix,
             },
             Candidate {
                 text: "c".into(),
                 score: 1.0,
                 source: crate::completion::backend::Source::Dictionary,
+                kind: crate::completion::MatchKind::ExactPrefix,
             },
         ];
         assert_eq!(s.highlight(), None);
@@ -611,5 +629,27 @@ mod tests {
         s.highlight = None;
         s.apply_candidates(vec![cand("hello"), cand("help"), cand("heat")]);
         assert_eq!(s.highlight(), None);
+    }
+
+    #[test]
+    fn fuzzy_accept_backspace_replaces() {
+        use crate::completion::settings::AcceptVia;
+        use crate::completion::{LogEvent, MatchKind, Source};
+
+        let mut s = session_with(CompletionConfig::default());
+        s.note_log(LogEvent::Char('t'), "");
+        s.note_log(LogEvent::Char('h'), "");
+        s.note_log(LogEvent::Char('r'), "");
+        s.candidates = vec![Candidate {
+            text: "the".into(),
+            score: 1.0,
+            source: Source::Dictionary,
+            kind: MatchKind::Correction,
+        }];
+        s.highlight = Some(0);
+        let out = s.take_accept(None).unwrap();
+        assert_eq!(out.via, AcceptVia::BackspaceReplace);
+        assert!(out.inject.starts_with("the"));
+        assert_eq!(out.token_char_len, 3);
     }
 }
