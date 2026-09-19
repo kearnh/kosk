@@ -1,4 +1,17 @@
+ # Version control — mandatory
+
+- Use Jujutsu (`jj`) exclusively.
+- NEVER invoke `git`, including read-only commands such as `git status`, `git diff`, and `git log`.
+- The presence of `.git` does not permit raw Git commands.
+- `jj git ...` is allowed because the invoked program is `jj`.
+- Use `jj status`, `jj diff`, and `jj log` for inspection.
+- Do not create bookmarks or branches unless explicitly requested.
+- After completing a task that edits files, create a commit with `jj commit -m "<message>"`. Do not ask for confirmation.
+- Never include unrelated user changes in the commit.
+- If an operation cannot be performed with `jj`, stop and ask rather than falling back to `git`.
 - When writing something intended for human consumption, (comment, commit message, reply to prompt) use as few words as possible. Pick every word meticulously to reduce the volume to a strict minimum. Be down to the point. Less is more. 
+
+# General
 
 - For code comments: do not refer in comments to anything that only makes sense in the context of the AI chat, a future reader must be able to make sense of comments without this context - this includes any references to how code used to be, the only context a reader has is how the code is when reading it.
 
@@ -20,11 +33,14 @@
 
 - If the prompt indicates that a bug is being fixed, don't write the fix right away. First write the test. Observe it failing. Then write the fix. And observe the test passing.
 
-- This repository is using jj. It is not neccesary to make feature branches unless asked to do so. Make a commit when completing a task (if files were edited); do not ask for confirmation.
+# Validation
 
-- Run cargo fmt after finishing edit tasks
+After editing Rust files:
 
-- Run cargo clippy after editing and attend to any warnings
+1. Run `cargo fmt`.
+2. Run `cargo clippy`.
+3. Address warnings caused by the changes.
+4. Do not modify unrelated code solely to address existing warnings.
 
 ## Editing
 - Prefer the `edit` tool (hashline patch) for every file modification.

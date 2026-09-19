@@ -9,4 +9,5 @@ docs/plans/OpenRouter Chat Thu Sep 03 2026.md
 data/completion/**/*.bin
 data/completion/**/vocab.txt
 data/completion/**/manifest.toml
+data/completion/**/count_2w.txt
 completion-cache.bin
