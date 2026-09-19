@@ -43,7 +43,7 @@ After egui draws, `update_geometry` stores centers and calls `calculate_hitboxes
 
 `selectable = false` and skip keys get no hitbox.
 
-Stick rest positions come from optional top-level `stick_rest_left` / `stick_rest_right` fields: each is a `[row, column]` index into `rows` / `rows.keys` (0-based). The referenced key must exist and must not be `Skip` (Skip has no captured centre). If a field is omitted, that side’s rest centre is `(0, 0)`. The checked-in `main` layout points at home-row `d` / `k`; `symbols` points at `]` / `;`.
+Stick rest positions come from optional top-level `stick_rest_left` / `stick_rest_right` fields: each is a `[row, column]` index into `rows` / `rows.keys` (0-based). The referenced key must exist and must not be `Skip` (Skip has no captured centre). If a field is omitted, that side’s rest centre is `(0, 0)`. The checked-in `main` layout points at home-row `d` / `k`; `symbols` uses the same row/column slots so analog rest does not jump.
 
 `stick_to_cursor_left` / `_right` take a warped stick in −1…1, multiply by `scale_* * stick_scale_*`, and add the rest center. That point is then hit-tested.
 

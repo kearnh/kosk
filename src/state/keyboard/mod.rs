@@ -650,10 +650,26 @@ impl KeyboardState {
             return Err(anyhow::anyhow!("Layout '{}' not found", name));
         }
         if self.current_layout != name {
+            let from = self.current_layout.clone();
             self.current_layout = name.to_string();
+            self.copy_provisional_rest(&from);
             self.drop_unselectable_cells();
         }
         Ok(())
+    }
+
+    fn copy_provisional_rest(&mut self, from_name: &str) {
+        let Some((shift, left, right)) = self
+            .layouts
+            .get(from_name)
+            .map(KeyboardLayout::rest_shift_and_centres)
+        else {
+            return;
+        };
+        let Some(to) = self.layouts.get_mut(&self.current_layout) else {
+            return;
+        };
+        to.adopt_provisional_rest(shift, left, right);
     }
 
     fn drop_unselectable_cells(&mut self) {

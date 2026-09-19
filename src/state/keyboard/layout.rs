@@ -788,6 +788,30 @@ impl KeyboardLayout {
         }
     }
 
+    /// Copy rest centres from another layout until this one has captured geometry.
+    pub(crate) fn adopt_provisional_rest(
+        &mut self,
+        shift: egui::Vec2,
+        left: (f32, f32),
+        right: (f32, f32),
+    ) {
+        if self.captured_centres.is_some() {
+            return;
+        }
+        self.geometry_shift = shift;
+        self.left_stick_center = left;
+        self.right_stick_center = right;
+        self.refresh_shifted_bounds();
+    }
+
+    pub(crate) fn rest_shift_and_centres(&self) -> (egui::Vec2, (f32, f32), (f32, f32)) {
+        (
+            self.geometry_shift,
+            self.left_stick_center,
+            self.right_stick_center,
+        )
+    }
+
     fn build_reach_cache(&self) -> Option<ReachCache> {
         let cfg = config::try_get()?;
         let overlay = cfg.debug?.reach_overlay;
@@ -1202,6 +1226,33 @@ mod tests {
     }
 
     #[test]
+    fn old_sc_and_symbols_share_home_row_rest_slots() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let main: KeyboardLayoutFile =
+            toml::from_str(&fs::read_to_string(dir.join("old_sc.toml")).unwrap()).unwrap();
+        let symbols: KeyboardLayoutFile =
+            toml::from_str(&fs::read_to_string(dir.join("old_sc_symbols.toml")).unwrap()).unwrap();
+        assert_eq!(
+            main.stick_rest_left
+                .as_ref()
+                .and_then(StickRest::key_position),
+            symbols
+                .stick_rest_left
+                .as_ref()
+                .and_then(StickRest::key_position),
+        );
+        assert_eq!(
+            main.stick_rest_right
+                .as_ref()
+                .and_then(StickRest::key_position),
+            symbols
+                .stick_rest_right
+                .as_ref()
+                .and_then(StickRest::key_position),
+        );
+    }
+
+    #[test]
     fn translucent_reach_fill_premultiplies_rgb() {
         let fill = reach_color(Color32::from_gray(210), 45);
         assert!(fill.r() <= fill.a());
@@ -1253,6 +1304,20 @@ items = [
         ]]);
         assert_eq!(layout.left_stick_center, (30.0, 40.0));
         assert_eq!(layout.right_stick_center, (10.0, 20.0));
+    }
+
+    #[test]
+    fn adopt_provisional_rest_fills_centres_before_capture() {
+        let toml = r#"
+[[rows]]
+indent = 0.0
+items = [{ key = "a" }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
+        assert_eq!(layout.stick_center(StickSide::Left), (0.0, 0.0));
+        layout.adopt_provisional_rest(Vec2::new(5.0, 6.0), (10.0, 20.0), (30.0, 40.0));
+        assert_eq!(layout.stick_center(StickSide::Left), (10.0, 20.0));
+        assert_eq!(layout.stick_center(StickSide::Right), (30.0, 40.0));
     }
 
     #[test]

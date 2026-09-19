@@ -5,9 +5,9 @@
 pad_x = 0.125
 pad_y = 0.1
 font_size = 24.0
-# Rest on ] (left pad) and ; (right pad) in the symbol row
-stick_rest_left = [1, 2]
-stick_rest_right = { type = "position", x = 11.0, y = 2.6 }
+# Rest on the same home-row slots as `main` (`d` / `k`) so analog cursors do not jump.
+stick_rest_left = [2, 3]
+stick_rest_right = [2, 9]
 
 [stick_bounds]
 left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } }]
