@@ -16,7 +16,7 @@ Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE`
 
 ## Completion next-word setup
 
-Git ships prefix completion only (`data/completion/en/unigrams.tsv`). After a space, next-word chips need packed **pair** counts. `cargo build` does not pack them. Those files are gitignored.
+Git ships the FrequencyWords source wordlist (`data/completion/en/unigrams.tsv`) for prefix completion. After a space, next-word chips need packed **pair** counts. `completion_build` writes gitignored `vocab.txt` and `*.bin`; it does not rewrite the TSV.
 
 This is **not** enough (`wrote N words, 0 bigrams`; chips stay `you` / `i` / `the`):
 

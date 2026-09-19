@@ -36,7 +36,7 @@ Green / gray dot on the chip strip shows armed vs disarmed.
 
 Neighbor keys are precomputed from letter-key centres when keyboard geometry updates, filtered to keys reachable from the same stick bounds. The last letter-layout map is kept when the current board has fewer than ten letters (symbols layout). Backends see only `HashMap<char, Vec<char>>` on the context; they do not call layout code.
 
-English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Large `*.bin` n-gram tables and `vocab.txt` are gitignored. Pair counts are required for context next-word. Unigrams-only pack is not enough:
+English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Source wordlist for prefix completion, not a pack output. `completion_build` writes gitignored `vocab.txt` and `*.bin` only. Pair counts are required for context next-word. Unigrams-only pack is not enough:
 
 ```text
 cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --out data/completion/en

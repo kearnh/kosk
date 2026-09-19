@@ -59,22 +59,17 @@ fn main() -> Result<()> {
     words.dedup_by(|a, b| a.0 == b.0);
 
     let mut vocab_txt = String::new();
-    let mut tsv = String::new();
     let mut ids = HashMap::new();
     let mut counts = Vec::with_capacity(words.len());
     for (i, (w, c)) in words.iter().enumerate() {
         ids.insert(w.clone(), i as u32);
         vocab_txt.push_str(w);
         vocab_txt.push('\n');
-        tsv.push_str(w);
-        tsv.push('\t');
-        tsv.push_str(&c.to_string());
-        tsv.push('\n');
         counts.push(*c);
     }
 
+    // Pack artifacts are vocab.txt + *.bin. The source unigrams.tsv is input-only.
     fs::write(args.out.join("vocab.txt"), vocab_txt)?;
-    fs::write(args.out.join("unigrams.tsv"), tsv)?;
     write_unigrams(&args.out.join("unigrams.bin"), &counts)?;
 
     let mut bigrams: HashMap<(u32, u32), u32> = HashMap::new();
