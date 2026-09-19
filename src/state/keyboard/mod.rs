@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -159,8 +159,8 @@ pub struct KeyboardState {
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
     feed_completion_log: bool,
-    /// After `switchLayout`, ignore controller key sends until the device is idle.
-    suppress_send_until_idle: bool,
+    /// After `switchLayout`, ignore further sends from that source until it is released.
+    suppress_send_until_release: HashSet<EventSource>,
 }
 
 impl KeyboardState {
@@ -497,7 +497,9 @@ impl KeyboardState {
         source: &EventSource,
     ) -> Result<()> {
         use KeyboardAction::*;
-        if self.suppress_send_until_idle && matches!(source, EventSource::Controller(_)) {
+        if matches!(source, EventSource::Controller(_))
+            && self.suppress_send_until_release.contains(source)
+        {
             return Ok(());
         }
         match action {
@@ -546,7 +548,9 @@ impl KeyboardState {
             }
             SwitchLayout(layout_name) => {
                 self.set_current_layout(layout_name)?;
-                self.suppress_send_until_idle = true;
+                if matches!(source, EventSource::Controller(_)) {
+                    self.suppress_send_until_release.insert(source.clone());
+                }
                 input_record::session().tap_layout(layout_name);
             }
             FlipWindowLeftRight => {
@@ -680,9 +684,14 @@ impl KeyboardState {
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         if holdover.is_none() {
             self.selected = StickCells::default();
-            self.suppress_send_until_idle = false;
+            self.suppress_send_until_release.clear();
         }
         self.bindings.reset(holdover);
+    }
+
+    fn retain_layout_switch_suppress(&mut self, held: &HashSet<EventSource>) {
+        self.suppress_send_until_release
+            .retain(|s| held.contains(s));
     }
 
     fn raw_key_at_selected(&self, cell: (usize, usize)) -> Option<RawKey> {
@@ -754,7 +763,14 @@ impl KeyboardState {
             self.last_right_stick_action = None;
         }
 
-        for (binding, action) in self.bindings.evaluate(input, &self.when_context()) {
+        let evaluated = self.bindings.evaluate(input, &self.when_context());
+        let held: HashSet<EventSource> = evaluated
+            .iter()
+            .map(|(b, _)| EventSource::Controller(b.clone()))
+            .collect();
+        self.retain_layout_switch_suppress(&held);
+
+        for (binding, action) in evaluated {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }
@@ -1279,6 +1295,7 @@ mod send_key_tests {
 mod layout_switch_idle_tests {
     use super::*;
     use crate::state::event::{Event, EventQueue, EventSource};
+    use std::collections::HashSet;
 
     fn stub_layout() -> KeyboardLayout {
         KeyboardLayout::load_with_scales(
@@ -1307,8 +1324,16 @@ items = [{ key = "a" }]
         EventSource::Controller(ControllerBinding::Single(ControllerButton::PadRight))
     }
 
+    fn pad_left() -> EventSource {
+        EventSource::Controller(ControllerBinding::Single(ControllerButton::PadLeft))
+    }
+
+    fn drain_events(events: &mut EventQueue) -> Vec<Event> {
+        events.drain_pending().into_iter().map(|(e, _)| e).collect()
+    }
+
     #[test]
-    fn layout_switch_suppresses_controller_keys_until_idle() {
+    fn layout_switch_suppresses_same_source_until_released() {
         let mut kb = stub_kb();
         let mut events = EventQueue::passthrough();
         let src = pad_right();
@@ -1324,16 +1349,32 @@ items = [{ key = "a" }]
         kb.do_action(&KeyboardAction::ToggleShift, &mut events, &src)
             .unwrap();
         assert!(
-            events.drain_pending().is_empty(),
-            "held send after layout switch must not fire until idle"
+            drain_events(&mut events).is_empty(),
+            "held send after layout switch must not fire until that source is released"
         );
 
-        kb.reset_controller_input(None);
+        kb.retain_layout_switch_suppress(&HashSet::new());
 
         kb.do_action(&KeyboardAction::ToggleShift, &mut events, &src)
             .unwrap();
-        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
-        assert_eq!(got, vec![Event::ToggleShift]);
+        assert_eq!(drain_events(&mut events), vec![Event::ToggleShift]);
+    }
+
+    #[test]
+    fn layout_switch_does_not_suppress_other_controller_source() {
+        let mut kb = stub_kb();
+        let mut events = EventQueue::passthrough();
+
+        kb.do_action(
+            &KeyboardAction::SwitchLayout("symbols".into()),
+            &mut events,
+            &pad_right(),
+        )
+        .unwrap();
+
+        kb.do_action(&KeyboardAction::ToggleShift, &mut events, &pad_left())
+            .unwrap();
+        assert_eq!(drain_events(&mut events), vec![Event::ToggleShift]);
     }
 
     #[test]
@@ -1354,7 +1395,6 @@ items = [{ key = "a" }]
             &EventSource::MouseClick,
         )
         .unwrap();
-        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
-        assert_eq!(got, vec![Event::ToggleShift]);
+        assert_eq!(drain_events(&mut events), vec![Event::ToggleShift]);
     }
 }
