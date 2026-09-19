@@ -14,35 +14,39 @@ cargo run -- config.toml
 
 Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them.
 
-## Completion next-word setup
+## Word suggestions
 
-Git ships the FrequencyWords source wordlist (`data/completion/en/unigrams.tsv`) for prefix completion. After a space, next-word chips need packed **pair** counts. `completion_build` writes gitignored `vocab.txt` and `*.bin`; it does not rewrite the TSV.
+While you type, kosk can show a few guesses above the keyboard.
 
-This is **not** enough (`wrote N words, 0 bigrams`; chips stay `you` / `i` / `the`):
+To finish a word you started, you only need the English list already in the repo: `data/completion/en/unigrams.tsv`. Type `hel` and you should see words like `hello`.
 
-```text
-cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --out data/completion/en
-```
+Guessing the *next* word after a space is a separate step. That uses a table of common two-word sequences: how often `going` is followed by `to`, and so on. The table is large, so it is not in git. You build it once on your machine.
 
-1. Download [Norvig count_2w.txt](https://norvig.com/ngrams/count_2w.txt) (Google Web 1T top bigrams). Save as `data/completion/en/count_2w.txt`. Lines are `word1 word2<TAB>count`. Words missing from the unigram list are skipped.
+### Next word after a space
 
-2. Pack (this is the setup):
+1. Download Peter Norvig's [count_2w.txt](https://norvig.com/ngrams/count_2w.txt). Save it as `data/completion/en/count_2w.txt`. Each line is two words and how often they appear together. Words that are not in the English list above are ignored.
+
+2. Convert that file into the tables kosk loads:
 
 ```text
 cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --bigrams data/completion/en/count_2w.txt --out data/completion/en
 ```
 
-The last line must show a **non-zero** bigram count. `0 bigrams` means next-word stays top unigrams. Expect `vocab.txt`, `unigrams.bin`, `bigrams.bin` under `data/completion/en/`. `[completion.ngram] model_dir` must point there (relative to the config file).
+`--unigrams` is the word list from the repo. `--bigrams` is the download from step 1. `--out` is the folder for the generated files (`vocab.txt`, `unigrams.bin`, `bigrams.bin`). Those generated files stay out of git. The word list is only read; it is not rewritten.
 
-Optional: `--corpus FILE` (one sentence per line; none is in this repo) or `--trigrams` with [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
+The last printed line includes how many two-word pairs were kept. If that number is zero, `--bigrams` was probably omitted, and after a space you will only see the most common English words (`you`, `i`, `the`).
 
-3. Verify before launching the overlay:
+`config.toml` already has `[completion.ngram] model_dir = "data/completion/en"`. The path is relative to the config file and should match `--out`.
+
+If you have your own text, `--corpus FILE` counts pairs from one sentence per line. There is no corpus in this repo. For three-word sequences, add `--trigrams` and [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
+
+3. Check without opening the overlay. This pretends you typed `going` and a space:
 
 ```text
 cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --model_dir data/completion/en
 ```
 
-Pass: first chips are context words (`to`, …), not `you` / `i` / `the`. Fail: that trio, or stderr `ngram model at … not loaded; unigram-only` / `no bigrams`.
+You should see words that follow `going` (for example `to`). If the guesses are still `you` / `i` / `the`, the two-word table did not load. The same problem shows up on stderr as `ngram model at … not loaded; unigram-only` or `no bigrams`.
 
 See [docs/completion.md](docs/completion.md).
 

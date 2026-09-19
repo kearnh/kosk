@@ -42,7 +42,7 @@ English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtit
 cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --out data/completion/en
 ```
 
-That command writes empty `bigrams.bin` and still succeeds. Download [count_2w.txt](https://norvig.com/ngrams/count_2w.txt) and pack with `--bigrams`, then confirm the printed bigram count is not zero. Full commands and a `completion_dev` check are in the [README](../README.md#completion-next-word-setup).
+That command writes empty `bigrams.bin` and still succeeds. Download [count_2w.txt](https://norvig.com/ngrams/count_2w.txt) and pack with `--bigrams`, then confirm the printed bigram count is not zero. Full commands and a `completion_dev` check are in the [README](../README.md#next-word-after-a-space).
 
 ## Headless
 
