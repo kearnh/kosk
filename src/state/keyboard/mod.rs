@@ -652,24 +652,20 @@ impl KeyboardState {
         if self.current_layout != name {
             let from = self.current_layout.clone();
             self.current_layout = name.to_string();
-            self.copy_provisional_rest(&from);
+            self.copy_origin_continuity(&from);
             self.drop_unselectable_cells();
         }
         Ok(())
     }
 
-    fn copy_provisional_rest(&mut self, from_name: &str) {
-        let Some((shift, left, right)) = self
-            .layouts
-            .get(from_name)
-            .map(KeyboardLayout::rest_shift_and_centres)
-        else {
+    fn copy_origin_continuity(&mut self, from_name: &str) {
+        let Some(from) = self.layouts.remove(from_name) else {
             return;
         };
-        let Some(to) = self.layouts.get_mut(&self.current_layout) else {
-            return;
-        };
-        to.adopt_provisional_rest(shift, left, right);
+        if let Some(to) = self.layouts.get_mut(&self.current_layout) {
+            to.continue_origin_from(&from);
+        }
+        self.layouts.insert(from_name.to_string(), from);
     }
 
     fn drop_unselectable_cells(&mut self) {
@@ -755,6 +751,9 @@ impl KeyboardState {
             self.layout_hold_left = None;
             self.layout_hold_right = None;
             self.pending_reselect_px = None;
+            for layout in self.layouts.values_mut() {
+                layout.clear_cursor_bias();
+            }
         }
         self.bindings.reset(holdover);
     }

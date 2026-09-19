@@ -396,6 +396,9 @@ pub struct KeyboardLayout {
     geometry_shift: Vec2,
 
     pub captured_centres: Option<Vec<Vec<Option<Pos2>>>>,
+    cursor_bias_left: (f32, f32),
+    cursor_bias_right: (f32, f32),
+    compensate_rest_on_capture: bool,
 
     reach_cache: Option<ReachCache>,
 
@@ -498,6 +501,9 @@ impl KeyboardLayout {
             right_stick_bounds_local,
             geometry_shift: Vec2::ZERO,
             captured_centres: None,
+            cursor_bias_left: (0.0, 0.0),
+            cursor_bias_right: (0.0, 0.0),
+            compensate_rest_on_capture: false,
             reach_cache: None,
             source: toml.to_owned(),
         };
@@ -645,12 +651,21 @@ impl KeyboardLayout {
         self.reach_cache = None;
         self.captured_centres = Some(captured_centres);
         self.calculate_hitboxes();
+        let old_left = self.left_stick_center;
+        let old_right = self.right_stick_center;
         self.left_stick_center = self
             .centre_at_rest(self.stick_rest_left.as_ref())
             .unwrap_or_default();
         self.right_stick_center = self
             .centre_at_rest(self.stick_rest_right.as_ref())
             .unwrap_or_default();
+        if self.compensate_rest_on_capture {
+            self.cursor_bias_left.0 += old_left.0 - self.left_stick_center.0;
+            self.cursor_bias_left.1 += old_left.1 - self.left_stick_center.1;
+            self.cursor_bias_right.0 += old_right.0 - self.right_stick_center.0;
+            self.cursor_bias_right.1 += old_right.1 - self.right_stick_center.1;
+            self.compensate_rest_on_capture = false;
+        }
         self.reach_cache = self.build_reach_cache();
     }
 
@@ -779,6 +794,7 @@ impl KeyboardLayout {
         self.geometry_shift = Vec2::ZERO;
         self.refresh_shifted_bounds();
         self.reach_cache = None;
+        self.clear_cursor_bias();
     }
 
     pub(crate) fn stick_center(&self, side: StickSide) -> (f32, f32) {
@@ -802,6 +818,34 @@ impl KeyboardLayout {
         self.left_stick_center = left;
         self.right_stick_center = right;
         self.refresh_shifted_bounds();
+    }
+
+    /// Keep analog→pixel continuous when rest centres differ (`bias += origin1 - origin2`).
+    pub(crate) fn continue_origin_from(&mut self, from: &Self) {
+        let (shift, from_left, from_right) = from.rest_shift_and_centres();
+        let from_bias_left = from.cursor_bias_left;
+        let from_bias_right = from.cursor_bias_right;
+        if self.captured_centres.is_none() {
+            self.adopt_provisional_rest(shift, from_left, from_right);
+            self.cursor_bias_left = from_bias_left;
+            self.cursor_bias_right = from_bias_right;
+            self.compensate_rest_on_capture = true;
+            return;
+        }
+        self.cursor_bias_left = (
+            from_bias_left.0 + from_left.0 - self.left_stick_center.0,
+            from_bias_left.1 + from_left.1 - self.left_stick_center.1,
+        );
+        self.cursor_bias_right = (
+            from_bias_right.0 + from_right.0 - self.right_stick_center.0,
+            from_bias_right.1 + from_right.1 - self.right_stick_center.1,
+        );
+    }
+
+    pub(crate) fn clear_cursor_bias(&mut self) {
+        self.cursor_bias_left = (0.0, 0.0);
+        self.cursor_bias_right = (0.0, 0.0);
+        self.compensate_rest_on_capture = false;
     }
 
     pub(crate) fn rest_shift_and_centres(&self) -> (egui::Vec2, (f32, f32), (f32, f32)) {
@@ -919,17 +963,26 @@ impl KeyboardLayout {
             scale_y: self.scale_y,
             stick_scale_x: self.stick_scale_x,
             stick_scale_y: self.stick_scale_y,
-            left_rest: self.left_stick_center,
-            right_rest: self.right_stick_center,
+            left_rest: self.mapping_rest(StickSide::Left),
+            right_rest: self.mapping_rest(StickSide::Right),
             left_bounds: self.left_stick_bounds.iter().map(rect_to_snap).collect(),
             right_bounds: self.right_stick_bounds.iter().map(rect_to_snap).collect(),
             keys,
         }
     }
 
+    fn mapping_rest(&self, side: StickSide) -> (f32, f32) {
+        let (rx, ry) = self.stick_center(side);
+        let (bx, by) = match side {
+            StickSide::Left => self.cursor_bias_left,
+            StickSide::Right => self.cursor_bias_right,
+        };
+        (rx + bx, ry + by)
+    }
+
     pub fn stick_to_cursor(&self, side: StickSide, stick: (f32, f32)) -> (f32, f32) {
         geom::stick_to_cursor(
-            self.stick_center(side),
+            self.mapping_rest(side),
             self.scale_x,
             self.scale_y,
             self.stick_scale_x,
@@ -1318,6 +1371,69 @@ items = [{ key = "a" }]
         layout.adopt_provisional_rest(Vec2::new(5.0, 6.0), (10.0, 20.0), (30.0, 40.0));
         assert_eq!(layout.stick_center(StickSide::Left), (10.0, 20.0));
         assert_eq!(layout.stick_center(StickSide::Right), (30.0, 40.0));
+    }
+
+    fn two_key_layout(rest_col: usize) -> KeyboardLayout {
+        let toml = format!(
+            r#"
+stick_rest_left = [0, {rest_col}]
+stick_rest_right = [0, {rest_col}]
+[[rows]]
+indent = 0.0
+items = [
+  {{ key = "a", width = 1.0 }},
+  {{ key = "b", width = 1.0 }},
+]
+"#
+        );
+        let mut layout = KeyboardLayout::load_with_scales(&toml, 30.0, 32.0, 3.0, 2.5).unwrap();
+        layout.update_geometry(vec![vec![
+            Some(Pos2::new(10.0, 20.0)),
+            Some(Pos2::new(80.0, 20.0)),
+        ]]);
+        layout
+    }
+
+    #[test]
+    fn origin_continuity_keeps_analog_cursor_pixel() {
+        let analog = (0.4, -0.2);
+        let from = two_key_layout(0);
+        let mut to = two_key_layout(1);
+        let old = from.stick_to_cursor(StickSide::Left, analog);
+        to.continue_origin_from(&from);
+        let new = to.stick_to_cursor(StickSide::Left, analog);
+        assert!(
+            (old.0 - new.0).abs() < 0.01 && (old.1 - new.1).abs() < 0.01,
+            "old={old:?} new={new:?}"
+        );
+    }
+
+    #[test]
+    fn origin_continuity_survives_first_capture() {
+        let analog = (0.4, -0.2);
+        let from = two_key_layout(0);
+        let toml = r#"
+stick_rest_left = [0, 1]
+stick_rest_right = [0, 1]
+[[rows]]
+indent = 0.0
+items = [
+  { key = "a", width = 1.0 },
+  { key = "b", width = 1.0 },
+]
+"#;
+        let mut to = KeyboardLayout::load_with_scales(toml, 30.0, 32.0, 3.0, 2.5).unwrap();
+        to.continue_origin_from(&from);
+        let held = to.stick_to_cursor(StickSide::Left, analog);
+        to.update_geometry(vec![vec![
+            Some(Pos2::new(10.0, 20.0)),
+            Some(Pos2::new(80.0, 20.0)),
+        ]]);
+        let after = to.stick_to_cursor(StickSide::Left, analog);
+        assert!(
+            (held.0 - after.0).abs() < 0.01 && (held.1 - after.1).abs() < 0.01,
+            "held={held:?} after={after:?}"
+        );
     }
 
     #[test]
