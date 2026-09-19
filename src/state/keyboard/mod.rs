@@ -184,6 +184,7 @@ pub struct KeyboardState {
     suppress_send_until_release: HashSet<EventSource>,
     layout_hold_left: Option<(f32, f32)>,
     layout_hold_right: Option<(f32, f32)>,
+    pending_reselect_px: Option<((f32, f32), (f32, f32))>,
 }
 
 impl KeyboardState {
@@ -668,6 +669,21 @@ impl KeyboardState {
         }
     }
 
+    fn reselect_at_pixels(&mut self, left: (f32, f32), right: (f32, f32)) {
+        let Some(layout) = self.layouts.get(&self.current_layout) else {
+            return;
+        };
+        if layout.captured_centres.is_none() {
+            self.pending_reselect_px = Some((left, right));
+            self.drop_unselectable_cells();
+            return;
+        }
+
+        self.pending_reselect_px = None;
+        self.selected.left = layout.cell_at_pixel(StickSide::Left, left);
+        self.selected.right = layout.cell_at_pixel(StickSide::Right, right);
+    }
+
     /// Bookkeeping after layouts are replaced.
     fn on_layouts_changed(&mut self) {
         for layout in self.layouts.values_mut() {
@@ -722,6 +738,7 @@ impl KeyboardState {
             self.suppress_send_until_release.clear();
             self.layout_hold_left = None;
             self.layout_hold_right = None;
+            self.pending_reselect_px = None;
         }
         self.bindings.reset(holdover);
     }
@@ -751,6 +768,14 @@ impl KeyboardState {
 
         let analog_left = input.left_pad().unwrap_or_else(|| input.left_stick());
         let analog_right = input.right_pad().unwrap_or_else(|| input.right_stick());
+        let left_px = {
+            let c = current_layout.stick_to_cursor(StickSide::Left, analog_left);
+            layout::clamp_stick_cursor(c, &current_layout.left_stick_bounds)
+        };
+        let right_px = {
+            let c = current_layout.stick_to_cursor(StickSide::Right, analog_right);
+            layout::clamp_stick_cursor(c, &current_layout.right_stick_bounds)
+        };
 
         let prev_selected = self.selected;
         let layout_before = self.current_layout.clone();
@@ -830,6 +855,7 @@ impl KeyboardState {
         }
 
         if self.current_layout != layout_before {
+            self.reselect_at_pixels(left_px, right_px);
             self.layout_hold_left = Some(analog_left);
             self.layout_hold_right = Some(analog_right);
         }
@@ -869,6 +895,7 @@ impl KeyboardState {
             ctrl_mod,
             alt_mod,
             last_battery,
+            pending_reselect_px,
             ..
         } = self;
 
@@ -1090,6 +1117,11 @@ impl KeyboardState {
             if publish_geometry {
                 geometry_snap::publish(current_layout_name, current_layout);
             }
+        }
+
+        if let Some((l, r)) = pending_reselect_px.take() {
+            selected.left = current_layout.cell_at_pixel(StickSide::Left, l);
+            selected.right = current_layout.cell_at_pixel(StickSide::Right, r);
         }
 
         if publish_geometry {
@@ -1490,5 +1522,54 @@ items = [{ key = "a" }]
             nearest
         );
         assert!(hold.is_none());
+    }
+
+    fn geom_layout(items: &str, centres: Vec<Option<egui::Pos2>>) -> KeyboardLayout {
+        let toml = format!(
+            r#"
+[[rows]]
+indent = 0.0
+items = [{items}]
+"#
+        );
+        let mut layout = KeyboardLayout::load_with_scales(&toml, 30.0, 32.0, 1.0, 1.0).unwrap();
+        layout.update_geometry(vec![centres]);
+        layout
+    }
+
+    #[test]
+    fn reselect_at_pixels_uses_screen_position_not_index() {
+        let mut kb = KeyboardState::default();
+        kb.layouts.insert(
+            "main".into(),
+            geom_layout(
+                r#"{ key = "a" }, { key = "b" }"#,
+                vec![
+                    Some(egui::Pos2::new(10.0, 20.0)),
+                    Some(egui::Pos2::new(80.0, 20.0)),
+                ],
+            ),
+        );
+        kb.layouts.insert(
+            "symbols".into(),
+            geom_layout(
+                r#"{ key = "x" }, { key = "y" }"#,
+                vec![
+                    Some(egui::Pos2::new(80.0, 20.0)),
+                    Some(egui::Pos2::new(10.0, 20.0)),
+                ],
+            ),
+        );
+        kb.current_layout = "main".into();
+        kb.selected.right = Some((0, 1));
+
+        kb.set_current_layout("symbols").unwrap();
+        kb.reselect_at_pixels((0.0, 0.0), (80.0, 20.0));
+
+        assert_eq!(
+            kb.selected.right,
+            Some((0, 0)),
+            "pixel at 80,20 is x (col 0), not y (col 1)"
+        );
     }
 }

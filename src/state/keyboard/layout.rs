@@ -984,6 +984,15 @@ impl KeyboardLayout {
         }
     }
 
+    pub(crate) fn cell_at_pixel(
+        &self,
+        side: StickSide,
+        pixel: (f32, f32),
+    ) -> Option<(usize, usize)> {
+        let (x, y) = clamp_stick_cursor(pixel, self.stick_bounds(side));
+        self.pick_cell_at(x, y, None, 1.0)
+    }
+
     pub(crate) fn nearest_cell(
         &self,
         side: StickSide,

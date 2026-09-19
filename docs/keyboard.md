@@ -16,7 +16,7 @@ Among hitboxes that contain the cursor, the layout ranks keys by how far the cur
 
 Those answers are not always applied immediately. After a stick-send action succeeds, that stick’s selection is frozen for `stick_select_lock_ms` (100 ms in the checked-in config). The lock exists so a small pad twitch right after a press does not slide onto a neighbor and type a different letter while the trigger is still down. When the lock expires, highlighting follows the stick again. The sticky margin is what stops a twitch from changing the key *before* send; the lock still runs after send.
 
-A layout switch keeps the highlighted cell when that slot still exists on the new board (so `*` on `main` stays on `abc` on `symbols`). Analog rest centres can differ between layouts, which would otherwise snap the cursor onto another key. Until that stick or pad moves by more than a small deadzone, selection stays on the kept cell.
+A layout switch hit-tests the same screen pixels on the new board, so different row heights and key widths still land on whatever key is under the cursor. If that pixel is empty, that stick has no selection. Until the stick or pad moves by more than a small deadzone, analog rest centres on the new layout do not snap the highlight elsewhere.
 
 If the selected **cell** on a side **does** change (lock not holding, or lock expired), the keyboard calls `events.clear_toggle_suppress` for that side’s usual sources (`triggerLeft` and `padLeft`, or the right pair). That is how you can hold a trigger, toggle Shift, then slide onto Ctrl and toggle Ctrl without releasing. Details are in the event-queue doc. Toggling Shift on the same cell is not a selection change.
 
@@ -41,7 +41,7 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 - **ToggleCompletion** arms/disarms the typed log. Re-arm clears the log.
 - **CancelSuggestion** clears highlight; with `retract_last_accept` also undoes the last injected suffix. Default on `faceRight` when `suggestionSelected`.
 - **SwitchState / Flip / Rotate / Exit / ToggleRecord** enqueue the matching event.
-- **SwitchLayout** changes `current_layout` immediately (not via the queue) and taps the recorder. A missing name is an error. The highlighted cell is kept when that slot still exists on the new board, and stick selection stays there until analog input moves, so a different rest centre does not snap the highlight onto another key. The controller source that sent the switch is ignored until that button is released, so a still-held pad click or trigger does not type the key now under the stick (for example Shift after `switchLayout.symbols`). Other buttons and pad aiming stay live; thumbs can stay on the pads.
+- **SwitchLayout** changes `current_layout` immediately (not via the queue) and taps the recorder. A missing name is an error. Selection is remapped by screen position on the new board (not by row/column index), then held until analog input moves, so a different rest centre does not snap the highlight onto another key. The controller source that sent the switch is ignored until that button is released, so a still-held pad click or trigger does not type the key now under the stick (for example Shift after `switchLayout.symbols`). Other buttons and pad aiming stay live; thumbs can stay on the pads.
 
 Layout-embedded actions (a key whose `key` field is `toggleShift`) go through `send_key` → `RawKey::Action` → the same `do_action`.
 
