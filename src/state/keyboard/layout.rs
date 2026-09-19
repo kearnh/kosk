@@ -643,7 +643,13 @@ impl KeyboardLayout {
                 .and_then(|c| first_centre(c))
                 .or_else(|| self.layout_local_centre(ri, ci));
             if let Some(old) = old {
-                self.geometry_shift += new - old;
+                let delta = new - old;
+                if self.captured_centres.is_none() {
+                    // Replace provisional shift copied from another layout.
+                    self.geometry_shift = delta;
+                } else {
+                    self.geometry_shift += delta;
+                }
                 self.refresh_shifted_bounds();
             }
         }
@@ -1557,6 +1563,47 @@ items = [{ key = "z", width = 1.0 }]
         assert_eq!(
             layout.get_nearest_key(StickSide::Left, (0.0, 1.0), false),
             Some(RawKey::Key('z'))
+        );
+    }
+
+    #[test]
+    fn first_capture_after_adopted_shift_does_not_double_bounds() {
+        let toml = r#"
+pad_x = 0.0
+pad_y = 0.0
+stick_rest_left = [0, 0]
+[stick_bounds]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 1.0, y = 2.0 } }]
+right = []
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [{ key = "a", width = 1.0 }]
+[[rows]]
+indent = 0.0
+height = 1.0
+items = [{ key = "z", width = 1.0 }]
+"#;
+        let mut layout = KeyboardLayout::load_with_scales(toml, 10.0, 10.0, 1.0, 1.0).unwrap();
+        let chrome = 80.0;
+        layout.adopt_provisional_rest(
+            Vec2::new(0.0, chrome),
+            (5.0, 5.0 + chrome),
+            (5.0, 5.0 + chrome),
+        );
+        layout.update_geometry(vec![
+            vec![Some(Pos2::new(5.0, 5.0 + chrome))],
+            vec![Some(Pos2::new(5.0, 15.0 + chrome))],
+        ]);
+        let top = 5.0 + chrome;
+        assert!(
+            layout.left_stick_bounds[0].min.y <= top,
+            "bounds min y {} leaves top key at {top} unselectable",
+            layout.left_stick_bounds[0].min.y
+        );
+        assert_eq!(
+            layout.get_nearest_key(StickSide::Left, (0.0, -1.0), false),
+            Some(RawKey::Key('a'))
         );
     }
 
