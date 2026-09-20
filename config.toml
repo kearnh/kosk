@@ -201,7 +201,8 @@ preview_on_highlight = false
 # (hel + hello → lo). backspace_replace = delete the token, then send the word.
 # Non-prefix chips (typo corrections) always use backspace_replace.
 accept_via = "suffix"
-# After accept, cancel deletes the accepted text. Does not undo chip cycling.
+# After accepting a chip, cancelSuggestion backspaces that insertion.
+# false: only clears the highlight.
 retract_last_accept = true
 # Backspace also forgets that character for suggestions.
 track_backspace = true
