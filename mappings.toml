@@ -44,7 +44,7 @@
 "faceRight" = { action = "cancelSuggestion", when = "suggestionSelected" }
 "faceLeft" = "sendKey.backspace"
 "l5" = [
-  { action = "cancelSuggestion", when = "justAccepted" },
+  { action = "cancelSuggestion", when = "suggestionJustAccepted" },
   { action = "sendKey.backspace" },
 ]
 "r5" = "sendKey.space"

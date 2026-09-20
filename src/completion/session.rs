@@ -56,7 +56,7 @@ pub struct Session {
     user: Arc<Mutex<UserCache>>,
     neighbors: HashMap<char, Vec<char>>,
     pending_eat_space: bool,
-    just_accepted: bool,
+    suggestion_just_accepted: bool,
 }
 
 impl Session {
@@ -107,7 +107,7 @@ impl Session {
             user,
             neighbors: HashMap::new(),
             pending_eat_space: false,
-            just_accepted: false,
+            suggestion_just_accepted: false,
         })
     }
 
@@ -157,7 +157,7 @@ impl Session {
             user,
             neighbors: HashMap::new(),
             pending_eat_space: false,
-            just_accepted: false,
+            suggestion_just_accepted: false,
         }
     }
 
@@ -195,7 +195,7 @@ impl Session {
 
     pub fn toggle_armed(&mut self) {
         self.pending_eat_space = false;
-        self.just_accepted = false;
+        self.suggestion_just_accepted = false;
         self.typed.toggle(&self.cfg.keyboard);
         self.candidates.clear();
         self.highlight = None;
@@ -205,7 +205,7 @@ impl Session {
     }
 
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
-        self.just_accepted = false;
+        self.suggestion_just_accepted = false;
         match event {
             LogEvent::Char(_) | LogEvent::Text => {}
             _ => self.pending_eat_space = false,
@@ -217,16 +217,16 @@ impl Session {
         }
     }
 
-    pub fn arm_just_accepted(&mut self) {
-        self.just_accepted = true;
+    pub fn arm_suggestion_just_accepted(&mut self) {
+        self.suggestion_just_accepted = true;
     }
 
-    pub fn clear_just_accepted(&mut self) {
-        self.just_accepted = false;
+    pub fn clear_suggestion_just_accepted(&mut self) {
+        self.suggestion_just_accepted = false;
     }
 
-    pub fn just_accepted(&self) -> bool {
-        self.just_accepted
+    pub fn suggestion_just_accepted(&self) -> bool {
+        self.suggestion_just_accepted
     }
 
     pub fn arm_eat_accept_space(&mut self) {
@@ -802,12 +802,12 @@ mod tests {
     }
 
     #[test]
-    fn just_accepted_clears_on_next_char() {
+    fn suggestion_just_accepted_clears_on_next_char() {
         let mut s = session_with(CompletionConfig::default());
         accept_hello(&mut s);
-        s.arm_just_accepted();
-        assert!(s.just_accepted());
+        s.arm_suggestion_just_accepted();
+        assert!(s.suggestion_just_accepted());
         s.note_log(LogEvent::Char('a'), "");
-        assert!(!s.just_accepted());
+        assert!(!s.suggestion_just_accepted());
     }
 }

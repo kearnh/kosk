@@ -102,7 +102,7 @@ impl TextInputState {
     fn insert_char(&mut self, ch: char) {
         let outcome = crate::completion::with_mut(|s| {
             let s = s?;
-            s.clear_just_accepted();
+            s.clear_suggestion_just_accepted();
             s.take_eat_accept_space(ch)
         });
         let ate = outcome.is_some() && preceding_is_space(&self.text, self.cursor_pos);
@@ -124,7 +124,7 @@ impl TextInputState {
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.clear_eat_accept_space();
-                s.clear_just_accepted();
+                s.clear_suggestion_just_accepted();
             }
         });
         backspace_at(&mut self.text, &mut self.cursor_pos);
@@ -221,7 +221,7 @@ impl TextInputState {
                 }
 
                 s.request_from_buffer(&self.text, self.cursor_pos);
-                s.arm_just_accepted();
+                s.arm_suggestion_just_accepted();
             }
         });
         true
@@ -231,7 +231,7 @@ impl TextInputState {
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.clear_eat_accept_space();
-                s.clear_just_accepted();
+                s.clear_suggestion_just_accepted();
                 s.clear_highlight();
             }
         });
@@ -245,7 +245,7 @@ impl TextInputState {
     fn submit_text(&mut self, events: &mut EventQueue, source: &EventSource) {
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
-                s.clear_just_accepted();
+                s.clear_suggestion_just_accepted();
                 if s.cfg().learn_on_submit {
                     let words = crate::completion::tokens_in(&self.text, s.cfg());
                     s.learn(&words);

@@ -26,7 +26,7 @@ The user-facing list of button names, action names, and flags is [MAPPINGS.md](.
 |------|-----------|
 | `suggestionSelected` | a completion chip is highlighted |
 | `completionActive` | completion is predicting (armed) |
-| `justAccepted` | a chip was just accepted and nothing has been typed since |
+| `suggestionJustAccepted` | a suggestion chip was just accepted and nothing has been typed since |
 | `modifier` | any of shift / ctrl / alt |
 | `modifier.shift` `modifier.ctrl` `modifier.alt` | that sticky modifier |
 | `recording` `replay` | tape record / playback |

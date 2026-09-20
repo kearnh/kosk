@@ -57,7 +57,7 @@ These names are true or false while you hold the button. You can combine them wi
 |------|-----------|
 | `suggestionSelected` | a word-suggestion chip is highlighted |
 | `completionActive` | word suggestions are on |
-| `justAccepted` | a chip was just accepted and nothing has been typed since |
+| `suggestionJustAccepted` | a suggestion chip was just accepted and nothing has been typed since |
 | `modifier` | Shift, Ctrl, or Alt is sticky-on |
 | `modifier.shift` | Shift is sticky-on (`shift` is the same flag) |
 | `modifier.ctrl` | Ctrl is sticky-on (`ctrl` is the same flag) |

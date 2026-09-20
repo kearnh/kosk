@@ -15,6 +15,8 @@
 
 - For code comments: do not refer in comments to anything that only makes sense in the context of the AI chat, a future reader must be able to make sense of comments without this context - this includes any references to how code used to be, the only context a reader has is how the code is when reading it.
 
+- User-facing names (config keys, mapping actions, `when` flags, overlay labels, comments in `config.toml` / `mappings.toml` / `MAPPINGS.md`) must be fully descriptive. Name the subject (`suggestionJustAccepted`, not `justAccepted`). Do not put internal identifiers in those texts. Do not treat shipped mappings as facts in comments.
+
 - Avoid superlatives and praise. Stop telling me I am absolutely right. Give me the cold hard truth.
 
 - Avoid magic numbers and strings by extracting recurring or meaningful values into descriptive constants (const) or enums. Keep self-explanatory, one-off values inline to avoid clutter. If a value comes from a spec (e.g. HTTP 200 OK), use a constant regardless.
