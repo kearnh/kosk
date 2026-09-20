@@ -121,13 +121,12 @@ eat_space_before = ",.!?;:)]}'\"/"
 space_after = ",.!?;:"
 # Reserved: put a next-word that fails the prefix into a mid-word slot. Unused.
 mix_unmatched_next_word = false
-# Highlight at rest: none | first. none = bumpers select; faceBottom stays Enter
-# until a chip is highlighted.
+# Highlight at rest: none | first. none = no chip highlighted until cycle or click.
 preselect = "none"
-# If a highlighted chip is gone after refresh, clear it (or apply preselect) so
-# Enter is Enter again. Same chip still in the list: keep it, even if it moved.
+# If a highlighted chip is gone after refresh, clear it (or apply preselect).
+# Same chip still in the list: keep it, even if it moved.
 reset_highlight_on_refresh = true
-# Bumper wrap: last → first (and reverse). false clamps at the ends.
+# Cycle wrap: last → first (and reverse). false clamps at the ends.
 highlight_wraps = true
 # Mix accepted chip text into the user cache.
 learn_on_accept = true
