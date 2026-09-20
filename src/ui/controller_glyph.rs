@@ -83,11 +83,14 @@ pub fn svg_bytes(family: GlyphFamily, button: ControllerButton) -> &'static [u8]
     }
 }
 
+fn image_uri(family: GlyphFamily, button: ControllerButton) -> String {
+    format!("bytes://controller-glyph/{family:?}/{button:?}.svg")
+}
+
 pub fn show(ui: &mut Ui, family: GlyphFamily, button: ControllerButton, size: f32) {
     let bytes = svg_bytes(family, button);
-    let uri = format!("bytes://controller-glyph/{family:?}/{button:?}");
     ui.add(
-        Image::from_bytes(uri, bytes)
+        Image::from_bytes(image_uri(family, button), bytes)
             .fit_to_exact_size(Vec2::splat(size))
             .bg_fill(egui::Color32::TRANSPARENT),
     );
@@ -97,6 +100,15 @@ pub fn show(ui: &mut Ui, family: GlyphFamily, button: ControllerButton, size: f3
 mod tests {
     use super::*;
     use strum::VariantArray;
+
+    #[test]
+    fn image_uri_ends_with_svg() {
+        let uri = image_uri(GlyphFamily::Sc2, ControllerButton::FaceBottom);
+        assert!(
+            uri.ends_with(".svg"),
+            "svg loader only claims uris ending in .svg, got {uri}"
+        );
+    }
 
     #[test]
     fn every_button_has_svg_for_both_families() {

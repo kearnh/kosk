@@ -18,7 +18,8 @@ struct App {
     window_setup_done: bool,
     size: Vec2,
     min_size: Vec2,
-    /// Last applied outer top-left; kept across content-driven resizes.
+    /// Last DWM behind-mode: `true` = empty blur region (see-through).
+    dwm_see_through: bool,
     last_outer: Option<egui::Pos2>,
     /// Resolved overlay alpha for the current mode (updated each frame).
     current_opacity: f32,
@@ -73,6 +74,7 @@ impl App {
             last_outer: None,
             current_opacity: 1.0,
             os_focus_guard: None,
+            dwm_see_through: false,
         }
     }
 }
@@ -92,9 +94,8 @@ impl eframe::App for App {
                 1.0
             } else {
                 let raw = match state {
-                    StateId::Keyboard | StateId::TextInput | StateId::MoveWindow => {
-                        cfg.keyboard_opacity
-                    }
+                    StateId::MoveWindow => 0.0,
+                    StateId::Keyboard | StateId::TextInput => cfg.keyboard_opacity,
                     StateId::Menu
                     | StateId::Mappings
                     | StateId::SelectKey
@@ -112,7 +113,16 @@ impl eframe::App for App {
                 egui::Color32::from_rgb(20, 20, 20)
             },
             panel_fill: if is_transparent {
-                egui::Color32::from_rgba_unmultiplied(20, 20, 20, (opacity * 255.0).round() as u8)
+                if state == StateId::MoveWindow {
+                    egui::Color32::TRANSPARENT
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(
+                        20,
+                        20,
+                        20,
+                        (opacity * 255.0).round() as u8,
+                    )
+                }
             } else {
                 egui::Color32::from_rgb(20, 20, 20)
             },
@@ -124,8 +134,9 @@ impl eframe::App for App {
             if let RawWindowHandle::Win32(h) = h.as_raw() {
                 use windows_sys::Win32::Foundation::{COLORREF, HWND};
                 use windows_sys::Win32::Graphics::Dwm::{
-                    DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
+                    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
                 };
+                use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
                     GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
                     LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
@@ -153,17 +164,32 @@ impl eframe::App for App {
                         let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
                     }
 
-                    // Enable DWM blur behind for transparency (only once)
-                    if !self.window_setup_done {
-                        if is_transparent {
-                            let bb = DWM_BLURBEHIND {
-                                dwFlags: DWM_BB_ENABLE,
-                                fEnable: 1,
-                                hRgnBlur: 0,
-                                fTransitionOnMaximized: 0,
-                            };
-                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                    if is_transparent {
+                        let want_see_through = state == StateId::MoveWindow;
+                        if !self.window_setup_done || self.dwm_see_through != want_see_through {
+                            if want_see_through {
+                                let region = CreateRectRgn(0, 0, -1, -1);
+                                let bb = DWM_BLURBEHIND {
+                                    dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                                    fEnable: 1,
+                                    hRgnBlur: region,
+                                    fTransitionOnMaximized: 0,
+                                };
+                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                                let _ = DeleteObject(region);
+                            } else {
+                                let bb = DWM_BLURBEHIND {
+                                    dwFlags: DWM_BB_ENABLE,
+                                    fEnable: 1,
+                                    hRgnBlur: 0,
+                                    fTransitionOnMaximized: 0,
+                                };
+                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                            }
+                            self.dwm_see_through = want_see_through;
                         }
+                        self.window_setup_done = true;
+                    } else if !self.window_setup_done {
                         self.window_setup_done = true;
                     }
                 }

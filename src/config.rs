@@ -142,7 +142,8 @@ pub struct Config {
     #[serde(default = "default_transparent")]
     pub transparent: bool,
 
-    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput / MoveWindow.
+    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput.
+    /// MoveWindow uses a see-through ghost and ignores this value.
     #[serde(default = "default_keyboard_opacity")]
     pub keyboard_opacity: f32,
 

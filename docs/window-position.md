@@ -46,12 +46,12 @@ These events only run when `WindowPos` is `MousePointer`. On a corner or absolut
 
 Entry (Menu **Move**) snapshots the current `WindowPos`. Analog does not go through the binding engine. Each HID tick:
 
-- Read left stick, right stick, left pad (if touching), right pad (if touching).
-- Deadzone is `0.15` on the max axis.
-- If any right source is past deadzone, use the larger-magnitude right source and ignore left. Otherwise use the larger-magnitude left source.
-- Full deflection crosses the monitor in one second. Stick up decreases window `y`. The live position becomes `WindowPos::Absolute` and is not written to config.
+- Right analog wins over left. A touching pad is input even at the pad center.
+- Pads are mouse-relative: finger travel on the pad (raw samples, first contact is no jump) moves the overlay. A swipe across the full pad (`-1` → `1`) crosses one monitor.
+- Sticks stay velocity: deadzone `0.15` on the max axis, full deflection crosses the monitor in one second. Stick up decreases window `y`.
+- The live position becomes `WindowPos::Absolute` and is not written to config.
 
-`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to the menu. `switchState.menu` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts draw Steam Input knockout glyphs for whichever buttons are currently bound to those actions.
+`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to the menu. `switchState.menu` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show Steam Input knockout glyphs plus Save/Cancel as labels, not buttons.
 
 ## Button glyphs
 
