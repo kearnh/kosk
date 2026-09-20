@@ -98,8 +98,6 @@ show_in_text_input = true
 backend = "ngram"
 # If the chosen predictor fails to load: ngram | dictionary.
 fallback = "dictionary"
-# Locale tag for model paths / docs. Does not choose the wordlist.
-locale = "en"
 # Suggestion cap. UI shows at most columns * rows of these.
 # Raise together with columns/rows to show a correction plus completions
 # (e.g. max_suggestions = 6 with columns = 3 and rows = 2).
@@ -118,8 +116,6 @@ eat_space_before = ",.!?;:)]}'\"/"
 # After eating, insert a space after the mark if it is in this set.
 # Must also be in eat_space_before. Empty string never re-spaces.
 space_after = ",.!?;:"
-# Reserved. Unused.
-mix_unmatched_next_word = false
 # Highlight at rest: none | first. none = no chip highlighted until cycle or click.
 preselect = "none"
 # If a highlighted chip is gone after refresh, clear it (or apply preselect).
@@ -205,11 +201,6 @@ new_word_mark_color = [50, 200, 90, 255]
 # exes = ["code.exe"]
 # wordlist = "data/completion/programming.tsv"
 
-[completion.text_input]
-# Reserved: show the highlighted chip in the field while cycling. Unused.
-# Off so both modes highlight first, then accept.
-preview_on_highlight = false
-
 [completion.keyboard]
 # How accept injects into the focused app: suffix = send the untyped tail
 # (hel + hello → lo). backspace_replace = delete the token, then send the word.
@@ -263,8 +254,6 @@ lambda_typo = -2.0
 # Cap how many words a prefix scan considers, and how often to drop a stale scan.
 prefix_scan_limit = 8192
 abort_check_every = 64
-# Reserved. Unused.
-precomputed_prefix_depth = 2
 
 [completion.user_cache]
 # Decayed counts of accepted / submitted words. Novel words complete
@@ -275,5 +264,3 @@ path = "completion-cache.bin"
 decay_tau_hours = 2.0
 max_unigrams = 20000
 max_bigrams = 50000
-# Learns write immediately. This interval is unused; kept so old configs load.
-persist_interval_s = 30

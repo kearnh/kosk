@@ -84,9 +84,6 @@ pub struct CompletionConfig {
     #[serde(default = "default_fallback")]
     pub fallback: CompletionBackendKind,
 
-    #[serde(default = "default_locale")]
-    pub locale: String,
-
     #[serde(default = "default_max_suggestions")]
     pub max_suggestions: usize,
 
@@ -107,9 +104,6 @@ pub struct CompletionConfig {
 
     #[serde(default = "default_space_after")]
     pub space_after: String,
-
-    #[serde(default)]
-    pub mix_unmatched_next_word: bool,
 
     #[serde(default)]
     pub preselect: Preselect,
@@ -157,9 +151,6 @@ pub struct CompletionConfig {
     pub ui: CompletionUiConfig,
 
     #[serde(default)]
-    pub text_input: CompletionTextInputConfig,
-
-    #[serde(default)]
     pub keyboard: CompletionKeyboardConfig,
 
     #[serde(default)]
@@ -180,7 +171,6 @@ impl Default for CompletionConfig {
             show_in_text_input: true,
             backend: CompletionBackendKind::default(),
             fallback: CompletionBackendKind::Dictionary,
-            locale: default_locale(),
             max_suggestions: default_max_suggestions(),
             min_prefix_len: default_min_prefix_len(),
             debounce_ms: default_debounce_ms(),
@@ -188,7 +178,6 @@ impl Default for CompletionConfig {
             insert_space_on_accept: true,
             eat_space_before: default_eat_space_before(),
             space_after: default_space_after(),
-            mix_unmatched_next_word: false,
             preselect: Preselect::None,
             reset_highlight_on_refresh: true,
             highlight_wraps: true,
@@ -204,7 +193,6 @@ impl Default for CompletionConfig {
             current_word_chip: CurrentWordChip::Last,
             app_types: HashMap::new(),
             ui: CompletionUiConfig::default(),
-            text_input: CompletionTextInputConfig::default(),
             keyboard: CompletionKeyboardConfig::default(),
             dictionary: CompletionDictionaryConfig::default(),
             ngram: CompletionNgramConfig::default(),
@@ -340,12 +328,6 @@ pub struct CompletionAppTypeConfig {
     pub wordlist: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
-pub struct CompletionTextInputConfig {
-    #[serde(default)]
-    pub preview_on_highlight: bool,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct CompletionKeyboardConfig {
     #[serde(default)]
@@ -448,9 +430,6 @@ pub struct CompletionNgramConfig {
 
     #[serde(default = "default_abort_every")]
     pub abort_check_every: usize,
-
-    #[serde(default = "default_prefix_depth")]
-    pub precomputed_prefix_depth: u8,
 }
 
 impl Default for CompletionNgramConfig {
@@ -467,7 +446,6 @@ impl Default for CompletionNgramConfig {
             lambda_typo: default_lambda_typo(),
             prefix_scan_limit: default_prefix_scan_limit(),
             abort_check_every: default_abort_every(),
-            precomputed_prefix_depth: default_prefix_depth(),
         }
     }
 }
@@ -488,9 +466,6 @@ pub struct CompletionUserCacheConfig {
 
     #[serde(default = "default_max_bi_cache")]
     pub max_bigrams: usize,
-
-    #[serde(default = "default_persist_s")]
-    pub persist_interval_s: u64,
 }
 
 impl Default for CompletionUserCacheConfig {
@@ -501,7 +476,6 @@ impl Default for CompletionUserCacheConfig {
             decay_tau_hours: default_tau(),
             max_unigrams: default_max_uni_cache(),
             max_bigrams: default_max_bi_cache(),
-            persist_interval_s: default_persist_s(),
         }
     }
 }
@@ -511,9 +485,6 @@ fn default_true() -> bool {
 }
 fn default_fallback() -> CompletionBackendKind {
     CompletionBackendKind::Dictionary
-}
-fn default_locale() -> String {
-    "en".into()
 }
 fn default_max_suggestions() -> usize {
     3
@@ -632,9 +603,6 @@ fn default_prefix_scan_limit() -> usize {
 fn default_abort_every() -> usize {
     64
 }
-fn default_prefix_depth() -> u8 {
-    2
-}
 fn default_cache_path() -> PathBuf {
     PathBuf::from("completion-cache.bin")
 }
@@ -646,9 +614,6 @@ fn default_max_uni_cache() -> usize {
 }
 fn default_max_bi_cache() -> usize {
     50000
-}
-fn default_persist_s() -> u64 {
-    30
 }
 
 #[cfg(test)]

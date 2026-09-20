@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn learn_survives_reload_before_interval() {
+    fn learn_survives_reload() {
         let path = std::env::temp_dir().join(format!(
             "kosk-cache-learn-{}-{}.bin",
             std::process::id(),
@@ -382,10 +382,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let cfg = CompletionUserCacheConfig {
-            persist_interval_s: 3600,
-            ..CompletionUserCacheConfig::default()
-        };
+        let cfg = CompletionUserCacheConfig::default();
         {
             let mut c = UserCache::load(&cfg, path.clone());
             c.learn_words(CATCH_ALL_TYPE, &["foobar".into()]);
@@ -393,7 +390,7 @@ mod tests {
         let c = UserCache::load(&cfg, path.clone());
         assert!(
             c.has_unigram(CATCH_ALL_TYPE, "foobar"),
-            "learn must hit disk before persist_interval_s"
+            "learn must write completion-cache.bin"
         );
         let _ = std::fs::remove_file(&path);
     }
