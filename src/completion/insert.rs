@@ -32,6 +32,14 @@ pub(super) fn is_inserted_punct_prefix(token: &str, word: &str) -> bool {
     !stripped_token.is_empty() && stripped_word.starts_with(&stripped_token)
 }
 
+/// True when `word` is `token` with only inserted punctuation added (`im` / `i'm`).
+pub(super) fn is_inserted_punct_fill(token: &str, word: &str) -> bool {
+    if !is_inserted_punct_prefix(token, word) {
+        return false;
+    }
+    strip_inserted(word) == strip_inserted(token)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +63,15 @@ mod tests {
     fn exact_letter_prefix_is_not_inserted_punct() {
         assert!(!is_inserted_punct_prefix("hel", "hello"));
         assert!(!is_inserted_punct_prefix("don", "don't"));
+    }
+
+    #[test]
+    fn fill_is_token_letters_only() {
+        assert!(is_inserted_punct_fill("im", "i'm"));
+        assert!(is_inserted_punct_fill("ill", "i'll"));
+        assert!(is_inserted_punct_fill("eg", "e.g."));
+        assert!(!is_inserted_punct_fill("e", "e.g."));
+        assert!(!is_inserted_punct_fill("don", "don't"));
     }
 
     #[test]

@@ -9,7 +9,9 @@ use super::backend::{Abort, Candidate, CompletionBackend, MatchKind, Source};
 use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::fuzzy::is_fuzzy_prefix;
-use super::insert::{fold_apostrophe_marks, is_inserted_punct_prefix, strip_inserted};
+use super::insert::{
+    fold_apostrophe_marks, is_inserted_punct_fill, is_inserted_punct_prefix, strip_inserted,
+};
 use super::settings::CompletionConfig;
 use super::user_cache::{mixed_count, UserCache};
 
@@ -210,7 +212,11 @@ impl DictionaryEngine {
                 .total_cmp(&a.score)
                 .then_with(|| a.text.cmp(&b.text))
         });
-        Some(mix_candidate_slots(cands, ctx.max_results.max(1)))
+        Some(mix_candidate_slots(
+            cands,
+            ctx.max_results.max(1),
+            &token_lower,
+        ))
     }
 
     pub fn from_path_or_embedded(path: &Path, cfg: &CompletionConfig) -> Result<Self> {
@@ -273,6 +279,7 @@ impl DictionaryEngine {
 fn mix_slots(
     mut exact: Vec<Ranked>,
     mut corrections: Vec<Ranked>,
+    mut inserted: Vec<Ranked>,
     mut fuzzy: Vec<Ranked>,
     max: usize,
 ) -> Vec<Ranked> {
@@ -283,6 +290,7 @@ fn mix_slots(
     };
     exact.sort_by(by_score);
     corrections.sort_by(by_score);
+    inserted.sort_by(by_score);
     fuzzy.sort_by(by_score);
 
     let mut out = Vec::with_capacity(max);
@@ -290,6 +298,13 @@ fn mix_slots(
     if let Some(c) = corrections.into_iter().next() {
         seen.insert(c.lower.clone());
         out.push(c);
+    }
+    if out.len() < max {
+        if let Some(c) = inserted.into_iter().next() {
+            if seen.insert(c.lower.clone()) {
+                out.push(c);
+            }
+        }
     }
     for r in exact.into_iter().chain(fuzzy) {
         if out.len() >= max {
@@ -303,15 +318,27 @@ fn mix_slots(
     out
 }
 
-pub(crate) fn mix_candidate_slots(cands: Vec<Candidate>, max: usize) -> Vec<Candidate> {
+pub(crate) fn mix_candidate_slots(
+    cands: Vec<Candidate>,
+    max: usize,
+    token: &str,
+) -> Vec<Candidate> {
     let mut exact = Vec::new();
     let mut corrections = Vec::new();
+    let mut inserted = Vec::new();
     let mut fuzzy = Vec::new();
+    let token_lower = token.to_lowercase();
     for c in cands {
         match c.kind {
             MatchKind::Correction => corrections.push(c),
-            MatchKind::ExactPrefix => exact.push(c),
             MatchKind::Fuzzy => fuzzy.push(c),
+            MatchKind::ExactPrefix => {
+                if is_inserted_punct_fill(&token_lower, &c.text.to_lowercase()) {
+                    inserted.push(c);
+                } else {
+                    exact.push(c);
+                }
+            }
         }
     }
     let by_score = |a: &Candidate, b: &Candidate| {
@@ -321,12 +348,20 @@ pub(crate) fn mix_candidate_slots(cands: Vec<Candidate>, max: usize) -> Vec<Cand
     };
     exact.sort_by(by_score);
     corrections.sort_by(by_score);
+    inserted.sort_by(by_score);
     fuzzy.sort_by(by_score);
     let mut out = Vec::with_capacity(max);
     let mut seen = std::collections::HashSet::new();
     if let Some(c) = corrections.into_iter().next() {
         seen.insert(c.text.clone());
         out.push(c);
+    }
+    if out.len() < max {
+        if let Some(c) = inserted.into_iter().next() {
+            if seen.insert(c.text.clone()) {
+                out.push(c);
+            }
+        }
     }
     for c in exact.into_iter().chain(fuzzy) {
         if out.len() >= max {
@@ -415,6 +450,7 @@ impl CompletionBackend for DictionaryEngine {
         }
 
         let stripped_token = strip_inserted(&token_lower);
+        let mut inserted: Vec<Ranked> = Vec::new();
         if !stripped_token.is_empty() {
             let punct_range = self.punct_prefix_range(&stripped_token);
             for (i, p) in self.punct_index[punct_range].iter().enumerate() {
@@ -428,7 +464,12 @@ impl CompletionBackend for DictionaryEngine {
                 if e.lower == token_lower || e.lower.starts_with(&token_lower) {
                     continue;
                 }
-                exact.push(self.rank(p.idx, e, MatchKind::ExactPrefix, 0.0));
+                let ranked = self.rank(p.idx, e, MatchKind::ExactPrefix, 0.0);
+                if is_inserted_punct_fill(&token_lower, &e.lower) {
+                    inserted.push(ranked);
+                } else {
+                    exact.push(ranked);
+                }
             }
         }
 
@@ -472,7 +513,7 @@ impl CompletionBackend for DictionaryEngine {
             }
         }
 
-        let ranked = mix_slots(exact, corrections, fuzzy, max);
+        let ranked = mix_slots(exact, corrections, inserted, fuzzy, max);
         let cands = ranked
             .into_iter()
             .map(|r| {
@@ -748,6 +789,36 @@ mod tests {
         let eng = DictionaryEngine::from_wordlist_text("don`t\t50\n", &cfg);
         let s = suggest_on(&eng, "dont", vec![]);
         assert!(s.iter().any(|c| c.text == "don't"));
+    }
+
+    #[test]
+    fn im_reserves_im_apostrophe_against_frequent_prefixes() {
+        let cfg = CompletionConfig {
+            max_suggestions: 3,
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng = DictionaryEngine::from_wordlist_text(
+            "i'm\t10\nimportant\t1000\nimagine\t900\nimmediately\t800\n",
+            &cfg,
+        );
+        let s = suggest_on(&eng, "im", vec![]);
+        assert!(s.iter().any(|c| c.text == "i'm"), "{s:?}");
+    }
+
+    #[test]
+    fn ill_reserves_ill_apostrophe_against_frequent_prefixes() {
+        let cfg = CompletionConfig {
+            max_suggestions: 3,
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng = DictionaryEngine::from_wordlist_text(
+            "i'll\t10\nillegal\t1000\nillness\t900\nillusion\t800\n",
+            &cfg,
+        );
+        let s = suggest_on(&eng, "ill", vec![]);
+        assert!(s.iter().any(|c| c.text == "i'll"), "{s:?}");
     }
 
     #[test]

@@ -486,7 +486,11 @@ impl CompletionBackend for NgramEngine {
                 .total_cmp(&a.score)
                 .then_with(|| a.text.cmp(&b.text))
         });
-        Some(mix_candidate_slots(cands, ctx.max_results.max(1)))
+        Some(mix_candidate_slots(
+            cands,
+            ctx.max_results.max(1),
+            &token_lower,
+        ))
     }
 
     fn knows_word(&self, ctx: &CompletionContext) -> bool {
