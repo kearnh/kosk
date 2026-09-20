@@ -222,9 +222,13 @@ impl KeyboardState {
     ) -> Result<()> {
         match key {
             RawKey::Key(c) => {
-                let eat = !self.ctrl_mod
-                    && !self.alt_mod
-                    && Self::eat_accept_space_before(self.feed_completion_log, *c);
+                let eat_out = if !self.ctrl_mod && !self.alt_mod {
+                    Self::eat_accept_space_before(self.feed_completion_log, *c)
+                } else {
+                    None
+                };
+                let eat = eat_out.is_some();
+                let space_after = eat_out.map(|o| o.space_after).unwrap_or(false);
                 let mut steps = Vec::new();
 
                 if eat {
@@ -266,6 +270,9 @@ impl KeyboardState {
                 if self.shift_mod {
                     steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
+                if space_after {
+                    steps.push(Event::SendText(" ".into()));
+                }
                 if events.push_seq(steps, source) {
                     self.shift_state = false;
                     self.shift_mod = false;
@@ -279,6 +286,9 @@ impl KeyboardState {
                         });
                     }
                     self.note_outgoing(key);
+                    if space_after {
+                        Self::note_space_after();
+                    }
                 }
             }
             RawKey::Enigo(k) => {
@@ -317,17 +327,24 @@ impl KeyboardState {
                 self.do_action(action, events, source)?;
             }
             RawKey::Text(text) => {
-                let eat = text.chars().next().is_some_and(|ch| {
-                    !self.ctrl_mod
-                        && !self.alt_mod
-                        && Self::eat_accept_space_before(self.feed_completion_log, ch)
+                let eat_out = text.chars().next().and_then(|ch| {
+                    if self.ctrl_mod || self.alt_mod {
+                        None
+                    } else {
+                        Self::eat_accept_space_before(self.feed_completion_log, ch)
+                    }
                 });
+                let eat = eat_out.is_some();
+                let space_after = eat_out.map(|o| o.space_after).unwrap_or(false);
 
                 let ok = if eat {
-                    let steps = vec![
+                    let mut steps = vec![
                         Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
                         Event::SendText(text.to_owned()),
                     ];
+                    if space_after {
+                        steps.push(Event::SendText(" ".into()));
+                    }
                     events.push_seq(steps, source)
                 } else {
                     events.push(Event::SendText(text.to_owned()), source)
@@ -342,6 +359,9 @@ impl KeyboardState {
                         });
                     }
                     self.note_outgoing(key);
+                    if space_after {
+                        Self::note_space_after();
+                    }
                 }
             }
             _ => return Ok(()),
@@ -354,17 +374,27 @@ impl KeyboardState {
         self.feed_completion_log = feed;
     }
 
-    fn eat_accept_space_before(feed: bool, ch: char) -> bool {
+    fn eat_accept_space_before(feed: bool, ch: char) -> Option<crate::completion::EatAcceptSpace> {
         if !feed {
-            return false;
+            return None;
         }
 
         crate::completion::with_mut(|s| {
-            let Some(s) = s else {
-                return false;
-            };
-            s.take_eat_accept_space(ch) && s.typed_text().ends_with(' ')
+            let s = s?;
+            let out = s.take_eat_accept_space(ch)?;
+            if !s.typed_text().ends_with(' ') {
+                return None;
+            }
+            Some(out)
         })
+    }
+
+    fn note_space_after() {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.note_log(crate::completion::LogEvent::Char(' '), "");
+            }
+        });
     }
 
     fn note_outgoing(&mut self, key: &RawKey) {

@@ -34,6 +34,11 @@ pub struct AcceptOutcome {
     pub token_char_len: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EatAcceptSpace {
+    pub space_after: bool,
+}
+
 pub struct Session {
     slot: Arc<(Mutex<Slot>, Condvar)>,
     gen: Arc<AtomicU64>,
@@ -215,13 +220,20 @@ impl Session {
         self.pending_eat_space = false;
     }
 
-    pub fn take_eat_accept_space(&mut self, ch: char) -> bool {
+    pub fn take_eat_accept_space(&mut self, ch: char) -> Option<EatAcceptSpace> {
         if !self.pending_eat_space {
-            return false;
+            return None;
         }
 
         self.pending_eat_space = false;
-        super::apply::eats_accept_space(ch, &self.cfg.eat_space_before)
+
+        if !super::apply::eats_accept_space(ch, &self.cfg.eat_space_before) {
+            return None;
+        }
+
+        Some(EatAcceptSpace {
+            space_after: super::apply::eats_accept_space(ch, &self.cfg.space_after),
+        })
     }
 
     pub fn request_from_buffer(&mut self, text: &str, cursor: usize) {
@@ -698,23 +710,39 @@ mod tests {
         let mut s = session_with(CompletionConfig::default());
         let out = accept_hello(&mut s);
         assert!(out.inject.ends_with(' '));
-        assert!(s.take_eat_accept_space('.'));
-        assert!(!s.take_eat_accept_space(','));
+        assert_eq!(
+            s.take_eat_accept_space('.'),
+            Some(EatAcceptSpace { space_after: true })
+        );
+        assert_eq!(s.take_eat_accept_space(','), None);
     }
 
     #[test]
     fn eat_space_slash_in_default() {
         let mut s = session_with(CompletionConfig::default());
         accept_hello(&mut s);
-        assert!(s.take_eat_accept_space('/'));
+        assert_eq!(
+            s.take_eat_accept_space('/'),
+            Some(EatAcceptSpace { space_after: false })
+        );
+    }
+
+    #[test]
+    fn eat_space_question_then_space() {
+        let mut s = session_with(CompletionConfig::default());
+        accept_hello(&mut s);
+        assert_eq!(
+            s.take_eat_accept_space('?'),
+            Some(EatAcceptSpace { space_after: true })
+        );
     }
 
     #[test]
     fn eat_space_letter_does_not() {
         let mut s = session_with(CompletionConfig::default());
         accept_hello(&mut s);
-        assert!(!s.take_eat_accept_space('a'));
-        assert!(!s.take_eat_accept_space('.'));
+        assert_eq!(s.take_eat_accept_space('a'), None);
+        assert_eq!(s.take_eat_accept_space('.'), None);
     }
 
     #[test]
@@ -723,7 +751,19 @@ mod tests {
         cfg.eat_space_before.clear();
         let mut s = session_with(cfg);
         accept_hello(&mut s);
-        assert!(!s.take_eat_accept_space('.'));
+        assert_eq!(s.take_eat_accept_space('.'), None);
+    }
+
+    #[test]
+    fn eat_space_empty_space_after_does_not_respace() {
+        let mut cfg = CompletionConfig::default();
+        cfg.space_after.clear();
+        let mut s = session_with(cfg);
+        accept_hello(&mut s);
+        assert_eq!(
+            s.take_eat_accept_space('?'),
+            Some(EatAcceptSpace { space_after: false })
+        );
     }
 
     #[test]
@@ -731,7 +771,7 @@ mod tests {
         let mut s = session_with(CompletionConfig::default());
         accept_hello(&mut s);
         s.note_log(LogEvent::Backspace, "");
-        assert!(!s.take_eat_accept_space('.'));
+        assert_eq!(s.take_eat_accept_space('.'), None);
     }
 
     #[test]
@@ -741,6 +781,6 @@ mod tests {
         let mut s = session_with(cfg);
         let out = accept_hello(&mut s);
         assert!(!out.inject.ends_with(' '));
-        assert!(!s.take_eat_accept_space('.'));
+        assert_eq!(s.take_eat_accept_space('.'), None);
     }
 }

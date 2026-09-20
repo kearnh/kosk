@@ -102,4 +102,15 @@ mod tests {
         assert!(!eats_accept_space('a', &set));
         assert!(!eats_accept_space('.', ""));
     }
+
+    #[test]
+    fn space_after_clause_not_slash() {
+        let set = crate::completion::settings::CompletionConfig::default().space_after;
+        assert!(eats_accept_space('?', &set));
+        assert!(eats_accept_space(',', &set));
+        assert!(eats_accept_space('.', &set));
+        assert!(!eats_accept_space('/', &set));
+        assert!(!eats_accept_space(')', &set));
+        assert!(!eats_accept_space('?', ""));
+    }
 }

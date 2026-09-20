@@ -116,6 +116,9 @@ insert_space_on_accept = true
 # Next key after accept: delete that space if the key is in this set.
 # Empty string disables.
 eat_space_before = ",.!?;:)]}'\"/"
+# After eating, insert a space after the mark if it is in this set.
+# Must also be in eat_space_before. Empty string never re-spaces.
+space_after = ",.!?;:"
 # Reserved: put a next-word that fails the prefix into a mid-word slot. Unused.
 mix_unmatched_next_word = false
 # Highlight at rest: none | first. none = bumpers select; faceBottom stays Enter

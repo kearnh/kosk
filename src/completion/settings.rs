@@ -96,6 +96,9 @@ pub struct CompletionConfig {
     #[serde(default = "default_eat_space_before")]
     pub eat_space_before: String,
 
+    #[serde(default = "default_space_after")]
+    pub space_after: String,
+
     #[serde(default)]
     pub mix_unmatched_next_word: bool,
 
@@ -169,6 +172,7 @@ impl Default for CompletionConfig {
             suggest_next_word: true,
             insert_space_on_accept: true,
             eat_space_before: default_eat_space_before(),
+            space_after: default_space_after(),
             mix_unmatched_next_word: false,
             preselect: Preselect::None,
             reset_highlight_on_refresh: true,
@@ -498,6 +502,10 @@ fn default_eat_space_before() -> String {
     ",.!?;:)]}'\"/".into()
 }
 
+fn default_space_after() -> String {
+    ",.!?;:".into()
+}
+
 fn default_columns() -> usize {
     3
 }
@@ -629,5 +637,6 @@ mod tests {
         assert_eq!(cfg.max_suggestions, 3);
         assert!(parsed.capitalization);
         assert_eq!(parsed.eat_space_before, default_eat_space_before());
+        assert_eq!(parsed.space_after, default_space_after());
     }
 }

@@ -100,15 +100,19 @@ impl TextInputState {
     }
 
     fn insert_char(&mut self, ch: char) {
-        let eat = crate::completion::with_mut(|s| {
-            s.map(|s| s.take_eat_accept_space(ch)).unwrap_or(false)
-        });
+        let outcome = crate::completion::with_mut(|s| s.and_then(|s| s.take_eat_accept_space(ch)));
+        let ate = outcome.is_some() && preceding_is_space(&self.text, self.cursor_pos);
 
-        if eat && preceding_is_space(&self.text, self.cursor_pos) {
+        if ate {
             backspace_at(&mut self.text, &mut self.cursor_pos);
         }
 
         insert_char_at(&mut self.text, &mut self.cursor_pos, ch);
+
+        if ate && outcome.is_some_and(|o| o.space_after) {
+            insert_char_at(&mut self.text, &mut self.cursor_pos, ' ');
+        }
+
         self.refresh_completion();
     }
 
@@ -496,8 +500,18 @@ mod tests {
         assert!(preceding_is_space(&text, cursor));
         backspace_at(&mut text, &mut cursor);
         insert_char_at(&mut text, &mut cursor, '.');
-        assert_eq!(text, "hello.");
+        insert_char_at(&mut text, &mut cursor, ' ');
+        assert_eq!(text, "hello. ");
         assert_eq!(cursor, text.len());
-        assert!(!preceding_is_space(&text, cursor));
+    }
+
+    #[test]
+    fn preceding_space_slash_does_not_respace() {
+        let mut text = String::from("hello ");
+        let mut cursor = text.len();
+        backspace_at(&mut text, &mut cursor);
+        insert_char_at(&mut text, &mut cursor, '/');
+        assert_eq!(text, "hello/");
+        assert_eq!(cursor, text.len());
     }
 }
