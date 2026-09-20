@@ -106,17 +106,27 @@ impl MoveWindowState {
                 .max_rect(resp.rect)
                 .layout(Layout::top_down(Align::Center)),
             |ui| {
-                let row_h = GLYPH_SIZE.max(PROMPT_LABEL_SIZE);
-                let block_h = row_h * 2.0 + PROMPT_ROW_GAP;
+                let save_gw = glyph_col_width(save_buttons.len());
+                let cancel_gw = glyph_col_width(cancel_buttons.len());
+                let glyph_col = save_gw.max(cancel_gw);
+                let label_col = label_width(ui, "Save").max(label_width(ui, "Cancel"));
+                let gap = if glyph_col > 0.0 {
+                    PROMPT_ITEM_GAP
+                } else {
+                    0.0
+                };
+                let block_w = glyph_col + gap + label_col;
+                let left = ((ui.available_width() - block_w) * 0.5).max(0.0);
+                let block_h = GLYPH_SIZE * 2.0 + PROMPT_ROW_GAP;
                 ui.add_space(((resp.rect.height() - block_h) * 0.5).max(0.0));
-                if prompt_row(ui, family, &save_buttons, "Save") {
+                if prompt_row(ui, family, &save_buttons, "Save", left, glyph_col) {
                     let _ = events.push_seq(
                         vec![Event::SaveWindowPos, Event::ChangeState(StateId::Menu)],
                         &EventSource::MouseClick,
                     );
                 }
                 ui.add_space(PROMPT_ROW_GAP);
-                if prompt_row(ui, family, &cancel_buttons, "Cancel") {
+                if prompt_row(ui, family, &cancel_buttons, "Cancel", left, glyph_col) {
                     let _ =
                         events.push(Event::ChangeState(StateId::Menu), &EventSource::MouseClick);
                 }
@@ -309,24 +319,39 @@ impl MoveWindowState {
     }
 }
 
-fn prompt_row(ui: &mut Ui, family: GlyphFamily, buttons: &[ControllerButton], label: &str) -> bool {
-    let mut clicked = false;
-    let font = FontId::proportional(PROMPT_LABEL_SIZE);
-    let text_w = ui
-        .painter()
-        .layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER)
-        .size()
-        .x;
-    let n = buttons.len() as f32;
-    let gaps = n * PROMPT_ITEM_GAP;
-    let row_w = n * GLYPH_SIZE + text_w + gaps;
+fn glyph_col_width(n: usize) -> f32 {
+    if n == 0 {
+        0.0
+    } else {
+        n as f32 * GLYPH_SIZE + (n - 1) as f32 * PROMPT_ITEM_GAP
+    }
+}
 
+fn label_width(ui: &Ui, text: &str) -> f32 {
+    let font = FontId::proportional(PROMPT_LABEL_SIZE);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font, Color32::PLACEHOLDER);
+    galley.mesh_bounds.width() + 2.0 * LABEL_HALO_PX
+}
+
+fn prompt_row(
+    ui: &mut Ui,
+    family: GlyphFamily,
+    buttons: &[ControllerButton],
+    label: &str,
+    left: f32,
+    glyph_col: f32,
+) -> bool {
+    let mut clicked = false;
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), GLYPH_SIZE),
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing.x = PROMPT_ITEM_GAP;
-            ui.add_space((ui.available_width() - row_w).max(0.0) * 0.5);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let gw = glyph_col_width(buttons.len());
+            ui.add_space(left + (glyph_col - gw).max(0.0));
             for button in buttons {
                 controller_glyph::show(ui, family, *button, GLYPH_SIZE);
             }
@@ -343,8 +368,10 @@ fn outlined_label(ui: &mut Ui, text: &str) -> bool {
     let galley = ui
         .painter()
         .layout_no_wrap(text.to_string(), font, Color32::PLACEHOLDER);
-    let (resp, painter) = ui.allocate_painter(galley.size(), Sense::click());
-    let pos = resp.rect.min;
+    let mesh = galley.mesh_bounds;
+    let size = vec2(mesh.width() + 2.0 * LABEL_HALO_PX, GLYPH_SIZE);
+    let (resp, painter) = ui.allocate_painter(size, Sense::click());
+    let origin = resp.rect.center() - mesh.center().to_vec2();
     for [dx, dy] in [
         [-1.0, 0.0],
         [1.0, 0.0],
@@ -356,12 +383,12 @@ fn outlined_label(ui: &mut Ui, text: &str) -> bool {
         [1.0, 1.0],
     ] {
         painter.galley(
-            pos + vec2(dx * LABEL_HALO_PX, dy * LABEL_HALO_PX),
+            origin + vec2(dx * LABEL_HALO_PX, dy * LABEL_HALO_PX),
             galley.clone(),
             Color32::BLACK,
         );
     }
-    painter.galley(pos, galley, Color32::WHITE);
+    painter.galley(origin, galley, Color32::WHITE);
     resp.clicked()
 }
 
@@ -545,6 +572,13 @@ pub fn init() -> Result<()> {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn glyph_col_width_counts_gaps() {
+        assert_eq!(glyph_col_width(0), 0.0);
+        assert_eq!(glyph_col_width(1), GLYPH_SIZE);
+        assert_eq!(glyph_col_width(2), GLYPH_SIZE * 2.0 + PROMPT_ITEM_GAP);
+    }
 
     #[test]
     fn deadzone_ignores_noise() {
