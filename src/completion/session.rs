@@ -39,6 +39,11 @@ pub struct AcceptOutcome {
     pub token_char_len: usize,
 }
 
+pub struct RetractOutcome {
+    pub inject: String,
+    pub restore_token: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EatAcceptSpace {
     pub space_after: bool,
@@ -249,12 +254,26 @@ impl Session {
         self.typed.text()
     }
 
-    pub fn last_injected(&self) -> Option<&str> {
-        self.typed.last_injected()
+    pub fn take_retract(&mut self) -> Option<RetractOutcome> {
+        let (inject, restore_token) = self.typed.take_last_accept()?;
+        Some(RetractOutcome {
+            inject,
+            restore_token,
+        })
     }
 
-    pub fn set_last_injected(&mut self, s: Option<String>) {
-        self.typed.set_last_injected(s);
+    pub fn note_retract(&mut self, out: &RetractOutcome) {
+        for _ in out.inject.chars() {
+            self.note_log(LogEvent::Backspace, "");
+        }
+
+        if !out.restore_token.is_empty() {
+            self.note_log(LogEvent::Text, &out.restore_token);
+        }
+
+        let t = self.typed_text().to_string();
+        let n = t.len();
+        self.request_from_buffer(&t, n);
     }
 
     pub fn toggle_armed(&mut self) {
@@ -507,7 +526,7 @@ impl Session {
             if self.cfg.learn_on_accept {
                 self.learn(&words);
             }
-            self.set_last_injected(Some(inject.clone()));
+            self.typed.set_last_accept(Some(inject.clone()), None);
             self.clear_highlight();
             if inject.ends_with(' ') {
                 self.arm_eat_accept_space();
@@ -537,7 +556,12 @@ impl Session {
         if self.cfg.learn_on_accept {
             self.learn(&words);
         }
-        self.set_last_injected(Some(inject.clone()));
+        let restore_token = match via {
+            AcceptVia::BackspaceReplace => Some(ctx.token.clone()),
+            AcceptVia::Suffix => None,
+        };
+        self.typed
+            .set_last_accept(Some(inject.clone()), restore_token);
         self.clear_highlight();
 
         if inject.ends_with(' ') {
@@ -861,6 +885,79 @@ mod tests {
         assert_eq!(out.via, AcceptVia::BackspaceReplace);
         assert!(out.inject.starts_with("the"));
         assert_eq!(out.token_char_len, 3);
+    }
+
+    fn apply_keyboard_accept(s: &mut Session, out: &AcceptOutcome) {
+        use crate::completion::settings::AcceptVia;
+
+        match out.via {
+            AcceptVia::Suffix => {
+                if !out.inject.is_empty() {
+                    s.note_log(LogEvent::Text, &out.inject);
+                }
+            }
+            AcceptVia::BackspaceReplace => {
+                for _ in 0..out.token_char_len {
+                    s.note_log(LogEvent::Backspace, "");
+                }
+                if !out.inject.is_empty() {
+                    s.note_log(LogEvent::Text, &out.inject);
+                }
+            }
+        }
+
+        let t = s.typed_text().to_string();
+        let n = t.len();
+        s.request_from_buffer(&t, n);
+    }
+
+    #[test]
+    fn retract_suffix_restores_token_and_requests() {
+        let mut s = session_with(CompletionConfig::default());
+        type_token(&mut s, "hell");
+        s.candidates = vec![cand("hello")];
+        s.highlight = Some(0);
+        let out = s.take_accept(None).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        assert_eq!(s.typed_text(), "hello ");
+
+        let retract = s.take_retract().unwrap();
+        assert_eq!(retract.inject, "o ");
+        assert!(retract.restore_token.is_empty());
+        s.note_retract(&retract);
+        assert_eq!(s.typed_text(), "hell");
+        assert_eq!(
+            s.pending_ctx.as_ref().map(|c| c.token.as_str()),
+            Some("hell")
+        );
+    }
+
+    #[test]
+    fn retract_replace_restores_typo_token_and_requests() {
+        use crate::completion::{MatchKind, Source};
+
+        let mut s = session_with(CompletionConfig::default());
+        type_token(&mut s, "thr");
+        s.candidates = vec![Candidate {
+            text: "the".into(),
+            score: 1.0,
+            source: Source::Dictionary,
+            kind: MatchKind::Correction,
+        }];
+        s.highlight = Some(0);
+        let out = s.take_accept(None).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        assert_eq!(s.typed_text(), "the ");
+
+        let retract = s.take_retract().unwrap();
+        assert_eq!(retract.inject, "the ");
+        assert_eq!(retract.restore_token, "thr");
+        s.note_retract(&retract);
+        assert_eq!(s.typed_text(), "thr");
+        assert_eq!(
+            s.pending_ctx.as_ref().map(|c| c.token.as_str()),
+            Some("thr")
+        );
     }
 
     fn accept_hello(s: &mut Session) -> AcceptOutcome {

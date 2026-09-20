@@ -489,6 +489,24 @@ impl KeyboardState {
         }
     }
 
+    fn enqueue_retract(
+        events: &mut EventQueue,
+        source: &EventSource,
+        out: &crate::completion::RetractOutcome,
+    ) -> bool {
+        let mut steps: Vec<Event> = out
+            .inject
+            .chars()
+            .map(|_| Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click))
+            .collect();
+
+        if !out.restore_token.is_empty() {
+            steps.push(Event::SendText(out.restore_token.clone()));
+        }
+
+        events.push_seq(steps, source)
+    }
+
     fn completion_accept(
         events: &mut EventQueue,
         source: &EventSource,
@@ -552,17 +570,10 @@ impl KeyboardState {
                 s.clear_highlight();
                 return;
             }
-            if let Some(inj) = s.last_injected().map(str::to_string) {
-                let steps: Vec<Event> = inj
-                    .chars()
-                    .map(|_| Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click))
-                    .collect();
-                if events.push_seq(steps, source) {
-                    for _ in inj.chars() {
-                        s.note_log(crate::completion::LogEvent::Backspace, "");
-                    }
+            if let Some(out) = s.take_retract() {
+                if Self::enqueue_retract(events, source, &out) {
+                    s.note_retract(&out);
                 }
-                s.set_last_injected(None);
             }
             s.clear_eat_accept_space();
             s.clear_suggestion_just_accepted();
@@ -1373,6 +1384,33 @@ mod send_key_tests {
                 backspace.clone(),
                 backspace,
                 Event::SendText("people ".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn retract_replace_retypes_original_token() {
+        use crate::completion::RetractOutcome;
+        use enigo::Direction;
+
+        let mut events = EventQueue::passthrough();
+        events.set_debounce_ms(240, 55);
+        let src = EventSource::MouseClick;
+        let out = RetractOutcome {
+            inject: "the ".into(),
+            restore_token: "thr".into(),
+        };
+        assert!(KeyboardState::enqueue_retract(&mut events, &src, &out));
+        let got: Vec<Event> = events.drain_pending().into_iter().map(|(e, _)| e).collect();
+        let backspace = Event::SendKey(enigo::Key::Backspace, Direction::Click);
+        assert_eq!(
+            got,
+            vec![
+                backspace.clone(),
+                backspace.clone(),
+                backspace.clone(),
+                backspace,
+                Event::SendText("thr".into()),
             ]
         );
     }

@@ -16,6 +16,7 @@ pub struct TypedLog {
     text: String,
     armed: bool,
     last_injected: Option<String>,
+    restore_token: Option<String>,
     last_event_at: Option<std::time::Instant>,
 }
 
@@ -25,6 +26,7 @@ impl TypedLog {
             text: String::new(),
             armed: start_armed,
             last_injected: None,
+            restore_token: None,
             last_event_at: None,
         }
     }
@@ -37,12 +39,20 @@ impl TypedLog {
         self.armed
     }
 
-    pub fn last_injected(&self) -> Option<&str> {
-        self.last_injected.as_deref()
+    pub fn set_last_accept(&mut self, inject: Option<String>, restore_token: Option<String>) {
+        self.last_injected = inject;
+        self.restore_token = restore_token;
     }
 
-    pub fn set_last_injected(&mut self, s: Option<String>) {
-        self.last_injected = s;
+    pub fn take_last_accept(&mut self) -> Option<(String, String)> {
+        let inject = self.last_injected.take()?;
+        let restore_token = self.restore_token.take().unwrap_or_default();
+        Some((inject, restore_token))
+    }
+
+    fn clear_last_accept(&mut self) {
+        self.last_injected = None;
+        self.restore_token = None;
     }
 
     pub fn toggle(&mut self, cfg: &CompletionKeyboardConfig) {
@@ -57,7 +67,7 @@ impl TypedLog {
         self.armed = true;
         if cfg.clear_log_on_arm {
             self.text.clear();
-            self.last_injected = None;
+            self.clear_last_accept();
         }
     }
 
@@ -93,7 +103,7 @@ impl TypedLog {
             LogEvent::Backspace if cfg.track_backspace => self.pop_char(),
             LogEvent::Enter if cfg.clear_on_enter => {
                 self.text.clear();
-                self.last_injected = None;
+                self.clear_last_accept();
             }
             LogEvent::Arrow
             | LogEvent::Paste
@@ -112,7 +122,7 @@ impl TypedLog {
         };
         if t.elapsed().as_millis() as u64 >= cfg.idle_reset_ms {
             self.text.clear();
-            self.last_injected = None;
+            self.clear_last_accept();
         }
     }
 

@@ -22,7 +22,7 @@ pub use case::restore_case;
 pub use context::{split_at_cursor, tokens_in, word_prefix_token, CompletionContext};
 pub use dictionary::DictionaryEngine;
 pub use ngram::NgramEngine;
-pub use session::{ensure, init, with_mut, AcceptOutcome, EatAcceptSpace, Session};
+pub use session::{ensure, init, with_mut, AcceptOutcome, EatAcceptSpace, RetractOutcome, Session};
 pub use settings::CompletionConfig;
 pub use typed_log::LogEvent;
 pub use user_cache::{resolve_cache_path, UserCache};

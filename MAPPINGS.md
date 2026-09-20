@@ -86,7 +86,7 @@ These names are true or false while you hold the button. You can combine them wi
 | `toggleRecord` | start or stop a `.krec` tape |
 | `cycleSuggestion` | highlight the next suggestion chip |
 | `cycleSuggestionPrev` | highlight the previous chip |
-| `cancelSuggestion` | clear the chip highlight |
+| `cancelSuggestion` | clear the chip highlight; undo the last accept when retract is on |
 | `toggleCompletion` | turn word suggestions on or off |
 | `acceptSuggestion` | type the highlighted chip |
 | `acceptSuggestion.0` | type that chip by index, highlighted or not |
