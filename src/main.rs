@@ -61,6 +61,8 @@ impl App {
 
         cc.egui_ctx.set_fonts(fonts);
 
+        egui_extras::install_image_loaders(&cc.egui_ctx);
+
         debug::register(&cc.egui_ctx);
 
         Self {
@@ -90,10 +92,11 @@ impl eframe::App for App {
                 1.0
             } else {
                 let raw = match state {
-                    StateId::Keyboard | StateId::TextInput => cfg.keyboard_opacity,
+                    StateId::Keyboard | StateId::TextInput | StateId::MoveWindow => {
+                        cfg.keyboard_opacity
+                    }
                     StateId::Menu
                     | StateId::Mappings
-                    | StateId::MoveWindow
                     | StateId::SelectKey
                     | StateId::SelectLayout => cfg.ui_opacity,
                 };

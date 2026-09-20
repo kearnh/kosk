@@ -20,6 +20,8 @@ Digital controls are one method per button. Names are semantic rather than PlayS
 
 `is_engaged` is the idle test. A device that is completely at rest can yield `None` from the iterator so the app can reset binding edge state. The exact definition is per device (sticks moved, any digital down, and so on).
 
+`family` returns `ControllerKind` for this snapshot (SC2, DualShock 4, or replay). Glyph drawing and similar UI use that to pick art. Replay and the virtual controller report `Replay`; the glyph layer then uses `preferred_controller`.
+
 ## Stick warp
 
 Physical analog sticks move in a circle. The on-screen keyboard is a rectangle of keys. `warp` pushes samples toward the square corners as `stick_warp` goes from 0 (leave the circle) to 1 (fill the square). It then clamps to −1…1.

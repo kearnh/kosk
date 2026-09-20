@@ -67,7 +67,7 @@ Chords are therefore leader-first: hold Options, then tap Triangle, and you get 
 
 `chords_fired` prevents the chord from repeating every poll while both buttons stay down. Chord actions in this codebase are Edge-style mode switches, so that is the intended feel. There is no WhileHeld chord path.
 
-WhileHeld singles (the stick-send actions, nudges, cursor moves) emit every poll for as long as the button is in `held` and not suppressed. That is the stream `EventQueue` later throttles.
+WhileHeld singles (the stick-send actions, cursor moves) emit every poll for as long as the button is in `held` and not suppressed. That is the stream `EventQueue` later throttles.
 
 Idle disconnect still goes through `reset`, not `evaluate(None)`.
 

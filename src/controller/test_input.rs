@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::{ControllerButton, ControllerInput, ControllerKind};
 
 #[derive(Debug, Clone)]
 pub struct ButtonSetInput(pub HashSet<ControllerButton>);
@@ -25,6 +25,9 @@ impl ControllerInput for ButtonSetInput {
     }
     fn is_engaged(&self) -> bool {
         !self.0.is_empty()
+    }
+    fn family(&self) -> ControllerKind {
+        ControllerKind::Sc2
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
@@ -55,6 +58,9 @@ impl ControllerInput for AnalogInput {
     }
     fn is_engaged(&self) -> bool {
         true
+    }
+    fn family(&self) -> ControllerKind {
+        ControllerKind::Sc2
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())

@@ -36,6 +36,10 @@ pub struct Args {
     /// Also enabled by env `KOSK_CONTROLLER_MCP` (see `mcp_controller_mode`).
     #[arg(long)]
     pub mcp_controller: bool,
+
+    /// Place the overlay at the mouse cursor, ignoring config window_pos.
+    #[arg(long)]
+    pub at_mouse: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -138,11 +142,11 @@ pub struct Config {
     #[serde(default = "default_transparent")]
     pub transparent: bool,
 
-    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput.
+    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput / MoveWindow.
     #[serde(default = "default_keyboard_opacity")]
     pub keyboard_opacity: f32,
 
-    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / MoveWindow / SelectKey / SelectLayout.
+    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / SelectKey / SelectLayout.
     #[serde(default = "default_ui_opacity")]
     pub ui_opacity: f32,
 
@@ -531,6 +535,7 @@ static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_MCP_CONTROLLER: OnceLock<bool> = OnceLock::new();
+static CLI_AT_MOUSE: OnceLock<bool> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
 
@@ -983,6 +988,9 @@ pub fn init() -> Result<()> {
     CLI_MCP_CONTROLLER
         .set(args.mcp_controller)
         .expect("CLI mcp-controller was already set");
+    CLI_AT_MOUSE
+        .set(args.at_mouse)
+        .expect("CLI at-mouse was already set");
     init_from_path(PathBuf::from(&args.config_path))?;
     if mcp_controller_mode() && preferred_is_replay() {
         bail!(
@@ -1020,6 +1028,10 @@ pub fn cli_replay_file() -> Option<PathBuf> {
 
 pub fn cli_keys_log() -> Option<PathBuf> {
     CLI_KEYS_LOG.get().and_then(|p| p.clone())
+}
+
+pub fn cli_at_mouse() -> bool {
+    CLI_AT_MOUSE.get().copied().unwrap_or(false)
 }
 
 pub fn ignore_recorded_config() -> bool {
@@ -1256,6 +1268,14 @@ mod tests {
         let args =
             Args::try_parse_from(["kosk", "config.toml", "--ignore-recorded-config"]).unwrap();
         assert!(args.ignore_recorded_config);
+    }
+
+    #[test]
+    fn parse_at_mouse_flag() {
+        let args = Args::try_parse_from(["kosk", "config.toml", "--at-mouse"]).unwrap();
+        assert!(args.at_mouse);
+        let args = Args::try_parse_from(["kosk", "config.toml"]).unwrap();
+        assert!(!args.at_mouse);
     }
 
     fn sample_cfg() -> Config {

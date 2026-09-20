@@ -17,6 +17,7 @@ Optional flags:
 - `--replay FILE` plays that `.krec` tape instead of opening HID. It overrides `preferred_controller` and `[replay].file`.
 - `--keys-log FILE` sends outgoing keys to a log instead of injecting them. `-` means stdout. This overrides the `[key_sink]` table. See [key-sink.md](key-sink.md).
 - `--ignore-recorded-config` keeps the on-disk config when replaying a tape that embedded one. See [record-replay.md](record-replay.md).
+- `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`. The file is not rewritten unless the user later saves from Move Window.
 
 Auxiliary binaries that need config without parsing those flags call `init_from_path`.
 
@@ -28,7 +29,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`stick_scale_x` / `stick_scale_y`** multiply analog deflection after it is mapped onto the keyboard (see [keyboard-layout.md](keyboard-layout.md)).
 - **`stick_warp`** is the circle-to-square warp applied in `ControllerInput::left_stick` / `right_stick` (see [controller.md](controller.md)).
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard/TextInput and **`ui_opacity`** (default `0.92`) on Menu/Mappings/MoveWindow/SelectKey; both are ignored when `transparent = false`.
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard, TextInput, and MoveWindow, and **`ui_opacity`** (default `0.92`) on Menu/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`stick_select_lock_ms`** holds stick highlighting still after a letter is sent ([keyboard.md](keyboard.md)).
 - **`stick_select_sticky`** is the extra hit-test margin for the key a stick is already on (`1` is off; default `1.25`). See [keyboard.md](keyboard.md).
@@ -65,7 +66,7 @@ Modules register with `config::on_changed`. Keyboard, menu, move-window, and tex
 
 ## Saving
 
-`config::save` writes `toml::to_string_pretty` of a `Config` back to the original path. `AppState` calls it when the user moves the window, so that `window_pos` persists.
+`config::save` writes `toml::to_string_pretty` of a `Config` back to the original path. `AppState` calls it when the user confirms a new overlay position in Move Window (`SaveWindowPos`), so that `window_pos` persists. Analog motion in that mode updates the live position only.
 
 Because `controller_map` in memory is the expanded HashMap, a full save serializes it as inline `[controller_map.Keyboard]` tables and drops the `"mappings.toml"` path. After that, editing `mappings.toml` has no effect: the next load uses the inlined copy inside `config.toml`. The same dump can also reorder or rewrite other tables.
 

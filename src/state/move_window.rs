@@ -1,136 +1,105 @@
 use crate::{
-    config,
     controller::ControllerInput,
     state::{
         actions::load_bindings,
         event::{Event, EventQueue, EventSource},
-        StateId, WindowPos,
+        move_window_action::MoveWindowAction,
+        window_pos::WindowPos,
+        StateId,
     },
+    ui::controller_glyph::{self, GlyphFamily},
 };
 use anyhow::Result;
-use egui::{Button, Context, Label, Ui};
+use egui::{Align, Color32, Layout, Sense, Stroke, Ui};
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::controller::bindings::BindingEngine;
+use crate::controller::{ControllerButton, ControllerKind};
 
-use crate::state::move_window_action::MoveWindowAction;
+/// Stick/pad max-axis past this is treated as engaged (same as SC2 analog idle).
+pub(crate) const ANALOG_DEADZONE: f32 = 0.15;
 
-const NUDGE: f32 = 100.0;
+/// Full deflection crosses the monitor in this many seconds.
+const MONITOR_CROSS_SECS: f32 = 1.0;
+
+const GLYPH_SIZE: f32 = 28.0;
 
 pub struct MoveWindowState {
     bindings: BindingEngine<MoveWindowAction>,
+    last_analog_tick: Option<Instant>,
 }
 
 impl MoveWindowState {
     pub fn new() -> Result<Self> {
         Ok(Self {
             bindings: load_bindings(StateId::MoveWindow)?,
+            last_analog_tick: None,
         })
+    }
+
+    pub fn begin(&mut self) {
+        self.last_analog_tick = None;
     }
 
     pub fn draw_ui(
         &mut self,
-        _ctx: &Context,
         ui: &mut Ui,
-        current_coords: (f32, f32),
+        controller_kind: ControllerKind,
         events: &mut EventQueue,
-    ) -> Option<WindowPos> {
-        let cfg = config::get();
-        let mut movement: Option<WindowPos> = None;
-        let (x, y) = current_coords;
+    ) {
+        let family = GlyphFamily::from_kind(controller_kind);
+        let fill = Color32::from_rgba_unmultiplied(32, 32, 32, 90);
+        let border = Color32::from_rgba_unmultiplied(220, 220, 220, 200);
+        let size = ui.available_size();
+        let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+        painter.rect_filled(resp.rect, 4.0, fill);
+        painter.rect_stroke(
+            resp.rect,
+            4.0,
+            Stroke::new(2.0, border),
+            egui::StrokeKind::Inside,
+        );
 
-        ui.vertical_centered(|ui| {
-            ui.heading("Move Window");
+        let save_buttons = self
+            .bindings
+            .buttons_matching(|a| matches!(a, MoveWindowAction::Save));
+        let cancel_buttons = self
+            .bindings
+            .buttons_matching(|a| matches!(a, MoveWindowAction::SwitchState(StateId::Menu)));
 
-            egui::Grid::new("move_grid")
-                .spacing([10.0, 10.0])
-                .show(ui, |ui| {
-                    let size = [1.5 * cfg.scale_x, 1.5 * cfg.scale_y];
-
-                    if ui.add_sized(size, Button::new("\u{25f0}")).clicked() {
-                        movement = Some(WindowPos::TopLeft);
-                    }
-                    if ui.add_sized(size, Button::new("↑")).clicked() {
-                        movement = Some(WindowPos::Absolute(x, y - NUDGE));
-                    }
-                    if ui.add_sized(size, Button::new("\u{25f3}")).clicked() {
-                        movement = Some(WindowPos::TopRight);
-                    }
-                    ui.end_row();
-
-                    if ui.add_sized(size, Button::new("←")).clicked() {
-                        movement = Some(WindowPos::Absolute(x - NUDGE, y));
-                    }
-                    ui.add_sized(size, Label::new(""));
-                    if ui.add_sized(size, Button::new("→")).clicked() {
-                        movement = Some(WindowPos::Absolute(x + NUDGE, y));
-                    }
-                    ui.end_row();
-
-                    if ui.add_sized(size, Button::new("\u{25f1}")).clicked() {
-                        movement = Some(WindowPos::BottomLeft);
-                    }
-                    if ui.add_sized(size, Button::new("↓")).clicked() {
-                        movement = Some(WindowPos::Absolute(x, y + NUDGE));
-                    }
-                    if ui.add_sized(size, Button::new("\u{25f2}")).clicked() {
-                        movement = Some(WindowPos::BottomRight);
-                    }
-                    ui.end_row();
-                });
-
-            if ui.button("Back").clicked() {
-                let _ = events.push(Event::ChangeState(StateId::Menu), &EventSource::MouseClick);
-            }
+        ui.scope_builder(egui::UiBuilder::new().max_rect(resp.rect), |ui| {
+            ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                ui.add_space((resp.rect.height() * 0.35).max(8.0));
+                if prompt_row(ui, family, &save_buttons, "Save") {
+                    let _ = events.push_seq(
+                        vec![Event::SaveWindowPos, Event::ChangeState(StateId::Menu)],
+                        &EventSource::MouseClick,
+                    );
+                }
+                ui.add_space(12.0);
+                if prompt_row(ui, family, &cancel_buttons, "Cancel") {
+                    let _ =
+                        events.push(Event::ChangeState(StateId::Menu), &EventSource::MouseClick);
+                }
+            });
         });
-
-        movement
     }
 
     fn do_action(
         &self,
         action: &MoveWindowAction,
-        coords: (f32, f32),
         events: &mut EventQueue,
         source: &EventSource,
     ) -> Result<()> {
-        use MoveWindowAction::*;
-        let (x, y) = coords;
         match action {
-            SnapTopLeft => {
-                let _ = events.push(Event::MoveWindow(WindowPos::TopLeft), source);
+            MoveWindowAction::Save => {
+                let _ = events.push_seq(
+                    vec![Event::SaveWindowPos, Event::ChangeState(StateId::Menu)],
+                    source,
+                );
             }
-            SnapTopRight => {
-                let _ = events.push(Event::MoveWindow(WindowPos::TopRight), source);
-            }
-            SnapBottomLeft => {
-                let _ = events.push(Event::MoveWindow(WindowPos::BottomLeft), source);
-            }
-            SnapBottomRight => {
-                let _ = events.push(Event::MoveWindow(WindowPos::BottomRight), source);
-            }
-            FlipWindowLeftRight => {
-                let _ = events.push(Event::FlipWindowLeftRight, source);
-            }
-            FlipWindowAboveBelow => {
-                let _ = events.push(Event::FlipWindowAboveBelow, source);
-            }
-            RotateWindow => {
-                let _ = events.push(Event::RotateWindow, source);
-            }
-            NudgeUp => {
-                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y - NUDGE)), source);
-            }
-            NudgeDown => {
-                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x, y + NUDGE)), source);
-            }
-            NudgeLeft => {
-                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x - NUDGE, y)), source);
-            }
-            NudgeRight => {
-                let _ = events.push(Event::MoveWindow(WindowPos::Absolute(x + NUDGE, y)), source);
-            }
-            SwitchState(state) => {
+            MoveWindowAction::SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
             }
         }
@@ -139,13 +108,12 @@ impl MoveWindowState {
 
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.bindings.reset(holdover);
+        self.last_analog_tick = None;
     }
 
     pub fn handle_controller_input(
         &mut self,
-        _ctx: &Context,
         input: &dyn ControllerInput,
-        coords: (f32, f32),
         events: &mut EventQueue,
     ) -> Result<()> {
         for (binding, action) in self
@@ -153,15 +121,109 @@ impl MoveWindowState {
             .evaluate(input, &crate::when::WhenContext::default())
         {
             let src = EventSource::Controller(binding);
-            self.do_action(&action, coords, events, &src)?;
+            self.do_action(&action, events, &src)?;
         }
 
         Ok(())
     }
 
+    /// Integrate analog into `coords`. `Some` when the window should move.
+    pub fn apply_analog(
+        &mut self,
+        input: &dyn ControllerInput,
+        coords: (f32, f32),
+        window_size: (f32, f32),
+        monitor_size: (f32, f32),
+    ) -> Option<(f32, f32)> {
+        let analog = analog_deflection(
+            input.left_stick(),
+            input.right_stick(),
+            input.left_pad(),
+            input.right_pad(),
+        );
+
+        let now = Instant::now();
+        let dt = self
+            .last_analog_tick
+            .map(|t| now.saturating_duration_since(t).as_secs_f32().min(0.05))
+            .unwrap_or(0.0);
+        self.last_analog_tick = Some(now);
+
+        if analog_magnitude(analog) <= ANALOG_DEADZONE {
+            return None;
+        }
+        if dt <= 0.0 {
+            return None;
+        }
+
+        Some(integrate_pos(coords, analog, dt, window_size, monitor_size))
+    }
+
     fn reload_from_config(&mut self) -> Result<()> {
         self.bindings = load_bindings(StateId::MoveWindow)?;
         Ok(())
+    }
+}
+
+fn prompt_row(ui: &mut Ui, family: GlyphFamily, buttons: &[ControllerButton], label: &str) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        for button in buttons {
+            controller_glyph::show(ui, family, *button, GLYPH_SIZE);
+        }
+        if ui.button(label).clicked() {
+            clicked = true;
+        }
+    });
+    clicked
+}
+
+fn analog_magnitude(v: (f32, f32)) -> f32 {
+    v.0.abs().max(v.1.abs())
+}
+
+fn side_deflection(stick: (f32, f32), pad: Option<(f32, f32)>) -> (f32, f32) {
+    match pad {
+        Some(p) if analog_magnitude(p) >= analog_magnitude(stick) => p,
+        _ => stick,
+    }
+}
+
+/// Right stick/pad past deadzone wins; otherwise left. Pad vs stick on a side: larger magnitude.
+pub(crate) fn analog_deflection(
+    left_stick: (f32, f32),
+    right_stick: (f32, f32),
+    left_pad: Option<(f32, f32)>,
+    right_pad: Option<(f32, f32)>,
+) -> (f32, f32) {
+    let right = side_deflection(right_stick, right_pad);
+    if analog_magnitude(right) > ANALOG_DEADZONE {
+        return right;
+    }
+    side_deflection(left_stick, left_pad)
+}
+
+pub(crate) fn integrate_pos(
+    coords: (f32, f32),
+    analog: (f32, f32),
+    dt: f32,
+    window_size: (f32, f32),
+    monitor_size: (f32, f32),
+) -> (f32, f32) {
+    let speed_x = monitor_size.0 / MONITOR_CROSS_SECS;
+    let speed_y = monitor_size.1 / MONITOR_CROSS_SECS;
+    let x = coords.0 + analog.0 * speed_x * dt;
+    let y = coords.1 + analog.1 * speed_y * dt;
+    let max_x = (monitor_size.0 - window_size.0).max(0.0);
+    let max_y = (monitor_size.1 - window_size.1).max(0.0);
+    (x.clamp(0.0, max_x), y.clamp(0.0, max_y))
+}
+
+pub(crate) fn pos_to_persist(origin: WindowPos, live: WindowPos, moved: bool) -> WindowPos {
+    if moved {
+        live
+    } else {
+        origin
     }
 }
 
@@ -189,4 +251,86 @@ pub fn init() -> Result<()> {
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deadzone_ignores_noise() {
+        let v = analog_deflection((0.1, 0.0), (0.0, 0.0), None, None);
+        assert!(analog_magnitude(v) <= ANALOG_DEADZONE);
+    }
+
+    #[test]
+    fn right_stick_ignores_left() {
+        let v = analog_deflection((1.0, 0.0), (0.0, 0.8), None, None);
+        assert!((v.0 - 0.0).abs() < 1e-6);
+        assert!((v.1 - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn right_pad_ignores_left_stick() {
+        let v = analog_deflection((1.0, 0.0), (0.0, 0.0), None, Some((0.5, 0.0)));
+        assert!((v.0 - 0.5).abs() < 1e-6);
+        assert!((v.1 - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn left_used_when_right_idle() {
+        let v = analog_deflection((0.0, -0.9), (0.05, 0.0), None, None);
+        assert!((v.0 - 0.0).abs() < 1e-6);
+        assert!((v.1 + 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pad_beats_stick_on_same_side_when_larger() {
+        let v = analog_deflection((0.0, 0.0), (0.2, 0.0), None, Some((0.9, 0.1)));
+        assert!((v.0 - 0.9).abs() < 1e-6);
+        assert!((v.1 - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn integrate_up_decreases_y() {
+        let next = integrate_pos(
+            (100.0, 200.0),
+            (0.0, -1.0),
+            0.2,
+            (200.0, 100.0),
+            (1000.0, 500.0),
+        );
+        assert!((next.1 - 100.0).abs() < 1e-3, "{}", next.1);
+        assert!((next.0 - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn integrate_clamps_to_monitor() {
+        let next = integrate_pos(
+            (0.0, 0.0),
+            (-1.0, -1.0),
+            1.0,
+            (100.0, 100.0),
+            (800.0, 600.0),
+        );
+        assert_eq!(next, (0.0, 0.0));
+        let next = integrate_pos((0.0, 0.0), (1.0, 1.0), 10.0, (100.0, 100.0), (800.0, 600.0));
+        assert_eq!(next, (700.0, 500.0));
+    }
+
+    #[test]
+    fn unmoved_save_keeps_origin_variant() {
+        assert_eq!(
+            pos_to_persist(WindowPos::TopLeft, WindowPos::Absolute(1.0, 2.0), false),
+            WindowPos::TopLeft
+        );
+        assert_eq!(
+            pos_to_persist(WindowPos::MousePointer, WindowPos::Absolute(1.0, 2.0), true),
+            WindowPos::Absolute(1.0, 2.0)
+        );
+        assert_eq!(
+            pos_to_persist(WindowPos::BottomRight, WindowPos::BottomRight, false),
+            WindowPos::BottomRight
+        );
+    }
 }

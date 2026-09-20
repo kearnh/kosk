@@ -104,6 +104,15 @@ impl<A: Clone> BindingTarget<A> {
     }
 }
 
+fn target_matches<A>(target: &BindingTarget<A>, pred: &impl Fn(&A) -> bool) -> bool {
+    match target {
+        BindingTarget::Always(action) => pred(action),
+        BindingTarget::Conditional { arms, otherwise } => {
+            arms.iter().any(|(_, action)| pred(action)) || otherwise.as_ref().is_some_and(pred)
+        }
+    }
+}
+
 /// Resolves single-button and two-button chord mappings with leader-first chord semantics.
 pub struct BindingEngine<A> {
     singles: HashMap<ControllerButton, BindingTarget<A>>,
@@ -193,6 +202,29 @@ impl<A: Action + Clone> BindingEngine<A> {
                 .map(|(k, v)| (k, BindingTarget::Always(v)))
                 .collect(),
         )
+    }
+
+    /// Buttons whose mapping can produce an action matching `pred` (any `when` arm).
+    pub fn buttons_matching(&self, pred: impl Fn(&A) -> bool) -> Vec<ControllerButton> {
+        let mut out = Vec::new();
+        let mut push = |button: ControllerButton| {
+            if !out.contains(&button) {
+                out.push(button);
+            }
+        };
+
+        for (button, target) in &self.singles {
+            if target_matches(target, &pred) {
+                push(*button);
+            }
+        }
+        for chord in &self.chords {
+            if target_matches(&chord.action, &pred) {
+                push(chord.leader);
+                push(chord.follower);
+            }
+        }
+        out
     }
 
     pub fn with_left_stick_dpad(mut self) -> Self {

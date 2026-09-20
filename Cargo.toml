@@ -22,6 +22,7 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1.12"
 eframe = { version = "0.36.1", default-features = false, features = ["glow", "inspection"] }
 egui = { version = "0.36.1", features = ["serde"] }
+egui_extras = { version = "0.36.1", features = ["svg"] }
 egui_phosphor_icons = "0.5"
 enigo = { version = "0.6.1", features = ["serde"] }
 hidapi = "2.6.5"

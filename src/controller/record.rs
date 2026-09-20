@@ -14,7 +14,7 @@ use anyhow::{bail, Context, Result};
 use crate::config;
 use strum::VariantArray;
 
-use crate::controller::{ControllerButton, ControllerInput};
+use crate::controller::{ControllerButton, ControllerInput, ControllerKind};
 
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
 pub const CURRENT_TAPE_VERSION: u32 = 1;
@@ -169,6 +169,9 @@ impl ControllerInput for PostMapInput {
             EngagedPolicy::Always => true,
             EngagedPolicy::AnyNonZero => self.snap.any_nonzero(),
         }
+    }
+    fn family(&self) -> ControllerKind {
+        ControllerKind::Replay
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())

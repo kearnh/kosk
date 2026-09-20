@@ -12,7 +12,7 @@ From the repository root, pass a config file as the first argument:
 cargo run -- config.toml
 ```
 
-Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them.
+Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them. `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`.
 
 ## Controller mappings
 

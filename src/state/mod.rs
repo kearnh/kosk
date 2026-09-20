@@ -1,7 +1,7 @@
 use crate::{
     config,
     controller::record as input_record,
-    controller::ControllerInput,
+    controller::{ControllerInput, ControllerKind},
     debug::DebugPlugin,
     state::{
         event::{CallRequest, Event, EventQueue, ReturnStateResult},
@@ -55,6 +55,11 @@ pub struct AppState {
     /// Modes pushed by `CallState`, most-recent callee's caller at the end.
     call_stack: Vec<StateId>,
     pos: WindowPos,
+    /// Placement when MoveWindow was entered; restored on cancel.
+    move_origin: Option<WindowPos>,
+    /// True after analog motion in the current MoveWindow visit.
+    moved_during_place: bool,
+    controller_kind: ControllerKind,
     monitor_size: (f32, f32),
     pointer_snapshot: Option<PointerSnapshot>,
     events: EventQueue,
@@ -77,7 +82,14 @@ impl AppState {
         Ok(Self {
             state: StateId::Keyboard,
             call_stack: Vec::new(),
-            pos: cfg.window_pos,
+            pos: if config::cli_at_mouse() {
+                WindowPos::MousePointer
+            } else {
+                cfg.window_pos
+            },
+            move_origin: None,
+            moved_during_place: false,
+            controller_kind: ControllerKind::Sc2,
             monitor_size,
             pointer_snapshot: None,
             events: EventQueue::new(),
@@ -121,9 +133,11 @@ impl AppState {
         let (resolved, coords) = resolve_position(self.pos, window_size, self.monitor_size);
         if matches!(self.pos, WindowPos::Absolute(..)) && resolved != self.pos {
             self.pos = resolved;
-            let mut cfg = config::get();
-            cfg.window_pos = self.pos;
-            let _ = config::save(cfg);
+            if self.state != StateId::MoveWindow {
+                let mut cfg = config::get();
+                cfg.window_pos = self.pos;
+                let _ = config::save(cfg);
+            }
         }
         coords
     }
@@ -197,6 +211,12 @@ impl AppState {
                         }
                     }
                     Event::ChangeState(state) => {
+                        if self.state == StateId::MoveWindow {
+                            if let Some(origin) = self.move_origin.take() {
+                                self.pos = origin;
+                            }
+                            self.moved_during_place = false;
+                        }
                         self.switch_state(state, holdover);
                         ctx.request_repaint();
                     }
@@ -211,14 +231,19 @@ impl AppState {
                     Event::Repaint => {
                         ctx.request_repaint();
                     }
-                    Event::MoveWindow(new_pos) => {
-                        let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
-                        if self.pos != final_pos {
-                            self.pos = final_pos;
-                            let mut cfg = config::get();
-                            cfg.window_pos = self.pos;
-                            let _ = config::save(cfg);
-                        }
+                    Event::SaveWindowPos => {
+                        let persist = move_window::pos_to_persist(
+                            self.move_origin.unwrap_or(self.pos),
+                            self.pos,
+                            self.moved_during_place,
+                        );
+                        let final_pos = self.clamp_absolute_pos(persist, ctx.content_rect());
+                        self.pos = final_pos;
+                        self.move_origin = None;
+                        self.moved_during_place = false;
+                        let mut cfg = config::get();
+                        cfg.window_pos = self.pos;
+                        let _ = config::save(cfg);
                     }
                     Event::FlipWindowLeftRight => {
                         self.flip_pointer(ctx, false);
@@ -276,19 +301,8 @@ impl AppState {
                 menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::MoveWindow => {
-                let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
                 move_window::with_mut(|mw| {
-                    let movement = mw.draw_ui(ctx, ui, (x, y), &mut self.events);
-                    if let Some(new_pos) = movement {
-                        let final_pos = self.clamp_absolute_pos(new_pos, ctx.content_rect());
-
-                        if self.pos != final_pos {
-                            self.pos = final_pos;
-                            let mut cfg = config::get();
-                            cfg.window_pos = self.pos;
-                            let _ = config::save(cfg);
-                        }
-                    }
+                    mw.draw_ui(ui, self.controller_kind, &mut self.events);
                 });
             }
             StateId::TextInput => {
@@ -314,6 +328,11 @@ impl AppState {
         }
         if state == StateId::SelectLayout {
             select_layout::with_mut(|s| s.begin());
+        }
+        if state == StateId::MoveWindow {
+            self.move_origin = Some(self.pos);
+            self.moved_during_place = false;
+            move_window::with_mut(|mw| mw.begin());
         }
         self.state = state;
         self.reset_current_mode_controller(holdover);
@@ -382,6 +401,8 @@ impl AppState {
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
 
+        self.controller_kind = input.family();
+
         if cfg.debug.is_some() {
             ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
         }
@@ -395,8 +416,16 @@ impl AppState {
             }
             StateId::MoveWindow => {
                 let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
+                let window_size = Self::window_size_from(ctx.content_rect());
                 move_window::with_mut(|mw| {
-                    mw.handle_controller_input(ctx, input, (x, y), &mut self.events)
+                    if let Some((nx, ny)) =
+                        mw.apply_analog(input, (x, y), window_size, self.monitor_size)
+                    {
+                        self.pos = WindowPos::Absolute(nx, ny);
+                        self.moved_during_place = true;
+                        ctx.request_repaint();
+                    }
+                    mw.handle_controller_input(input, &mut self.events)
                 })?
             }
             StateId::TextInput => {
@@ -418,6 +447,7 @@ impl AppState {
     }
 
     pub fn note_battery(&mut self, input: &dyn ControllerInput) {
+        self.controller_kind = input.family();
         keyboard::with_mut(|kb| kb.note_battery(input.battery()));
     }
 

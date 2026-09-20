@@ -11,8 +11,7 @@ Controller / bindings
 Menu
 ----
 
-Finish menu: nicer interface, config/options setting in menu, controller
-navigation in move window
+Finish menu: nicer interface, config/options setting in menu
 
 Input Text Prediction
 ---------------------

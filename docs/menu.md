@@ -20,7 +20,7 @@ There is no analog-stick highlight. Idle `None` input resets the binding engine 
 
 ## What this does not cover
 
-**Move-window controller navigation is not this file.** The menu only switches into that mode. D-pad behavior once you are there is [window-position.md](window-position.md).
+**Move-window analog placement is not this file.** The menu only switches into that mode. Stick and pad motion once you are there is [window-position.md](window-position.md).
 
 **This is not a settings page.** Changing debounce, mappings, or transparency still means editing TOML.
 

@@ -4,7 +4,7 @@ use std::sync::RwLock;
 
 use strum::IntoEnumIterator;
 
-use crate::controller::{BatteryStatus, ControllerButton, ControllerInput};
+use crate::controller::{BatteryStatus, ControllerButton, ControllerInput, ControllerKind};
 
 const PS4_VID: u16 = 0x054c;
 const PS4_PID: u16 = 0x09cc;
@@ -348,6 +348,10 @@ impl ControllerInput for Ps4InputData {
 
     fn battery(&self) -> Option<BatteryStatus> {
         self.battery
+    }
+
+    fn family(&self) -> ControllerKind {
+        ControllerKind::Ps4
     }
 
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {

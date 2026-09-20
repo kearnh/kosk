@@ -1,6 +1,6 @@
 # Window position (`window_pos.rs`, `move_window.rs`)
 
-This document describes how the overlay is placed on screen. `src/state/window_pos.rs` stores and resolves positions. `src/state/move_window.rs` and `src/state/move_window_action.rs` are the on-screen “Move Window” mode. `AppState::get_position` applies this every frame and sends the result to eframe; see [overview.md](overview.md).
+This document describes how the overlay is placed on screen. `src/state/window_pos.rs` stores and resolves positions. `src/state/move_window.rs` and `src/state/move_window_action.rs` are the on-screen “Move Window” mode. Button glyphs used while placing live in `src/ui/controller_glyph.rs`. `AppState::get_position` applies this every frame and sends the result to eframe; see [overview.md](overview.md).
 
 ## What problem does this solve?
 
@@ -14,9 +14,11 @@ The saved value in config is one of:
 - `mouse pointer` — place beside the cursor captured at launch (or first use).
 - `[x, y]` — an absolute top-left in egui points.
 
-`resolve_position` turns a variant into coordinates given the current window size and monitor size. Corners are recomputed every time, so a larger keyboard still sits in the same corner. Absolute coordinates are clamped to keep the window on the monitor; if clamping changes the pair, `AppState` writes the clamped `Absolute` back to config.
+`resolve_position` turns a variant into coordinates given the current window size and monitor size. Corners are recomputed every time, so a larger keyboard still sits in the same corner. Absolute coordinates are clamped to keep the window on the monitor; if clamping changes the pair, `AppState` writes the clamped `Absolute` back to config, except while Move Window is active so dragging cannot rewrite the file.
 
 `MousePointer` is **not** resolved in `resolve_position` (the fallback coordinates there are unused). `AppState::get_position` handles it via `PointerSnapshot`.
+
+`--at-mouse` forces `MousePointer` at process start and ignores config `window_pos`. That override is not written to disk unless the user later saves from Move Window.
 
 ## Pointer snapshot
 
@@ -36,29 +38,31 @@ Pointer placement is one of four slots around the captured cursor: bottom-right,
 - `FlipWindowAboveBelow` mirrors hang-down ↔ hang-up and keeps left/right.
 - `RotateWindow` walks the four slots counterclockwise: bottom-right → bottom-left → top-left → top-right → bottom-right. If launch started on another slot because of fit, rotate begins at that slot in the same ring. The fourth rotate returns to the start.
 
-These events only run when `WindowPos` is `MousePointer`. On a corner or absolute position they are no-ops. Keyboard mappings in the checked-in file bind L4/R4 to the dedicated flips; `rotateWindow` exists as an action for a single-button cycle.
+These events only run when `WindowPos` is `MousePointer`. On a corner or absolute position they are no-ops. They are Keyboard actions, not Move Window actions.
 
 ## Move-window mode
 
-`StateId::MoveWindow` draws a 3×3 pad of corner snaps and nudges, plus Back to the menu. Mouse clicks set a `WindowPos` that `AppState::draw_ui` applies immediately (the same clamp-and-save path as `Event::MoveWindow`).
+`StateId::MoveWindow` turns the overlay into a layout-sized translucent rectangle. Analog sticks and pads move it as a cursor. Disk save happens only on confirm.
 
-Controller actions (`MoveWindowAction`) enqueue events instead:
+Entry (Menu **Move**) snapshots the current `WindowPos`. Analog does not go through the binding engine. Each HID tick:
 
-- Snap to each named corner.
-- Nudge by 100 points along an axis (`WhileHeld`, so debounce applies).
-- The same flip/rotate events as the keyboard.
-- `switchState.*` to leave the mode.
+- Read left stick, right stick, left pad (if touching), right pad (if touching).
+- Deadzone is `0.15` on the max axis.
+- If any right source is past deadzone, use the larger-magnitude right source and ignore left. Otherwise use the larger-magnitude left source.
+- Full deflection crosses the monitor in one second. Stick up decreases window `y`. The live position becomes `WindowPos::Absolute` and is not written to config.
 
-Nudges are `WindowPos::Absolute` from the current on-screen coordinates. If you started on a named corner, the first nudge converts you to absolute placement.
+`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to the menu. `switchState.menu` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts draw Steam Input knockout glyphs for whichever buttons are currently bound to those actions.
 
-The menu’s “Move” button switches to this mode. Controller navigation of the move-window grid is still unfinished relative to `todo.md`; dpad nudges work, but there is no highlighted cell walking the 3×3 like the menu’s selected index.
+## Button glyphs
+
+`src/ui/controller_glyph.rs` maps every `ControllerButton` for Steam Controller 2 and DualShock 4 to an embedded knockout SVG from Steam’s `controller_base/images/api/knockout`. Replay and the virtual controller pick a family from `preferred_controller` (first non-replay name, else SC2). Later screens can call `controller_glyph::show` with a family and button.
 
 ## What this does not cover
 
-**The overlay never moves itself in response to the focused application’s caret.** Placement is config, the launch-time pointer, or this mode.
+**The overlay never moves itself in response to the focused application’s caret.** Placement is config, the launch-time pointer, `--at-mouse`, or this mode.
 
 **Flips do not persist as `window_pos` strings.** The snapshot’s slot lives in memory. Restarting with `mouse pointer` recaptures the cursor and picks the default bottom-right (or left/top if that is what fits) again.
 
 ## Summary
 
-Window position is a small enum in config plus, for pointer mode, a one-shot snapshot of cursor and work area. Corners and absolute coordinates are resolved against the current monitor. Pointer mode can flip or rotate around that frozen cursor. Move-window mode is the interactive editor for the same values, persisted through `config::save`.
+Window position is a small enum in config plus, for pointer mode, a one-shot snapshot of cursor and work area. Corners and absolute coordinates are resolved against the current monitor. Pointer mode can flip or rotate around that frozen cursor. Move-window mode slides the overlay with analog input and writes config only when the user saves.

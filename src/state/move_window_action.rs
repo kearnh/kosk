@@ -7,17 +7,7 @@ use crate::state::StateId;
 
 #[derive(Deserialize, strum::VariantNames, Eq, Hash, PartialEq, Clone, Debug)]
 pub enum MoveWindowAction {
-    SnapTopLeft,
-    SnapTopRight,
-    SnapBottomLeft,
-    SnapBottomRight,
-    FlipWindowLeftRight,
-    FlipWindowAboveBelow,
-    RotateWindow,
-    NudgeUp,
-    NudgeDown,
-    NudgeLeft,
-    NudgeRight,
+    Save,
     SwitchState(StateId),
 }
 
@@ -27,20 +17,7 @@ impl Action for MoveWindowAction {
     }
 
     fn trigger_mode(&self) -> TriggerMode {
-        match self {
-            MoveWindowAction::NudgeUp
-            | MoveWindowAction::NudgeDown
-            | MoveWindowAction::NudgeLeft
-            | MoveWindowAction::NudgeRight => TriggerMode::WhileHeld,
-            MoveWindowAction::SnapTopLeft
-            | MoveWindowAction::SnapTopRight
-            | MoveWindowAction::SnapBottomLeft
-            | MoveWindowAction::SnapBottomRight
-            | MoveWindowAction::FlipWindowLeftRight
-            | MoveWindowAction::FlipWindowAboveBelow
-            | MoveWindowAction::RotateWindow
-            | MoveWindowAction::SwitchState(_) => TriggerMode::Edge,
-        }
+        TriggerMode::Edge
     }
 }
 
@@ -54,5 +31,22 @@ impl TryFrom<&str> for MoveWindowAction {
             "move window",
             MoveWindowAction::SwitchState,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_save_and_switch() {
+        assert_eq!(
+            MoveWindowAction::try_from("save").unwrap(),
+            MoveWindowAction::Save
+        );
+        assert_eq!(
+            MoveWindowAction::try_from("switchState.menu").unwrap(),
+            MoveWindowAction::SwitchState(StateId::Menu)
+        );
     }
 }

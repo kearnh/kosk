@@ -40,7 +40,7 @@ Use these names after `switchState.`:
 | `keyboard` | on-screen keyboard |
 | `menu` | menu |
 | `textInput` | single-line field that intercepts typing |
-| `moveWindow` | move and snap the overlay |
+| `moveWindow` | place the overlay with analog sticks/pads |
 | `selectLayout` | pick a keyboard layout |
 | `mappings` | edit bindings in the overlay |
 | `selectKey` | pick a key inside that editor |
@@ -101,7 +101,7 @@ These names are true or false while you hold the button. You can combine them wi
 
 ## Move-window actions
 
-`nudgeUp`, `nudgeDown`, `nudgeLeft`, `nudgeRight`, `snapTopLeft`, `snapTopRight`, `snapBottomLeft`, `snapBottomRight`, `flipWindowLeftRight`, `flipWindowAboveBelow`, `rotateWindow`, `switchState.…`
+`save` writes the live overlay position to config and returns to the menu. Analog sticks and pads move the window; they are not mapping actions. `switchState.…` leaves without saving (the shipped map uses `switchState.menu` on `faceRight`).
 
 ## Select-layout actions
 

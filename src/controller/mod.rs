@@ -109,6 +109,8 @@ pub trait ControllerInput: Debug {
         None
     }
 
+    fn family(&self) -> ControllerKind;
+
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync>;
 }
 
@@ -749,6 +751,9 @@ mod tests {
         }
         fn is_engaged(&self) -> bool {
             true
+        }
+        fn family(&self) -> ControllerKind {
+            ControllerKind::Sc2
         }
         fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
             Box::new(self.clone())

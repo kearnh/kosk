@@ -10,13 +10,13 @@ It does not own the keyboard, menu, move-window, or text-input structs. Those li
 
 ## Modes
 
-`StateId` is `Keyboard`, `Menu`, `MoveWindow`, or `TextInput`. The process starts in `Keyboard`. Modes switch by enqueueing `Event::ChangeState`. `process_events` assigns `self.state`. There is no stack: opening the menu replaces keyboard, and “Back” is just a change to `Keyboard` or `Menu` depending on the button.
+`StateId` is `Keyboard`, `Menu`, `MoveWindow`, `TextInput`, `Mappings`, `SelectKey`, or `SelectLayout`. The process starts in `Keyboard`. Modes switch by enqueueing `Event::ChangeState`. `process_events` assigns `self.state`. There is no stack: opening the menu replaces keyboard, and “Back” is just a change to `Keyboard` or `Menu` depending on the button.
 
 Each mode both draws and handles controller input. Mouse clicks are handled inside `draw_ui` because that is where egui button responses exist. Controller input is handled on the HID thread.
 
 ## The two ticks
 
-`draw_ui` (UI thread) refreshes debounce intervals from config, draws the current mode, then calls `process_events`. Keyboard drawing may push `MouseClick` events (a click on a key). Move-window drawing may return a `WindowPos` that `draw_ui` applies immediately, in addition to events.
+`draw_ui` (UI thread) refreshes debounce intervals from config, draws the current mode, then calls `process_events`. Keyboard drawing may push `MouseClick` events (a click on a key). Move-window drawing may enqueue save or cancel. Analog placement updates `AppState.pos` on the HID tick, not from the draw path.
 
 `handle_controller_input` (HID thread) also refreshes debounce intervals, optionally copies the snapshot into the debug plugin, dispatches to the current mode, then **always** calls `events.end_controller_tick()` before `process_events`. That end-of-tick call is what the queue uses to notice button releases. Skipping it would break repeat-vs-tap. Text-input mode has its own nested queue and calls `end_controller_tick` on that nested queue internally; the outer queue still gets an end-of-tick from `AppState` for events the nested path forwarded.
 
@@ -45,8 +45,8 @@ flowchart TD
 This match is the side-effect boundary. Handlers are supposed to enqueue, not type.
 
 - `SendKey` / `SendText` go to the key sink. Errors print and do not panic.
-- `ChangeState` writes `self.state`.
-- `MoveWindow` clamps the position, stores it, and `config::save`s (see the save caveat in [config.md](config.md)).
+- `ChangeState` writes `self.state`. Leaving Move Window without `SaveWindowPos` restores the position captured on entry.
+- `SaveWindowPos` writes `window_pos` through `config::save` (see the save caveat in [config.md](config.md)) and clears the move-window origin so the following `ChangeState` does not restore it.
 - `FlipWindowLeftRight`, `FlipWindowAboveBelow`, and `RotateWindow` only affect a `MousePointer` placement; they are no-ops for corner or absolute positions. See [window-position.md](window-position.md).
 - `Exit` sends `ViewportCommand::Close`.
 - `ToggleRecord` starts or stops a `.krec` capture.

@@ -80,16 +80,8 @@ quickAccess = "switchState.mappings"
 "options + faceLeft" = "toggleCompletion"
 
 [MoveWindow]
+"faceBottom" = "save"
 "faceRight" = "switchState.menu"
-"dpadUp" = "nudgeUp"
-"dpadDown" = "nudgeDown"
-"dpadLeft" = "nudgeLeft"
-"dpadRight" = "nudgeRight"
-"faceTop" = "snapTopLeft"
-"faceLeft" = "snapBottomLeft"
-"faceBottom" = "snapBottomRight"
-"options" = "snapTopRight"
-"l4" = "flipWindowLeftRight"
 
 [SelectLayout]
 "dpadUp" = "selectUp"

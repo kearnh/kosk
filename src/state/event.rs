@@ -2,7 +2,7 @@ use crate::config;
 use crate::controller::mapping::MappingPill;
 use crate::controller::record as input_record;
 use crate::controller::ControllerBinding;
-use crate::state::{StateId, WindowPos};
+use crate::state::StateId;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -77,7 +77,9 @@ pub enum Event {
     /// Use when UI data changed in-place (draft pills, status, dirty flag) and no
     /// Change/Call/Return already covers the refresh.
     Repaint,
-    MoveWindow(WindowPos),
+    /// Write the live overlay position to config. Clears move-window origin so
+    /// the following `ChangeState` does not restore it.
+    SaveWindowPos,
     FlipWindowLeftRight,
     FlipWindowAboveBelow,
     RotateWindow,

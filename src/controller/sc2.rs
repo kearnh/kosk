@@ -12,7 +12,7 @@ use hidapi::{DeviceInfo, HidApi, HidDevice};
 use strum::IntoEnumIterator;
 
 use crate::config::HapticIntensity;
-use crate::controller::{BatteryStatus, ControllerButton, ControllerInput};
+use crate::controller::{BatteryStatus, ControllerButton, ControllerInput, ControllerKind};
 
 const VALVE_VID: u16 = 0x28de;
 const PID_WIRED: u16 = 0x1302;
@@ -459,6 +459,9 @@ impl ControllerInput for Sc2State {
     }
     fn battery(&self) -> Option<BatteryStatus> {
         self.battery
+    }
+    fn family(&self) -> ControllerKind {
+        ControllerKind::Sc2
     }
     fn box_clone(&self) -> Box<dyn ControllerInput + Send + Sync> {
         Box::new(self.clone())
