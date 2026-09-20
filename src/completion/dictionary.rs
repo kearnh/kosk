@@ -10,7 +10,8 @@ use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::fuzzy::is_fuzzy_prefix;
 use super::insert::{
-    fold_apostrophe_marks, is_inserted_punct_fill, is_inserted_punct_prefix, strip_inserted,
+    fold_apostrophe_marks, is_inserted_punct_fill, is_inserted_punct_prefix, starts_with_inserted,
+    strip_inserted,
 };
 use super::settings::CompletionConfig;
 use super::user_cache::{mixed_count, UserCache};
@@ -406,7 +407,7 @@ fn punct_index_from_entries(entries: &[Entry]) -> Vec<PunctIndexEntry> {
         .enumerate()
         .filter_map(|(idx, e)| {
             let stripped = strip_inserted(&e.lower);
-            if stripped.is_empty() || stripped == e.lower {
+            if starts_with_inserted(&e.lower) || stripped.is_empty() || stripped == e.lower {
                 None
             } else {
                 Some(PunctIndexEntry { stripped, idx })
@@ -819,6 +820,26 @@ mod tests {
         );
         let s = suggest_on(&eng, "ill", vec![]);
         assert!(s.iter().any(|c| c.text == "i'll"), "{s:?}");
+    }
+
+    #[test]
+    fn leading_apostrophe_clitic_not_suggested() {
+        let cfg = CompletionConfig {
+            max_suggestions: 3,
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng =
+            DictionaryEngine::from_wordlist_text("'s\t10000\nsee\t100\nsaid\t90\nso\t80\n", &cfg);
+        let s = suggest_on(&eng, "s", vec![]);
+        assert!(!s.iter().any(|c| c.text.starts_with('\'')), "{s:?}");
+
+        let eng = DictionaryEngine::from_wordlist_text(
+            "'th\t10000\n'the\t9000\nthe\t100\nthis\t90\nthat\t80\n",
+            &cfg,
+        );
+        let s = suggest_on(&eng, "th", vec![]);
+        assert!(!s.iter().any(|c| c.text.starts_with('\'')), "{s:?}");
     }
 
     #[test]

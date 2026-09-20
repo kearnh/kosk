@@ -17,11 +17,18 @@ pub(super) fn strip_inserted(s: &str) -> String {
         .collect()
 }
 
+pub(super) fn starts_with_inserted(s: &str) -> bool {
+    s.chars()
+        .next()
+        .is_some_and(|c| INSERTED_PUNCTUATION.contains(&c))
+}
+
 /// True when `word` has inserted punctuation and its letters-only form starts
 /// with the letters-only token. Exact prefixes return false so the dictionary
-/// exact range remains the owner of those hits.
+/// exact range remains the owner of those hits. Leading clitics (`'s`, `'the`)
+/// are not treated as inserted punctuation.
 pub(super) fn is_inserted_punct_prefix(token: &str, word: &str) -> bool {
-    if token.is_empty() || word.starts_with(token) {
+    if token.is_empty() || word.starts_with(token) || starts_with_inserted(word) {
         return false;
     }
     let stripped_word = strip_inserted(word);
@@ -72,6 +79,15 @@ mod tests {
         assert!(is_inserted_punct_fill("eg", "e.g."));
         assert!(!is_inserted_punct_fill("e", "e.g."));
         assert!(!is_inserted_punct_fill("don", "don't"));
+    }
+
+    #[test]
+    fn leading_apostrophe_is_not_inserted_punct() {
+        assert!(!is_inserted_punct_prefix("s", "'s"));
+        assert!(!is_inserted_punct_fill("s", "'s"));
+        assert!(!is_inserted_punct_prefix("th", "'th"));
+        assert!(!is_inserted_punct_prefix("th", "'the"));
+        assert!(!is_inserted_punct_fill("th", "'th"));
     }
 
     #[test]
