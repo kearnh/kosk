@@ -113,6 +113,9 @@ debounce_ms = 16
 suggest_next_word = true
 # Append a space after an accepted word.
 insert_space_on_accept = true
+# Next key after accept: delete that space if the key is in this set.
+# Empty string disables.
+eat_space_before = ",.!?;:)]}'\"/"
 # Reserved: put a next-word that fails the prefix into a mid-word slot. Unused.
 mix_unmatched_next_word = false
 # Highlight at rest: none | first. none = bumpers select; faceBottom stays Enter
@@ -160,7 +163,7 @@ chip_width = "fill"
 max_chip_width = 200.0
 # Floor for both fill and hug.
 min_chip_width = 48.0
-font_size = 18.0
+font_size = 14.0
 corner_radius = 6.0
 # RGBA 0–255.
 background_color = [40, 40, 40, 255]

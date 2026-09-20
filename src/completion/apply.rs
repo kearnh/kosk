@@ -36,6 +36,10 @@ pub fn remainder(token: &str, candidate: &str) -> String {
     c[t.len()..].iter().collect()
 }
 
+pub fn eats_accept_space(ch: char, eat_before: &str) -> bool {
+    !eat_before.is_empty() && eat_before.contains(ch)
+}
+
 pub fn is_case_insensitive_prefix(token: &str, candidate: &str) -> bool {
     let t: Vec<char> = token.chars().collect();
     let c: Vec<char> = candidate.chars().collect();
@@ -87,5 +91,15 @@ mod tests {
         assert!(is_case_insensitive_prefix("the", "the"));
         assert!(!is_case_insensitive_prefix("thr", "the"));
         assert!(!is_case_insensitive_prefix("xyz", "hello"));
+    }
+
+    #[test]
+    fn eats_default_closers_not_letters() {
+        let set = crate::completion::settings::CompletionConfig::default().eat_space_before;
+        assert!(eats_accept_space('.', &set));
+        assert!(eats_accept_space('/', &set));
+        assert!(eats_accept_space(',', &set));
+        assert!(!eats_accept_space('a', &set));
+        assert!(!eats_accept_space('.', ""));
     }
 }

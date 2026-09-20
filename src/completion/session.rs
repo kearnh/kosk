@@ -50,6 +50,7 @@ pub struct Session {
     cfg: CompletionConfig,
     user: Arc<Mutex<UserCache>>,
     neighbors: HashMap<char, Vec<char>>,
+    pending_eat_space: bool,
 }
 
 impl Session {
@@ -99,6 +100,7 @@ impl Session {
             cfg,
             user,
             neighbors: HashMap::new(),
+            pending_eat_space: false,
         })
     }
 
@@ -147,6 +149,7 @@ impl Session {
             cfg,
             user,
             neighbors: HashMap::new(),
+            pending_eat_space: false,
         }
     }
 
@@ -183,6 +186,7 @@ impl Session {
     }
 
     pub fn toggle_armed(&mut self) {
+        self.pending_eat_space = false;
         self.typed.toggle(&self.cfg.keyboard);
         self.candidates.clear();
         self.highlight = None;
@@ -192,11 +196,32 @@ impl Session {
     }
 
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
+        match event {
+            LogEvent::Char(_) | LogEvent::Text => {}
+            _ => self.pending_eat_space = false,
+        }
         self.typed.apply(event, payload, &self.cfg.keyboard);
         if !self.typed.armed() {
             self.candidates.clear();
             self.highlight = None;
         }
+    }
+
+    pub fn arm_eat_accept_space(&mut self) {
+        self.pending_eat_space = !self.cfg.eat_space_before.is_empty();
+    }
+
+    pub fn clear_eat_accept_space(&mut self) {
+        self.pending_eat_space = false;
+    }
+
+    pub fn take_eat_accept_space(&mut self, ch: char) -> bool {
+        if !self.pending_eat_space {
+            return false;
+        }
+
+        self.pending_eat_space = false;
+        super::apply::eats_accept_space(ch, &self.cfg.eat_space_before)
     }
 
     pub fn request_from_buffer(&mut self, text: &str, cursor: usize) {
@@ -360,6 +385,11 @@ impl Session {
         }
         self.set_last_injected(Some(inject.clone()));
         self.clear_highlight();
+
+        if inject.ends_with(' ') {
+            self.arm_eat_accept_space();
+        }
+
         Some(AcceptOutcome {
             inject,
             via,
@@ -493,6 +523,7 @@ pub fn with_mut<R>(f: impl FnOnce(Option<&mut Session>) -> R) -> R {
 mod tests {
     use super::*;
     use crate::completion::dictionary::DictionaryEngine;
+    use crate::completion::LogEvent;
     use std::sync::atomic::AtomicBool;
 
     struct Sleepy {
@@ -634,7 +665,7 @@ mod tests {
     #[test]
     fn fuzzy_accept_backspace_replaces() {
         use crate::completion::settings::AcceptVia;
-        use crate::completion::{LogEvent, MatchKind, Source};
+        use crate::completion::{MatchKind, Source};
 
         let mut s = session_with(CompletionConfig::default());
         s.note_log(LogEvent::Char('t'), "");
@@ -651,5 +682,65 @@ mod tests {
         assert_eq!(out.via, AcceptVia::BackspaceReplace);
         assert!(out.inject.starts_with("the"));
         assert_eq!(out.token_char_len, 3);
+    }
+
+    fn accept_hello(s: &mut Session) -> AcceptOutcome {
+        s.note_log(LogEvent::Char('h'), "");
+        s.note_log(LogEvent::Char('e'), "");
+        s.note_log(LogEvent::Char('l'), "");
+        s.candidates = vec![cand("hello")];
+        s.highlight = Some(0);
+        s.take_accept(None).unwrap()
+    }
+
+    #[test]
+    fn eat_space_punct_once() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_hello(&mut s);
+        assert!(out.inject.ends_with(' '));
+        assert!(s.take_eat_accept_space('.'));
+        assert!(!s.take_eat_accept_space(','));
+    }
+
+    #[test]
+    fn eat_space_slash_in_default() {
+        let mut s = session_with(CompletionConfig::default());
+        accept_hello(&mut s);
+        assert!(s.take_eat_accept_space('/'));
+    }
+
+    #[test]
+    fn eat_space_letter_does_not() {
+        let mut s = session_with(CompletionConfig::default());
+        accept_hello(&mut s);
+        assert!(!s.take_eat_accept_space('a'));
+        assert!(!s.take_eat_accept_space('.'));
+    }
+
+    #[test]
+    fn eat_space_empty_charset_off() {
+        let mut cfg = CompletionConfig::default();
+        cfg.eat_space_before.clear();
+        let mut s = session_with(cfg);
+        accept_hello(&mut s);
+        assert!(!s.take_eat_accept_space('.'));
+    }
+
+    #[test]
+    fn eat_space_clears_on_backspace() {
+        let mut s = session_with(CompletionConfig::default());
+        accept_hello(&mut s);
+        s.note_log(LogEvent::Backspace, "");
+        assert!(!s.take_eat_accept_space('.'));
+    }
+
+    #[test]
+    fn eat_space_skips_when_accept_has_no_space() {
+        let mut cfg = CompletionConfig::default();
+        cfg.insert_space_on_accept = false;
+        let mut s = session_with(cfg);
+        let out = accept_hello(&mut s);
+        assert!(!out.inject.ends_with(' '));
+        assert!(!s.take_eat_accept_space('.'));
     }
 }

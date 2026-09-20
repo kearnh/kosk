@@ -28,6 +28,15 @@ fn clamp_cursor(text: &str, cursor: usize) -> usize {
     }
 }
 
+fn preceding_is_space(text: &str, cursor: usize) -> bool {
+    let cursor = clamp_cursor(text, cursor);
+    if cursor == 0 {
+        return false;
+    }
+
+    text[..cursor].ends_with(' ')
+}
+
 fn insert_char_at(text: &mut String, cursor: &mut usize, ch: char) {
     *cursor = clamp_cursor(text, *cursor);
     text.insert(*cursor, ch);
@@ -91,11 +100,24 @@ impl TextInputState {
     }
 
     fn insert_char(&mut self, ch: char) {
+        let eat = crate::completion::with_mut(|s| {
+            s.map(|s| s.take_eat_accept_space(ch)).unwrap_or(false)
+        });
+
+        if eat && preceding_is_space(&self.text, self.cursor_pos) {
+            backspace_at(&mut self.text, &mut self.cursor_pos);
+        }
+
         insert_char_at(&mut self.text, &mut self.cursor_pos, ch);
         self.refresh_completion();
     }
 
     fn backspace(&mut self) {
+        crate::completion::with_mut(|s| {
+            if let Some(s) = s {
+                s.clear_eat_accept_space();
+            }
+        });
         backspace_at(&mut self.text, &mut self.cursor_pos);
         self.refresh_completion();
     }
@@ -184,6 +206,11 @@ impl TextInputState {
                     s.learn(&words);
                 }
                 s.clear_highlight();
+
+                if cfg.insert_space_on_accept {
+                    s.arm_eat_accept_space();
+                }
+
                 s.request_from_buffer(&self.text, self.cursor_pos);
             }
         });
@@ -193,6 +220,7 @@ impl TextInputState {
     fn completion_cancel(&mut self) {
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
+                s.clear_eat_accept_space();
                 s.clear_highlight();
             }
         });
@@ -459,5 +487,17 @@ mod tests {
         assert_eq!(cursor, 1);
         move_cursor_right(&text, &mut cursor);
         assert_eq!(cursor, "a😀".len());
+    }
+
+    #[test]
+    fn preceding_space_punct_replaces_space() {
+        let mut text = String::from("hello ");
+        let mut cursor = text.len();
+        assert!(preceding_is_space(&text, cursor));
+        backspace_at(&mut text, &mut cursor);
+        insert_char_at(&mut text, &mut cursor, '.');
+        assert_eq!(text, "hello.");
+        assert_eq!(cursor, text.len());
+        assert!(!preceding_is_space(&text, cursor));
     }
 }

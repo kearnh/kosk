@@ -40,7 +40,7 @@ Idle `None` resets the text-input binding engine.
 
 The field is `interactive(false)` so a mouse click on the field does not move the caret; only the d-pad actions and typing do. A click on a filled chip still accepts that index.
 
-Accept splices `token_range` with the candidate (mid-word replaces the whole token) and optionally a trailing space. Cycle does not touch the buffer.
+Accept splices `token_range` with the candidate (mid-word replaces the whole token) and optionally a trailing space. If the next character is in `eat_space_before`, that space is removed so punctuation sits against the word. Cycle does not touch the buffer.
 
 ## What this does not cover
 

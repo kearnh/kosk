@@ -222,7 +222,18 @@ impl KeyboardState {
     ) -> Result<()> {
         match key {
             RawKey::Key(c) => {
+                let eat = !self.ctrl_mod
+                    && !self.alt_mod
+                    && Self::eat_accept_space_before(self.feed_completion_log, *c);
                 let mut steps = Vec::new();
+
+                if eat {
+                    steps.push(Event::SendKey(
+                        enigo::Key::Backspace,
+                        enigo::Direction::Click,
+                    ));
+                }
+
                 if self.shift_mod {
                     steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
@@ -260,6 +271,13 @@ impl KeyboardState {
                     self.shift_mod = false;
                     self.ctrl_mod = false;
                     self.alt_mod = false;
+                    if eat {
+                        crate::completion::with_mut(|s| {
+                            if let Some(s) = s {
+                                s.note_log(crate::completion::LogEvent::Backspace, "");
+                            }
+                        });
+                    }
                     self.note_outgoing(key);
                 }
             }
@@ -299,7 +317,30 @@ impl KeyboardState {
                 self.do_action(action, events, source)?;
             }
             RawKey::Text(text) => {
-                if events.push(Event::SendText(text.to_owned()), source) {
+                let eat = text.chars().next().is_some_and(|ch| {
+                    !self.ctrl_mod
+                        && !self.alt_mod
+                        && Self::eat_accept_space_before(self.feed_completion_log, ch)
+                });
+
+                let ok = if eat {
+                    let steps = vec![
+                        Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
+                        Event::SendText(text.to_owned()),
+                    ];
+                    events.push_seq(steps, source)
+                } else {
+                    events.push(Event::SendText(text.to_owned()), source)
+                };
+
+                if ok {
+                    if eat {
+                        crate::completion::with_mut(|s| {
+                            if let Some(s) = s {
+                                s.note_log(crate::completion::LogEvent::Backspace, "");
+                            }
+                        });
+                    }
                     self.note_outgoing(key);
                 }
             }
@@ -311,6 +352,19 @@ impl KeyboardState {
 
     pub fn set_feed_completion_log(&mut self, feed: bool) {
         self.feed_completion_log = feed;
+    }
+
+    fn eat_accept_space_before(feed: bool, ch: char) -> bool {
+        if !feed {
+            return false;
+        }
+
+        crate::completion::with_mut(|s| {
+            let Some(s) = s else {
+                return false;
+            };
+            s.take_eat_accept_space(ch) && s.typed_text().ends_with(' ')
+        })
     }
 
     fn note_outgoing(&mut self, key: &RawKey) {
@@ -456,6 +510,7 @@ impl KeyboardState {
                 return;
             };
             if !s.cfg().keyboard.retract_last_accept {
+                s.clear_eat_accept_space();
                 s.clear_highlight();
                 return;
             }
@@ -471,6 +526,7 @@ impl KeyboardState {
                 }
                 s.set_last_injected(None);
             }
+            s.clear_eat_accept_space();
             s.clear_highlight();
         });
     }
@@ -1237,6 +1293,12 @@ mod send_key_tests {
     fn letter_without_mods_uses_send_text() {
         let mut kb = KeyboardState::default();
         assert_eq!(drain_char(&mut kb, 'c'), vec![Event::SendText("c".into())]);
+    }
+
+    #[test]
+    fn punct_without_session_does_not_eat() {
+        let mut kb = KeyboardState::default();
+        assert_eq!(drain_char(&mut kb, '.'), vec![Event::SendText(".".into())]);
     }
 
     #[test]
