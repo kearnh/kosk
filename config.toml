@@ -275,5 +275,5 @@ path = "completion-cache.bin"
 decay_tau_hours = 2.0
 max_unigrams = 20000
 max_bigrams = 50000
-# Flush to disk at most this often (seconds). Also flushed on exit.
+# Learns write immediately. This interval is unused; kept so old configs load.
 persist_interval_s = 30

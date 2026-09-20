@@ -44,7 +44,6 @@ pub struct UserCache {
     by_type: HashMap<String, TypeMaps>,
     cfg: CompletionUserCacheConfig,
     path: PathBuf,
-    last_persist: Instant,
 }
 
 impl UserCache {
@@ -53,7 +52,6 @@ impl UserCache {
             by_type: HashMap::new(),
             cfg: cfg.clone(),
             path,
-            last_persist: Instant::now(),
         };
         if cfg.enabled {
             let _ = cache.read_disk();
@@ -129,7 +127,7 @@ impl UserCache {
             self.bump_bi(ty, &pair[0], &pair[1]);
         }
         self.trim(ty);
-        self.maybe_persist();
+        let _ = self.persist();
     }
 
     fn bump_uni(&mut self, ty: &str, w: &str) {
@@ -224,13 +222,6 @@ impl UserCache {
         trim_map(&mut maps.bigrams, max_b);
     }
 
-    fn maybe_persist(&mut self) {
-        if self.last_persist.elapsed().as_secs() < self.cfg.persist_interval_s {
-            return;
-        }
-        let _ = self.persist();
-    }
-
     pub fn persist(&mut self) -> Result<()> {
         if !self.cfg.enabled {
             return Ok(());
@@ -275,7 +266,6 @@ impl UserCache {
         let tmp = self.path.with_extension("bin.tmp");
         std::fs::write(&tmp, &bytes)?;
         std::fs::rename(&tmp, &self.path)?;
-        self.last_persist = Instant::now();
         Ok(())
     }
 }
@@ -380,6 +370,32 @@ mod tests {
         assert_eq!(hits[0].0, "jujutsu");
         assert!(c.prefix_unigrams("programming", "jujutsu").is_empty());
         assert!(c.prefix_unigrams("browser", "juju").is_empty());
+    }
+
+    #[test]
+    fn learn_survives_reload_before_interval() {
+        let path = std::env::temp_dir().join(format!(
+            "kosk-cache-learn-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cfg = CompletionUserCacheConfig {
+            persist_interval_s: 3600,
+            ..CompletionUserCacheConfig::default()
+        };
+        {
+            let mut c = UserCache::load(&cfg, path.clone());
+            c.learn_words(CATCH_ALL_TYPE, &["foobar".into()]);
+        }
+        let c = UserCache::load(&cfg, path.clone());
+        assert!(
+            c.has_unigram(CATCH_ALL_TYPE, "foobar"),
+            "learn must hit disk before persist_interval_s"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
