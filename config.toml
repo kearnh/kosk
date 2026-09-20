@@ -248,7 +248,6 @@ backoff_alpha = 0.4
 lambda_trigram = 1.0
 lambda_bigram = 0.3
 lambda_unigram = 0.2
-lambda_user = 0.8
 lambda_exact = 0.1
 lambda_typo = -2.0
 # Cap how many words a prefix scan considers, and how often to drop a stale scan.
@@ -256,11 +255,11 @@ prefix_scan_limit = 8192
 abort_check_every = 64
 
 [completion.user_cache]
-# Decayed counts of accepted / submitted words. Novel words complete
+# Lifetime counts of accepted / submitted words. Novel words complete
 # without rebuilding the packed tables. File is next to this config if relative.
+# Cache mass is mixed into dictionary counts so a few accepts cannot bury
+# high-frequency English; caps drop the rarest entries when full.
 enabled = true
 path = "completion-cache.bin"
-# Half-life for cache counts (hours).
-decay_tau_hours = 2.0
 max_unigrams = 20000
 max_bigrams = 50000

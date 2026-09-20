@@ -10,6 +10,18 @@ use super::settings::CompletionUserCacheConfig;
 
 const PERSIST_VERSION: u32 = 2;
 
+/// Phantom corpus mass. One user accept is `corpus_total / USER_PRIOR_MASS`
+/// dictionary counts (floored at 1).
+pub(crate) const USER_PRIOR_MASS: f32 = 8_000.0;
+
+pub(crate) fn user_observation_weight(corpus_total: f32) -> f32 {
+    (corpus_total / USER_PRIOR_MASS).max(1.0)
+}
+
+pub(crate) fn mixed_count(dict_count: f32, user_count: f32, corpus_total: f32) -> f32 {
+    dict_count + user_observation_weight(corpus_total) * user_count
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistV1 {
     unigrams: Vec<(String, f32, u64)>,
@@ -132,7 +144,6 @@ impl UserCache {
 
     fn bump_uni(&mut self, ty: &str, w: &str) {
         let now = Instant::now();
-        let tau = self.cfg.decay_tau_hours;
         let e = self
             .maps_mut(ty)
             .unigrams
@@ -141,13 +152,12 @@ impl UserCache {
                 count: 0.0,
                 last: now,
             });
-        e.count = decay(e.count, e.last, tau) + 1.0;
+        e.count += 1.0;
         e.last = now;
     }
 
     fn bump_bi(&mut self, ty: &str, a: &str, b: &str) {
         let now = Instant::now();
-        let tau = self.cfg.decay_tau_hours;
         let e = self
             .maps_mut(ty)
             .bigrams
@@ -156,12 +166,8 @@ impl UserCache {
                 count: 0.0,
                 last: now,
             });
-        e.count = decay(e.count, e.last, tau) + 1.0;
+        e.count += 1.0;
         e.last = now;
-    }
-
-    fn decay(&self, count: f32, last: Instant) -> f32 {
-        decay(count, last, self.cfg.decay_tau_hours)
     }
 
     pub fn has_unigram(&self, ty: &str, w: &str) -> bool {
@@ -171,14 +177,14 @@ impl UserCache {
     pub fn unigram(&self, ty: &str, w: &str) -> f32 {
         self.maps(ty)
             .and_then(|m| m.unigrams.get(w))
-            .map(|t| self.decay(t.count, t.last))
+            .map(|t| t.count)
             .unwrap_or(0.0)
     }
 
     pub fn bigram(&self, ty: &str, a: &str, b: &str) -> f32 {
         self.maps(ty)
             .and_then(|m| m.bigrams.get(&(a.to_string(), b.to_string())))
-            .map(|t| self.decay(t.count, t.last))
+            .map(|t| t.count)
             .unwrap_or(0.0)
     }
 
@@ -190,7 +196,7 @@ impl UserCache {
             .bigrams
             .iter()
             .filter(|((a, _), _)| a == prev)
-            .map(|((_, b), t)| (b.clone(), self.decay(t.count, t.last)))
+            .map(|((_, b), t)| (b.clone(), t.count))
             .filter(|(_, c)| *c > 0.0)
             .collect();
         out.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -205,7 +211,7 @@ impl UserCache {
             .unigrams
             .iter()
             .filter(|(w, _)| w.starts_with(prefix) && w.as_str() != prefix)
-            .map(|(w, t)| (w.clone(), self.decay(t.count, t.last)))
+            .map(|(w, t)| (w.clone(), t.count))
             .filter(|(_, c)| *c > 0.0)
             .collect();
         out.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
@@ -270,16 +276,6 @@ impl UserCache {
     }
 }
 
-fn decay(count: f32, last: Instant, tau_hours: f32) -> f32 {
-    decay_amount(count, last.elapsed(), tau_hours)
-}
-
-fn decay_amount(count: f32, dt: Duration, tau_hours: f32) -> f32 {
-    let tau = Duration::from_secs_f32(tau_hours.max(0.01) * 3600.0);
-    let steps = dt.as_secs_f32() / tau.as_secs_f32();
-    count * 0.5f32.powf(steps)
-}
-
 fn trim_map<K: Eq + std::hash::Hash>(map: &mut HashMap<K, Timed>, max: usize) {
     if map.len() <= max {
         return;
@@ -340,6 +336,15 @@ mod tests {
         c.learn_words(CATCH_ALL_TYPE, &["foo".into(), "bar".into()]);
         assert!(c.unigram(CATCH_ALL_TYPE, "foo") > 0.0);
         assert!(c.bigram(CATCH_ALL_TYPE, "foo", "bar") > 0.0);
+    }
+
+    #[test]
+    fn learn_counts_are_monotonic() {
+        let mut c = empty_cache("kosk-test-cache-mono.bin");
+        c.learn_words(CATCH_ALL_TYPE, &["foo".into()]);
+        assert_eq!(c.unigram(CATCH_ALL_TYPE, "foo"), 1.0);
+        c.learn_words(CATCH_ALL_TYPE, &["foo".into()]);
+        assert_eq!(c.unigram(CATCH_ALL_TYPE, "foo"), 2.0);
     }
 
     #[test]
@@ -412,7 +417,7 @@ mod tests {
             c.persist().unwrap();
         }
         let c = UserCache::load(&CompletionUserCacheConfig::default(), path.clone());
-        assert!(c.unigram("browser", "hello") > 0.0);
+        assert_eq!(c.unigram("browser", "hello"), 1.0);
         let _ = std::fs::remove_file(&path);
 
         let v1 = PersistV1 {
@@ -432,12 +437,5 @@ mod tests {
         let c = UserCache::load(&CompletionUserCacheConfig::default(), v1_path.clone());
         assert!(c.has_unigram(CATCH_ALL_TYPE, "old"));
         let _ = std::fs::remove_file(&v1_path);
-    }
-
-    #[test]
-    fn decay_half_life() {
-        let hour = Duration::from_secs(3600);
-        assert!((decay_amount(8.0, hour, 1.0) - 4.0).abs() < 1e-5);
-        assert!((decay_amount(8.0, Duration::ZERO, 2.0) - 8.0).abs() < 1e-5);
     }
 }

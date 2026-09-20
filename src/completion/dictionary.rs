@@ -10,7 +10,7 @@ use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::fuzzy::is_fuzzy_prefix;
 use super::settings::CompletionConfig;
-use super::user_cache::UserCache;
+use super::user_cache::{mixed_count, UserCache};
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -62,6 +62,7 @@ pub struct DictionaryEngine {
     lambda_typo: f32,
     extras: HashMap<String, DictionaryEngine>,
     user: Option<Arc<Mutex<UserCache>>>,
+    count_total: u64,
 }
 
 impl DictionaryEngine {
@@ -72,6 +73,7 @@ impl DictionaryEngine {
             .collect();
         entries.sort_by(|a, b| a.lower.cmp(&b.lower).then_with(|| b.count.cmp(&a.count)));
         entries.dedup_by(|a, b| a.lower == b.lower);
+        let count_total: u64 = entries.iter().map(|e| e.count as u64).sum();
         Self {
             entries,
             suggest_next_word: cfg.suggest_next_word,
@@ -85,6 +87,7 @@ impl DictionaryEngine {
             lambda_typo: cfg.ngram.lambda_typo,
             extras: HashMap::new(),
             user: None,
+            count_total,
         }
     }
 
@@ -117,6 +120,25 @@ impl DictionaryEngine {
         self.extras.get(ty)
     }
 
+    fn overlay_dict_count(&self, ty: &str, lower: &str) -> f32 {
+        let base = self.count_lower(lower) as f32;
+        let extra = self.extra(ty).map(|e| e.count_lower(lower)).unwrap_or(0) as f32;
+        base + extra
+    }
+
+    fn mixed_user_score(&self, ty: &str, lower: &str, user_count: f32) -> f32 {
+        let mixed = mixed_count(
+            self.overlay_dict_count(ty, lower),
+            user_count,
+            self.count_total as f32,
+        );
+        if mixed > 0.0 {
+            mixed.ln()
+        } else {
+            0.0
+        }
+    }
+
     fn merge_overlay(
         &self,
         ctx: &CompletionContext,
@@ -141,38 +163,35 @@ impl DictionaryEngine {
 
         if let Some(user) = &self.user {
             let g = user.lock().unwrap();
-            if token_lower.is_empty() {
-                if let Some(prev) = ctx.prev_words.last() {
-                    for (word, count) in g.continuations(&ctx.app_type, prev) {
-                        if abort.stale() {
-                            return None;
-                        }
-                        if !seen.insert(word.clone()) {
-                            continue;
-                        }
-                        cands.push(Candidate {
-                            text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
-                            score: (1.0 + count).ln(),
-                            source: Source::UserCache,
-                            kind: MatchKind::ExactPrefix,
-                        });
-                    }
-                }
+            let hits = if token_lower.is_empty() {
+                ctx.prev_words
+                    .last()
+                    .map(|prev| g.continuations(&ctx.app_type, prev))
+                    .unwrap_or_default()
             } else {
-                for (word, count) in g.prefix_unigrams(&ctx.app_type, &token_lower) {
-                    if abort.stale() {
-                        return None;
-                    }
-                    if !seen.insert(word.clone()) {
-                        continue;
-                    }
-                    cands.push(Candidate {
-                        text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
-                        score: (1.0 + count).ln(),
-                        source: Source::UserCache,
-                        kind: MatchKind::ExactPrefix,
-                    });
+                g.prefix_unigrams(&ctx.app_type, &token_lower)
+            };
+            for (word, count) in hits {
+                if abort.stale() {
+                    return None;
                 }
+                let score = self.mixed_user_score(&ctx.app_type, &word, count);
+                if let Some(c) = cands
+                    .iter_mut()
+                    .find(|c| normalize_word(&c.text, nfc) == word)
+                {
+                    c.score = score;
+                    continue;
+                }
+                if !seen.insert(word.clone()) {
+                    continue;
+                }
+                cands.push(Candidate {
+                    text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
+                    score,
+                    source: Source::UserCache,
+                    kind: MatchKind::ExactPrefix,
+                });
             }
         }
 

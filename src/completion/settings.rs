@@ -416,9 +416,6 @@ pub struct CompletionNgramConfig {
     #[serde(default = "default_lambda_uni")]
     pub lambda_unigram: f32,
 
-    #[serde(default = "default_lambda_user")]
-    pub lambda_user: f32,
-
     #[serde(default = "default_lambda_exact")]
     pub lambda_exact: f32,
 
@@ -441,7 +438,6 @@ impl Default for CompletionNgramConfig {
             lambda_trigram: default_lambda_tri(),
             lambda_bigram: default_lambda_bi(),
             lambda_unigram: default_lambda_uni(),
-            lambda_user: default_lambda_user(),
             lambda_exact: default_lambda_exact(),
             lambda_typo: default_lambda_typo(),
             prefix_scan_limit: default_prefix_scan_limit(),
@@ -458,9 +454,6 @@ pub struct CompletionUserCacheConfig {
     #[serde(default = "default_cache_path")]
     pub path: PathBuf,
 
-    #[serde(default = "default_tau")]
-    pub decay_tau_hours: f32,
-
     #[serde(default = "default_max_uni_cache")]
     pub max_unigrams: usize,
 
@@ -473,7 +466,6 @@ impl Default for CompletionUserCacheConfig {
         Self {
             enabled: true,
             path: default_cache_path(),
-            decay_tau_hours: default_tau(),
             max_unigrams: default_max_uni_cache(),
             max_bigrams: default_max_bi_cache(),
         }
@@ -585,9 +577,6 @@ fn default_lambda_bi() -> f32 {
 fn default_lambda_uni() -> f32 {
     0.2
 }
-fn default_lambda_user() -> f32 {
-    0.8
-}
 fn default_lambda_exact() -> f32 {
     0.1
 }
@@ -605,9 +594,6 @@ fn default_abort_every() -> usize {
 }
 fn default_cache_path() -> PathBuf {
     PathBuf::from("completion-cache.bin")
-}
-fn default_tau() -> f32 {
-    2.0
 }
 fn default_max_uni_cache() -> usize {
     20000

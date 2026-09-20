@@ -12,7 +12,7 @@ use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::dictionary::{mix_candidate_slots, DictionaryEngine};
 use super::settings::CompletionConfig;
-use super::user_cache::UserCache;
+use super::user_cache::{mixed_count, UserCache};
 
 pub const ID_BITS: u32 = 21;
 pub const ID_MASK: u64 = (1 << ID_BITS) - 1;
@@ -96,7 +96,6 @@ pub struct NgramEngine {
     lambda_tri: f32,
     lambda_bi: f32,
     lambda_uni: f32,
-    lambda_user: f32,
     lambda_exact: f32,
     lambda_typo: f32,
     user: Option<Arc<Mutex<UserCache>>>,
@@ -124,7 +123,6 @@ impl NgramEngine {
             lambda_tri: cfg.ngram.lambda_trigram,
             lambda_bi: cfg.ngram.lambda_bigram,
             lambda_uni: cfg.ngram.lambda_unigram,
-            lambda_user: cfg.ngram.lambda_user,
             lambda_exact: cfg.ngram.lambda_exact,
             lambda_typo: cfg.ngram.lambda_typo,
             user,
@@ -195,7 +193,6 @@ impl NgramEngine {
             lambda_tri: cfg.ngram.lambda_trigram,
             lambda_bi: cfg.ngram.lambda_bigram,
             lambda_uni: cfg.ngram.lambda_unigram,
-            lambda_user: cfg.ngram.lambda_user,
             lambda_exact: cfg.ngram.lambda_exact,
             lambda_typo: cfg.ngram.lambda_typo,
             user: Some(user),
@@ -257,29 +254,6 @@ impl NgramEngine {
     fn blend(&self, ctx: &CompletionContext, lower: &str) -> f32 {
         let ids = self.prev_ids(ctx);
         let wid = self.id(lower);
-        let in_pack = wid.is_some();
-        let mut score = 0.0;
-        if let Some(w) = wid {
-            let tri = if ids.len() >= 2 {
-                self.stupid(&ids[ids.len() - 2..], w)
-            } else {
-                0.0
-            };
-            let bi = if let Some(a) = ids.last() {
-                self.stupid(&[*a], w)
-            } else {
-                0.0
-            };
-            let uni = self.stupid(&[], w);
-            if tri > 0.0 {
-                score += self.lambda_tri * tri.ln();
-            }
-            if bi > 0.0 {
-                score += self.lambda_bi * bi.ln();
-            }
-            score += self.lambda_uni * uni.ln();
-        }
-
         let extra_c = self
             .extra(&ctx.app_type)
             .map(|e| e.count_lower(lower))
@@ -297,22 +271,53 @@ impl NgramEngine {
             (0.0, 0.0)
         };
 
-        if in_pack {
-            if u > 0.0 {
-                score += self.lambda_user * u.ln();
+        let total = (self.unigram_total as f32).max(1.0);
+        let mut score = 0.0;
+
+        if let Some(w) = wid {
+            let tri = if ids.len() >= 2 {
+                self.stupid(&ids[ids.len() - 2..], w)
+            } else {
+                0.0
+            };
+            if tri > 0.0 {
+                score += self.lambda_tri * tri.ln();
             }
-            if b > 0.0 {
-                score += self.lambda_user * b.ln();
+
+            if let Some(a) = ids.last() {
+                let dict_bi = lookup_count(&self.bigrams, pack2(*a, w)) as f32;
+                if dict_bi > 0.0 || b > 0.0 {
+                    let den = self.count1(*a).max(1) as f32;
+                    let p = mixed_count(dict_bi, b, total) / den;
+                    if p > 0.0 {
+                        score += self.lambda_bi * p.ln();
+                    }
+                } else {
+                    let bi = self.stupid(&[*a], w);
+                    if bi > 0.0 {
+                        score += self.lambda_bi * bi.ln();
+                    }
+                }
             }
-        } else {
-            let stand_in = if u > 0.0 { u } else { extra_c };
-            if stand_in > 0.0 {
-                score += self.lambda_user * (1.0 + stand_in).ln();
-            }
-            if b > 0.0 {
-                score += self.lambda_user * (1.0 + b).ln();
+        } else if b > 0.0 {
+            let den = ctx
+                .prev_words
+                .last()
+                .and_then(|p| self.id(p))
+                .map(|a| self.count1(a).max(1) as f32)
+                .unwrap_or(total);
+            let p = mixed_count(0.0, b, total) / den;
+            if p > 0.0 {
+                score += self.lambda_bi * p.ln();
             }
         }
+
+        let dict_uni = wid.map(|w| self.count1(w) as f32).unwrap_or(extra_c);
+        let mixed_uni = mixed_count(dict_uni, u, total);
+        if mixed_uni > 0.0 {
+            score += self.lambda_uni * (mixed_uni / total).ln();
+        }
+
         if normalize_word(&ctx.token, self.nfc) == lower {
             score += self.lambda_exact;
         } else if !ctx.token.is_empty() {
@@ -670,6 +675,78 @@ mod tests {
         hel.app_type = "browser".into();
         let out = eng.suggest(&hel, &abort).unwrap();
         assert!(out.iter().any(|c| c.text == "hello"));
+    }
+
+    fn hello_scale_cache(name: &str) -> UserCache {
+        let cfg = CompletionConfig::default();
+        UserCache::load(
+            &cfg.user_cache,
+            std::path::PathBuf::from(format!(
+                "target/{name}-{}-{}.bin",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+        )
+    }
+
+    fn hello_scale_engine(cache: UserCache) -> (NgramEngine, CompletionConfig) {
+        let cfg = CompletionConfig::default();
+        let dict =
+            DictionaryEngine::from_wordlist_text("hello\t405534\nhelp\t50000\nhell\t159\n", &cfg);
+        let user = Arc::new(Mutex::new(cache));
+        let mut eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
+        eng.vocab = vec!["hello".into(), "help".into(), "hell".into()];
+        eng.vocab_ids.insert("hello".into(), 0);
+        eng.vocab_ids.insert("help".into(), 1);
+        eng.vocab_ids.insert("hell".into(), 2);
+        eng.unigrams = vec![405_534, 50_000, 159];
+        eng.unigram_total = 320_000_000;
+        (eng, cfg)
+    }
+
+    fn suggest_hel(eng: &NgramEngine, cfg: &CompletionConfig) -> Vec<Candidate> {
+        let ctx = CompletionContext::from_buffer("hel", 3, cfg).unwrap();
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        eng.suggest(&ctx, &abort).unwrap()
+    }
+
+    #[test]
+    fn one_oov_accept_loses_to_hello() {
+        let mut cache = hello_scale_cache("kosk-ngram-oov1");
+        cache.learn_words(crate::completion::CATCH_ALL_TYPE, &["helldivers".into()]);
+        let (eng, cfg) = hello_scale_engine(cache);
+        let out = suggest_hel(&eng, &cfg);
+        assert_eq!(out[0].text, "hello");
+        assert!(out.iter().any(|c| c.text == "helldivers"));
+    }
+
+    #[test]
+    fn many_oov_accepts_can_beat_hello() {
+        let mut cache = hello_scale_cache("kosk-ngram-oovn");
+        for _ in 0..40 {
+            cache.learn_words(crate::completion::CATCH_ALL_TYPE, &["helldivers".into()]);
+        }
+        let (eng, cfg) = hello_scale_engine(cache);
+        let out = suggest_hel(&eng, &cfg);
+        assert_eq!(out[0].text, "helldivers");
+    }
+
+    #[test]
+    fn in_dict_usage_can_rerank_siblings() {
+        let mut cache = hello_scale_cache("kosk-ngram-sib");
+        for _ in 0..15 {
+            cache.learn_words(crate::completion::CATCH_ALL_TYPE, &["help".into()]);
+        }
+        let (eng, cfg) = hello_scale_engine(cache);
+        let out = suggest_hel(&eng, &cfg);
+        assert_eq!(out[0].text, "help");
     }
 
     #[test]
