@@ -30,9 +30,6 @@ const PAD_AXIS_SPAN: f32 = 2.0;
 /// EMA time constant for pad samples.
 const PAD_SMOOTH_TAU_SECS: f32 = 0.012;
 
-/// Ignore smoothed pad deltas smaller than this (pad units).
-const PAD_DELTA_EPS: f32 = 0.004;
-
 /// Drop pad motion this recent when the thumb lifts.
 const PAD_LIFT_SUPPRESS: Duration = Duration::from_millis(40);
 
@@ -56,6 +53,8 @@ pub struct MoveWindowState {
     last_left_pad: Option<(f32, f32)>,
     last_right_pad: Option<(f32, f32)>,
     pad_moves: VecDeque<(Instant, (f32, f32))>,
+    left_remainder: (f32, f32),
+    right_remainder: (f32, f32),
 }
 
 impl MoveWindowState {
@@ -66,6 +65,8 @@ impl MoveWindowState {
             last_left_pad: None,
             last_right_pad: None,
             pad_moves: VecDeque::new(),
+            left_remainder: (0.0, 0.0),
+            right_remainder: (0.0, 0.0),
         })
     }
 
@@ -219,6 +220,7 @@ impl MoveWindowState {
                 Self::apply_pad_mouse(
                     &mut self.last_left_pad,
                     &mut self.pad_moves,
+                    &mut self.left_remainder,
                     sample,
                     dt,
                     now,
@@ -236,6 +238,7 @@ impl MoveWindowState {
                 Self::apply_pad_mouse(
                     &mut self.last_right_pad,
                     &mut self.pad_moves,
+                    &mut self.right_remainder,
                     sample,
                     dt,
                     now,
@@ -254,10 +257,8 @@ impl MoveWindowState {
         now: Instant,
     ) -> Option<(f32, f32)> {
         let was_pad = self.last_left_pad.is_some() || self.last_right_pad.is_some();
-        self.last_left_pad = None;
-        self.last_right_pad = None;
         if !was_pad {
-            self.pad_moves.clear();
+            self.clear_pad_tracking();
             return None;
         }
         let next = rewind_pad_lift(
@@ -267,7 +268,7 @@ impl MoveWindowState {
             window_size,
             monitor_size,
         );
-        self.pad_moves.clear();
+        self.clear_pad_tracking();
         (next != coords).then_some(next)
     }
 
@@ -275,11 +276,14 @@ impl MoveWindowState {
         self.last_left_pad = None;
         self.last_right_pad = None;
         self.pad_moves.clear();
+        self.left_remainder = (0.0, 0.0);
+        self.right_remainder = (0.0, 0.0);
     }
 
     fn apply_pad_mouse(
         last: &mut Option<(f32, f32)>,
         trail: &mut VecDeque<(Instant, (f32, f32))>,
+        remainder: &mut (f32, f32),
         sample: (f32, f32),
         dt: f32,
         now: Instant,
@@ -289,7 +293,8 @@ impl MoveWindowState {
         let step = filtered_pad_step(*last, sample, dt);
         *last = step.last;
         let d = step.delta?;
-        let (dx, dy) = pad_delta_to_points(d, monitor_size);
+        let points = pad_delta_to_points(d, monitor_size);
+        let (dx, dy) = take_whole_pixels(remainder, points)?;
         push_pad_move(trail, now, (dx, dy));
         Some(clamp_pos(
             (coords.0 + dx, coords.1 + dy),
@@ -316,16 +321,20 @@ fn prompt_row(ui: &mut Ui, family: GlyphFamily, buttons: &[ControllerButton], la
     let gaps = n * PROMPT_ITEM_GAP;
     let row_w = n * GLYPH_SIZE + text_w + gaps;
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = PROMPT_ITEM_GAP;
-        ui.add_space((ui.available_width() - row_w).max(0.0) * 0.5);
-        for button in buttons {
-            controller_glyph::show(ui, family, *button, GLYPH_SIZE);
-        }
-        if outlined_label(ui, label) {
-            clicked = true;
-        }
-    });
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), GLYPH_SIZE),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = PROMPT_ITEM_GAP;
+            ui.add_space((ui.available_width() - row_w).max(0.0) * 0.5);
+            for button in buttons {
+                controller_glyph::show(ui, family, *button, GLYPH_SIZE);
+            }
+            if outlined_label(ui, label) {
+                clicked = true;
+            }
+        },
+    );
     clicked
 }
 
@@ -427,7 +436,7 @@ fn filtered_pad_step(last: Option<(f32, f32)>, sample: (f32, f32), dt: f32) -> P
     };
     let smoothed = lerp_pair(prev, sample, ema_alpha(dt));
     let d = (smoothed.0 - prev.0, smoothed.1 - prev.1);
-    let delta = (analog_magnitude(d) >= PAD_DELTA_EPS).then_some(d);
+    let delta = (d.0 != 0.0 || d.1 != 0.0).then_some(d);
     PadStep {
         delta,
         last: Some(smoothed),
@@ -447,6 +456,16 @@ fn rewind_pad_lift(
         .filter(|(at, _)| *at >= cutoff)
         .fold((0.0, 0.0), |acc, (_, d)| (acc.0 + d.0, acc.1 + d.1));
     clamp_pos((coords.0 - dx, coords.1 - dy), window_size, monitor_size)
+}
+
+fn take_whole_pixels(acc: &mut (f32, f32), delta: (f32, f32)) -> Option<(f32, f32)> {
+    acc.0 += delta.0;
+    acc.1 += delta.1;
+    let ix = acc.0.trunc();
+    let iy = acc.1.trunc();
+    acc.0 -= ix;
+    acc.1 -= iy;
+    (ix != 0.0 || iy != 0.0).then_some((ix, iy))
 }
 
 fn push_pad_move(trail: &mut VecDeque<(Instant, (f32, f32))>, now: Instant, delta: (f32, f32)) {
@@ -633,10 +652,23 @@ mod tests {
     }
 
     #[test]
-    fn epsilon_drops_sub_threshold_delta() {
-        let step = filtered_pad_step(Some((0.0, 0.0)), (0.001, 0.0), 1.0);
-        assert!(step.delta.is_none());
-        assert!(step.last.is_some());
+    fn sub_pixel_step_does_not_move() {
+        let mut acc = (0.0, 0.0);
+        assert!(take_whole_pixels(&mut acc, (0.4, -0.2)).is_none());
+        assert!((acc.0 - 0.4).abs() < 1e-6);
+        assert!((acc.1 + 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tiny_steps_eventually_emit_pixel() {
+        let mut acc = (0.0, 0.0);
+        let mut moved = 0.0;
+        for _ in 0..10 {
+            if let Some((dx, _)) = take_whole_pixels(&mut acc, (0.3, 0.0)) {
+                moved += dx;
+            }
+        }
+        assert!((moved - 3.0).abs() < 1e-6, "{moved}");
     }
 
     #[test]

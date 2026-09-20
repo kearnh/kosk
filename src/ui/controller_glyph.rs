@@ -89,7 +89,8 @@ fn image_uri(family: GlyphFamily, button: ControllerButton) -> String {
 
 pub fn show(ui: &mut Ui, family: GlyphFamily, button: ControllerButton, size: f32) {
     let bytes = svg_bytes(family, button);
-    ui.add(
+    ui.add_sized(
+        Vec2::splat(size),
         Image::from_bytes(image_uri(family, button), bytes)
             .fit_to_exact_size(Vec2::splat(size))
             .bg_fill(egui::Color32::TRANSPARENT),
