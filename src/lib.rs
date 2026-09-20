@@ -4,5 +4,6 @@ pub mod completion;
 pub mod config;
 pub mod controller;
 pub mod debug;
+pub mod platform;
 pub mod state;
 pub mod when;

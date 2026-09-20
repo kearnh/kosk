@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -56,6 +57,14 @@ pub enum AcceptVia {
     #[default]
     Suffix,
     BackspaceReplace,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CurrentWordChip {
+    First,
+    #[default]
+    Last,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -139,6 +148,12 @@ pub struct CompletionConfig {
     pub transpose_neighbors_only: bool,
 
     #[serde(default)]
+    pub current_word_chip: CurrentWordChip,
+
+    #[serde(default)]
+    pub app_types: HashMap<String, CompletionAppTypeConfig>,
+
+    #[serde(default)]
     pub ui: CompletionUiConfig,
 
     #[serde(default)]
@@ -186,6 +201,8 @@ impl Default for CompletionConfig {
             typo_tolerance: true,
             min_fuzzy_len: default_min_fuzzy_len(),
             transpose_neighbors_only: false,
+            current_word_chip: CurrentWordChip::Last,
+            app_types: HashMap::new(),
             ui: CompletionUiConfig::default(),
             text_input: CompletionTextInputConfig::default(),
             keyboard: CompletionKeyboardConfig::default(),
@@ -275,6 +292,9 @@ pub struct CompletionUiConfig {
 
     #[serde(default = "default_disarmed_color")]
     pub disarmed_color: [u8; 4],
+
+    #[serde(default = "default_armed_color")]
+    pub new_word_mark_color: [u8; 4],
 }
 
 impl Default for CompletionUiConfig {
@@ -306,8 +326,18 @@ impl Default for CompletionUiConfig {
             armed_dot_placement: ArmedDotPlacement::default(),
             armed_color: default_armed_color(),
             disarmed_color: default_disarmed_color(),
+            new_word_mark_color: default_armed_color(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+pub struct CompletionAppTypeConfig {
+    #[serde(default)]
+    pub exes: Vec<String>,
+
+    #[serde(default)]
+    pub wordlist: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
@@ -638,5 +668,31 @@ mod tests {
         assert!(parsed.capitalization);
         assert_eq!(parsed.eat_space_before, default_eat_space_before());
         assert_eq!(parsed.space_after, default_space_after());
+        assert_eq!(parsed.current_word_chip, CurrentWordChip::Last);
+        assert!(parsed.app_types.is_empty());
+    }
+
+    #[test]
+    fn current_word_chip_first() {
+        let parsed: CompletionConfig = toml::from_str("current_word_chip = \"first\"\n").unwrap();
+        assert_eq!(parsed.current_word_chip, CurrentWordChip::First);
+    }
+
+    #[test]
+    fn app_types_table() {
+        let parsed: CompletionConfig = toml::from_str(
+            r#"
+[app_types.browser]
+exes = ["firefox.exe", "chrome.exe"]
+wordlist = "data/completion/browser.tsv"
+"#,
+        )
+        .unwrap();
+        let t = parsed.app_types.get("browser").unwrap();
+        assert_eq!(t.exes, vec!["firefox.exe", "chrome.exe"]);
+        assert_eq!(
+            t.wordlist.as_deref(),
+            Some(std::path::Path::new("data/completion/browser.tsv"))
+        );
     }
 }

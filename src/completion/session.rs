@@ -7,11 +7,16 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
-use super::backend::{backend_from_config, Abort, Candidate, CompletionBackend};
+use super::app_type::AppTypeMap;
+use super::backend::{backend_from_config, Abort, Candidate, CompletionBackend, Source};
 use super::context::CompletionContext;
-use super::settings::{CompletionConfig, Preselect};
+use super::settings::{CompletionConfig, CurrentWordChip, Preselect};
 use super::typed_log::{LogEvent, TypedLog};
 use super::user_cache::{resolve_cache_path, UserCache};
+use crate::platform::{ForegroundExe, OsForeground};
+
+#[cfg(test)]
+use crate::platform::FixedForeground;
 
 struct Request {
     gen: u64,
@@ -54,6 +59,10 @@ pub struct Session {
     notify: Arc<dyn Fn() + Send + Sync>,
     cfg: CompletionConfig,
     user: Arc<Mutex<UserCache>>,
+    backend: Arc<dyn CompletionBackend>,
+    types: AppTypeMap,
+    fg: Arc<dyn ForegroundExe>,
+    last_ctx: Option<CompletionContext>,
     neighbors: HashMap<char, Vec<char>>,
     pending_eat_space: bool,
     suggestion_just_accepted: bool,
@@ -64,7 +73,9 @@ impl Session {
         cfg: CompletionConfig,
         config_dir: Option<&std::path::Path>,
         notify: Arc<dyn Fn() + Send + Sync>,
+        fg: Arc<dyn ForegroundExe>,
     ) -> Result<Self> {
+        let types = AppTypeMap::from_config(&cfg.app_types)?;
         let user = Arc::new(Mutex::new(UserCache::load(
             &cfg.user_cache,
             resolve_cache_path(config_dir, &cfg.user_cache.path),
@@ -105,6 +116,10 @@ impl Session {
             notify,
             cfg,
             user,
+            backend,
+            types,
+            fg,
+            last_ctx: None,
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
@@ -117,10 +132,38 @@ impl Session {
         cfg: CompletionConfig,
         notify: Arc<dyn Fn() + Send + Sync>,
     ) -> Self {
+        Self::spawn_for_test_fg(backend, cfg, notify, Arc::new(FixedForeground(None)))
+    }
+
+    #[cfg(test)]
+    pub fn spawn_for_test_fg(
+        backend: Arc<dyn CompletionBackend>,
+        cfg: CompletionConfig,
+        notify: Arc<dyn Fn() + Send + Sync>,
+        fg: Arc<dyn ForegroundExe>,
+    ) -> Self {
         let user = Arc::new(Mutex::new(UserCache::load(
             &cfg.user_cache,
-            std::path::PathBuf::from("target/kosk-session-test-cache.bin"),
+            std::path::PathBuf::from(format!(
+                "target/kosk-session-test-fg-{}-{}.bin",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
         )));
+        Self::spawn_for_test_full(backend, cfg, notify, user, fg)
+    }
+
+    #[cfg(test)]
+    pub fn spawn_for_test_full(
+        backend: Arc<dyn CompletionBackend>,
+        cfg: CompletionConfig,
+        notify: Arc<dyn Fn() + Send + Sync>,
+        user: Arc<Mutex<UserCache>>,
+        fg: Arc<dyn ForegroundExe>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
         let slot = Arc::new((
             Mutex::new(Slot {
@@ -140,6 +183,23 @@ impl Session {
                 move || worker_loop(backend, slot, gen, tx, notify)
             })
             .unwrap();
+        Self::finish_spawn_for_test(backend, cfg, notify, user, slot, gen, join, rx, fg)
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    fn finish_spawn_for_test(
+        backend: Arc<dyn CompletionBackend>,
+        cfg: CompletionConfig,
+        notify: Arc<dyn Fn() + Send + Sync>,
+        user: Arc<Mutex<UserCache>>,
+        slot: Arc<(Mutex<Slot>, Condvar)>,
+        gen: Arc<AtomicU64>,
+        join: JoinHandle<()>,
+        rx: Receiver<Batch>,
+        fg: Arc<dyn ForegroundExe>,
+    ) -> Self {
+        let types = AppTypeMap::from_config(&cfg.app_types).unwrap();
         Self {
             slot,
             gen,
@@ -155,6 +215,10 @@ impl Session {
             notify,
             cfg,
             user,
+            backend,
+            types,
+            fg,
+            last_ctx: None,
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
@@ -261,6 +325,13 @@ impl Session {
             return;
         };
         ctx.neighbors = self.neighbors.clone();
+        ctx.app_type = self.current_app_type();
+        let slots = self.visible_slots().min(self.cfg.max_suggestions.max(1));
+        if !ctx.token.is_empty() && !self.backend.knows_word(&ctx) {
+            ctx.max_results = slots.saturating_sub(1).max(1);
+        } else {
+            ctx.max_results = slots;
+        }
         self.pending_ctx = Some(ctx);
         self.pending_at = Some(Instant::now());
     }
@@ -296,7 +367,7 @@ impl Session {
             .highlight
             .and_then(|i| self.candidates.get(i).map(|c| c.text.clone()));
 
-        self.candidates = candidates;
+        self.candidates = self.with_current_word_chip(candidates);
 
         if let Some(text) = prev {
             if let Some(i) = self.candidates.iter().position(|c| c.text == text) {
@@ -323,8 +394,35 @@ impl Session {
         let mut s = lock.lock().unwrap();
         let gen = self.gen.fetch_add(1, Ordering::Relaxed) + 1;
         self.current_gen = gen;
+        self.last_ctx = Some(ctx.clone());
         s.pending = Some(Request { gen, ctx });
         cv.notify_one();
+    }
+
+    fn current_app_type(&self) -> String {
+        self.types.resolve(self.fg.basename().as_deref())
+    }
+
+    fn with_current_word_chip(&self, mut cands: Vec<Candidate>) -> Vec<Candidate> {
+        let Some(ctx) = self.last_ctx.as_ref() else {
+            return cands;
+        };
+        if ctx.token.is_empty() || self.backend.knows_word(ctx) {
+            return cands;
+        }
+        let n = self.visible_slots().min(self.cfg.max_suggestions.max(1));
+        cands.truncate(n.saturating_sub(1));
+        let chip = Candidate {
+            text: ctx.token.clone(),
+            score: 0.0,
+            source: Source::CurrentWord,
+            kind: super::backend::MatchKind::ExactPrefix,
+        };
+        match self.cfg.current_word_chip {
+            CurrentWordChip::First => cands.insert(0, chip),
+            CurrentWordChip::Last => cands.push(chip),
+        }
+        cands
     }
 
     pub fn cycle(&mut self, forward: bool) {
@@ -375,7 +473,10 @@ impl Session {
             .map(|w| super::context::normalize_word(w, self.cfg.normalize_nfc))
             .filter(|w| !w.is_empty())
             .collect();
-        self.user.lock().unwrap().learn_words(&lower);
+        self.user
+            .lock()
+            .unwrap()
+            .learn_words(&self.current_app_type(), &lower);
     }
 
     pub fn tick(&mut self) {
@@ -391,9 +492,33 @@ impl Session {
             Some(i) => self.accept_index(i).cloned(),
             None => self.highlighted().cloned(),
         }?;
-        let ctx =
+        let mut ctx =
             CompletionContext::from_buffer(self.typed_text(), self.typed_text().len(), &self.cfg)?;
+        ctx.app_type = self.current_app_type();
         use super::settings::AcceptVia;
+
+        if cand.source == Source::CurrentWord {
+            let mut inject = String::new();
+            if self.cfg.insert_space_on_accept {
+                inject.push(' ');
+            }
+            let mut words = ctx.prev_words.clone();
+            words.push(ctx.token.clone());
+            if self.cfg.learn_on_accept {
+                self.learn(&words);
+            }
+            self.set_last_injected(Some(inject.clone()));
+            self.clear_highlight();
+            if inject.ends_with(' ') {
+                self.arm_eat_accept_space();
+            }
+            return Some(AcceptOutcome {
+                inject,
+                via: AcceptVia::Suffix,
+                token_char_len: ctx.token.chars().count(),
+            });
+        }
+
         let prefix = super::apply::is_case_insensitive_prefix(&ctx.token, &cand.text);
         let via = if prefix {
             self.cfg.keyboard.accept_via
@@ -519,7 +644,12 @@ fn rebuild_locked(g: &mut Option<Session>) -> Result<()> {
         return Ok(());
     }
     let dir = crate::config::config_dir();
-    let session = Session::spawn(cfg.completion.clone(), dir.as_deref(), current_notify())?;
+    let session = Session::spawn(
+        cfg.completion.clone(),
+        dir.as_deref(),
+        current_notify(),
+        Arc::new(OsForeground),
+    )?;
     *g = Some(session);
     Ok(())
 }
@@ -568,6 +698,10 @@ mod tests {
             }
             self.inner.suggest(ctx, abort)
         }
+
+        fn knows_word(&self, ctx: &CompletionContext) -> bool {
+            self.inner.knows_word(ctx)
+        }
     }
 
     fn cand(text: &str) -> Candidate {
@@ -580,9 +714,25 @@ mod tests {
     }
 
     fn session_with(cfg: CompletionConfig) -> Session {
-        let dict = DictionaryEngine::embedded_demo(&cfg);
+        session_with_fg(cfg, Arc::new(FixedForeground(None)))
+    }
+
+    fn session_with_fg(cfg: CompletionConfig, fg: Arc<dyn ForegroundExe>) -> Session {
+        let user = Arc::new(Mutex::new(UserCache::load(
+            &cfg.user_cache,
+            std::path::PathBuf::from(format!(
+                "target/kosk-session-test-{}-{}.bin",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )),
+        )));
+        let mut dict = DictionaryEngine::embedded_demo(&cfg);
+        dict.set_overlay(std::collections::HashMap::new(), Some(Arc::clone(&user)));
         let notify = Arc::new(|| {}) as Arc<dyn Fn() + Send + Sync>;
-        Session::spawn_for_test(Arc::new(dict), cfg, notify)
+        Session::spawn_for_test_full(Arc::new(dict), cfg, notify, user, fg)
     }
 
     #[test]
@@ -809,5 +959,159 @@ mod tests {
         assert!(s.suggestion_just_accepted());
         s.note_log(LogEvent::Char('a'), "");
         assert!(!s.suggestion_just_accepted());
+    }
+
+    fn ctx_token(s: &Session, text: &str) -> CompletionContext {
+        let mut ctx = CompletionContext::from_buffer(text, text.len(), s.cfg()).unwrap();
+        ctx.app_type = s.current_app_type();
+        ctx
+    }
+
+    fn apply_token(s: &mut Session, text: &str, engine: Vec<Candidate>) {
+        s.last_ctx = Some(ctx_token(s, text));
+        s.apply_candidates(engine);
+    }
+
+    fn type_token(s: &mut Session, text: &str) {
+        for c in text.chars() {
+            s.note_log(LogEvent::Char(c), "");
+        }
+    }
+
+    #[test]
+    fn current_word_chip_last_when_unknown() {
+        let mut s = session_with(CompletionConfig::default());
+        apply_token(&mut s, "xyzzy", vec![cand("hello"), cand("help")]);
+        assert_eq!(s.candidates.len(), 3);
+        assert_eq!(s.candidates[2].text, "xyzzy");
+        assert_eq!(s.candidates[2].source, Source::CurrentWord);
+        assert_eq!(s.candidates[0].text, "hello");
+    }
+
+    #[test]
+    fn current_word_chip_first() {
+        let cfg = CompletionConfig {
+            current_word_chip: CurrentWordChip::First,
+            ..CompletionConfig::default()
+        };
+        let mut s = session_with(cfg);
+        apply_token(&mut s, "xyzzy", vec![cand("hello"), cand("help")]);
+        assert_eq!(s.candidates[0].text, "xyzzy");
+        assert_eq!(s.candidates[0].source, Source::CurrentWord);
+        assert_eq!(s.candidates[1].text, "hello");
+    }
+
+    #[test]
+    fn current_word_chip_hidden_when_known_or_empty() {
+        let mut s = session_with(CompletionConfig::default());
+        apply_token(&mut s, "hello", vec![cand("help")]);
+        assert!(!s.candidates.iter().any(|c| c.source == Source::CurrentWord));
+        assert!(!s.candidates.iter().any(|c| c.text == "hello"));
+        apply_token(&mut s, "the ", vec![cand("cat")]);
+        assert!(!s.candidates.iter().any(|c| c.source == Source::CurrentWord));
+    }
+
+    #[test]
+    fn current_word_chip_isolated_by_type() {
+        let mut extras = std::collections::HashMap::new();
+        extras.insert(
+            "programming".into(),
+            DictionaryEngine::from_wordlist_text("jujutsu\t10\n", &CompletionConfig::default()),
+        );
+        let mut dict = DictionaryEngine::embedded_demo(&CompletionConfig::default());
+        dict.set_overlay(extras, None);
+
+        let mut cfg = CompletionConfig::default();
+        cfg.app_types.insert(
+            "browser".into(),
+            crate::completion::settings::CompletionAppTypeConfig {
+                exes: vec!["firefox.exe".into()],
+                wordlist: None,
+            },
+        );
+        cfg.app_types.insert(
+            "programming".into(),
+            crate::completion::settings::CompletionAppTypeConfig {
+                exes: vec!["code.exe".into()],
+                wordlist: None,
+            },
+        );
+        let notify = Arc::new(|| {}) as Arc<dyn Fn() + Send + Sync>;
+        let backend = Arc::new(dict);
+
+        let mut browser = Session::spawn_for_test_fg(
+            Arc::clone(&backend) as Arc<dyn CompletionBackend>,
+            cfg.clone(),
+            Arc::clone(&notify),
+            Arc::new(FixedForeground(Some("firefox.exe".into()))),
+        );
+        apply_token(&mut browser, "jujutsu", vec![cand("hello")]);
+        assert_eq!(
+            browser.candidates.last().unwrap().source,
+            Source::CurrentWord
+        );
+
+        let mut prog = Session::spawn_for_test_fg(
+            backend,
+            cfg,
+            notify,
+            Arc::new(FixedForeground(Some("code.exe".into()))),
+        );
+        apply_token(&mut prog, "jujutsu", vec![cand("hello")]);
+        assert!(!prog
+            .candidates
+            .iter()
+            .any(|c| c.source == Source::CurrentWord));
+    }
+
+    #[test]
+    fn current_word_accept_space_and_learn() {
+        use crate::completion::settings::AcceptVia;
+        use crate::completion::CATCH_ALL_TYPE;
+
+        let mut s = session_with(CompletionConfig::default());
+        type_token(&mut s, "xyzzy");
+        s.last_ctx = Some(ctx_token(&s, "xyzzy"));
+        s.candidates = vec![Candidate {
+            text: "xyzzy".into(),
+            score: 0.0,
+            source: Source::CurrentWord,
+            kind: crate::completion::MatchKind::ExactPrefix,
+        }];
+        s.highlight = Some(0);
+        let out = s.take_accept(None).unwrap();
+        assert_eq!(out.inject, " ");
+        assert_eq!(out.via, AcceptVia::Suffix);
+        assert!(s.user.lock().unwrap().has_unigram(CATCH_ALL_TYPE, "xyzzy"));
+
+        apply_token(&mut s, "xyzzy", vec![cand("hello")]);
+        assert!(!s.candidates.iter().any(|c| c.source == Source::CurrentWord));
+    }
+
+    #[test]
+    fn current_word_accept_learns_named_type() {
+        let mut cfg = CompletionConfig::default();
+        cfg.app_types.insert(
+            "browser".into(),
+            crate::completion::settings::CompletionAppTypeConfig {
+                exes: vec!["firefox.exe".into()],
+                wordlist: None,
+            },
+        );
+        let mut s = session_with_fg(cfg, Arc::new(FixedForeground(Some("Firefox.exe".into()))));
+        type_token(&mut s, "xyzzy");
+        s.last_ctx = Some(ctx_token(&s, "xyzzy"));
+        s.candidates = vec![Candidate {
+            text: "xyzzy".into(),
+            score: 0.0,
+            source: Source::CurrentWord,
+            kind: crate::completion::MatchKind::ExactPrefix,
+        }];
+        s.highlight = Some(0);
+        s.take_accept(None).unwrap();
+        let g = s.user.lock().unwrap();
+        assert!(g.has_unigram("browser", "xyzzy"));
+        assert!(!g.has_unigram(crate::completion::CATCH_ALL_TYPE, "xyzzy"));
+        assert!(!g.has_unigram("programming", "xyzzy"));
     }
 }

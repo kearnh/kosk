@@ -850,6 +850,9 @@ fn load_config() -> Result<Vec<PathBuf>> {
         crate::controller::record::validate_record_template(template).context("record_file")?;
     }
 
+    crate::completion::validate_app_types(&new_config.completion.app_types)
+        .context("completion.app_types")?;
+
     if new_config.preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay)
         && cli_replay_file().is_none()
     {

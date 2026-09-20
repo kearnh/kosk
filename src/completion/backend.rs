@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::context::CompletionContext;
+use super::dictionary::DictionaryEngine;
 use super::settings::{CompletionBackendKind, CompletionConfig};
 use super::user_cache::UserCache;
 
@@ -13,6 +14,7 @@ pub enum Source {
     Ngram,
     UserCache,
     Dictionary,
+    CurrentWord,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,6 +47,8 @@ impl Abort<'_> {
 
 pub trait CompletionBackend: Send + Sync {
     fn suggest(&self, ctx: &CompletionContext, abort: &Abort<'_>) -> Option<Vec<Candidate>>;
+
+    fn knows_word(&self, ctx: &CompletionContext) -> bool;
 }
 
 pub fn backend_from_config(
@@ -85,18 +89,26 @@ fn try_backend(
     match kind {
         CompletionBackendKind::Dictionary => {
             let path = resolve(config_dir, &cfg.dictionary.wordlist);
-            let engine = super::dictionary::DictionaryEngine::from_path_or_embedded(&path, cfg)?;
+            let mut engine =
+                super::dictionary::DictionaryEngine::from_path_or_embedded(&path, cfg)?;
+            engine.set_overlay(load_type_wordlists(cfg, config_dir), Some(user));
             Ok(Arc::new(engine))
         }
         CompletionBackendKind::Ngram => {
             let dir = resolve(config_dir, &cfg.ngram.model_dir);
+            let extras = load_type_wordlists(cfg, config_dir);
             match super::ngram::NgramEngine::load(&dir, cfg, Arc::clone(&user)) {
-                Ok(eng) => Ok(Arc::new(eng)),
+                Ok(mut eng) => {
+                    eng.set_overlay(extras);
+                    Ok(Arc::new(eng))
+                }
                 Err(e) => {
                     let wordlist = resolve(config_dir, &cfg.dictionary.wordlist);
                     let dict =
                         super::dictionary::DictionaryEngine::from_path_or_embedded(&wordlist, cfg)?;
-                    let wrapped = super::ngram::NgramEngine::from_dictionary(dict, cfg, Some(user));
+                    let mut wrapped =
+                        super::ngram::NgramEngine::from_dictionary(dict, cfg, Some(user));
+                    wrapped.set_overlay(extras);
                     eprintln!(
                         "completion: ngram model at {} not loaded ({e}); unigram-only",
                         dir.display()
@@ -116,6 +128,38 @@ fn resolve(dir: Option<&std::path::Path>, path: &std::path::Path) -> std::path::
     } else {
         path.to_path_buf()
     }
+}
+
+pub fn load_type_wordlists(
+    cfg: &CompletionConfig,
+    config_dir: Option<&std::path::Path>,
+) -> std::collections::HashMap<String, DictionaryEngine> {
+    let mut extras = std::collections::HashMap::new();
+    for (name, t) in &cfg.app_types {
+        let Some(rel) = t.wordlist.as_ref() else {
+            continue;
+        };
+        let path = resolve(config_dir, rel);
+        if !path.exists() {
+            eprintln!(
+                "completion: app type '{name}' wordlist {} missing",
+                path.display()
+            );
+            continue;
+        }
+        match DictionaryEngine::from_path_or_embedded(&path, cfg) {
+            Ok(eng) => {
+                extras.insert(name.clone(), eng);
+            }
+            Err(e) => {
+                eprintln!(
+                    "completion: app type '{name}' wordlist {} failed ({e})",
+                    path.display()
+                );
+            }
+        }
+    }
+    extras
 }
 
 #[cfg(test)]

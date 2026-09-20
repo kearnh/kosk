@@ -5,12 +5,27 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use super::app_type::CATCH_ALL_TYPE;
 use super::settings::CompletionUserCacheConfig;
 
+const PERSIST_VERSION: u32 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Persist {
+struct PersistV1 {
     unigrams: Vec<(String, f32, u64)>,
     bigrams: Vec<(String, String, f32, u64)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistBucket {
+    unigrams: Vec<(String, f32, u64)>,
+    bigrams: Vec<(String, String, f32, u64)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistV2 {
+    version: u32,
+    by_type: Vec<(String, PersistBucket)>,
 }
 
 #[derive(Debug, Clone)]
@@ -19,9 +34,14 @@ struct Timed {
     last: Instant,
 }
 
-pub struct UserCache {
+#[derive(Debug, Clone, Default)]
+struct TypeMaps {
     unigrams: HashMap<String, Timed>,
     bigrams: HashMap<(String, String), Timed>,
+}
+
+pub struct UserCache {
+    by_type: HashMap<String, TypeMaps>,
     cfg: CompletionUserCacheConfig,
     path: PathBuf,
     last_persist: Instant,
@@ -30,8 +50,7 @@ pub struct UserCache {
 impl UserCache {
     pub fn load(cfg: &CompletionUserCacheConfig, path: PathBuf) -> Self {
         let mut cache = Self {
-            unigrams: HashMap::new(),
-            bigrams: HashMap::new(),
+            by_type: HashMap::new(),
             cfg: cfg.clone(),
             path,
             last_persist: Instant::now(),
@@ -48,10 +67,31 @@ impl UserCache {
         }
         let bytes =
             std::fs::read(&self.path).with_context(|| format!("read {}", self.path.display()))?;
-        let persist: Persist = postcard::from_bytes(&bytes).context("parse user cache")?;
         let now = Instant::now();
-        for (w, c, unix) in persist.unigrams {
-            self.unigrams.insert(
+        if let Ok(v2) = postcard::from_bytes::<PersistV2>(&bytes) {
+            if v2.version == PERSIST_VERSION {
+                for (ty, bucket) in v2.by_type {
+                    self.insert_bucket(&ty, bucket, now);
+                }
+                return Ok(());
+            }
+        }
+        let v1: PersistV1 = postcard::from_bytes(&bytes).context("parse user cache")?;
+        self.insert_bucket(
+            CATCH_ALL_TYPE,
+            PersistBucket {
+                unigrams: v1.unigrams,
+                bigrams: v1.bigrams,
+            },
+            now,
+        );
+        Ok(())
+    }
+
+    fn insert_bucket(&mut self, ty: &str, bucket: PersistBucket, now: Instant) {
+        let maps = self.by_type.entry(ty.to_string()).or_default();
+        for (w, c, unix) in bucket.unigrams {
+            maps.unigrams.insert(
                 w,
                 Timed {
                     count: c,
@@ -59,8 +99,8 @@ impl UserCache {
                 },
             );
         }
-        for (a, b, c, unix) in persist.bigrams {
-            self.bigrams.insert(
+        for (a, b, c, unix) in bucket.bigrams {
+            maps.bigrams.insert(
                 (a, b),
                 Timed {
                     count: c,
@@ -68,38 +108,50 @@ impl UserCache {
                 },
             );
         }
-        Ok(())
     }
 
-    pub fn learn_words(&mut self, words: &[String]) {
+    fn maps_mut(&mut self, ty: &str) -> &mut TypeMaps {
+        self.by_type.entry(ty.to_string()).or_default()
+    }
+
+    fn maps(&self, ty: &str) -> Option<&TypeMaps> {
+        self.by_type.get(ty)
+    }
+
+    pub fn learn_words(&mut self, ty: &str, words: &[String]) {
         if !self.cfg.enabled || words.is_empty() {
             return;
         }
         for w in words {
-            self.bump_uni(w);
+            self.bump_uni(ty, w);
         }
         for pair in words.windows(2) {
-            self.bump_bi(&pair[0], &pair[1]);
+            self.bump_bi(ty, &pair[0], &pair[1]);
         }
-        self.trim();
+        self.trim(ty);
         self.maybe_persist();
     }
 
-    fn bump_uni(&mut self, w: &str) {
+    fn bump_uni(&mut self, ty: &str, w: &str) {
         let now = Instant::now();
         let tau = self.cfg.decay_tau_hours;
-        let e = self.unigrams.entry(w.to_string()).or_insert(Timed {
-            count: 0.0,
-            last: now,
-        });
+        let e = self
+            .maps_mut(ty)
+            .unigrams
+            .entry(w.to_string())
+            .or_insert(Timed {
+                count: 0.0,
+                last: now,
+            });
         e.count = decay(e.count, e.last, tau) + 1.0;
         e.last = now;
     }
 
-    fn bump_bi(&mut self, a: &str, b: &str) {
+    fn bump_bi(&mut self, ty: &str, a: &str, b: &str) {
         let now = Instant::now();
         let tau = self.cfg.decay_tau_hours;
         let e = self
+            .maps_mut(ty)
             .bigrams
             .entry((a.to_string(), b.to_string()))
             .or_insert(Timed {
@@ -114,22 +166,29 @@ impl UserCache {
         decay(count, last, self.cfg.decay_tau_hours)
     }
 
-    pub fn unigram(&self, w: &str) -> f32 {
-        self.unigrams
-            .get(w)
+    pub fn has_unigram(&self, ty: &str, w: &str) -> bool {
+        self.maps(ty).is_some_and(|m| m.unigrams.contains_key(w))
+    }
+
+    pub fn unigram(&self, ty: &str, w: &str) -> f32 {
+        self.maps(ty)
+            .and_then(|m| m.unigrams.get(w))
             .map(|t| self.decay(t.count, t.last))
             .unwrap_or(0.0)
     }
 
-    pub fn bigram(&self, a: &str, b: &str) -> f32 {
-        self.bigrams
-            .get(&(a.to_string(), b.to_string()))
+    pub fn bigram(&self, ty: &str, a: &str, b: &str) -> f32 {
+        self.maps(ty)
+            .and_then(|m| m.bigrams.get(&(a.to_string(), b.to_string())))
             .map(|t| self.decay(t.count, t.last))
             .unwrap_or(0.0)
     }
 
-    pub fn continuations(&self, prev: &str) -> Vec<(String, f32)> {
-        let mut out: Vec<(String, f32)> = self
+    pub fn continuations(&self, ty: &str, prev: &str) -> Vec<(String, f32)> {
+        let Some(maps) = self.maps(ty) else {
+            return Vec::new();
+        };
+        let mut out: Vec<(String, f32)> = maps
             .bigrams
             .iter()
             .filter(|((a, _), _)| a == prev)
@@ -140,9 +199,29 @@ impl UserCache {
         out
     }
 
-    fn trim(&mut self) {
-        trim_map(&mut self.unigrams, self.cfg.max_unigrams);
-        trim_map(&mut self.bigrams, self.cfg.max_bigrams);
+    pub fn prefix_unigrams(&self, ty: &str, prefix: &str) -> Vec<(String, f32)> {
+        let Some(maps) = self.maps(ty) else {
+            return Vec::new();
+        };
+        let mut out: Vec<(String, f32)> = maps
+            .unigrams
+            .iter()
+            .filter(|(w, _)| w.starts_with(prefix) && w.as_str() != prefix)
+            .map(|(w, t)| (w.clone(), self.decay(t.count, t.last)))
+            .filter(|(_, c)| *c > 0.0)
+            .collect();
+        out.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
+    }
+
+    fn trim(&mut self, ty: &str) {
+        let max_u = self.cfg.max_unigrams;
+        let max_b = self.cfg.max_bigrams;
+        let Some(maps) = self.by_type.get_mut(ty) else {
+            return;
+        };
+        trim_map(&mut maps.unigrams, max_u);
+        trim_map(&mut maps.bigrams, max_b);
     }
 
     fn maybe_persist(&mut self) {
@@ -160,24 +239,37 @@ impl UserCache {
             std::fs::create_dir_all(parent).ok();
         }
         let now = Instant::now();
-        let persist = Persist {
-            unigrams: self
-                .unigrams
-                .iter()
-                .map(|(w, t)| (w.clone(), t.count, unix_from_instant(t.last, now)))
-                .collect(),
-            bigrams: self
-                .bigrams
-                .iter()
-                .map(|((a, b), t)| {
-                    (
-                        a.clone(),
-                        b.clone(),
-                        t.count,
-                        unix_from_instant(t.last, now),
-                    )
-                })
-                .collect(),
+        let types = self
+            .by_type
+            .iter()
+            .map(|(ty, maps)| {
+                (
+                    ty.clone(),
+                    PersistBucket {
+                        unigrams: maps
+                            .unigrams
+                            .iter()
+                            .map(|(w, t)| (w.clone(), t.count, unix_from_instant(t.last, now)))
+                            .collect(),
+                        bigrams: maps
+                            .bigrams
+                            .iter()
+                            .map(|((a, b), t)| {
+                                (
+                                    a.clone(),
+                                    b.clone(),
+                                    t.count,
+                                    unix_from_instant(t.last, now),
+                                )
+                            })
+                            .collect(),
+                    },
+                )
+            })
+            .collect();
+        let persist = PersistV2 {
+            version: PERSIST_VERSION,
+            by_type: types,
         };
         let bytes = postcard::to_stdvec(&persist).context("serialize user cache")?;
         let tmp = self.path.with_extension("bin.tmp");
@@ -189,8 +281,11 @@ impl UserCache {
 }
 
 fn decay(count: f32, last: Instant, tau_hours: f32) -> f32 {
+    decay_amount(count, last.elapsed(), tau_hours)
+}
+
+fn decay_amount(count: f32, dt: Duration, tau_hours: f32) -> f32 {
     let tau = Duration::from_secs_f32(tau_hours.max(0.01) * 3600.0);
-    let dt = last.elapsed();
     let steps = dt.as_secs_f32() / tau.as_secs_f32();
     count * 0.5f32.powf(steps)
 }
@@ -242,25 +337,94 @@ mod tests {
     use super::*;
     use crate::completion::settings::CompletionUserCacheConfig;
 
+    fn empty_cache(name: &str) -> UserCache {
+        let cfg = CompletionUserCacheConfig::default();
+        let mut c = UserCache::load(&cfg, PathBuf::from(format!("target/{name}")));
+        c.by_type.clear();
+        c
+    }
+
     #[test]
     fn learn_boosts() {
-        let cfg = CompletionUserCacheConfig::default();
-        let mut c = UserCache::load(&cfg, PathBuf::from("target/kosk-test-cache.bin"));
-        c.unigrams.clear();
-        c.learn_words(&["foo".into(), "bar".into()]);
-        assert!(c.unigram("foo") > 0.0);
-        assert!(c.bigram("foo", "bar") > 0.0);
+        let mut c = empty_cache("kosk-test-cache.bin");
+        c.learn_words(CATCH_ALL_TYPE, &["foo".into(), "bar".into()]);
+        assert!(c.unigram(CATCH_ALL_TYPE, "foo") > 0.0);
+        assert!(c.bigram(CATCH_ALL_TYPE, "foo", "bar") > 0.0);
     }
 
     #[test]
     fn continuations_lists_learned_pair() {
-        let cfg = CompletionUserCacheConfig::default();
-        let mut c = UserCache::load(&cfg, PathBuf::from("target/kosk-test-cache-cont.bin"));
-        c.unigrams.clear();
-        c.bigrams.clear();
-        c.learn_words(&["cat".into(), "sat".into()]);
-        let next = c.continuations("cat");
+        let mut c = empty_cache("kosk-test-cache-cont.bin");
+        c.learn_words(CATCH_ALL_TYPE, &["cat".into(), "sat".into()]);
+        let next = c.continuations(CATCH_ALL_TYPE, "cat");
         assert_eq!(next[0].0, "sat");
-        assert!(c.continuations("the").is_empty());
+        assert!(c.continuations(CATCH_ALL_TYPE, "the").is_empty());
+    }
+
+    #[test]
+    fn types_are_isolated() {
+        let mut c = empty_cache("kosk-test-cache-iso.bin");
+        c.learn_words("browser", &["tab".into()]);
+        assert!(c.unigram("browser", "tab") > 0.0);
+        assert_eq!(c.unigram("programming", "tab"), 0.0);
+        assert_eq!(c.unigram(CATCH_ALL_TYPE, "tab"), 0.0);
+        assert!(!c.has_unigram("programming", "tab"));
+        assert!(c.has_unigram("browser", "tab"));
+    }
+
+    #[test]
+    fn prefix_unigrams_skips_identity() {
+        let mut c = empty_cache("kosk-test-cache-pref.bin");
+        c.learn_words("programming", &["jujutsu".into()]);
+        let hits = c.prefix_unigrams("programming", "juju");
+        assert_eq!(hits[0].0, "jujutsu");
+        assert!(c.prefix_unigrams("programming", "jujutsu").is_empty());
+        assert!(c.prefix_unigrams("browser", "juju").is_empty());
+    }
+
+    #[test]
+    fn persist_round_trip_and_v1_migrate() {
+        let path = std::env::temp_dir().join(format!(
+            "kosk-cache-rt-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        {
+            let mut c = UserCache::load(&CompletionUserCacheConfig::default(), path.clone());
+            c.by_type.clear();
+            c.learn_words("browser", &["hello".into()]);
+            c.persist().unwrap();
+        }
+        let c = UserCache::load(&CompletionUserCacheConfig::default(), path.clone());
+        assert!(c.unigram("browser", "hello") > 0.0);
+        let _ = std::fs::remove_file(&path);
+
+        let v1 = PersistV1 {
+            unigrams: vec![("old".into(), 4.0, 0)],
+            bigrams: vec![],
+        };
+        let bytes = postcard::to_stdvec(&v1).unwrap();
+        let v1_path = std::env::temp_dir().join(format!(
+            "kosk-cache-v1-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&v1_path, bytes).unwrap();
+        let c = UserCache::load(&CompletionUserCacheConfig::default(), v1_path.clone());
+        assert!(c.has_unigram(CATCH_ALL_TYPE, "old"));
+        let _ = std::fs::remove_file(&v1_path);
+    }
+
+    #[test]
+    fn decay_half_life() {
+        let hour = Duration::from_secs(3600);
+        assert!((decay_amount(8.0, hour, 1.0) - 4.0).abs() < 1e-5);
+        assert!((decay_amount(8.0, Duration::ZERO, 2.0) - 8.0).abs() < 1e-5);
     }
 }

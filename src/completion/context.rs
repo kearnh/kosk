@@ -4,6 +4,7 @@ use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::app_type::CATCH_ALL_TYPE;
 use super::settings::CompletionConfig;
 
 /// Split `text` at `cursor_byte`. Returns `None` if `cursor_byte` is not on a UTF-8 scalar boundary.
@@ -63,6 +64,7 @@ pub struct CompletionContext {
     pub max_results: usize,
     pub capitalize_sentence: bool,
     pub neighbors: HashMap<char, Vec<char>>,
+    pub app_type: String,
 }
 
 impl CompletionContext {
@@ -96,6 +98,7 @@ impl CompletionContext {
             max_results: cfg.max_suggestions.max(1),
             capitalize_sentence,
             neighbors: HashMap::new(),
+            app_type: CATCH_ALL_TYPE.to_string(),
         })
     }
 }

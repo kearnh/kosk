@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/kosk-mcp"]
+members = [".", "crates/kosk-mcp", "crates/wordlist-convert"]
 resolver = "2"
 
 [package]

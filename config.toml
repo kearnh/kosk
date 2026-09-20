@@ -131,6 +131,8 @@ highlight_wraps = true
 learn_on_accept = true
 # Mix a submitted line (TextInput) or Enter (Keyboard) into the user cache.
 learn_on_submit = true
+# first | last. Unknown typed token chip; accept adds a space and learns it.
+current_word_chip = "last"
 # Token letters: unicode alphanumeric vs ASCII only.
 unicode_letters = true
 # Extra characters that count as inside a word (apostrophe, underscore).
@@ -190,6 +192,18 @@ armed_dot_radius = 4.0
 armed_dot_placement = "chips_leading"
 armed_color = [50, 200, 90, 255]
 disarmed_color = [128, 128, 128, 255]
+# + before a current-word chip (unknown token).
+new_word_mark_color = [50, 200, 90, 255]
+
+# App types: free names, exclusive exe basenames, optional wordlist TSV.
+# Processes not listed use an implicit catch-all (do not declare a type named *).
+# [completion.app_types.browser]
+# exes = ["firefox.exe", "chrome.exe"]
+# wordlist = "data/completion/browser.tsv"
+#
+# [completion.app_types.programming]
+# exes = ["code.exe"]
+# wordlist = "data/completion/programming.tsv"
 
 [completion.text_input]
 # Reserved: show the highlighted chip in the field while cycling. Unused.

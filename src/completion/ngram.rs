@@ -100,6 +100,7 @@ pub struct NgramEngine {
     lambda_exact: f32,
     lambda_typo: f32,
     user: Option<Arc<Mutex<UserCache>>>,
+    extras: HashMap<String, DictionaryEngine>,
     nfc: bool,
     abort_every: usize,
     suggest_next_word: bool,
@@ -127,6 +128,7 @@ impl NgramEngine {
             lambda_exact: cfg.ngram.lambda_exact,
             lambda_typo: cfg.ngram.lambda_typo,
             user,
+            extras: HashMap::new(),
             nfc: cfg.normalize_nfc,
             abort_every: cfg.ngram.abort_check_every.max(1),
             suggest_next_word: cfg.suggest_next_word,
@@ -197,10 +199,19 @@ impl NgramEngine {
             lambda_exact: cfg.ngram.lambda_exact,
             lambda_typo: cfg.ngram.lambda_typo,
             user: Some(user),
+            extras: HashMap::new(),
             nfc: cfg.normalize_nfc,
             abort_every: cfg.ngram.abort_check_every.max(1),
             suggest_next_word: cfg.suggest_next_word,
         })
+    }
+
+    pub fn set_overlay(&mut self, extras: HashMap<String, DictionaryEngine>) {
+        self.extras = extras;
+    }
+
+    fn extra(&self, ty: &str) -> Option<&DictionaryEngine> {
+        self.extras.get(ty)
     }
 
     fn id(&self, w: &str) -> Option<u32> {
@@ -246,6 +257,7 @@ impl NgramEngine {
     fn blend(&self, ctx: &CompletionContext, lower: &str) -> f32 {
         let ids = self.prev_ids(ctx);
         let wid = self.id(lower);
+        let in_pack = wid.is_some();
         let mut score = 0.0;
         if let Some(w) = wid {
             let tri = if ids.len() >= 2 {
@@ -267,19 +279,38 @@ impl NgramEngine {
             }
             score += self.lambda_uni * uni.ln();
         }
-        if let Some(cache) = &self.user {
+
+        let extra_c = self
+            .extra(&ctx.app_type)
+            .map(|e| e.count_lower(lower))
+            .unwrap_or(0) as f32;
+        let (u, b) = if let Some(cache) = &self.user {
             let g = cache.lock().unwrap();
-            let u = g.unigram(lower);
+            let u = g.unigram(&ctx.app_type, lower);
             let b = if let Some(prev) = ctx.prev_words.last() {
-                g.bigram(prev, lower)
+                g.bigram(&ctx.app_type, prev, lower)
             } else {
                 0.0
             };
+            (u, b)
+        } else {
+            (0.0, 0.0)
+        };
+
+        if in_pack {
             if u > 0.0 {
                 score += self.lambda_user * u.ln();
             }
             if b > 0.0 {
                 score += self.lambda_user * b.ln();
+            }
+        } else {
+            let stand_in = if u > 0.0 { u } else { extra_c };
+            if stand_in > 0.0 {
+                score += self.lambda_user * (1.0 + stand_in).ln();
+            }
+            if b > 0.0 {
+                score += self.lambda_user * (1.0 + b).ln();
             }
         }
         if normalize_word(&ctx.token, self.nfc) == lower {
@@ -356,7 +387,7 @@ impl NgramEngine {
 
         if let Some(prev) = ctx.prev_words.last() {
             if let Some(cache) = &self.user {
-                let cont = cache.lock().unwrap().continuations(prev);
+                let cont = cache.lock().unwrap().continuations(&ctx.app_type, prev);
                 for (word, _) in cont {
                     if abort.stale() {
                         return None;
@@ -398,6 +429,42 @@ impl CompletionBackend for NgramEngine {
         }
 
         let mut cands = self.dict.suggest(ctx, abort)?;
+        let mut seen: HashSet<String> = cands
+            .iter()
+            .map(|c| normalize_word(&c.text, self.nfc))
+            .collect();
+
+        if let Some(extra) = self.extra(&ctx.app_type) {
+            for c in extra.suggest(ctx, abort)? {
+                let lower = normalize_word(&c.text, self.nfc);
+                if !seen.insert(lower) {
+                    continue;
+                }
+                cands.push(c);
+            }
+        }
+
+        if let Some(cache) = &self.user {
+            let prefixes = cache
+                .lock()
+                .unwrap()
+                .prefix_unigrams(&ctx.app_type, &token_lower);
+            for (word, _) in prefixes {
+                if abort.stale() {
+                    return None;
+                }
+                if !seen.insert(word.clone()) {
+                    continue;
+                }
+                cands.push(Candidate {
+                    text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
+                    score: 0.0,
+                    source: Source::UserCache,
+                    kind: MatchKind::ExactPrefix,
+                });
+            }
+        }
+
         for c in &mut cands {
             if abort.stale() {
                 return None;
@@ -414,6 +481,25 @@ impl CompletionBackend for NgramEngine {
                 .then_with(|| a.text.cmp(&b.text))
         });
         Some(mix_candidate_slots(cands, ctx.max_results.max(1)))
+    }
+
+    fn knows_word(&self, ctx: &CompletionContext) -> bool {
+        let lower = normalize_word(&ctx.token, self.nfc);
+        if lower.is_empty() {
+            return false;
+        }
+        if self.vocab_ids.contains_key(&lower) || self.dict.contains_lower(&lower) {
+            return true;
+        }
+        if self
+            .extra(&ctx.app_type)
+            .is_some_and(|e| e.contains_lower(&lower))
+        {
+            return true;
+        }
+        self.user
+            .as_ref()
+            .is_some_and(|u| u.lock().unwrap().has_unigram(&ctx.app_type, &lower))
     }
 }
 
@@ -514,7 +600,10 @@ mod tests {
             &cfg.user_cache,
             std::path::PathBuf::from("target/kosk-ngram-cache.bin"),
         );
-        cache.learn_words(&["cat".into(), "sat".into()]);
+        cache.learn_words(
+            crate::completion::CATCH_ALL_TYPE,
+            &["cat".into(), "sat".into()],
+        );
         let user = Arc::new(Mutex::new(cache));
         let eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
@@ -525,6 +614,62 @@ mod tests {
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
+    }
+
+    #[test]
+    fn prefix_from_cache_is_typed() {
+        let cfg = CompletionConfig::default();
+        let dict = DictionaryEngine::from_wordlist_text("hello\t10\nhelp\t5\n", &cfg);
+        let mut cache = UserCache::load(
+            &cfg.user_cache,
+            std::path::PathBuf::from(format!("target/kosk-ngram-pref-{}.bin", std::process::id())),
+        );
+        cache.learn_words("browser", &["jujutsu".into()]);
+        let user = Arc::new(Mutex::new(cache));
+        let eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
+        ctx.app_type = "browser".into();
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert!(out.iter().any(|c| c.text == "jujutsu"));
+        assert!(!out.iter().any(|c| c.text == "juju"));
+
+        ctx.app_type = "programming".into();
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert!(!out.iter().any(|c| c.text == "jujutsu"));
+    }
+
+    #[test]
+    fn extra_wordlist_prefix_typed() {
+        let cfg = CompletionConfig::default();
+        let extra = DictionaryEngine::from_wordlist_text("jujutsu\t10\n", &cfg);
+        let mut extras = std::collections::HashMap::new();
+        extras.insert("programming".into(), extra);
+        let dict = DictionaryEngine::from_wordlist_text("hello\t10\nhelp\t5\n", &cfg);
+        let mut eng = NgramEngine::from_dictionary(dict, &cfg, None);
+        eng.set_overlay(extras);
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
+        ctx.app_type = "programming".into();
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert!(out.iter().any(|c| c.text == "jujutsu"));
+
+        ctx.app_type = "browser".into();
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        assert!(!out.iter().any(|c| c.text == "jujutsu"));
+
+        let mut hel = CompletionContext::from_buffer("hel", 3, &cfg).unwrap();
+        hel.app_type = "browser".into();
+        let out = eng.suggest(&hel, &abort).unwrap();
+        assert!(out.iter().any(|c| c.text == "hello"));
     }
 
     #[test]

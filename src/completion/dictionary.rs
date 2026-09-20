@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 
@@ -9,6 +10,7 @@ use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::fuzzy::is_fuzzy_prefix;
 use super::settings::CompletionConfig;
+use super::user_cache::UserCache;
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -58,6 +60,8 @@ pub struct DictionaryEngine {
     min_fuzzy_len: usize,
     transpose_neighbors_only: bool,
     lambda_typo: f32,
+    extras: HashMap<String, DictionaryEngine>,
+    user: Option<Arc<Mutex<UserCache>>>,
 }
 
 impl DictionaryEngine {
@@ -79,7 +83,105 @@ impl DictionaryEngine {
             min_fuzzy_len: cfg.min_fuzzy_len.max(1),
             transpose_neighbors_only: cfg.transpose_neighbors_only,
             lambda_typo: cfg.ngram.lambda_typo,
+            extras: HashMap::new(),
+            user: None,
         }
+    }
+
+    pub fn set_overlay(
+        &mut self,
+        extras: HashMap<String, DictionaryEngine>,
+        user: Option<Arc<Mutex<UserCache>>>,
+    ) {
+        self.extras = extras;
+        self.user = user;
+    }
+
+    pub fn contains_lower(&self, lower: &str) -> bool {
+        self.entries
+            .binary_search_by(|e| e.lower.as_str().cmp(lower))
+            .is_ok()
+    }
+
+    pub fn count_lower(&self, lower: &str) -> u32 {
+        let Ok(i) = self
+            .entries
+            .binary_search_by(|e| e.lower.as_str().cmp(lower))
+        else {
+            return 0;
+        };
+        self.entries[i].count
+    }
+
+    fn extra(&self, ty: &str) -> Option<&DictionaryEngine> {
+        self.extras.get(ty)
+    }
+
+    fn merge_overlay(
+        &self,
+        ctx: &CompletionContext,
+        abort: &Abort<'_>,
+        mut cands: Vec<Candidate>,
+    ) -> Option<Vec<Candidate>> {
+        let nfc = self.normalize_nfc;
+        let token_lower = normalize_word(&ctx.token, nfc);
+        let mut seen: std::collections::HashSet<String> =
+            cands.iter().map(|c| normalize_word(&c.text, nfc)).collect();
+
+        if let Some(extra) = self.extra(&ctx.app_type) {
+            let extra_cands = extra.suggest(ctx, abort)?;
+            for c in extra_cands {
+                let lower = normalize_word(&c.text, nfc);
+                if !seen.insert(lower) {
+                    continue;
+                }
+                cands.push(c);
+            }
+        }
+
+        if let Some(user) = &self.user {
+            let g = user.lock().unwrap();
+            if token_lower.is_empty() {
+                if let Some(prev) = ctx.prev_words.last() {
+                    for (word, count) in g.continuations(&ctx.app_type, prev) {
+                        if abort.stale() {
+                            return None;
+                        }
+                        if !seen.insert(word.clone()) {
+                            continue;
+                        }
+                        cands.push(Candidate {
+                            text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
+                            score: (1.0 + count).ln(),
+                            source: Source::UserCache,
+                            kind: MatchKind::ExactPrefix,
+                        });
+                    }
+                }
+            } else {
+                for (word, count) in g.prefix_unigrams(&ctx.app_type, &token_lower) {
+                    if abort.stale() {
+                        return None;
+                    }
+                    if !seen.insert(word.clone()) {
+                        continue;
+                    }
+                    cands.push(Candidate {
+                        text: restore_case(&ctx.token, &word, ctx.capitalize_sentence),
+                        score: (1.0 + count).ln(),
+                        source: Source::UserCache,
+                        kind: MatchKind::ExactPrefix,
+                    });
+                }
+            }
+        }
+
+        cands.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.text.cmp(&b.text))
+        });
+        Some(mix_candidate_slots(cands, ctx.max_results.max(1)))
     }
 
     pub fn from_path_or_embedded(path: &Path, cfg: &CompletionConfig) -> Result<Self> {
@@ -232,7 +334,8 @@ impl CompletionBackend for DictionaryEngine {
             if !self.suggest_next_word {
                 return Some(Vec::new());
             }
-            return self.top_unigrams(ctx, abort);
+            let cands = self.top_unigrams(ctx, abort)?;
+            return self.merge_overlay(ctx, abort, cands);
         }
 
         let range = self.prefix_range(&token_lower);
@@ -290,20 +393,38 @@ impl CompletionBackend for DictionaryEngine {
         }
 
         let ranked = mix_slots(exact, corrections, fuzzy, max);
-        Some(
-            ranked
-                .into_iter()
-                .map(|r| {
-                    let e = &self.entries[r.idx];
-                    Candidate {
-                        text: restore_case(&ctx.token, &e.surface, ctx.capitalize_sentence),
-                        score: r.score,
-                        source: Source::Dictionary,
-                        kind: r.kind,
-                    }
-                })
-                .collect(),
-        )
+        let cands = ranked
+            .into_iter()
+            .map(|r| {
+                let e = &self.entries[r.idx];
+                Candidate {
+                    text: restore_case(&ctx.token, &e.surface, ctx.capitalize_sentence),
+                    score: r.score,
+                    source: Source::Dictionary,
+                    kind: r.kind,
+                }
+            })
+            .collect();
+        self.merge_overlay(ctx, abort, cands)
+    }
+
+    fn knows_word(&self, ctx: &CompletionContext) -> bool {
+        let lower = normalize_word(&ctx.token, self.normalize_nfc);
+        if lower.is_empty() {
+            return false;
+        }
+        if self.contains_lower(&lower) {
+            return true;
+        }
+        if self
+            .extra(&ctx.app_type)
+            .is_some_and(|e| e.contains_lower(&lower))
+        {
+            return true;
+        }
+        self.user
+            .as_ref()
+            .is_some_and(|u| u.lock().unwrap().has_unigram(&ctx.app_type, &lower))
     }
 }
 
@@ -510,5 +631,35 @@ mod tests {
         let eng = DictionaryEngine::from_wordlist_text("don't\t50\n", &cfg);
         let s = suggest_on(&eng, "dont", vec![]);
         assert!(s.iter().any(|c| c.text.contains('\'')));
+    }
+
+    #[test]
+    fn extra_wordlist_only_for_that_type() {
+        let cfg = CompletionConfig::default();
+        let extra = DictionaryEngine::from_wordlist_text("jujutsu\t10\n", &cfg);
+        let mut extras = std::collections::HashMap::new();
+        extras.insert("programming".into(), extra);
+        let mut eng = DictionaryEngine::from_wordlist_text("hello\t10\nhelp\t5\n", &cfg);
+        eng.set_overlay(extras, None);
+
+        let (gen, mine) = abort();
+        let abort = Abort {
+            mine,
+            current: &gen,
+        };
+        let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
+        ctx.app_type = "programming".into();
+        let s = eng.suggest(&ctx, &abort).unwrap();
+        assert!(s.iter().any(|c| c.text == "jujutsu"));
+        assert!(!s.iter().any(|c| c.text == "juju"));
+
+        ctx.app_type = "browser".into();
+        let s = eng.suggest(&ctx, &abort).unwrap();
+        assert!(!s.iter().any(|c| c.text == "jujutsu"));
+
+        let mut hel = CompletionContext::from_buffer("hel", 3, &cfg).unwrap();
+        hel.app_type = "browser".into();
+        let s = eng.suggest(&hel, &abort).unwrap();
+        assert!(s.iter().any(|c| c.text == "hello"));
     }
 }

@@ -52,7 +52,7 @@ cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --m
 
 You should see words that follow `going` (for example `to`). If the guesses are still `you` / `i` / `the`, the two-word table did not load. The same problem shows up on stderr as `ngram model at … not loaded; unigram-only` or `no bigrams`.
 
-See [docs/completion.md](docs/completion.md).
+See [docs/completion.md](docs/completion.md) (app types, current-word chip, `cargo run -p wordlist-convert` recipes).
 
 ## Reading the code
 

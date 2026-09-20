@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use kosk::completion::settings::CompletionConfig;
-use kosk::completion::{CompletionBackend, CompletionContext, DictionaryEngine, NgramEngine};
+use kosk::completion::{
+    load_type_wordlists, AppTypeMap, CompletionBackend, CompletionContext, DictionaryEngine,
+    NgramEngine,
+};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -22,38 +25,50 @@ struct Args {
     model_dir: Option<std::path::PathBuf>,
     #[arg(long)]
     eval: Option<std::path::PathBuf>,
+    /// Foreground exe basename; mapped through `[completion.app_types]` (default catch-all).
+    #[arg(long)]
+    exe: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let cfg = CompletionConfig {
-        max_suggestions: args.max,
-        suggest_next_word: true,
-        ..CompletionConfig::default()
-    };
+    let mut cfg = load_completion_cfg();
+    cfg.max_suggestions = args.max;
+    cfg.suggest_next_word = true;
+
+    let dummy = Arc::new(std::sync::Mutex::new(kosk::completion::UserCache::load(
+        &cfg.user_cache,
+        std::path::PathBuf::from("target/completion-dev-cache.bin"),
+    )));
+    let extras = load_type_wordlists(&cfg, Some(std::path::Path::new(".")));
 
     let engine: Box<dyn CompletionBackend> = match args.backend.as_str() {
         "ngram" => {
             let dir = args
                 .model_dir
                 .unwrap_or_else(|| std::path::PathBuf::from("data/completion/en"));
-            let dummy = Arc::new(std::sync::Mutex::new(kosk::completion::UserCache::load(
-                &cfg.user_cache,
-                std::path::PathBuf::from("target/completion-dev-cache.bin"),
-            )));
-            match NgramEngine::load(&dir, &cfg, dummy) {
-                Ok(e) => Box::new(e),
+            match NgramEngine::load(&dir, &cfg, Arc::clone(&dummy)) {
+                Ok(mut e) => {
+                    e.set_overlay(extras);
+                    Box::new(e)
+                }
                 Err(_) => {
                     let dict = load_dict(&args.wordlist, &cfg)?;
-                    Box::new(NgramEngine::from_dictionary(dict, &cfg, None))
+                    let mut wrapped = NgramEngine::from_dictionary(dict, &cfg, Some(dummy));
+                    wrapped.set_overlay(extras);
+                    Box::new(wrapped)
                 }
             }
         }
-        _ => Box::new(load_dict(&args.wordlist, &cfg)?),
+        _ => {
+            let mut dict = load_dict(&args.wordlist, &cfg)?;
+            dict.set_overlay(extras, Some(dummy));
+            Box::new(dict)
+        }
     };
 
     if let Some(eval_path) = args.eval {
-        return run_eval(engine.as_ref(), &eval_path, &cfg);
+        return run_eval(engine.as_ref(), &eval_path, &cfg, args.exe.as_deref());
     }
 
     let text = args
@@ -62,8 +77,9 @@ fn main() -> Result<()> {
     let cursor = args
         .cursor
         .ok_or_else(|| anyhow::anyhow!("--cursor is required unless --eval is set"))?;
-    let ctx = CompletionContext::from_buffer(&text, cursor, &cfg)
+    let mut ctx = CompletionContext::from_buffer(&text, cursor, &cfg)
         .context("cursor must be on a UTF-8 character boundary and <= text length")?;
+    stamp_app_type(&mut ctx, &cfg, args.exe.as_deref());
     let gen = AtomicU64::new(1);
     let abort = kosk::completion::Abort {
         mine: 1,
@@ -78,6 +94,26 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn load_completion_cfg() -> CompletionConfig {
+    let Ok(raw) = std::fs::read_to_string("config.toml") else {
+        return CompletionConfig::default();
+    };
+    let Ok(val) = raw.parse::<toml::Value>() else {
+        return CompletionConfig::default();
+    };
+    let Some(comp) = val.get("completion") else {
+        return CompletionConfig::default();
+    };
+    comp.clone()
+        .try_into::<CompletionConfig>()
+        .unwrap_or_default()
+}
+
+fn stamp_app_type(ctx: &mut CompletionContext, cfg: &CompletionConfig, exe: Option<&str>) {
+    let types = AppTypeMap::from_config(&cfg.app_types).unwrap_or_default();
+    ctx.app_type = types.resolve(exe);
 }
 
 fn load_dict(
@@ -97,6 +133,7 @@ fn run_eval(
     engine: &dyn CompletionBackend,
     path: &std::path::Path,
     cfg: &CompletionConfig,
+    exe: Option<&str>,
 ) -> Result<()> {
     let text = std::fs::read_to_string(path)?;
     let chars: Vec<char> = text.chars().filter(|c| *c != '\r').collect();
@@ -120,7 +157,8 @@ fn run_eval(
             continue;
         }
         let ctx = CompletionContext::from_buffer(&typed, typed.len(), cfg);
-        if let Some(ctx) = ctx {
+        if let Some(mut ctx) = ctx {
+            stamp_app_type(&mut ctx, cfg, exe);
             if let Some(sugs) = engine.suggest(&ctx, &abort) {
                 let rest: String = chars[i..].iter().collect();
                 let rest_word: String = rest

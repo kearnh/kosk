@@ -199,14 +199,22 @@ impl TextInputState {
             return false;
         };
         self.undo_accept = Some((self.text.clone(), self.cursor_pos));
-        let (new_text, new_cursor) = crate::completion::splice(
-            &self.text,
-            ctx.token_range,
-            &cand.text,
-            cfg.insert_space_on_accept,
-        );
-        self.text = new_text;
-        self.cursor_pos = new_cursor;
+        if cand.source == crate::completion::Source::CurrentWord {
+            if cfg.insert_space_on_accept {
+                let at = ctx.token_range.end;
+                self.text.insert(at, ' ');
+                self.cursor_pos = at + 1;
+            }
+        } else {
+            let (new_text, new_cursor) = crate::completion::splice(
+                &self.text,
+                ctx.token_range,
+                &cand.text,
+                cfg.insert_space_on_accept,
+            );
+            self.text = new_text;
+            self.cursor_pos = new_cursor;
+        }
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 if s.cfg().learn_on_accept {

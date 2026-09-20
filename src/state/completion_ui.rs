@@ -1,5 +1,5 @@
 use crate::completion::settings::{ArmedDotPlacement, ChipLabel, ChipWidth, CompletionUiConfig};
-use crate::completion::Candidate;
+use crate::completion::{Candidate, Source};
 use egui::{Color32, FontId, Pos2, Sense, Stroke, Ui, Vec2};
 
 fn rgba(c: [u8; 4]) -> Color32 {
@@ -176,18 +176,43 @@ fn draw_chip(
         );
     }
 
-    let label = match cfg.label {
-        ChipLabel::Full => cand.text.clone(),
-        ChipLabel::Remainder => {
-            if crate::completion::is_case_insensitive_prefix(token, &cand.text) {
-                crate::completion::remainder(token, &cand.text)
-            } else {
-                cand.text.clone()
+    let current_word = cand.source == Source::CurrentWord;
+    let label = if current_word {
+        cand.text.clone()
+    } else {
+        match cfg.label {
+            ChipLabel::Full => cand.text.clone(),
+            ChipLabel::Remainder => {
+                if crate::completion::is_case_insensitive_prefix(token, &cand.text) {
+                    crate::completion::remainder(token, &cand.text)
+                } else {
+                    cand.text.clone()
+                }
             }
         }
     };
     let text_pos = Pos2::new(rect.left() + cfg.padding_x, rect.center().y);
-    let dim_prefix = cfg.dim_typed_prefix
+    let mark_w = if current_word {
+        let mark = "+ ";
+        let w = ui.fonts_mut(|f| {
+            f.layout_no_wrap(mark.to_string(), font.clone(), fg)
+                .size()
+                .x
+        });
+        ui.painter().text(
+            text_pos,
+            egui::Align2::LEFT_CENTER,
+            mark,
+            font.clone(),
+            rgba(cfg.new_word_mark_color),
+        );
+        w
+    } else {
+        0.0
+    };
+    let word_pos = Pos2::new(text_pos.x + mark_w, text_pos.y);
+    let dim_prefix = !current_word
+        && cfg.dim_typed_prefix
         && cfg.label == ChipLabel::Full
         && !token.is_empty()
         && crate::completion::is_case_insensitive_prefix(token, &cand.text);
@@ -200,14 +225,14 @@ fn draw_chip(
         });
         let dim = Color32::from_rgba_unmultiplied(fg.r(), fg.g(), fg.b(), 140);
         ui.painter().text(
-            text_pos,
+            word_pos,
             egui::Align2::LEFT_CENTER,
             token,
             font.clone(),
             dim,
         );
         ui.painter().text(
-            Pos2::new(text_pos.x + prefix_w, text_pos.y),
+            Pos2::new(word_pos.x + prefix_w, word_pos.y),
             egui::Align2::LEFT_CENTER,
             rest,
             font.clone(),
@@ -215,10 +240,10 @@ fn draw_chip(
         );
     } else {
         ui.painter()
-            .text(text_pos, egui::Align2::LEFT_CENTER, label, font.clone(), fg);
+            .text(word_pos, egui::Align2::LEFT_CENTER, label, font.clone(), fg);
     }
 
-    if cfg.show_debug_scores {
+    if cfg.show_debug_scores && !current_word {
         ui.painter().text(
             Pos2::new(rect.right() - 4.0, rect.top() + 2.0),
             egui::Align2::RIGHT_TOP,

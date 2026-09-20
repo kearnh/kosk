@@ -1,4 +1,5 @@
 //! Word and next-token prediction for keyboard and text-input modes.
+mod app_type;
 mod apply;
 mod backend;
 mod case;
@@ -11,8 +12,12 @@ pub mod settings;
 mod typed_log;
 mod user_cache;
 
+pub use app_type::{validate_app_types, AppTypeMap, CATCH_ALL_TYPE};
 pub use apply::{is_case_insensitive_prefix, remainder, splice};
-pub use backend::{backend_from_config, Abort, Candidate, CompletionBackend, MatchKind, Source};
+pub use backend::{
+    backend_from_config, load_type_wordlists, Abort, Candidate, CompletionBackend, MatchKind,
+    Source,
+};
 pub use case::restore_case;
 pub use context::{split_at_cursor, tokens_in, word_prefix_token, CompletionContext};
 pub use dictionary::DictionaryEngine;
