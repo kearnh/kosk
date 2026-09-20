@@ -86,28 +86,27 @@ font_size = 22.0
 # Word / next-token chips. Omitted keys use the defaults shown. Relative paths
 # resolve against this file's directory. Not stored in recordings.
 #
-# enabled: false removes the strip (today's keyboard). true keeps reserved slots
-# so key centres do not jump when suggestions are empty or disarmed.
+# enabled: false hides the chip strip. true keeps reserved slots
+# so key centres do not jump when suggestions are empty or off.
 enabled = true
-# Draw chips in Keyboard mode (typed-log context).
+# Draw chips in Keyboard mode (from keys sent to the app).
 show_in_keyboard = true
-# Draw chips in TextInput (local buffer + caret).
+# Draw chips in TextInput (the field you are composing).
 show_in_text_input = true
 # Predictor: ngram | dictionary. ngram needs vocab.txt + unigrams.bin in
-# model_dir (from completion_build); otherwise it wraps the wordlist as
-# unigram-only and still uses this backend name.
+# model_dir (from completion_build); otherwise it uses the wordlist.
 backend = "ngram"
-# If the chosen backend fails to load: ngram | dictionary.
+# If the chosen predictor fails to load: ngram | dictionary.
 fallback = "dictionary"
-# Locale tag for model paths / docs. Not used to pick a dictionary at runtime.
+# Locale tag for model paths / docs. Does not choose the wordlist.
 locale = "en"
-# Engine cap. UI shows at most columns * rows of these.
+# Suggestion cap. UI shows at most columns * rows of these.
 # Raise together with columns/rows to show a correction plus completions
 # (e.g. max_suggestions = 6 with columns = 3 and rows = 2).
 max_suggestions = 6
-# Ignore tokens shorter than this (unicode scalars). 0 allows next-word only.
+# Ignore tokens shorter than this (characters). 0 allows next-word only.
 min_prefix_len = 1
-# Collapse buffer changes into one worker request (ms).
+# Wait this long after typing before refreshing suggestions (ms).
 debounce_ms = 16
 # Empty token (after a space): suggest the next word.
 suggest_next_word = true
@@ -119,7 +118,7 @@ eat_space_before = ",.!?;:)]}'\"/"
 # After eating, insert a space after the mark if it is in this set.
 # Must also be in eat_space_before. Empty string never re-spaces.
 space_after = ",.!?;:"
-# Reserved: put a next-word that fails the prefix into a mid-word slot. Unused.
+# Reserved. Unused.
 mix_unmatched_next_word = false
 # Highlight at rest: none | first. none = no chip highlighted until cycle or click.
 preselect = "none"
@@ -130,19 +129,19 @@ reset_highlight_on_refresh = true
 highlight_wraps = true
 # Mix accepted chip text into the user cache.
 learn_on_accept = true
-# Mix TextInput submit / Keyboard Enter line into the user cache.
+# Mix a submitted line (TextInput) or Enter (Keyboard) into the user cache.
 learn_on_submit = true
 # Token letters: unicode alphanumeric vs ASCII only.
 unicode_letters = true
 # Extra characters that count as inside a word (apostrophe, underscore).
 extra_word_chars = "_'"
-# NFC-normalize tokens before lookup.
+# Treat equivalent unicode spellings as the same.
 normalize_nfc = true
 # Restore model lowercase to HEL / Hel / sentence-start. Default true; omit ok.
 # capitalization = true
 # Distance-1 typos: neighbor subst, adjacent transpose, omitted/extra key.
 typo_tolerance = true
-# Min token length (unicode scalars) for subst / omit / extra-key. Transpose still at length 2.
+# Min token length (characters) for subst / omit / extra-key. Transpose still at length 2.
 min_fuzzy_len = 3
 # If true, only transpose keys that are layout neighbors. false allows wehn → when.
 transpose_neighbors_only = false
@@ -151,12 +150,12 @@ transpose_neighbors_only = false
 # Keyboard: always above the keys. TextInput: between = field, strip, keys;
 # above_field = strip, field, keys; above_keyboard = same as between.
 placement = "between"
-# Chips per row (row-major). Extra engine hits past columns*rows are dropped.
+# Chips per row, left to right. Extra hits past columns*rows are dropped.
 # Correction + completions: raise rows (e.g. 2) and max_suggestions together.
 # reserve_slots sizes the strip to this grid even when empty (key centres stay put).
 columns = 3
 rows = 2
-# Allocate the full grid (and armed dot) even with 0 suggestions / disarmed.
+# Allocate the full grid (and on/off dot) even with 0 suggestions or chips off.
 reserve_slots = true
 # fill = equal share of keyboard content width (minus dot + gaps).
 # hug = size to text, capped by max_chip_width.
@@ -182,9 +181,9 @@ label = "full"
 dim_typed_prefix = true
 # Color of unused reserved slots.
 empty_slot_background = [30, 30, 30, 255]
-# Paint the log-space score on each chip.
+# Paint the ranking score on each chip.
 show_debug_scores = false
-# Green/gray circle on the strip: prediction armed vs latched off.
+# Green/gray circle on the strip: suggestions on vs off.
 armed_dot = true
 armed_dot_radius = 4.0
 # chips_leading | chips_trailing (first row only).
@@ -193,8 +192,8 @@ armed_color = [50, 200, 90, 255]
 disarmed_color = [128, 128, 128, 255]
 
 [completion.text_input]
-# Reserved: splice the highlighted chip into the field while cycling. Unused.
-# Default off so both modes share highlight-then-accept.
+# Reserved: show the highlighted chip in the field while cycling. Unused.
+# Off so both modes highlight first, then accept.
 preview_on_highlight = false
 
 [completion.keyboard]
@@ -202,65 +201,64 @@ preview_on_highlight = false
 # (hel + hello → lo). backspace_replace = delete the token, then send the word.
 # Non-prefix chips (typo corrections) always use backspace_replace.
 accept_via = "suffix"
-# cancelSuggestion after accept undoes last_injected only (not chip cycling).
+# After accept, cancel deletes the accepted text. Does not undo chip cycling.
 retract_last_accept = true
-# Pop one char from the typed log on Backspace.
+# Backspace also forgets that character for suggestions.
 track_backspace = true
-# Clear the typed log on Enter/Return if still armed. Does not re-arm.
+# On Enter, forget suggestion context if still on. Does not turn suggestions back on.
 clear_on_enter = true
-# Ctrl/Alt letter chords: do not append. Do not latch off (only paste does).
+# Ctrl/Alt letter chords: ignore for suggestions. Do not turn chips off (only paste does).
 ignore_ctrl_alt = true
-# Process start: log empty and predicting.
+# At start: suggestion context empty and chips on.
 start_armed = true
-# Arrow / Home / End / PageUp / PageDown / Insert / Delete: stop logging, hide chips, until toggleCompletion.
+# Arrow / Home / End / PageUp / PageDown / Insert / Delete: hide chips until toggleCompletion.
 latch_off_on_arrow = true
-# Paste (Ctrl+V sequence): same latch-off.
+# Paste (Ctrl+V): same, hide chips until toggleCompletion.
 latch_off_on_paste = true
-# toggleCompletion while disarmed: arm and wipe the log (old text is stale).
+# Turning chips back on wipes old context (it is stale).
 clear_log_on_arm = true
-# Drop oldest bytes from the log past this length.
+# Drop oldest characters from suggestion context past this length.
 max_chars = 2048
-# 0 = off. Else clear the log after this idle (ms). For a later always-on overlay.
+# 0 = off. Else forget suggestion context after this idle (ms).
 idle_reset_ms = 0
 
 [completion.dictionary]
-# word or word<TAB>count. Used by backend=dictionary and as ngram unigram-only
+# word or word<TAB>count. Used when backend is dictionary, and as ngram
 # fallback when model_dir has no vocab.txt / unigrams.bin.
 wordlist = "data/completion/en/unigrams.tsv"
 
 [completion.ngram]
 # Packed tables from completion_build: vocab.txt, unigrams.bin, optional
-# bigrams.bin / trigrams.bin. Unigrams-only pack writes 0 bigrams; next-word
-# then stays you/i/the. See README "Completion next-word setup".
+# bigrams.bin / trigrams.bin. Without pair tables, next-word stays you/i/the.
+# See README "Completion next-word setup".
 model_dir = "data/completion/en"
-# Prev-word context length (trigrams need 3).
+# How many previous words to use (3 for trigrams).
 order = 3
-# Stupid backoff: unseen n-gram → α * shorter context.
+# If a longer pattern was never seen, fall back to a shorter one, scaled by this.
 backoff_alpha = 0.4
-# Blend weights (log space): score = λ_tri·S3 + λ_bi·S2 + λ_uni·P + λ_user·cache
-# + λ_exact if the candidate equals the token.
-# λ_typo is added when the candidate is not an exact prefix (corrections / fuzzy).
+# How much each source counts toward a chip's score.
+# lambda_exact if the candidate equals the token.
+# lambda_typo if the candidate is a correction, not an exact prefix.
 lambda_trigram = 1.0
 lambda_bigram = 0.3
 lambda_unigram = 0.2
 lambda_user = 0.8
 lambda_exact = 0.1
 lambda_typo = -2.0
-# Cap prefix-range scan / abort granularity inside the worker.
+# Cap how many words a prefix scan considers, and how often to drop a stale scan.
 prefix_scan_limit = 8192
 abort_check_every = 64
-# Reserved: build-time top-k for short prefixes ("a", "th"). Unused until
-# completion_build writes prefix_topk.bin.
+# Reserved. Unused.
 precomputed_prefix_depth = 2
 
 [completion.user_cache]
-# Decayed unigram/bigram of accepted / submitted words. Novel words complete
-# without rewriting the mmap tables. File is next to this config if relative.
+# Decayed counts of accepted / submitted words. Novel words complete
+# without rebuilding the packed tables. File is next to this config if relative.
 enabled = true
 path = "completion-cache.bin"
 # Half-life for cache counts (hours).
 decay_tau_hours = 2.0
 max_unigrams = 20000
 max_bigrams = 50000
-# Flush to disk at most this often (seconds). Also flushed on session drop.
+# Flush to disk at most this often (seconds). Also flushed on exit.
 persist_interval_s = 30
