@@ -47,7 +47,7 @@ These events only run when `WindowPos` is `MousePointer`. On a corner or absolut
 Entry (Menu **Move**) snapshots the current `WindowPos`. Analog does not go through the binding engine. Each HID tick:
 
 - Right analog wins over left. A touching pad is input even at the pad center.
-- Pads are mouse-relative: finger travel on the pad (raw samples, first contact is no jump) moves the overlay. A swipe across the full pad (`-1` → `1`) crosses one monitor.
+- Pads are mouse-relative: finger travel on the pad (raw samples, first contact is no jump) moves the overlay. A swipe across the full pad (`-1` → `1`) crosses one monitor. Samples are EMA-smoothed; deltas below a small epsilon are ignored. Lifting the thumb drops motion from the last 40ms so peel-off does not nudge the ghost.
 - Sticks stay velocity: deadzone `0.15` on the max axis, full deflection crosses the monitor in one second. Stick up decreases window `y`.
 - The live position becomes `WindowPos::Absolute` and is not written to config.
 

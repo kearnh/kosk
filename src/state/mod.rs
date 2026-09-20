@@ -453,6 +453,16 @@ impl AppState {
 
     /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.
     pub fn reset_controller_input(&mut self, ctx: &Context) -> Result<()> {
+        if self.state == StateId::MoveWindow {
+            let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
+            let window_size = Self::window_size_from(ctx.content_rect());
+            move_window::with_mut(|mw| {
+                if let Some((nx, ny)) = mw.flush_pad_lift((x, y), window_size, self.monitor_size) {
+                    self.pos = WindowPos::Absolute(nx, ny);
+                    ctx.request_repaint();
+                }
+            });
+        }
         self.reset_current_mode_controller(None);
         if config::get().debug.is_some() {
             ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = None);
