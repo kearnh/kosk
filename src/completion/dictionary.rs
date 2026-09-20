@@ -9,8 +9,15 @@ use super::backend::{Abort, Candidate, CompletionBackend, MatchKind, Source};
 use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::fuzzy::is_fuzzy_prefix;
+use super::insert::{fold_apostrophe_marks, is_inserted_punct_prefix, strip_inserted};
 use super::settings::CompletionConfig;
 use super::user_cache::{mixed_count, UserCache};
+
+#[derive(Clone)]
+struct PunctIndexEntry {
+    stripped: String,
+    idx: usize,
+}
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -63,6 +70,7 @@ pub struct DictionaryEngine {
     extras: HashMap<String, DictionaryEngine>,
     user: Option<Arc<Mutex<UserCache>>>,
     count_total: u64,
+    punct_index: Vec<PunctIndexEntry>,
 }
 
 impl DictionaryEngine {
@@ -73,6 +81,7 @@ impl DictionaryEngine {
             .collect();
         entries.sort_by(|a, b| a.lower.cmp(&b.lower).then_with(|| b.count.cmp(&a.count)));
         entries.dedup_by(|a, b| a.lower == b.lower);
+        let punct_index = punct_index_from_entries(&entries);
         let count_total: u64 = entries.iter().map(|e| e.count as u64).sum();
         Self {
             entries,
@@ -88,6 +97,7 @@ impl DictionaryEngine {
             extras: HashMap::new(),
             user: None,
             count_total,
+            punct_index,
         }
     }
 
@@ -233,6 +243,18 @@ impl DictionaryEngine {
         start..end
     }
 
+    fn punct_prefix_range(&self, stripped_token: &str) -> std::ops::Range<usize> {
+        let start = self
+            .punct_index
+            .partition_point(|e| e.stripped.as_str() < stripped_token);
+        let end = self.punct_index[start..]
+            .iter()
+            .position(|e| !e.stripped.starts_with(stripped_token))
+            .map(|i| start + i)
+            .unwrap_or(self.punct_index.len());
+        start..end
+    }
+
     fn rank(&self, idx: usize, e: &Entry, kind: MatchKind, penalty: f32) -> Ranked {
         let score = if e.count > 0 {
             (e.count as f32).ln() + penalty
@@ -335,11 +357,29 @@ fn parse_line(line: &str, nfc: bool) -> Option<Entry> {
     if word.is_empty() {
         return None;
     }
+    let word = fold_apostrophe_marks(word);
     Some(Entry {
-        lower: normalize_word(word, nfc),
-        surface: word.to_string(),
+        lower: normalize_word(&word, nfc),
+        surface: word,
         count,
     })
+}
+
+fn punct_index_from_entries(entries: &[Entry]) -> Vec<PunctIndexEntry> {
+    let mut index: Vec<PunctIndexEntry> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, e)| {
+            let stripped = strip_inserted(&e.lower);
+            if stripped.is_empty() || stripped == e.lower {
+                None
+            } else {
+                Some(PunctIndexEntry { stripped, idx })
+            }
+        })
+        .collect();
+    index.sort_by(|a, b| a.stripped.cmp(&b.stripped).then_with(|| a.idx.cmp(&b.idx)));
+    index
 }
 
 impl CompletionBackend for DictionaryEngine {
@@ -374,6 +414,24 @@ impl CompletionBackend for DictionaryEngine {
             exact.push(self.rank(range.start + i, e, MatchKind::ExactPrefix, 0.0));
         }
 
+        let stripped_token = strip_inserted(&token_lower);
+        if !stripped_token.is_empty() {
+            let punct_range = self.punct_prefix_range(&stripped_token);
+            for (i, p) in self.punct_index[punct_range].iter().enumerate() {
+                if i & (self.abort_every - 1) == 0 && abort.stale() {
+                    return None;
+                }
+                if i >= self.scan_limit {
+                    break;
+                }
+                let e = &self.entries[p.idx];
+                if e.lower == token_lower || e.lower.starts_with(&token_lower) {
+                    continue;
+                }
+                exact.push(self.rank(p.idx, e, MatchKind::ExactPrefix, 0.0));
+            }
+        }
+
         let mut corrections: Vec<Ranked> = Vec::new();
         let mut fuzzy: Vec<Ranked> = Vec::new();
         if self.typo_tolerance {
@@ -382,7 +440,10 @@ impl CompletionBackend for DictionaryEngine {
                 if i & (self.abort_every - 1) == 0 && abort.stale() {
                     return None;
                 }
-                if e.lower == token_lower || e.lower.starts_with(&token_lower) {
+                if e.lower == token_lower
+                    || e.lower.starts_with(&token_lower)
+                    || is_inserted_punct_prefix(&token_lower, &e.lower)
+                {
                     continue;
                 }
                 if is_fuzzy_prefix(
@@ -650,6 +711,43 @@ mod tests {
         let eng = DictionaryEngine::from_wordlist_text("don't\t50\n", &cfg);
         let s = suggest_on(&eng, "dont", vec![]);
         assert!(s.iter().any(|c| c.text.contains('\'')));
+    }
+
+    #[test]
+    fn dont_inserts_apostrophe_without_typo_tolerance() {
+        let cfg = CompletionConfig {
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng = DictionaryEngine::from_wordlist_text("don't\t50\n", &cfg);
+        let s = suggest_on(&eng, "dont", vec![]);
+        assert!(s
+            .iter()
+            .any(|c| c.text == "don't" && c.kind == MatchKind::ExactPrefix));
+    }
+
+    #[test]
+    fn eg_inserts_periods_without_typo_tolerance() {
+        let cfg = CompletionConfig {
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng = DictionaryEngine::from_wordlist_text("e.g.\t50\n", &cfg);
+        let s = suggest_on(&eng, "eg", vec![]);
+        assert!(s
+            .iter()
+            .any(|c| c.text == "e.g." && c.kind == MatchKind::ExactPrefix));
+    }
+
+    #[test]
+    fn backtick_line_loads_as_apostrophe() {
+        let cfg = CompletionConfig {
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let eng = DictionaryEngine::from_wordlist_text("don`t\t50\n", &cfg);
+        let s = suggest_on(&eng, "dont", vec![]);
+        assert!(s.iter().any(|c| c.text == "don't"));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use super::backend::{Abort, Candidate, CompletionBackend, MatchKind, Source};
 use super::case::restore_case;
 use super::context::{normalize_word, CompletionContext};
 use super::dictionary::{mix_candidate_slots, DictionaryEngine};
+use super::insert::is_inserted_punct_prefix;
 use super::settings::CompletionConfig;
 use super::user_cache::{mixed_count, UserCache};
 
@@ -322,7 +323,7 @@ impl NgramEngine {
             score += self.lambda_exact;
         } else if !ctx.token.is_empty() {
             let token_lower = normalize_word(&ctx.token, self.nfc);
-            if !lower.starts_with(&token_lower) {
+            if !lower.starts_with(&token_lower) && !is_inserted_punct_prefix(&token_lower, lower) {
                 score += self.lambda_typo;
             }
         }
@@ -747,6 +748,39 @@ mod tests {
         let (eng, cfg) = hello_scale_engine(cache);
         let out = suggest_hel(&eng, &cfg);
         assert_eq!(out[0].text, "help");
+    }
+
+    #[test]
+    fn inserted_punct_not_typo_penalized() {
+        let cfg = CompletionConfig {
+            typo_tolerance: false,
+            ..CompletionConfig::default()
+        };
+        let dict = DictionaryEngine::from_wordlist_text("don't\t100\ndontexact\t100\n", &cfg);
+        let mut eng = NgramEngine::from_dictionary(dict, &cfg, None);
+        eng.vocab = vec!["don't".into(), "dontexact".into()];
+        eng.vocab_ids.insert("don't".into(), 0);
+        eng.vocab_ids.insert("dontexact".into(), 1);
+        eng.unigrams = vec![100, 100];
+        eng.unigram_total = 200;
+        let ctx = CompletionContext::from_buffer("dont", 4, &cfg).unwrap();
+        let gen = AtomicU64::new(1);
+        let abort = Abort {
+            mine: 1,
+            current: &gen,
+        };
+        let out = eng.suggest(&ctx, &abort).unwrap();
+        let apos = out.iter().find(|c| c.text == "don't").expect("don't");
+        let exact = out
+            .iter()
+            .find(|c| c.text == "dontexact")
+            .expect("dontexact");
+        assert!(
+            (apos.score - exact.score).abs() < 1e-5,
+            "inserted punct must not take lambda_typo: {} vs {}",
+            apos.score,
+            exact.score
+        );
     }
 
     #[test]

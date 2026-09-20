@@ -6,6 +6,7 @@ mod case;
 mod context;
 mod dictionary;
 mod fuzzy;
+mod insert;
 mod ngram;
 mod session;
 pub mod settings;

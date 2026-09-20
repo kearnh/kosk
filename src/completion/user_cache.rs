@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::app_type::CATCH_ALL_TYPE;
+use super::insert::is_inserted_punct_prefix;
 use super::settings::CompletionUserCacheConfig;
 
 const PERSIST_VERSION: u32 = 2;
@@ -210,7 +211,10 @@ impl UserCache {
         let mut out: Vec<(String, f32)> = maps
             .unigrams
             .iter()
-            .filter(|(w, _)| w.starts_with(prefix) && w.as_str() != prefix)
+            .filter(|(w, _)| {
+                w.as_str() != prefix
+                    && (w.starts_with(prefix) || is_inserted_punct_prefix(prefix, w))
+            })
             .map(|(w, t)| (w.clone(), t.count))
             .filter(|(_, c)| *c > 0.0)
             .collect();
@@ -375,6 +379,14 @@ mod tests {
         assert_eq!(hits[0].0, "jujutsu");
         assert!(c.prefix_unigrams("programming", "jujutsu").is_empty());
         assert!(c.prefix_unigrams("browser", "juju").is_empty());
+    }
+
+    #[test]
+    fn prefix_unigrams_inserts_apostrophe() {
+        let mut c = empty_cache("kosk-test-cache-apos.bin");
+        c.learn_words("programming", &["don't".into()]);
+        let hits = c.prefix_unigrams("programming", "dont");
+        assert_eq!(hits[0].0, "don't");
     }
 
     #[test]
