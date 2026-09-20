@@ -39,7 +39,7 @@ Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit 
 - **CycleSuggestion / CycleSuggestionPrev** move chip highlight (RB from none → slot 0; LB from none → last). No inject.
 - **AcceptSuggestion** suffix-injects (or backspace-replaces) the highlighted or indexed chip.
 - **ToggleCompletion** arms/disarms the typed log. Re-arm clears the log.
-- **CancelSuggestion** clears highlight; with `retract_last_accept` also undoes the last injected suffix. Default on `faceRight` when `suggestionSelected`.
+- **CancelSuggestion** clears highlight; with `retract_last_accept` also undoes the last injected suffix. Shipped map: `faceRight` when `suggestionSelected`; `l5` when `justAccepted` (else Backspace).
 - **SwitchState / Flip / Rotate / Exit / ToggleRecord** enqueue the matching event.
 - **SwitchLayout** changes `current_layout` immediately (not via the queue) and taps the recorder. A missing name is an error. The new layout drops captured geometry and recaptures on the next draw. Selection is remapped by screen position on the new board (not by row/column index). Analog mapping is biased by `origin1 − origin2` so the cursor stays put when rest centres differ; the bias lifts on idle. Until analog input moves, a different rest centre does not snap the highlight onto another key. The controller source that sent the switch is ignored until that button is released, so a still-held pad click or trigger does not type the key now under the stick (for example Shift after `switchLayout.symbols`). Other buttons and pad aiming stay live; thumbs can stay on the pads.
 

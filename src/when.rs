@@ -13,6 +13,7 @@ pub struct WhenContext {
     pub alt: bool,
     pub suggestion_selected: bool,
     pub completion_active: bool,
+    pub just_accepted: bool,
 }
 
 impl WhenContext {
@@ -29,6 +30,7 @@ pub enum Flag {
     ModifierAlt,
     SuggestionSelected,
     CompletionActive,
+    JustAccepted,
     Recording,
     Replay,
 }
@@ -42,6 +44,7 @@ impl Flag {
             "modifier.alt" | "alt" => Some(Self::ModifierAlt),
             "suggestionselected" => Some(Self::SuggestionSelected),
             "completionactive" => Some(Self::CompletionActive),
+            "justaccepted" => Some(Self::JustAccepted),
             "recording" => Some(Self::Recording),
             "replay" => Some(Self::Replay),
             _ => None,
@@ -56,13 +59,14 @@ impl Flag {
             Self::ModifierAlt => ctx.alt,
             Self::SuggestionSelected => ctx.suggestion_selected,
             Self::CompletionActive => ctx.completion_active,
+            Self::JustAccepted => ctx.just_accepted,
             Self::Recording => ctx.recording,
             Self::Replay => ctx.replay,
         }
     }
 }
 
-const FLAG_NAMES: &str = "suggestionSelected, completionActive, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay";
+const FLAG_NAMES: &str = "suggestionSelected, completionActive, justAccepted, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhenExpr {
@@ -310,6 +314,7 @@ mod tests {
             parse("completionActive"),
             WhenExpr::Flag(Flag::CompletionActive)
         );
+        assert_eq!(parse("justAccepted"), WhenExpr::Flag(Flag::JustAccepted));
     }
 
     #[test]
@@ -396,5 +401,16 @@ mod tests {
         assert!(e.eval(&on));
         assert!(!e.eval(&WhenContext::default()));
         assert!(parse("!suggestionSelected").eval(&WhenContext::default()));
+    }
+
+    #[test]
+    fn just_accepted_eval() {
+        let e = parse("justAccepted");
+        let on = WhenContext {
+            just_accepted: true,
+            ..WhenContext::default()
+        };
+        assert!(e.eval(&on));
+        assert!(!e.eval(&WhenContext::default()));
     }
 }

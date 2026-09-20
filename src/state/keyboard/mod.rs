@@ -531,6 +531,13 @@ impl KeyboardState {
                 }
             }
         }
+        if !out.inject.is_empty() {
+            crate::completion::with_mut(|s| {
+                if let Some(s) = s {
+                    s.arm_just_accepted();
+                }
+            });
+        }
         true
     }
 
@@ -541,6 +548,7 @@ impl KeyboardState {
             };
             if !s.cfg().keyboard.retract_last_accept {
                 s.clear_eat_accept_space();
+                s.clear_just_accepted();
                 s.clear_highlight();
                 return;
             }
@@ -557,6 +565,7 @@ impl KeyboardState {
                 s.set_last_injected(None);
             }
             s.clear_eat_accept_space();
+            s.clear_just_accepted();
             s.clear_highlight();
         });
     }
@@ -585,10 +594,11 @@ impl KeyboardState {
 
     pub(crate) fn when_context(&self) -> WhenContext {
         let session = input_record::session();
-        let (suggestion_selected, completion_active) = crate::completion::with_mut(|s| {
-            s.map(|s| (s.highlight().is_some(), s.armed()))
-                .unwrap_or((false, false))
-        });
+        let (suggestion_selected, completion_active, just_accepted) =
+            crate::completion::with_mut(|s| {
+                s.map(|s| (s.highlight().is_some(), s.armed(), s.just_accepted()))
+                    .unwrap_or((false, false, false))
+            });
         WhenContext {
             shift: self.shift_state,
             recording: session.is_recording(),
@@ -597,6 +607,7 @@ impl KeyboardState {
             alt: self.alt_mod,
             suggestion_selected,
             completion_active,
+            just_accepted,
         }
     }
 
