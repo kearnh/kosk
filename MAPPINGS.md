@@ -55,9 +55,9 @@ These names are true or false while you hold the button. You can combine them wi
 
 | Name | True when |
 |------|-----------|
-| `suggestionSelected` | a word-suggestion chip is highlighted |
+| `suggestionSelected` | a word suggestion is highlighted |
 | `completionActive` | word suggestions are on |
-| `suggestionJustAccepted` | a suggestion chip was just accepted and nothing has been typed since |
+| `suggestionJustAccepted` | a suggestion was just accepted and nothing has been typed since |
 | `modifier` | Shift, Ctrl, or Alt is sticky-on |
 | `modifier.shift` | Shift is sticky-on (`shift` is the same flag) |
 | `modifier.ctrl` | Ctrl is sticky-on (`ctrl` is the same flag) |
@@ -84,12 +84,12 @@ These names are true or false while you hold the button. You can combine them wi
 | `rotateWindow` | cycle those flips |
 | `exit` | quit kosk |
 | `toggleRecord` | start or stop a `.krec` tape |
-| `cycleSuggestion` | highlight the next suggestion chip |
-| `cycleSuggestionPrev` | highlight the previous chip |
-| `cancelSuggestion` | clear a highlighted chip; undo the last accept only when retract is on and that accept is still the latest edit |
+| `cycleSuggestion` | highlight the next suggestion |
+| `cycleSuggestionPrev` | highlight the previous suggestion |
+| `cancelSuggestion` | clear a highlighted suggestion; undo the last accept only when retract is on and that accept is still the latest edit |
 | `toggleCompletion` | turn word suggestions on or off |
-| `acceptSuggestion` | type the highlighted chip |
-| `acceptSuggestion.0` | type that chip by index, highlighted or not |
+| `acceptSuggestion` | type the highlighted suggestion |
+| `acceptSuggestion.0` | type that suggestion by index, highlighted or not |
 
 ## Settings actions
 

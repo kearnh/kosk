@@ -493,10 +493,16 @@ fn row_text(id: RowId) -> (&'static str, &'static str) {
     match id {
         RowId::Suggestions => (
             "Suggestions",
-            "Hides the chip strip. The empty slots stay reserved, so the keys do not jump.",
+            "Hides the suggestions. The empty slots stay reserved, so the keys do not jump.",
         ),
-        RowId::OnKeyboard => ("On the keyboard", "Draw chips while typing into another app."),
-        RowId::InTextField => ("In the text field", "Draw chips on the text-input screen."),
+        RowId::OnKeyboard => (
+            "On the keyboard",
+            "Draw suggestions while typing into another app.",
+        ),
+        RowId::InTextField => (
+            "In the text field",
+            "Draw suggestions on the text-input screen.",
+        ),
         RowId::Typos => (
             "Typo corrections",
             "Offer a word one edit away from what you typed.",
@@ -507,15 +513,15 @@ fn row_text(id: RowId) -> (&'static str, &'static str) {
         ),
         RowId::HighlightAtRest => (
             "Highlight at rest",
-            "None waits until you cycle or click a chip. First highlights the top chip as soon as the list appears.",
+            "None waits until you cycle or click a suggestion. First highlights the top suggestion as soon as the list appears.",
         ),
         RowId::Columns => (
             "Columns",
-            "How many chips sit on one row. Suggestions past columns times rows are not shown.",
+            "How many suggestions sit on one row. Suggestions past columns times rows are not shown.",
         ),
         RowId::Rows => (
             "Rows",
-            "How many chip rows to reserve. Use two when you want a correction and completions together.",
+            "How many suggestion rows to reserve. Use two when you want a correction beside the other suggestions.",
         ),
         RowId::SeeThrough => (
             "See-through window",
