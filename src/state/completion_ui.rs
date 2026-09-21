@@ -3,6 +3,7 @@ use crate::completion::{Candidate, Source};
 use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 const CHIP_OVERFLOW_MARK: &str = "..";
+const CURRENT_WORD_MARK: &str = "+ ";
 
 fn rgba(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
@@ -54,39 +55,68 @@ pub fn draw_strip(
                     0.0
                 };
                 let inner_w = (content_width - dots).max(ui_cfg.min_chip_width);
-                let chip_w = match ui_cfg.chip_width {
+                let base = match ui_cfg.chip_width {
                     ChipWidth::Fill => {
                         let g = gap * (columns.saturating_sub(1) as f32);
                         ((inner_w - g) / columns as f32).max(ui_cfg.min_chip_width)
                     }
                     ChipWidth::Hug => ui_cfg.max_chip_width,
                 };
-
+                let mut slots_on_row = Vec::new();
                 for col in 0..columns {
                     let i = row * columns + col;
-                    if i >= slots && ui_cfg.reserve_slots {
-                        draw_empty(ui, chip_w, row_h, ui_cfg);
-                        continue;
-                    }
                     if i >= slots {
+                        if ui_cfg.reserve_slots {
+                            slots_on_row.push(RowSlot::Empty);
+                        }
                         continue;
                     }
-                    if let Some(c) = candidates.get(i) {
-                        if draw_chip(
-                            ui,
-                            c,
-                            i,
-                            highlight == Some(i),
-                            chip_w,
-                            row_h,
-                            ui_cfg,
-                            &font,
-                            typed_token,
-                        ) {
-                            clicked = Some(i);
-                        }
+                    if candidates.get(i).is_some() {
+                        slots_on_row.push(RowSlot::Chip(i));
                     } else if ui_cfg.reserve_slots {
-                        draw_empty(ui, chip_w, row_h, ui_cfg);
+                        slots_on_row.push(RowSlot::Empty);
+                    }
+                }
+
+                let selected_at = slots_on_row
+                    .iter()
+                    .position(|slot| matches!(slot, RowSlot::Chip(i) if highlight == Some(*i)));
+                let desired = selected_at
+                    .and_then(|at| match slots_on_row[at] {
+                        RowSlot::Chip(i) => candidates.get(i),
+                        RowSlot::Empty => None,
+                    })
+                    .map(|cand| chip_outer_width(ui, cand, ui_cfg, &font, typed_token))
+                    .unwrap_or(0.0);
+                let widths = row_chip_widths(
+                    base,
+                    ui_cfg.padding_x * 2.0,
+                    slots_on_row.len(),
+                    selected_at,
+                    desired,
+                );
+
+                for (slot, width) in slots_on_row.iter().zip(widths) {
+                    match slot {
+                        RowSlot::Empty => draw_empty(ui, width, row_h, ui_cfg),
+                        RowSlot::Chip(i) => {
+                            let Some(cand) = candidates.get(*i) else {
+                                continue;
+                            };
+                            if draw_chip(
+                                ui,
+                                cand,
+                                *i,
+                                highlight == Some(*i),
+                                width,
+                                row_h,
+                                ui_cfg,
+                                &font,
+                                typed_token,
+                            ) {
+                                clicked = Some(*i);
+                            }
+                        }
                     }
                 }
 
@@ -155,6 +185,89 @@ fn text_width(ui: &Ui, text: &str, font: &FontId) -> f32 {
             .size()
             .x
     })
+}
+
+enum RowSlot {
+    Empty,
+    Chip(usize),
+}
+
+/// Selected chip takes the width its label needs. Siblings on the row shrink to pay for it, down to `floor`.
+fn row_chip_widths(
+    base: f32,
+    floor: f32,
+    count: usize,
+    selected: Option<usize>,
+    selected_desired: f32,
+) -> Vec<f32> {
+    let mut widths = vec![base; count];
+    let Some(sel) = selected else {
+        return widths;
+    };
+    if sel >= count || count <= 1 {
+        return widths;
+    }
+
+    let grow = (selected_desired - base).max(0.0);
+    if grow == 0.0 {
+        return widths;
+    }
+
+    let room = (base - floor).max(0.0);
+    let others = (count - 1) as f32;
+    let give = grow.min(room * others);
+    let shrink = give / others;
+    for (i, width) in widths.iter_mut().enumerate() {
+        if i == sel {
+            *width = base + give;
+        } else {
+            *width = base - shrink;
+        }
+    }
+
+    widths
+}
+
+fn chip_outer_width(
+    ui: &Ui,
+    cand: &Candidate,
+    cfg: &CompletionUiConfig,
+    font: &FontId,
+    token: &str,
+) -> f32 {
+    let text = text_width(ui, &painted_label(cand, cfg, token), font);
+    let mark = if cand.source == Source::CurrentWord {
+        text_width(ui, CURRENT_WORD_MARK, font)
+    } else {
+        0.0
+    };
+
+    text + mark + cfg.padding_x * 2.0
+}
+
+fn dims_typed_prefix(cand: &Candidate, cfg: &CompletionUiConfig, token: &str) -> bool {
+    cand.source != Source::CurrentWord
+        && cfg.dim_typed_prefix
+        && cfg.label == ChipLabel::Full
+        && !token.is_empty()
+        && crate::completion::is_case_insensitive_prefix(token, &cand.text)
+}
+
+fn painted_label(cand: &Candidate, cfg: &CompletionUiConfig, token: &str) -> String {
+    if cand.source == Source::CurrentWord {
+        return cand.text.clone();
+    }
+    if dims_typed_prefix(cand, cfg, token) {
+        let rest = crate::completion::remainder(token, &cand.text);
+        return format!("{token}{rest}");
+    }
+    if cfg.label == ChipLabel::Remainder
+        && crate::completion::is_case_insensitive_prefix(token, &cand.text)
+    {
+        return crate::completion::remainder(token, &cand.text);
+    }
+
+    cand.text.clone()
 }
 
 fn chip_text_clip(rect: Rect, padding_x: f32) -> Rect {
@@ -269,30 +382,16 @@ fn draw_chip(
     }
 
     let current_word = cand.source == Source::CurrentWord;
-    let label = if current_word {
-        cand.text.clone()
-    } else {
-        match cfg.label {
-            ChipLabel::Full => cand.text.clone(),
-            ChipLabel::Remainder => {
-                if crate::completion::is_case_insensitive_prefix(token, &cand.text) {
-                    crate::completion::remainder(token, &cand.text)
-                } else {
-                    cand.text.clone()
-                }
-            }
-        }
-    };
+    let display = painted_label(cand, cfg, token);
     let text_clip = chip_text_clip(rect, cfg.padding_x);
     let painter = ui.painter().with_clip_rect(text_clip);
     let text_pos = Pos2::new(rect.left() + cfg.padding_x, rect.center().y);
     let mark_w = if current_word {
-        let mark = "+ ";
-        let w = text_width(ui, mark, font);
+        let w = text_width(ui, CURRENT_WORD_MARK, font);
         painter.text(
             text_pos,
             egui::Align2::LEFT_CENTER,
-            mark,
+            CURRENT_WORD_MARK,
             font.clone(),
             rgba(cfg.new_word_mark_color),
         );
@@ -301,17 +400,7 @@ fn draw_chip(
         0.0
     };
     let word_pos = Pos2::new(text_pos.x + mark_w, text_pos.y);
-    let dim_prefix = !current_word
-        && cfg.dim_typed_prefix
-        && cfg.label == ChipLabel::Full
-        && !token.is_empty()
-        && crate::completion::is_case_insensitive_prefix(token, &cand.text);
-    let display = if dim_prefix {
-        let rest = crate::completion::remainder(token, &cand.text);
-        format!("{token}{rest}")
-    } else {
-        label
-    };
+    let dim_prefix = dims_typed_prefix(cand, cfg, token);
     let available = (text_clip.right() - word_pos.x).max(0.0);
     let fitted = truncate_to_width(&display, available, |sample| text_width(ui, sample, font));
     if dim_prefix {
@@ -421,6 +510,48 @@ mod tests {
         let (dim, bright) = split_dim_prefix(&fitted, "inc");
         assert_eq!(dim, "inc");
         assert_eq!(bright, "ons..");
+    }
+
+    #[test]
+    fn equal_widths_when_nothing_is_selected() {
+        assert_eq!(row_chip_widths(100.0, 40.0, 3, None, 180.0), vec![100.0; 3]);
+    }
+
+    #[test]
+    fn selected_chip_stays_when_the_word_already_fits() {
+        assert_eq!(
+            row_chip_widths(100.0, 40.0, 3, Some(0), 80.0),
+            vec![100.0; 3]
+        );
+    }
+
+    #[test]
+    fn selected_chip_grows_by_shrinking_the_row() {
+        assert_eq!(
+            row_chip_widths(100.0, 40.0, 3, Some(0), 160.0),
+            vec![160.0, 70.0, 70.0]
+        );
+    }
+
+    #[test]
+    fn siblings_stop_at_the_floor_when_the_word_is_wider_than_the_row() {
+        assert_eq!(
+            row_chip_widths(100.0, 40.0, 3, Some(1), 10_000.0),
+            vec![40.0, 220.0, 40.0]
+        );
+    }
+
+    #[test]
+    fn lone_chip_stays_at_its_base_width() {
+        assert_eq!(row_chip_widths(100.0, 40.0, 1, Some(0), 400.0), vec![100.0]);
+    }
+
+    #[test]
+    fn selection_outside_the_row_is_ignored() {
+        assert_eq!(
+            row_chip_widths(100.0, 40.0, 3, Some(4), 180.0),
+            vec![100.0; 3]
+        );
     }
 
     #[test]
