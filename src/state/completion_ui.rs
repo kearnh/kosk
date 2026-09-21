@@ -1,6 +1,8 @@
 use crate::completion::settings::{ArmedDotPlacement, ChipLabel, ChipWidth, CompletionUiConfig};
 use crate::completion::{Candidate, Source};
-use egui::{Color32, FontId, Pos2, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+
+const CHIP_OVERFLOW_MARK: &str = "..";
 
 fn rgba(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
@@ -141,6 +143,96 @@ fn draw_empty(ui: &mut Ui, w: f32, h: f32, cfg: &CompletionUiConfig) {
         .rect_filled(rect, cfg.corner_radius, rgba(cfg.empty_slot_background));
 }
 
+struct FittedText {
+    text: String,
+    kept: usize,
+}
+
+fn text_width(ui: &Ui, text: &str, font: &FontId) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_string(), font.clone(), Color32::PLACEHOLDER)
+            .size()
+            .x
+    })
+}
+
+fn chip_text_clip(rect: Rect, padding_x: f32) -> Rect {
+    let left = rect.left() + padding_x;
+    let right = (rect.right() - padding_x).max(left);
+
+    Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(right, rect.bottom()))
+}
+
+fn truncate_to_width(text: &str, max_width: f32, width_of: impl Fn(&str) -> f32) -> FittedText {
+    let count = text.chars().count();
+    if max_width <= 0.0 {
+        return FittedText {
+            text: String::new(),
+            kept: 0,
+        };
+    }
+    if width_of(text) <= max_width {
+        return FittedText {
+            text: text.to_string(),
+            kept: count,
+        };
+    }
+
+    if width_of(CHIP_OVERFLOW_MARK) <= max_width {
+        let kept = longest_prefix_len(text, max_width, &width_of, CHIP_OVERFLOW_MARK);
+
+        return FittedText {
+            text: prefix_plus(text, kept, CHIP_OVERFLOW_MARK),
+            kept,
+        };
+    }
+
+    let kept = longest_prefix_len(text, max_width, &width_of, "");
+
+    FittedText {
+        text: text.chars().take(kept).collect(),
+        kept,
+    }
+}
+
+fn longest_prefix_len(
+    text: &str,
+    max_width: f32,
+    width_of: &impl Fn(&str) -> f32,
+    suffix: &str,
+) -> usize {
+    let mut low = 0;
+    let mut high = text.chars().count();
+    while low < high {
+        let mid = low + (high - low).div_ceil(2);
+        if width_of(&prefix_plus(text, mid, suffix)) <= max_width {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    low
+}
+
+fn prefix_plus(text: &str, n: usize, suffix: &str) -> String {
+    let mut out: String = text.chars().take(n).collect();
+    out.push_str(suffix);
+    out
+}
+
+fn split_dim_prefix(fitted: &FittedText, token: &str) -> (String, String) {
+    let token_chars = token.chars().count();
+    if fitted.kept <= token_chars {
+        return (fitted.text.clone(), String::new());
+    }
+
+    let dim: String = fitted.text.chars().take(token_chars).collect();
+    let bright: String = fitted.text.chars().skip(token_chars).collect();
+    (dim, bright)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_chip(
     ui: &mut Ui,
@@ -191,15 +283,13 @@ fn draw_chip(
             }
         }
     };
+    let text_clip = chip_text_clip(rect, cfg.padding_x);
+    let painter = ui.painter().with_clip_rect(text_clip);
     let text_pos = Pos2::new(rect.left() + cfg.padding_x, rect.center().y);
     let mark_w = if current_word {
         let mark = "+ ";
-        let w = ui.fonts_mut(|f| {
-            f.layout_no_wrap(mark.to_string(), font.clone(), fg)
-                .size()
-                .x
-        });
-        ui.painter().text(
+        let w = text_width(ui, mark, font);
+        painter.text(
             text_pos,
             egui::Align2::LEFT_CENTER,
             mark,
@@ -216,31 +306,40 @@ fn draw_chip(
         && cfg.label == ChipLabel::Full
         && !token.is_empty()
         && crate::completion::is_case_insensitive_prefix(token, &cand.text);
-    if dim_prefix {
+    let display = if dim_prefix {
         let rest = crate::completion::remainder(token, &cand.text);
-        let prefix_w = ui.fonts_mut(|f| {
-            f.layout_no_wrap(token.to_string(), font.clone(), fg)
-                .size()
-                .x
-        });
+        format!("{token}{rest}")
+    } else {
+        label
+    };
+    let available = (text_clip.right() - word_pos.x).max(0.0);
+    let fitted = truncate_to_width(&display, available, |sample| text_width(ui, sample, font));
+    if dim_prefix {
+        let (dim_text, bright_text) = split_dim_prefix(&fitted, token);
         let dim = Color32::from_rgba_unmultiplied(fg.r(), fg.g(), fg.b(), 140);
-        ui.painter().text(
+        let prefix_w = text_width(ui, &dim_text, font);
+        painter.text(
             word_pos,
             egui::Align2::LEFT_CENTER,
-            token,
+            dim_text,
             font.clone(),
             dim,
         );
-        ui.painter().text(
+        painter.text(
             Pos2::new(word_pos.x + prefix_w, word_pos.y),
             egui::Align2::LEFT_CENTER,
-            rest,
+            bright_text,
             font.clone(),
             fg,
         );
     } else {
-        ui.painter()
-            .text(word_pos, egui::Align2::LEFT_CENTER, label, font.clone(), fg);
+        painter.text(
+            word_pos,
+            egui::Align2::LEFT_CENTER,
+            fitted.text,
+            font.clone(),
+            fg,
+        );
     }
 
     if cfg.show_debug_scores && !current_word {
@@ -254,4 +353,84 @@ fn draw_chip(
     }
 
     resp.clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn char_width(text: &str) -> f32 {
+        text.chars().count() as f32
+    }
+
+    #[test]
+    fn short_label_is_unchanged() {
+        let fitted = truncate_to_width("hi", 10.0, char_width);
+        assert_eq!(fitted.text, "hi");
+        assert_eq!(fitted.kept, 2);
+    }
+
+    #[test]
+    fn exact_fit_is_unchanged() {
+        let fitted = truncate_to_width("hello", 5.0, char_width);
+        assert_eq!(fitted.text, "hello");
+        assert_eq!(fitted.kept, 5);
+    }
+
+    #[test]
+    fn long_label_ends_with_dots_inside_width() {
+        let fitted = truncate_to_width("inconsequential", 8.0, char_width);
+        assert_eq!(fitted.text, "incons..");
+        assert_eq!(fitted.kept, 6);
+        assert!(char_width(&fitted.text) <= 8.0);
+    }
+
+    #[test]
+    fn uses_measured_width() {
+        let width = |text: &str| {
+            text.chars()
+                .map(|c| if c == 'i' { 1.0 } else { 10.0 })
+                .sum::<f32>()
+        };
+        let fitted = truncate_to_width("inconsequential", 21.0, width);
+        assert_eq!(fitted.text, "i..");
+        assert_eq!(fitted.kept, 1);
+        assert!(width(&fitted.text) <= 21.0);
+    }
+
+    #[test]
+    fn prefix_only_when_dots_do_not_fit() {
+        let fitted = truncate_to_width("inconsequential", 1.0, char_width);
+        assert_eq!(fitted.text, "i");
+        assert_eq!(fitted.kept, 1);
+    }
+
+    #[test]
+    fn zero_width_is_empty() {
+        let fitted = truncate_to_width("inconsequential", 0.0, char_width);
+        assert_eq!(fitted.text, "");
+        assert_eq!(fitted.kept, 0);
+    }
+
+    #[test]
+    fn dim_split_keeps_typed_prefix_when_remainder_is_cut() {
+        let fitted = FittedText {
+            text: "incons..".into(),
+            kept: 6,
+        };
+        let (dim, bright) = split_dim_prefix(&fitted, "inc");
+        assert_eq!(dim, "inc");
+        assert_eq!(bright, "ons..");
+    }
+
+    #[test]
+    fn dim_split_includes_dots_when_cut_inside_prefix() {
+        let fitted = FittedText {
+            text: "in..".into(),
+            kept: 2,
+        };
+        let (dim, bright) = split_dim_prefix(&fitted, "incon");
+        assert_eq!(dim, "in..");
+        assert_eq!(bright, "");
+    }
 }
