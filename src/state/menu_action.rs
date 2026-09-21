@@ -30,7 +30,7 @@ impl TryFrom<&str> for MenuAction {
         actions::parse_unit_or_switch_state(
             value,
             MenuAction::VARIANTS,
-            "menu",
+            "settings",
             MenuAction::SwitchState,
         )
     }

@@ -16,7 +16,7 @@ Each button has a `key` field that deserializes as `Key<RawKey>`: a `normal` val
 
 - A single character becomes `Key(char)`.
 - `skip` (any case) is a spacer: no widget, just width.
-- A known `KeyboardAction` name becomes `Action(...)`, so a key can be `toggleShift` or `switchState.menu`.
+- A known `KeyboardAction` name becomes `Action(...)`, so a key can be `toggleShift` or `switchState.settings`.
 - A name Enigo understands (`Backspace`, and so on) becomes `Enigo`.
 - Anything else, including several characters, becomes `Text`.
 - A leading `\` forces a literal `Text` (or, after the slash, the remainder as text) so that a label which would otherwise parse as an action can still be a character sequence. `\\` starts a literal that itself begins with a backslash.

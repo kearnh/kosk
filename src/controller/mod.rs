@@ -596,7 +596,7 @@ mod tests {
 [Keyboard]
 "triggerLeft" = "sendKeyUnderLeftStick"
 "triggerRight" = "sendKeyUnderRightStick"
-"options + faceTop" = "switchState.menu"
+"options + faceTop" = "switchState.settings"
 "faceTop" = "toggleShift"
 "stickLeft" = "toggleCtrl"
 "stickRight" = "toggleAlt"
@@ -619,7 +619,7 @@ mod tests {
                 leader: ControllerButton::Options,
                 follower: ControllerButton::FaceTop,
             }),
-            Some(&"switchState.menu".to_string())
+            Some(&"switchState.settings".to_string())
         );
     }
 

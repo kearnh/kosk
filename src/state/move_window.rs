@@ -99,7 +99,7 @@ impl MoveWindowState {
             .buttons_matching(|a| matches!(a, MoveWindowAction::Save));
         let cancel_buttons = self
             .bindings
-            .buttons_matching(|a| matches!(a, MoveWindowAction::SwitchState(StateId::Menu)));
+            .buttons_matching(|a| matches!(a, MoveWindowAction::SwitchState(StateId::Settings)));
 
         ui.scope_builder(
             egui::UiBuilder::new()
@@ -121,14 +121,16 @@ impl MoveWindowState {
                 ui.add_space(((resp.rect.height() - block_h) * 0.5).max(0.0));
                 if prompt_row(ui, family, &save_buttons, "Save", left, glyph_col) {
                     let _ = events.push_seq(
-                        vec![Event::SaveWindowPos, Event::ChangeState(StateId::Menu)],
+                        vec![Event::SaveWindowPos, Event::ChangeState(StateId::Settings)],
                         &EventSource::MouseClick,
                     );
                 }
                 ui.add_space(PROMPT_ROW_GAP);
                 if prompt_row(ui, family, &cancel_buttons, "Cancel", left, glyph_col) {
-                    let _ =
-                        events.push(Event::ChangeState(StateId::Menu), &EventSource::MouseClick);
+                    let _ = events.push(
+                        Event::ChangeState(StateId::Settings),
+                        &EventSource::MouseClick,
+                    );
                 }
             },
         );
@@ -143,7 +145,7 @@ impl MoveWindowState {
         match action {
             MoveWindowAction::Save => {
                 let _ = events.push_seq(
-                    vec![Event::SaveWindowPos, Event::ChangeState(StateId::Menu)],
+                    vec![Event::SaveWindowPos, Event::ChangeState(StateId::Settings)],
                     source,
                 );
             }

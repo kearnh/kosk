@@ -45,8 +45,8 @@ mod tests {
             MoveWindowAction::Save
         );
         assert_eq!(
-            MoveWindowAction::try_from("switchState.menu").unwrap(),
-            MoveWindowAction::SwitchState(StateId::Menu)
+            MoveWindowAction::try_from("switchState.settings").unwrap(),
+            MoveWindowAction::SwitchState(StateId::Settings)
         );
     }
 }

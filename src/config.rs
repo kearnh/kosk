@@ -147,7 +147,7 @@ pub struct Config {
     #[serde(default = "default_keyboard_opacity")]
     pub keyboard_opacity: f32,
 
-    /// Overlay clear/panel alpha while `transparent` is true, on Menu / Mappings / SelectKey / SelectLayout.
+    /// Overlay clear/panel alpha while `transparent` is true, on Settings / Mappings / SelectKey / SelectLayout.
     #[serde(default = "default_ui_opacity")]
     pub ui_opacity: f32,
 
@@ -1530,7 +1530,7 @@ controller_map = \"mappings.toml\"\n\
             "\"faceTop\" = \"toggleShift\"",
             "\"faceBottom\" = \"sendKey.enter\"",
             "",
-            "[Menu]",
+            "[Settings]",
             "\"faceBottom\" = \"activate\"",
             "",
         ]
@@ -1573,7 +1573,7 @@ controller_map = \"mappings.toml\"\n\
         );
         let mut map = HashMap::new();
         map.insert(StateId::Keyboard, keyboard);
-        map.insert(StateId::Menu, menu);
+        map.insert(StateId::Settings, menu);
 
         let mut old = sample_cfg();
         old.window_pos = WindowPos::MousePointer;

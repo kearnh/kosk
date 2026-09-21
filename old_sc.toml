@@ -109,8 +109,8 @@ indent = 0.0
 height = 1.1
 
 [[rows.items]]
-key = "switchState.menu"
-display = "{icon:list}"
+key = "switchState.settings"
+display = "{icon:gear}"
 width = 0.8
 font_size = 18.0
 

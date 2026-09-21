@@ -32,7 +32,7 @@ pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {
             let action = KeyboardAction::try_from(name).ok()?;
             Some(Box::new(action))
         }
-        StateId::Menu => {
+        StateId::Settings => {
             let action = MenuAction::try_from(name).ok()?;
             Some(Box::new(action))
         }

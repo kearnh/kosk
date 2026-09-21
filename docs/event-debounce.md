@@ -25,7 +25,7 @@ An `Event` is a side effect the app will perform later, after the queue is drain
 |---------|---------|
 | `SendKey(key, direction)` | Press, release, or click a virtual key via enigo |
 | `SendText(String)` | Type a Unicode string |
-| `ChangeState(StateId)` | Switch app mode (keyboard, menu, and so on) |
+| `ChangeState(StateId)` | Switch app mode (keyboard, settings, and so on) |
 | `SaveWindowPos`, `FlipWindow*`, `RotateWindow`, `Exit`, `ToggleRecord` | Window and lifecycle actions |
 | `ToggleShift`, `ToggleCtrl`, `ToggleAlt` | Flip the corresponding sticky modifier on the on-screen keyboard |
 

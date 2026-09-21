@@ -24,7 +24,7 @@ When the device yields `None` (idle), selection is cleared, the binding engine i
 
 ## `KeyboardAction`
 
-Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit names are case-insensitive (`toggleShift`, `ToggleShift`). Parameterized names use a dot: `switchState.menu`, `switchLayout.symbols`, `sendKey.c`.
+Mappings and on-layout keys both parse through `KeyboardAction::try_from`. Unit names are case-insensitive (`toggleShift`, `ToggleShift`). Parameterized names use a dot: `switchState.settings`, `switchLayout.symbols`, `sendKey.c`.
 
 `sendKey.space`, `sendKey.enter`, `sendKey.tab` become character sends. `sendKey.backspace` and arrows become `SendEnigoKey` because they are not Unicode characters Enigo will type as text.
 

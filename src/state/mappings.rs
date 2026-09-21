@@ -37,7 +37,7 @@ const BACK_CANCEL: ControllerButton = ControllerButton::FaceRight; // B
 
 const EDITABLE_MODES: [StateId; 5] = [
     StateId::Keyboard,
-    StateId::Menu,
+    StateId::Settings,
     StateId::SelectLayout,
     StateId::TextInput,
     StateId::MoveWindow,
@@ -242,7 +242,7 @@ fn catalog_rows(mode: StateId, draft: &ModeDraft) -> Vec<String> {
             rows.extend(concrete);
             rows
         }
-        StateId::Menu => unit_and_switch_rows(MenuAction::VARIANTS),
+        StateId::Settings => unit_and_switch_rows(MenuAction::VARIANTS),
         StateId::SelectLayout => unit_and_switch_rows(SelectLayoutAction::VARIANTS),
         StateId::TextInput => {
             let mut rows = unit_names(
@@ -261,7 +261,7 @@ fn catalog_rows(mode: StateId, draft: &ModeDraft) -> Vec<String> {
 fn mode_label(mode: StateId) -> &'static str {
     match mode {
         StateId::Keyboard => "Keyboard",
-        StateId::Menu => "Menu",
+        StateId::Settings => "Settings",
         StateId::SelectLayout => "SelectLayout",
         StateId::TextInput => "TextInput",
         StateId::MoveWindow => "MoveWindow",
@@ -714,7 +714,7 @@ impl MappingsState {
     fn do_cancel(&mut self, events: &mut EventQueue, source: &EventSource) {
         self.pending_select = None;
         self.delete_confirm = None;
-        let _ = events.push(Event::ChangeState(StateId::Menu), source);
+        let _ = events.push(Event::ChangeState(StateId::Settings), source);
     }
 
     fn do_save(&mut self) {
@@ -1256,7 +1256,7 @@ mod tests {
     fn rejects_single_on_chord_leader() {
         let mut draft = HashMap::new();
         draft.insert(
-            "switchState.menu".to_owned(),
+            "switchState.settings".to_owned(),
             vec![pill(chord(
                 ControllerButton::Options,
                 ControllerButton::FaceTop,
@@ -1323,7 +1323,7 @@ mod tests {
     fn allows_follower_as_single_elsewhere() {
         let mut draft = HashMap::new();
         draft.insert(
-            "switchState.menu".to_owned(),
+            "switchState.settings".to_owned(),
             vec![pill(chord(
                 ControllerButton::Options,
                 ControllerButton::FaceTop,

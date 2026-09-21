@@ -653,13 +653,16 @@ mod tests {
         let mut q = EventQueue::passthrough();
         q.extend_pending([
             (Event::Repaint, EventSource::FollowUp),
-            (Event::ChangeState(StateId::Menu), EventSource::FollowUp),
+            (Event::ChangeState(StateId::Settings), EventSource::FollowUp),
         ]);
         let drained = q.drain_pending();
         assert_eq!(drained.len(), 2);
         assert!(matches!(drained[0].0, Event::Repaint));
         assert_eq!(drained[0].1, EventSource::FollowUp);
-        assert!(matches!(drained[1].0, Event::ChangeState(StateId::Menu)));
+        assert!(matches!(
+            drained[1].0,
+            Event::ChangeState(StateId::Settings)
+        ));
         q.end_controller_tick();
     }
 }

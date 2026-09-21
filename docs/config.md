@@ -29,7 +29,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`stick_scale_x` / `stick_scale_y`** multiply analog deflection after it is mapped onto the keyboard (see [keyboard-layout.md](keyboard-layout.md)).
 - **`stick_warp`** is the circle-to-square warp applied in `ControllerInput::left_stick` / `right_stick` (see [controller.md](controller.md)).
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `0.92`) on Menu/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `0.92`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`stick_select_lock_ms`** holds stick highlighting still after a letter is sent ([keyboard.md](keyboard.md)).
 - **`stick_select_sticky`** is the extra hit-test margin for the key a stick is already on (`1` is off; default `1.25`). See [keyboard.md](keyboard.md).
@@ -50,7 +50,7 @@ Serde sees `controller_map` as either a nested table or a string. A string is op
 
 That is convenient for loading. It is the cause of the save bug described below.
 
-`mappings.toml` is grouped by mode (`[Keyboard]`, `[Menu]`, `[TextInput]`, `[MoveWindow]`). Keys are binding specs such as `"triggerLeft"` or `"options + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.menu"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
+`mappings.toml` is grouped by mode (`[Keyboard]`, `[Settings]`, `[TextInput]`, `[MoveWindow]`). Keys are binding specs such as `"triggerLeft"` or `"options + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.settings"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
 
 ## Live reload
 
@@ -60,7 +60,7 @@ When a watched file is modified, `load_config` runs again. Reloads within the sa
 
 `load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout file exists on disk, and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
 
-Modules register with `config::on_changed`. Keyboard, menu, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher does **not** watch `mappings.toml`. If you edit mappings while the process is running, those edits are not picked up until something else reloads config (for example saving `config.toml`, or restarting). Combined with the save bug, that is easy to trip over.
+Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher does **not** watch `mappings.toml`. If you edit mappings while the process is running, those edits are not picked up until something else reloads config (for example saving `config.toml`, or restarting). Combined with the save bug, that is easy to trip over.
 
 **Footnote:** Not watching `mappings.toml` is a bug. See [todo.md](../todo.md).
 

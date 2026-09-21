@@ -1,7 +1,7 @@
 # This file tells kosk what each controller button should do. You point at it
 # from config.toml with controller_map; the path is relative to that file.
 #
-# Each [Heading] is a screen of the app: the on-screen keyboard, the menu, and
+# Each [Heading] is a screen of the app: the on-screen keyboard, settings, and
 # so on. Each line maps a button (left of =) to an action on that screen (right
 # of =). Action names match that screen's actions, and are the same strings used
 # as keyboard layout keys. Button names ignore case, so faceBottom and
@@ -33,7 +33,7 @@
 ]
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
-"options + faceTop" = "switchState.menu"
+"options + faceTop" = "switchState.settings"
 "options + faceRight" = "switchState.textInput"
 "options + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
@@ -60,7 +60,7 @@
 "options + faceLeft" = "toggleCompletion"
 quickAccess = "switchState.mappings"
 
-[Menu]
+[Settings]
 "dpadUp" = "selectUp"
 "dpadDown" = "selectDown"
 "faceBottom" = "activate"
@@ -81,11 +81,11 @@ quickAccess = "switchState.mappings"
 
 [MoveWindow]
 "faceBottom" = "save"
-"faceRight" = "switchState.menu"
+"faceRight" = "switchState.settings"
 
 [SelectLayout]
 "dpadUp" = "selectUp"
 "dpadDown" = "selectDown"
 "faceBottom" = "activate"
 "faceTop" = "togglePreview"
-"faceRight" = "switchState.menu"
+"faceRight" = "switchState.settings"

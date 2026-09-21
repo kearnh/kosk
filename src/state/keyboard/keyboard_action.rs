@@ -193,7 +193,7 @@ mod tests {
             KeyboardAction::SendKey(' '),
             KeyboardAction::SendKey('\n'),
             KeyboardAction::SendEnigoKey(enigo::Key::Backspace),
-            KeyboardAction::SwitchState(StateId::Menu),
+            KeyboardAction::SwitchState(StateId::Settings),
             KeyboardAction::SwitchLayout("main".into()),
             KeyboardAction::SendKeyUnderLeftStick,
             KeyboardAction::CycleSuggestion,

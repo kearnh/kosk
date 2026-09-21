@@ -4,13 +4,13 @@ This document describes how a controller snapshot becomes a list of typed action
 
 ## What problem does this solve?
 
-`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStick"` and `"options + faceTop" = "switchState.menu"`. A few keys mean two things: accept a highlighted chip, or type. Those use a `when` clause on the same key, not a composite action name. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
+`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStick"` and `"options + faceTop" = "switchState.settings"`. A few keys mean two things: accept a highlighted chip, or type. Those use a `when` clause on the same key, not a composite action name. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
 
-Two complications sit in that sentence. Some actions should run on the rising edge only (open the menu once). Others should run on every poll while the button is held (type the highlighted letter, with debounce later). And two-button chords have to coexist with single-button mappings on the follower without firing both.
+Two complications sit in that sentence. Some actions should run on the rising edge only (open settings once). Others should run on every poll while the button is held (type the highlighted letter, with debounce later). And two-button chords have to coexist with single-button mappings on the follower without firing both.
 
 ## File shape
 
-Each mode is still a table (`[Keyboard]`, `[Menu]`, …). A value is one of:
+Each mode is still a table (`[Keyboard]`, `[Settings]`, …). A value is one of:
 
 - a string: always that action.
 - `{ action = "…", when = "…" }`: fire only when the clause is true (`faceRight` cancel while a chip is highlighted).
@@ -41,17 +41,17 @@ The user-facing list of button names, action names, and flags is [MAPPINGS.md](.
 
 `TriggerMode::Edge` means “fire when this button becomes down.” `TriggerMode::WhileHeld` means “fire every evaluation while the button is physically down.” Hold-repeat for typing is **not** implemented here. WhileHeld actions still run at poll rate; [the event queue](event-debounce.md) drops extras.
 
-`get_action(state, name)` parses a mapping value in the context of a `StateId`. `"toggleShift"` is a `KeyboardAction` only in the Keyboard table. The same string in `[Menu]` would not parse. `load_bindings` walks `config.controller_map` for that state, compiles entries whose action names parse as the requested type `A`, and builds the engine. Unknown names in a rule are skipped; a bad `when` or fallback-not-last aborts that mode’s map.
+`get_action(state, name)` parses a mapping value in the context of a `StateId`. `"toggleShift"` is a `KeyboardAction` only in the Keyboard table. The same string in `[Settings]` would not parse. `load_bindings` walks `config.controller_map` for that state, compiles entries whose action names parse as the requested type `A`, and builds the engine. Unknown names in a rule are skipped; a bad `when` or fallback-not-last aborts that mode’s map.
 
 ## Building the engine
 
-`BindingEngine::try_from_raw` splits the map into singles and chords. A button that is a chord **leader** must not also have a standalone mapping. That rule is load-time: `"options" = "something"` together with `"options + faceTop" = "switchState.menu"` is an error. The **follower** may have its own single mapping. In the checked-in file, `faceTop` toggles Shift, and `options + faceTop` still opens the menu because of the suppress rule below.
+`BindingEngine::try_from_raw` splits the map into singles and chords. A button that is a chord **leader** must not also have a standalone mapping. That rule is load-time: `"options" = "something"` together with `"options + faceTop" = "switchState.settings"` is an error. The **follower** may have its own single mapping. In the checked-in file, `faceTop` toggles Shift, and `options + faceTop` still opens settings because of the suppress rule below.
 
 The engine stores the set of buttons that appear in any mapping so each poll only queries those buttons.
 
 ## Evaluation
 
-`evaluate` takes a controller snapshot and a `WhenContext` (Keyboard and TextInput fill `suggestionSelected` and modifiers; Menu and the others pass defaults).
+`evaluate` takes a controller snapshot and a `WhenContext` (Keyboard and TextInput fill `suggestionSelected` and modifiers; Settings and the others pass defaults).
 
 When a snapshot is present:
 
@@ -73,7 +73,7 @@ Idle disconnect still goes through `reset`, not `evaluate(None)`.
 
 ## How a mode uses the result
 
-Keyboard, menu, move-window, and text-input each loop the returned `(ControllerBinding, Action)` pairs, wrap the binding in `EventSource::Controller`, and call `do_action`. The binding is the debounce bucket: `triggerLeft` and `padLeft` are different sources even if both send the key under the left stick.
+Keyboard, settings, move-window, and text-input each loop the returned `(ControllerBinding, Action)` pairs, wrap the binding in `EventSource::Controller`, and call `do_action`. The binding is the debounce bucket: `triggerLeft` and `padLeft` are different sources even if both send the key under the left stick.
 
 Mouse clicks never go through `BindingEngine`. They push events with `EventSource::MouseClick` directly.
 

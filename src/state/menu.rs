@@ -48,7 +48,7 @@ impl MenuState {
             ],
 
             selected: 0,
-            bindings: load_bindings(StateId::Menu)?.with_left_stick_dpad(),
+            bindings: load_bindings(StateId::Settings)?.with_left_stick_dpad(),
         };
         Ok(state)
     }
@@ -121,7 +121,7 @@ impl MenuState {
     }
 
     fn reload_from_config(&mut self) -> Result<()> {
-        self.bindings = load_bindings(StateId::Menu)?.with_left_stick_dpad();
+        self.bindings = load_bindings(StateId::Settings)?.with_left_stick_dpad();
         Ok(())
     }
 }

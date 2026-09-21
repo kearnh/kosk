@@ -6,11 +6,11 @@ This document describes `AppState` in `src/state/mod.rs`: the mode enum, the sha
 
 `AppState` is the process’s session. It knows which mode is visible (`StateId`), where the overlay sits (`WindowPos` plus an optional pointer snapshot), how large the monitor is, the `EventQueue` that all modes write into, and the `KeySink` that actually types.
 
-It does not own the keyboard, menu, move-window, or text-input structs. Those live in process-wide `OnceLock<Mutex<…>>` cells initialized from `AppState::new`. `keyboard::with_mut` (and the equivalents) lock one mode at a time. That is a leftover of each mode being a singleton that reloads itself on config change. `AppState` still coordinates them: it chooses which one handles a poll, and it is the only place that drains the event queue into side effects.
+It does not own the keyboard, settings, move-window, or text-input structs. Those live in process-wide `OnceLock<Mutex<…>>` cells initialized from `AppState::new`. `keyboard::with_mut` (and the equivalents) lock one mode at a time. That is a leftover of each mode being a singleton that reloads itself on config change. `AppState` still coordinates them: it chooses which one handles a poll, and it is the only place that drains the event queue into side effects.
 
 ## Modes
 
-`StateId` is `Keyboard`, `Menu`, `MoveWindow`, `TextInput`, `Mappings`, `SelectKey`, or `SelectLayout`. The process starts in `Keyboard`. Modes switch by enqueueing `Event::ChangeState`. `process_events` assigns `self.state`. There is no stack: opening the menu replaces keyboard, and “Back” is just a change to `Keyboard` or `Menu` depending on the button.
+`StateId` is `Keyboard`, `Settings`, `MoveWindow`, `TextInput`, `Mappings`, `SelectKey`, or `SelectLayout`. The process starts in `Keyboard`. Modes switch by enqueueing `Event::ChangeState`. `process_events` assigns `self.state`. There is no stack: opening settings replaces keyboard, and “Back” is just a change to `Keyboard` or `Settings` depending on the button.
 
 Each mode both draws and handles controller input. Mouse clicks are handled inside `draw_ui` because that is where egui button responses exist. Controller input is handled on the HID thread.
 

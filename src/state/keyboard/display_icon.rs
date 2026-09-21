@@ -345,7 +345,7 @@ mod tests {
     fn steam_layout_icon_names_resolve() {
         for name in [
             "backspace",
-            "list",
+            "gear",
             "key-return",
             "arrow-fat-up",
             "arrow-line-right",
@@ -373,8 +373,8 @@ mod tests {
             Icon::from_name("record").unwrap().as_str()
         );
         assert_eq!(
-            expand("{icon:list}", SIZE, COLOR).text(),
-            Icon::from_name("list").unwrap().as_str()
+            expand("{icon:gear}", SIZE, COLOR).text(),
+            Icon::from_name("gear").unwrap().as_str()
         );
     }
 }

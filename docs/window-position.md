@@ -44,14 +44,14 @@ These events only run when `WindowPos` is `MousePointer`. On a corner or absolut
 
 `StateId::MoveWindow` turns the overlay into a layout-sized translucent rectangle. Analog sticks and pads move it as a cursor. Disk save happens only on confirm.
 
-Entry (Menu **Move**) snapshots the current `WindowPos`. Analog does not go through the binding engine. Each HID tick:
+Entry (Settings **Move**) snapshots the current `WindowPos`. Analog does not go through the binding engine. Each HID tick:
 
 - Right analog wins over left. A touching pad is input even at the pad center.
 - Pads are mouse-relative: finger travel on the pad (raw samples, first contact is no jump) moves the overlay. A swipe across the full pad (`-1` → `1`) crosses one monitor. Samples are EMA-smoothed; window motion is whole pixels from a leftover remainder. Lifting the thumb drops motion from the last 40ms so peel-off does not nudge the ghost.
 - Sticks stay velocity: deadzone `0.15` on the max axis, full deflection crosses the monitor in one second. Stick up decreases window `y`.
 - The live position becomes `WindowPos::Absolute` and is not written to config.
 
-`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to the menu. `switchState.menu` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show Steam Input knockout glyphs plus Save/Cancel as labels, not buttons.
+`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to settings. `switchState.settings` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show Steam Input knockout glyphs plus Save/Cancel as labels, not buttons.
 
 ## Button glyphs
 

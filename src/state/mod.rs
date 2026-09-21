@@ -34,7 +34,7 @@ pub mod window_pos;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash, strum::VariantNames)]
 pub enum StateId {
-    Menu,
+    Settings,
     Keyboard,
     MoveWindow,
     TextInput,
@@ -297,7 +297,7 @@ impl AppState {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));
             }
-            StateId::Menu => {
+            StateId::Settings => {
                 menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::MoveWindow => {
@@ -380,7 +380,7 @@ impl AppState {
     fn reset_current_mode_controller(&mut self, holdover: Option<&dyn ControllerInput>) {
         match self.state {
             StateId::Keyboard => keyboard::with_mut(|kb| kb.reset_controller_input(holdover)),
-            StateId::Menu => menu::with_mut(|m| m.reset_controller_input(holdover)),
+            StateId::Settings => menu::with_mut(|m| m.reset_controller_input(holdover)),
             StateId::MoveWindow => move_window::with_mut(|mw| mw.reset_controller_input(holdover)),
             StateId::TextInput => text_input::with_mut(|ti| ti.reset_controller_input(holdover)),
             StateId::Mappings => mappings::with_mut(|m| m.reset_controller_input(holdover)),
@@ -411,7 +411,7 @@ impl AppState {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.handle_controller_input(input, &mut self.events))?
             }
-            StateId::Menu => {
+            StateId::Settings => {
                 menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
             }
             StateId::MoveWindow => {

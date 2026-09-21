@@ -96,7 +96,7 @@ impl eframe::App for App {
                 let raw = match state {
                     StateId::MoveWindow => 0.0,
                     StateId::Keyboard | StateId::TextInput => cfg.keyboard_opacity,
-                    StateId::Menu
+                    StateId::Settings
                     | StateId::Mappings
                     | StateId::SelectKey
                     | StateId::SelectLayout => cfg.ui_opacity,
