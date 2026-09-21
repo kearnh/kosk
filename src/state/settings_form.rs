@@ -137,8 +137,21 @@ impl Effect {
 
 pub(in crate::state) struct DrawnRow {
     pub label: &'static str,
-    pub explain: &'static str,
+    pub explain: Option<&'static str>,
     pub value: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::state) enum FooterButtons {
+    Activate,
+    Back,
+    Adjust,
+    Page,
+}
+
+pub(in crate::state) struct FooterHint {
+    pub buttons: FooterButtons,
+    pub label: &'static str,
 }
 
 pub(in crate::state) struct SettingsForm {
@@ -307,17 +320,49 @@ impl SettingsForm {
         }
     }
 
-    pub(in crate::state) fn footer(&self, kind: ControllerKind) -> &'static str {
+    pub(in crate::state) fn footer(&self, kind: ControllerKind) -> Vec<FooterHint> {
         match self.view {
-            View::Hub => "A open     B keyboard",
-            View::Index => "A open     B back",
+            View::Hub => vec![
+                FooterHint {
+                    buttons: FooterButtons::Activate,
+                    label: "open",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "keyboard",
+                },
+            ],
+            View::Index => vec![
+                FooterHint {
+                    buttons: FooterButtons::Activate,
+                    label: "open",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "back",
+                },
+            ],
             View::Page(_) => {
-                let toggle = self.focused_row(kind).is_some_and(is_toggle);
-                if toggle {
-                    "A toggle     Left / right change     L1 / R1 page     B back"
-                } else {
-                    "Left / right change     L1 / R1 page     B back"
+                let mut hints = Vec::new();
+                if self.focused_row(kind).is_some_and(is_toggle) {
+                    hints.push(FooterHint {
+                        buttons: FooterButtons::Activate,
+                        label: "toggle",
+                    });
                 }
+                hints.push(FooterHint {
+                    buttons: FooterButtons::Adjust,
+                    label: "change",
+                });
+                hints.push(FooterHint {
+                    buttons: FooterButtons::Page,
+                    label: "page",
+                });
+                hints.push(FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "back",
+                });
+                hints
             }
         }
     }
@@ -325,24 +370,18 @@ impl SettingsForm {
     pub(in crate::state) fn drawn(&self, cfg: &Config, kind: ControllerKind) -> Vec<DrawnRow> {
         match self.view {
             View::Hub => (0..HUB_LEN)
-                .map(|i| {
-                    let (label, explain) = hub_text(i);
-                    DrawnRow {
-                        label,
-                        explain,
-                        value: None,
-                    }
+                .map(|i| DrawnRow {
+                    label: hub_label(i),
+                    explain: None,
+                    value: None,
                 })
                 .collect(),
             View::Index => PAGES
                 .iter()
-                .map(|page| {
-                    let (label, explain) = page.text();
-                    DrawnRow {
-                        label,
-                        explain,
-                        value: None,
-                    }
+                .map(|page| DrawnRow {
+                    label: page.title(),
+                    explain: None,
+                    value: None,
                 })
                 .collect(),
             View::Page(page) => page
@@ -353,7 +392,7 @@ impl SettingsForm {
                     let (label, explain) = row_text(id);
                     DrawnRow {
                         label,
-                        explain,
+                        explain: Some(explain),
                         value: Some(format_value(cfg, id)),
                     }
                 })
@@ -379,32 +418,13 @@ impl SettingsForm {
 
 impl Page {
     fn title(self) -> &'static str {
-        self.text().0
-    }
-
-    fn text(self) -> (&'static str, &'static str) {
         match self {
-            Page::Suggestions => (
-                "Suggestions",
-                "Word chips above the keyboard, and how many fit.",
-            ),
-            Page::Overlay => (
-                "Overlay",
-                "How solid the window is, and how big the keys are.",
-            ),
-            Page::Typing => ("Typing", "How soon a held key starts repeating."),
-            Page::Sticks => (
-                "Sticks",
-                "How far the sticks reach, and how the highlight stays on a key.",
-            ),
-            Page::Controller => (
-                "Controller",
-                "Where a thumb on the pad counts as rest, and when a trigger counts as pressed.",
-            ),
-            Page::Debug => (
-                "Debug",
-                "Draw the stick, the hit regions, or the reach, on top of the keys.",
-            ),
+            Page::Suggestions => "Suggestions",
+            Page::Overlay => "Overlay",
+            Page::Typing => "Typing",
+            Page::Sticks => "Sticks",
+            Page::Controller => "Controller",
+            Page::Debug => "Debug",
         }
     }
 
@@ -459,22 +479,13 @@ fn page_index(page: Page) -> usize {
     PAGES.iter().position(|p| *p == page).unwrap_or(0)
 }
 
-fn hub_text(index: usize) -> (&'static str, &'static str) {
+fn hub_label(index: usize) -> &'static str {
     match index {
-        HUB_MOVE => (
-            "Move window",
-            "Place the overlay. The sticks move it. Save writes the position and returns here.",
-        ),
-        HUB_MAPPINGS => ("Mappings", "Change which button does what, on each screen."),
-        HUB_LAYOUTS => (
-            "Layouts",
-            "Pick a keyboard layout. The one in use is marked.",
-        ),
-        HUB_OPTIONS => (
-            "Options",
-            "Opacity, key size, key repeat, suggestions, and how the sticks feel.",
-        ),
-        _ => ("Back", "Return to the keyboard."),
+        HUB_MOVE => "Move window",
+        HUB_MAPPINGS => "Mappings",
+        HUB_LAYOUTS => "Layouts",
+        HUB_OPTIONS => "Options",
+        _ => "Back",
     }
 }
 

@@ -8,7 +8,9 @@ The keyboard opens settings with a chord. In the checked-in mappings, `options +
 
 The hub lists **Move window**, **Mappings**, **Layouts**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Options opens a second list: Suggestions, Overlay, Typing, Sticks, Controller, and Debug. Each of those is a short page of values. Back, and the `back` action, return to the keyboard from the hub.
 
-The window is two columns, and both stay the same width on every row. The left column is the title, the rows, and a footer that names the buttons. The highlighted row is a full-width bar. On a value page the current value sits on the right of that row (`On`, `240 ms`, `1.25`). The right column is a panel: the row’s name, then the explainer. Every row has one, including a single sentence. Nothing is drawn under the list.
+The list sits 16px in from the top and both sides. The screen title is white. The hub and the Options list are one column: the title, the rows, and a footer. The highlighted row is a full-width bar. On a value page the current value sits on the right of that row (`On`, `240 ms`, `1.25`), and a panel appears beside it. The panel title is white. The body is the explainer for that value, including a single sentence. Hub and category rows have no panel. Nothing is drawn under the list.
+
+The footer draws each bound button as a 16px glyph, then a short word. A remapped button shows that button's glyph.
 
 Labels name the thing being set (`Thumb rest`, `Delay before repeat`). The TOML key is not shown.
 
@@ -20,7 +22,7 @@ Paths, model weights, colors, and word lists are not on this screen. They stay i
 
 ## Mouse
 
-A click on the hub or the category list opens that row. On a value page, a click moves the highlight so the panel updates. A second click on a toggle flips it. Steppers do not change on click; left and right do.
+A click on the hub or the category list opens that row. On a value page, the first click on a row only moves the highlight, so the panel follows it. A second click on an already highlighted toggle flips it. Steppers do not change on click; left and right do.
 
 ## Controller
 
@@ -46,4 +48,4 @@ While a tape config is overlaid, the save copies only the fields you changed ont
 
 ## Summary
 
-Settings is a hub plus short pages of values, with a panel beside the highlighted row. Up and down move, left and right change the value, and back climbs one level until it returns to the keyboard. Edits sit in memory until you leave the page, and then one write updates the file.
+Settings is a hub plus short pages of values. The explainer panel appears only beside a highlighted value. Up and down move, left and right change the value, and back climbs one level until it returns to the keyboard. Edits sit in memory until you leave the page, and then one write updates the file.

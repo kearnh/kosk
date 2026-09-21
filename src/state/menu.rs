@@ -1,27 +1,32 @@
 use crate::{
     config,
+    controller::ControllerButton,
     controller::ControllerInput,
     controller::ControllerKind,
     state::{
         actions::load_bindings,
         event::{Event, EventQueue, EventSource},
-        settings_form::{copy_row, Effect, SettingsForm},
+        menu_action::MenuAction,
+        settings_form::{copy_row, Effect, FooterButtons, FooterHint, SettingsForm},
         StateId,
     },
+    ui::controller_glyph::{self, GlyphFamily},
 };
 
 use anyhow::Result;
-use egui::{Align2, Context, FontId, Sense, Ui, Vec2};
+use egui::{Align2, Color32, Context, FontId, Frame, Margin, RichText, Sense, Ui, Vec2};
 use std::sync::{Mutex, OnceLock};
 
 use crate::controller::bindings::BindingEngine;
-use crate::state::menu_action::MenuAction;
 
 const LIST_WIDTH: f32 = 320.0;
 const PANEL_WIDTH: f32 = 240.0;
 const ROW_HEIGHT: f32 = 28.0;
 const ROW_FONT: f32 = 14.0;
 const ROW_PAD: f32 = 8.0;
+const EDGE_INSET: i8 = 16;
+const HINT_GLYPH: f32 = 16.0;
+const HINT_GAP: f32 = 10.0;
 
 pub struct MenuState {
     form: SettingsForm,
@@ -54,36 +59,56 @@ impl MenuState {
         let focus = self.form.focus();
         let focused = rows.get(focus);
 
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(LIST_WIDTH);
-                ui.heading(self.form.title());
-                ui.separator();
-                for (index, row) in rows.iter().enumerate() {
-                    if draw_row(ui, row.label, row.value.as_deref(), index == focus).clicked() {
-                        let already = index == focus;
-                        self.form.set_focus(index, kind);
-                        if !self.form.on_page() || already {
-                            self.commit(events, &EventSource::MouseClick, |form, cfg, kind| {
-                                form.activate(cfg, kind)
+        let hints = self.form.footer(kind);
+        Frame::NONE
+            .inner_margin(Margin {
+                left: EDGE_INSET,
+                right: EDGE_INSET,
+                top: EDGE_INSET,
+                bottom: 0,
+            })
+            .show(ui, |ui| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(LIST_WIDTH);
+                        ui.label(
+                            RichText::new(self.form.title())
+                                .heading()
+                                .color(Color32::WHITE),
+                        );
+                        ui.separator();
+                        for (index, row) in rows.iter().enumerate() {
+                            if draw_row(ui, row.label, row.value.as_deref(), index == focus)
+                                .clicked()
+                            {
+                                let already = index == focus;
+                                self.form.set_focus(index, kind);
+                                if !self.form.on_page() || already {
+                                    self.commit(
+                                        events,
+                                        &EventSource::MouseClick,
+                                        |form, cfg, kind| form.activate(cfg, kind),
+                                    );
+                                }
+                            }
+                        }
+                        ui.separator();
+                        draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));
+                    });
+
+                    if let Some(row) = focused {
+                        if let Some(explain) = row.explain {
+                            ui.vertical(|ui| {
+                                ui.set_min_width(PANEL_WIDTH);
+                                ui.set_max_width(PANEL_WIDTH);
+                                ui.label(RichText::new(row.label).strong().color(Color32::WHITE));
+                                ui.add_space(6.0);
+                                ui.label(explain);
                             });
                         }
                     }
-                }
-                ui.separator();
-                ui.label(self.form.footer(kind));
-            });
-
-            if let Some(row) = focused {
-                ui.vertical(|ui| {
-                    ui.set_min_width(PANEL_WIDTH);
-                    ui.set_max_width(PANEL_WIDTH);
-                    ui.label(egui::RichText::new(row.label).strong());
-                    ui.add_space(6.0);
-                    ui.label(row.explain);
                 });
-            }
-        });
+            });
     }
 
     fn commit(
@@ -189,6 +214,69 @@ impl MenuState {
     fn reload_from_config(&mut self) -> Result<()> {
         self.bindings = load_bindings(StateId::Settings)?.with_left_stick_dpad();
         Ok(())
+    }
+}
+
+fn draw_footer(
+    ui: &mut Ui,
+    bindings: &BindingEngine<MenuAction>,
+    hints: &[FooterHint],
+    family: GlyphFamily,
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let mut started = false;
+        for hint in hints {
+            let buttons = buttons_for(bindings, hint.buttons);
+            if buttons.is_empty() {
+                continue;
+            }
+            if started {
+                ui.add_space(HINT_GAP);
+            }
+            started = true;
+            for button in buttons {
+                controller_glyph::show(ui, family, button, HINT_GLYPH);
+            }
+            ui.label(hint.label);
+        }
+    });
+}
+
+fn buttons_for(
+    bindings: &BindingEngine<MenuAction>,
+    buttons: FooterButtons,
+) -> Vec<ControllerButton> {
+    match buttons {
+        FooterButtons::Activate => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::Activate))
+        }
+        FooterButtons::Back => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::Back))
+        }
+        FooterButtons::Adjust => {
+            let mut found =
+                bindings.buttons_matching(|action| matches!(action, MenuAction::SelectLeft));
+            for button in
+                bindings.buttons_matching(|action| matches!(action, MenuAction::SelectRight))
+            {
+                if !found.contains(&button) {
+                    found.push(button);
+                }
+            }
+            found
+        }
+        FooterButtons::Page => {
+            let mut found =
+                bindings.buttons_matching(|action| matches!(action, MenuAction::PagePrev));
+            for button in bindings.buttons_matching(|action| matches!(action, MenuAction::PageNext))
+            {
+                if !found.contains(&button) {
+                    found.push(button);
+                }
+            }
+            found
+        }
     }
 }
 

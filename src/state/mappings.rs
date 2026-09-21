@@ -3,7 +3,7 @@
 use crate::config;
 use crate::controller::bindings::StickDpad;
 use crate::controller::mapping::{validate_rule_order, MappingPill, MappingRule, MappingValue};
-use crate::controller::{ControllerBinding, ControllerButton, ControllerInput};
+use crate::controller::{ControllerBinding, ControllerButton, ControllerInput, ControllerKind};
 use crate::state::actions::get_action;
 use crate::state::event::{CallRequest, Event, EventQueue, EventSource, ReturnStateResult};
 use crate::state::keyboard::display_icon::LabelCache;
@@ -13,6 +13,7 @@ use crate::state::move_window_action::MoveWindowAction;
 use crate::state::select_layout_action::SelectLayoutAction;
 use crate::state::text_input_action::TextInputAction;
 use crate::state::StateId;
+use crate::ui::controller_glyph::{self, GlyphFamily};
 use anyhow::Result;
 use egui::{
     Align, Button, Color32, Context, Frame, Label, Margin, RichText, ScrollArea, Sense, Stroke, Ui,
@@ -33,7 +34,38 @@ const TAB_NEXT: ControllerButton = ControllerButton::ShoulderRight; // R1
 const ACTIVATE: ControllerButton = ControllerButton::FaceBottom; // A
 const DELETE_CONFIRM: ControllerButton = ControllerButton::FaceTop; // Y
 const BACK_CANCEL: ControllerButton = ControllerButton::FaceRight; // B
-                                                                   // ----------------------------------------------------------------------
+const HINT_GLYPH: f32 = 16.0;
+const HINT_GAP: f32 = 10.0;
+// ----------------------------------------------------------------------
+
+fn draw_mapping_hints(ui: &mut Ui, family: GlyphFamily) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        hint_group(ui, family, &[ACTIVATE], "enter table / edit");
+        ui.add_space(HINT_GAP);
+        hint_group(ui, family, &[BACK_CANCEL], "back out / Cancel");
+        ui.add_space(HINT_GAP);
+        hint_group(ui, family, &[DELETE_CONFIRM], "delete binding");
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        hint_group(ui, family, &[TAB_PREV, TAB_NEXT], "mode tab");
+        ui.add_space(HINT_GAP);
+        hint_group(
+            ui,
+            family,
+            &[NAV_UP, NAV_DOWN, NAV_LEFT, NAV_RIGHT],
+            "move focus / row / pill",
+        );
+    });
+}
+
+fn hint_group(ui: &mut Ui, family: GlyphFamily, buttons: &[ControllerButton], label: &str) {
+    for button in buttons {
+        controller_glyph::show(ui, family, *button, HINT_GLYPH);
+    }
+    ui.label(label);
+}
 
 const EDITABLE_MODES: [StateId; 5] = [
     StateId::Keyboard,
@@ -926,7 +958,13 @@ impl MappingsState {
         self.prev_held = held;
     }
 
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
+    pub fn draw_ui(
+        &mut self,
+        ctx: &Context,
+        ui: &mut Ui,
+        events: &mut EventQueue,
+        kind: ControllerKind,
+    ) {
         ui.horizontal(|ui| {
             ui.heading(RichText::new("Key Mappings").color(Color32::WHITE));
             if self.dirty {
@@ -1128,8 +1166,7 @@ impl MappingsState {
                 self.do_save();
             }
         });
-        ui.label("A enter table / edit   B back out / Cancel   Y delete binding");
-        ui.label("L1/R1 mode tab   D-pad move focus / row / pill");
+        draw_mapping_hints(ui, GlyphFamily::from_kind(kind));
 
         if let Some((action, pill)) = self.delete_confirm.clone() {
             let binding_text = self

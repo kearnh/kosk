@@ -311,7 +311,7 @@ impl AppState {
                 text_input::with_mut(|ti| ti.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::Mappings => {
-                mappings::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
+                mappings::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events, self.controller_kind));
             }
             StateId::SelectKey => {
                 select_key::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
