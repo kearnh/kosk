@@ -658,8 +658,78 @@ fn controller_map_file() -> Option<String> {
         .and_then(|m| m.lock().unwrap().clone())
 }
 
+/// Decimal places when writing a config float. `None` keeps the shortest `f32` text.
+fn config_float_digits(path: &str) -> Option<usize> {
+    match path {
+        "keyboard_opacity"
+        | "ui_opacity"
+        | "stick_warp"
+        | "stick_select_sticky"
+        | "sc2.pad_origin_relative"
+        | "sc2.pad_origin_stretch" => Some(2),
+        "stick_scale_x"
+        | "stick_scale_y"
+        | "scale_x"
+        | "scale_y"
+        | "sc2.pad_origin_stretch_max_gain"
+        | "text_input.font_size"
+        | "completion.ui.max_chip_width"
+        | "completion.ui.min_chip_width"
+        | "completion.ui.font_size"
+        | "completion.ui.corner_radius"
+        | "completion.ui.selected_outline_width"
+        | "completion.ui.padding_x"
+        | "completion.ui.padding_y"
+        | "completion.ui.gap"
+        | "completion.ui.armed_dot_radius"
+        | "completion.ngram.backoff_alpha"
+        | "completion.ngram.lambda_trigram"
+        | "completion.ngram.lambda_bigram"
+        | "completion.ngram.lambda_unigram"
+        | "completion.ngram.lambda_exact"
+        | "completion.ngram.lambda_typo" => Some(1),
+        _ => None,
+    }
+}
+
+fn format_config_float(path: &str, value: f64) -> String {
+    if let Some(digits) = config_float_digits(path) {
+        return format!("{:.*}", digits, value);
+    }
+
+    let mut text = (value as f32).to_string();
+    if !text.contains(['.', 'e', 'E']) {
+        text.push_str(".0");
+    }
+    text
+}
+
+fn child_config_path(path: &str, key: &str) -> String {
+    if path.is_empty() {
+        key.to_owned()
+    } else {
+        format!("{path}.{key}")
+    }
+}
+
 /// Convert a `toml::Value` into a `toml_edit::Item` (toml_edit 0.22 has no `ser::to_item`).
-fn toml_to_item(value: &toml::Value) -> Result<toml_edit::Item> {
+fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
+    if let Some(n) = value.as_float() {
+        let literal = format_config_float(path, n);
+        let parsed: toml_edit::Value = literal
+            .parse()
+            .map_err(|e| anyhow::anyhow!("config float {path} = {literal}: {e}"))?;
+        return Ok(toml_edit::Item::Value(parsed));
+    }
+
+    if let Some(table) = value.as_table() {
+        let mut out = toml_edit::Table::new();
+        for (key, child) in table {
+            out.insert(key, toml_to_item(&child_config_path(path, key), child)?);
+        }
+        return Ok(toml_edit::Item::Table(out));
+    }
+
     use serde::Serialize;
     let edit_value = value
         .serialize(toml_edit::ser::ValueSerializer::new())
@@ -673,6 +743,7 @@ fn toml_to_item(value: &toml::Value) -> Result<toml_edit::Item> {
 
 /// Diff `old` → `new` into an existing `toml_edit` table, preserving unrelated formatting.
 fn apply_toml_diff(
+    path: &str,
     table: &mut toml_edit::Table,
     old: &toml::Value,
     new: &toml::Value,
@@ -689,18 +760,19 @@ fn apply_toml_diff(
             Some(old_child) if old_child == new_child => {}
             Some(old_child) if old_child.is_table() && new_child.is_table() => {
                 let can_recurse = table.get(key).is_some_and(|item| item.is_table());
+                let child_path = child_config_path(path, key);
                 if can_recurse {
                     let child_table = table
                         .get_mut(key)
                         .and_then(|item| item.as_table_mut())
                         .expect("checked is_table");
-                    apply_toml_diff(child_table, old_child, new_child)?;
+                    apply_toml_diff(&child_path, child_table, old_child, new_child)?;
                 } else {
-                    table[key] = toml_to_item(new_child)?;
+                    table[key] = toml_to_item(&child_path, new_child)?;
                 }
             }
             _ => {
-                table[key] = toml_to_item(new_child)?;
+                table[key] = toml_to_item(&child_config_path(path, key), new_child)?;
             }
         }
     }
@@ -723,7 +795,7 @@ fn write_toml_diff_preserving(path: &Path, old: &toml::Value, new: &toml::Value)
     let mut doc = content
         .parse::<toml_edit::DocumentMut>()
         .with_context(|| format!("Could not parse {}", path.display()))?;
-    apply_toml_diff(doc.as_table_mut(), old, new)?;
+    apply_toml_diff("", doc.as_table_mut(), old, new)?;
     fs::write(path, doc.to_string())
         .with_context(|| format!("Could not write {}", path.display()))?;
     Ok(())
@@ -753,7 +825,7 @@ fn write_config_preserving(
         let mut doc = content
             .parse::<toml_edit::DocumentMut>()
             .with_context(|| format!("Could not parse {}", path.display()))?;
-        apply_toml_diff(doc.as_table_mut(), &old_val, &new_val)?;
+        apply_toml_diff("", doc.as_table_mut(), &old_val, &new_val)?;
 
         let needs_path = match doc.get("controller_map") {
             Some(item) => item.as_str() != Some(rel),
@@ -1634,5 +1706,46 @@ controller_map = \"mappings.toml\"\n\
         assert!(main.contains("[layouts]"), "{main}");
         assert!(main.contains("window_pos = ["), "{main}");
         assert_eq!(fs::read_to_string(&mappings_path).unwrap(), mappings);
+    }
+
+    #[test]
+    fn write_rounds_floats_to_field_decimals() {
+        let dir = temp_dir("float-decimals");
+        let config_path = dir.join("config.toml");
+        fs::write(
+            &config_path,
+            "\
+layouts = { main = \"kb.toml\" }\n\
+keyboard_opacity = 0.30\n\
+ui_opacity = 1.00\n\
+stick_scale_x = 3.0\n\
+scale_x = 40.0\n\
+stick_select_sticky = 1.00\n\
+",
+        )
+        .unwrap();
+
+        let mut old = sample_cfg();
+        old.keyboard_opacity = 0.3;
+        old.ui_opacity = 1.0;
+        old.stick_scale_x = 3.0;
+        old.scale_x = 40.0;
+        old.stick_select_sticky = 1.0;
+        let mut new = old.clone();
+        new.keyboard_opacity = 0.7;
+        new.ui_opacity = 0.95;
+        new.stick_scale_x = 3.8;
+        new.scale_x = 30.0;
+        new.stick_select_sticky = 1.25;
+
+        write_config_preserving(&config_path, &old, &new, None).unwrap();
+
+        let main = fs::read_to_string(&config_path).unwrap();
+        assert!(main.contains("keyboard_opacity = 0.70"), "{main}");
+        assert!(main.contains("ui_opacity = 0.95"), "{main}");
+        assert!(main.contains("stick_scale_x = 3.8"), "{main}");
+        assert!(main.contains("scale_x = 30.0"), "{main}");
+        assert!(main.contains("stick_select_sticky = 1.25"), "{main}");
+        assert!(!main.contains("699999"), "{main}");
     }
 }
