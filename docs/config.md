@@ -6,7 +6,7 @@ This document describes how KOSK loads, watches, and writes its TOML configurati
 
 Almost every tunable in the program — stick scaling, which controller to open, debounce intervals, window position, the path of the layout TOML — is meant to be edited without rebuilding. Config is therefore a process-wide singleton: `config::init` runs once at startup, `config::get` clones the current value, and a file watcher reloads it when you save. Modes register `on_changed` callbacks so they can rebuild bindings and layouts after a reload.
 
-That singleton is also why saving has to be careful. The in-memory `Config` is not always a faithful round-trip of the file on disk.
+That singleton is also why saving has to be careful. `Config` holds the expanded binding map, and a tape overlay or a CLI flag can make the live value differ from the file. Save patches the existing TOML instead of replacing it.
 
 ## Command line
 
@@ -46,11 +46,9 @@ Relative paths (layouts, mappings file, record template, replay file, keys log) 
 
 ## `controller_map` as a file
 
-Serde sees `controller_map` as either a nested table or a string. A string is opened, parsed as TOML whose root is `HashMap<StateId, HashMap<ControllerBinding, String>>`, and stored in memory as that map. The original path is not kept on `Config`.
+Serde sees `controller_map` as either a nested table or a string. A string is opened relative to the config directory, parsed, and stored on `Config` as the expanded map. The path string is remembered beside the struct, from the raw file, so a later save can keep `controller_map = "mappings.toml"` and write binding changes into that sidecar. An inline table leaves the remembered path empty, and save patches the tables inside `config.toml`.
 
-That is convenient for loading. It is the cause of the save bug described below.
-
-`mappings.toml` is grouped by mode (`[Keyboard]`, `[Settings]`, `[TextInput]`, `[MoveWindow]`). Keys are binding specs such as `"triggerLeft"` or `"options + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.settings"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
+`mappings.toml` is grouped by mode (`[Keyboard]`, `[Settings]`, `[TextInput]`, `[MoveWindow]`, `[SelectLayout]`). Keys are binding specs such as `"triggerLeft"` or `"options + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.settings"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
 
 ## Live reload
 
@@ -60,21 +58,17 @@ When a watched file is modified, `load_config` runs again. Reloads within the sa
 
 `load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout file exists on disk, and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
 
-Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher does **not** watch `mappings.toml`. If you edit mappings while the process is running, those edits are not picked up until something else reloads config (for example saving `config.toml`, or restarting). Combined with the save bug, that is easy to trip over.
+Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher does **not** watch `mappings.toml`. An edit to that file in an external editor is ignored until something else reloads config (for example a change to `config.toml`, or a restart). The mappings screen calls `config::notify_changed` after it saves, so its own write still reloads bindings.
 
 **Footnote:** Not watching `mappings.toml` is a bug. See [todo.md](../todo.md).
 
 ## Saving
 
-`config::save` writes `toml::to_string_pretty` of a `Config` back to the original path. `AppState` calls it when the user confirms a new overlay position in Move Window (`SaveWindowPos`), so that `window_pos` persists. Analog motion in that mode updates the live position only.
+`config::save` diffs the last disk snapshot against the new `Config` and patches the existing file with `toml_edit`. Unchanged keys and comments stay. `AppState` calls it when the user confirms a new overlay position in Move Window (`SaveWindowPos`). The mappings editor calls it after replacing `controller_map`. Analog motion in that mode updates the live position only and does not save.
 
-Because `controller_map` in memory is the expanded HashMap, a full save serializes it as inline `[controller_map.Keyboard]` tables and drops the `"mappings.toml"` path. After that, editing `mappings.toml` has no effect: the next load uses the inlined copy inside `config.toml`. The same dump can also reorder or rewrite other tables.
+When the loaded file used a path string, that key is left out of the config diff. If the string is missing or different, save writes it back. If the binding map changed, the same diff is applied to the sidecar. An inline map is patched in `config.toml` instead.
 
-When a recording’s config overlay is active, `save` is more conservative: it copies `window_pos` onto the remembered disk config and writes that, so a replay does not persist tape-only values. That path still does not restore a `controller_map` file reference if the disk file had already been rewritten earlier.
-
-Until that is fixed, treat `config::save` as “persist window position, possibly at the cost of rewriting the rest of the file.” Prefer editing `config.toml` and `mappings.toml` by hand and restarting if mappings stop applying.
-
-**Footnote:** Inlining the mappings table on save (and forgetting the `mappings.toml` path) is a bug. See [todo.md](../todo.md).
+When a recording’s config overlay is active, `save` copies `window_pos` onto the remembered disk config and writes that, so a replay does not persist tape-only values. The path string is still kept.
 
 ## Recorded config
 
@@ -90,4 +84,4 @@ Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.
 
 ## Summary
 
-`config.rs` owns the process-wide TOML singleton, the CLI flags that override pieces of it, a file watcher for the main file and layout files, and a save path that currently round-trips the in-memory struct rather than the original file. Bindings may live in a sidecar `mappings.toml`, but that path is forgotten after deserialize, and the watcher does not include that sidecar. Device feel and binding tables are separate on purpose: thresholds belong next to the controller family, action names belong next to the mode that interprets them.
+`config.rs` owns the process-wide TOML singleton, the CLI flags that override pieces of it, a file watcher for the main file and layout files, and a save path that patches the original TOML. A `controller_map` path string is remembered across load and save, and binding edits go to that sidecar; the watcher does not include the sidecar. Device feel and binding tables are separate on purpose: thresholds belong next to the controller family, action names belong next to the mode that interprets them.

@@ -46,7 +46,7 @@ This match is the side-effect boundary. Handlers are supposed to enqueue, not ty
 
 - `SendKey` / `SendText` go to the key sink. Errors print and do not panic.
 - `ChangeState` writes `self.state`. Leaving Move Window without `SaveWindowPos` restores the position captured on entry.
-- `SaveWindowPos` writes `window_pos` through `config::save` (see the save caveat in [config.md](config.md)) and clears the move-window origin so the following `ChangeState` does not restore it.
+- `SaveWindowPos` writes `window_pos` through `config::save` (see [config.md](config.md)) and clears the move-window origin so the following `ChangeState` does not restore it.
 - `FlipWindowLeftRight`, `FlipWindowAboveBelow`, and `RotateWindow` only affect a `MousePointer` placement; they are no-ops for corner or absolute positions. See [window-position.md](window-position.md).
 - `Exit` sends `ViewportCommand::Close`.
 - `ToggleRecord` starts or stops a `.krec` capture.
