@@ -1116,6 +1116,36 @@ pub(crate) fn try_get() -> Option<Config> {
         .map(|instance| instance.lock().unwrap().clone())
 }
 
+/// Replace the in-memory config. Does not write the file or notify listeners.
+pub(crate) fn replace_live(cfg: Config) {
+    if let Some(instance) = CONFIG_INSTANCE.get() {
+        *instance.lock().unwrap() = cfg;
+    }
+}
+
+/// Write settings edits. While a tape config is overlaid, `copy_edits` copies only
+/// the changed fields onto the disk snapshot so tape-merged values stay off disk.
+/// Otherwise the whole live config is saved, same as [`save`].
+pub(crate) fn persist_settings(live: &Config, copy_edits: impl FnOnce(&mut Config)) -> Result<()> {
+    if !TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
+        return save(live.clone());
+    }
+
+    let path = CONFIG_PATH
+        .get()
+        .ok_or(anyhow::anyhow!("Config path not set"))?;
+    let map_file = controller_map_file();
+    let disk = DISK_CONFIG
+        .get()
+        .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?;
+    let disk_before = disk.lock().unwrap().clone();
+    let mut persist = disk_before.clone();
+    copy_edits(&mut persist);
+    write_config_preserving(path, &disk_before, &persist, map_file.as_deref())?;
+    *disk.lock().unwrap() = persist;
+    Ok(())
+}
+
 pub fn save(new_config: Config) -> Result<()> {
     let path = CONFIG_PATH
         .get()

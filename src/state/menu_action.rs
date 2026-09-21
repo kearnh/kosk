@@ -9,7 +9,12 @@ use crate::state::StateId;
 pub enum MenuAction {
     SelectUp,
     SelectDown,
+    SelectLeft,
+    SelectRight,
     Activate,
+    PagePrev,
+    PageNext,
+    Back,
     SwitchState(StateId),
 }
 

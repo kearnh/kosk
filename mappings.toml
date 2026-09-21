@@ -63,8 +63,12 @@ quickAccess = "switchState.mappings"
 [Settings]
 "dpadUp" = "selectUp"
 "dpadDown" = "selectDown"
+"dpadLeft" = "selectLeft"
+"dpadRight" = "selectRight"
 "faceBottom" = "activate"
-"faceRight" = "switchState.keyboard"
+"faceRight" = "back"
+"shoulderLeft" = "pagePrev"
+"shoulderRight" = "pageNext"
 
 [TextInput]
 "dpadLeft" = "moveCursorLeft"

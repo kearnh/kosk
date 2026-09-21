@@ -28,6 +28,7 @@ pub mod os_focus;
 mod select_key;
 mod select_layout;
 mod select_layout_action;
+mod settings_form;
 mod text_input;
 mod text_input_action;
 pub mod window_pos;
@@ -298,7 +299,8 @@ impl AppState {
                 keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::Settings => {
-                menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events));
+                menu::with_mut(|m| m.draw_ui(ctx, ui, &mut self.events, self.controller_kind));
+                menu::flush_pending_notify();
             }
             StateId::MoveWindow => {
                 move_window::with_mut(|mw| {
@@ -412,7 +414,10 @@ impl AppState {
                 keyboard::with_mut(|kb| kb.handle_controller_input(input, &mut self.events))?
             }
             StateId::Settings => {
-                menu::with_mut(|m| m.handle_controller_input(ctx, input, &mut self.events))?
+                menu::with_mut(|m| {
+                    m.handle_controller_input(ctx, input, &mut self.events, self.controller_kind)
+                })?;
+                menu::flush_pending_notify();
             }
             StateId::MoveWindow => {
                 let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());

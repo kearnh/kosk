@@ -8,11 +8,6 @@ Controller / bindings
   support (e.g. `quickAccess`, paddles on DualShock 4). Today unsupported
   buttons simply never fire because device drivers report them as not held.
 
-Settings
---------
-
-Finish settings: nicer interface, config/options setting on that screen
-
 Input Text Prediction
 ---------------------
 

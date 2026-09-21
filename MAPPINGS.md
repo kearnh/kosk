@@ -93,7 +93,9 @@ These names are true or false while you hold the button. You can combine them wi
 
 ## Settings actions
 
-`selectUp`, `selectDown`, `activate`, `switchState.…`
+`selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `switchState.…`
+
+Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between option pages while one is open. `back` climbs one level, and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`. `switchState.keyboard` still leaves for the keyboard immediately.
 
 ## Text input actions
 
