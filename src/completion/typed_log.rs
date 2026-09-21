@@ -50,6 +50,16 @@ impl TypedLog {
         Some((inject, restore_token))
     }
 
+    pub fn last_accept(&self) -> Option<(String, String)> {
+        let inject = self.last_injected.clone()?;
+        let restore_token = self.restore_token.clone().unwrap_or_default();
+        Some((inject, restore_token))
+    }
+
+    pub fn drop_last_accept(&mut self) {
+        self.clear_last_accept();
+    }
+
     fn clear_last_accept(&mut self) {
         self.last_injected = None;
         self.restore_token = None;

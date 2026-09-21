@@ -525,7 +525,11 @@ impl KeyboardState {
                 if !out.inject.is_empty() {
                     crate::completion::with_mut(|s| {
                         if let Some(s) = s {
+                            let saved = s.snapshot_last_accept();
                             s.note_log(crate::completion::LogEvent::Text, &out.inject);
+                            if let Some(saved) = saved {
+                                s.restore_last_accept(saved);
+                            }
                             let t = s.typed_text().to_string();
                             let n = t.len();
                             s.request_from_buffer(&t, n);
@@ -537,10 +541,14 @@ impl KeyboardState {
                 if !out.inject.is_empty() {
                     crate::completion::with_mut(|s| {
                         if let Some(s) = s {
+                            let saved = s.snapshot_last_accept();
                             for _ in 0..out.token_char_len {
                                 s.note_log(crate::completion::LogEvent::Backspace, "");
                             }
                             s.note_log(crate::completion::LogEvent::Text, &out.inject);
+                            if let Some(saved) = saved {
+                                s.restore_last_accept(saved);
+                            }
                             let t = s.typed_text().to_string();
                             let n = t.len();
                             s.request_from_buffer(&t, n);
@@ -560,25 +568,17 @@ impl KeyboardState {
     }
 
     fn completion_cancel(&mut self, events: &mut EventQueue, source: &EventSource) {
-        crate::completion::with_mut(|s| {
-            let Some(s) = s else {
-                return;
-            };
-            if !s.cfg().keyboard.retract_last_accept {
-                s.clear_eat_accept_space();
-                s.clear_suggestion_just_accepted();
-                s.clear_highlight();
-                return;
-            }
-            if let Some(out) = s.take_retract() {
-                if Self::enqueue_retract(events, source, &out) {
+        let effect = crate::completion::with_mut(|s| s.map(|s| s.cancel_suggestion()));
+        let Some(crate::completion::CancelSuggestion::Retract(out)) = effect else {
+            return;
+        };
+        if Self::enqueue_retract(events, source, &out) {
+            crate::completion::with_mut(|s| {
+                if let Some(s) = s {
                     s.note_retract(&out);
                 }
-            }
-            s.clear_eat_accept_space();
-            s.clear_suggestion_just_accepted();
-            s.clear_highlight();
-        });
+            });
+        }
     }
 
     fn send_under_stick(

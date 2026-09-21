@@ -100,6 +100,7 @@ impl TextInputState {
     }
 
     fn insert_char(&mut self, ch: char) {
+        self.undo_accept = None;
         let outcome = crate::completion::with_mut(|s| {
             let s = s?;
             s.clear_suggestion_just_accepted();
@@ -121,6 +122,7 @@ impl TextInputState {
     }
 
     fn backspace(&mut self) {
+        self.undo_accept = None;
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.clear_eat_accept_space();
@@ -132,6 +134,7 @@ impl TextInputState {
     }
 
     fn move_cursor_left(&mut self) {
+        self.undo_accept = None;
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.note_log(crate::completion::LogEvent::Arrow, "");
@@ -142,6 +145,7 @@ impl TextInputState {
     }
 
     fn move_cursor_right(&mut self) {
+        self.undo_accept = None;
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.note_log(crate::completion::LogEvent::Arrow, "");
@@ -236,17 +240,40 @@ impl TextInputState {
     }
 
     fn completion_cancel(&mut self) {
-        crate::completion::with_mut(|s| {
-            if let Some(s) = s {
-                s.clear_eat_accept_space();
-                s.clear_suggestion_just_accepted();
+        enum Step {
+            Dismiss,
+            Undo,
+            Drop,
+        }
+
+        let step = crate::completion::with_mut(|s| {
+            let Some(s) = s else {
+                return Step::Undo;
+            };
+            if s.highlight().is_some() {
                 s.clear_highlight();
+                return Step::Dismiss;
+            }
+            let undo = s.suggestion_just_accepted();
+            s.clear_eat_accept_space();
+            s.clear_suggestion_just_accepted();
+            if undo {
+                Step::Undo
+            } else {
+                Step::Drop
             }
         });
-        if let Some((text, cursor)) = self.undo_accept.take() {
-            self.text = text;
-            self.cursor_pos = cursor;
-            self.refresh_completion();
+
+        match step {
+            Step::Dismiss => {}
+            Step::Drop => self.undo_accept = None,
+            Step::Undo => {
+                if let Some((text, cursor)) = self.undo_accept.take() {
+                    self.text = text;
+                    self.cursor_pos = cursor;
+                    self.refresh_completion();
+                }
+            }
         }
     }
 

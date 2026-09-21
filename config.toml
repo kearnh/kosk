@@ -206,9 +206,10 @@ new_word_mark_color = [50, 200, 90, 255]
 # (hel + hello → lo). backspace_replace = delete the token, then send the word.
 # Non-prefix chips (typo corrections) always use backspace_replace.
 accept_via = "suffix"
-# After accepting a chip, cancelSuggestion undoes that insertion
-# (retypes a replaced typo token) and refreshes chips.
-# false: only clears the highlight.
+# cancelSuggestion undoes the last accept only while that accept is still
+# the latest edit and no chip is highlighted (retypes a replaced token).
+# Backing out of a highlighted chip only clears the highlight.
+# false: cancel never undoes an accept.
 retract_last_accept = true
 # Backspace also forgets that character for suggestions.
 track_backspace = true

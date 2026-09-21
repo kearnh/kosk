@@ -39,9 +39,17 @@ pub struct AcceptOutcome {
     pub token_char_len: usize,
 }
 
+#[derive(Debug)]
 pub struct RetractOutcome {
     pub inject: String,
     pub restore_token: String,
+}
+
+#[derive(Debug)]
+pub enum CancelSuggestion {
+    DismissedHighlight,
+    Retract(RetractOutcome),
+    Cleared,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,6 +270,41 @@ impl Session {
         })
     }
 
+    pub fn snapshot_last_accept(&self) -> Option<(String, String)> {
+        self.typed.last_accept()
+    }
+
+    pub fn restore_last_accept(&mut self, saved: (String, String)) {
+        let (inject, restore_token) = saved;
+        let restore = if restore_token.is_empty() {
+            None
+        } else {
+            Some(restore_token)
+        };
+        self.typed.set_last_accept(Some(inject), restore);
+    }
+
+    pub fn cancel_suggestion(&mut self) -> CancelSuggestion {
+        if self.highlight.is_some() {
+            self.highlight = None;
+            return CancelSuggestion::DismissedHighlight;
+        }
+
+        let undo = self.cfg.keyboard.retract_last_accept && self.suggestion_just_accepted;
+        self.pending_eat_space = false;
+        self.suggestion_just_accepted = false;
+
+        if !undo {
+            self.typed.drop_last_accept();
+            return CancelSuggestion::Cleared;
+        }
+
+        match self.take_retract() {
+            Some(out) => CancelSuggestion::Retract(out),
+            None => CancelSuggestion::Cleared,
+        }
+    }
+
     pub fn note_retract(&mut self, out: &RetractOutcome) {
         for _ in out.inject.chars() {
             self.note_log(LogEvent::Backspace, "");
@@ -289,6 +332,7 @@ impl Session {
 
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
         self.suggestion_just_accepted = false;
+        self.typed.drop_last_accept();
         match event {
             LogEvent::Char(_) | LogEvent::Text => {}
             _ => self.pending_eat_space = false,
@@ -890,6 +934,7 @@ mod tests {
     fn apply_keyboard_accept(s: &mut Session, out: &AcceptOutcome) {
         use crate::completion::settings::AcceptVia;
 
+        let saved = s.snapshot_last_accept();
         match out.via {
             AcceptVia::Suffix => {
                 if !out.inject.is_empty() {
@@ -909,6 +954,9 @@ mod tests {
         let t = s.typed_text().to_string();
         let n = t.len();
         s.request_from_buffer(&t, n);
+        if let Some(saved) = saved {
+            s.restore_last_accept(saved);
+        }
     }
 
     #[test]
@@ -1056,6 +1104,71 @@ mod tests {
         assert!(s.suggestion_just_accepted());
         s.note_log(LogEvent::Char('a'), "");
         assert!(!s.suggestion_just_accepted());
+    }
+
+    #[test]
+    fn typing_after_accept_drops_retract() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_hello(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+        s.note_log(LogEvent::Char('n'), "");
+        s.note_log(LogEvent::Char('o'), "");
+        s.note_log(LogEvent::Char('t'), "");
+        assert!(s.take_retract().is_none());
+    }
+
+    fn accept_im(s: &mut Session) -> AcceptOutcome {
+        use crate::completion::{MatchKind, Source};
+
+        type_token(s, "im");
+        s.candidates = vec![Candidate {
+            text: "i'm".into(),
+            score: 1.0,
+            source: Source::Dictionary,
+            kind: MatchKind::Correction,
+        }];
+        s.highlight = Some(0);
+        s.take_accept(None).unwrap()
+    }
+
+    #[test]
+    fn cancel_highlight_does_not_undo_accept() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_im(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+        s.highlight = Some(0);
+        assert!(matches!(
+            s.cancel_suggestion(),
+            CancelSuggestion::DismissedHighlight
+        ));
+        assert!(s.suggestion_just_accepted());
+        assert_eq!(s.typed_text(), "i'm ");
+        match s.cancel_suggestion() {
+            CancelSuggestion::Retract(retract) => {
+                assert_eq!(retract.restore_token, "im");
+                s.note_retract(&retract);
+            }
+            other => panic!("expected retract, got {other:?}"),
+        }
+        assert_eq!(s.typed_text(), "im");
+    }
+
+    #[test]
+    fn cancel_highlight_after_later_word_does_not_retract() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_im(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+        type_token(&mut s, "not");
+        s.highlight = Some(0);
+        assert!(matches!(
+            s.cancel_suggestion(),
+            CancelSuggestion::DismissedHighlight
+        ));
+        assert_eq!(s.typed_text(), "i'm not");
+        assert!(s.take_retract().is_none());
     }
 
     fn ctx_token(s: &Session, text: &str) -> CompletionContext {
