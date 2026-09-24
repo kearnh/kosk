@@ -67,6 +67,7 @@ quickAccess = "switchState.mappings"
 "dpadRight" = "selectRight"
 "faceBottom" = "activate"
 "faceRight" = "back"
+"options" = "openConfig"
 "shoulderLeft" = "pagePrev"
 "shoulderRight" = "pageNext"
 

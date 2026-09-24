@@ -15,6 +15,7 @@ pub enum MenuAction {
     PagePrev,
     PageNext,
     Back,
+    OpenConfig,
     SwitchState(StateId),
 }
 

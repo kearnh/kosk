@@ -147,6 +147,7 @@ pub(in crate::state) enum FooterButtons {
     Back,
     Adjust,
     Page,
+    OpenConfig,
 }
 
 pub(in crate::state) struct FooterHint {
@@ -340,6 +341,10 @@ impl SettingsForm {
                 FooterHint {
                     buttons: FooterButtons::Back,
                     label: "back",
+                },
+                FooterHint {
+                    buttons: FooterButtons::OpenConfig,
+                    label: "open config",
                 },
             ],
             View::Page(_) => {
@@ -1059,6 +1064,10 @@ mod tests {
         assert!(opened.open.is_none());
         assert_eq!(form.view, View::Index);
         assert_eq!(form.focus, 0);
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::OpenConfig && hint.label == "open config"));
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);

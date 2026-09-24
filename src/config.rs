@@ -564,6 +564,25 @@ fn config_source() -> ConfigSource {
         .unwrap_or(ConfigSource::Explicit)
 }
 
+const CONFIG_EDITOR: &str = "notepad";
+
+/// Open `%LOCALAPPDATA%\kosk\config.toml` in a text editor, creating it when absent.
+pub(crate) fn open_user_config_in_editor() {
+    let path = match crate::config_overlay::ensure_user_config_file() {
+        Ok(path) => path,
+        Err(e) => {
+            crate::user_notify::notify_user(&format!("could not open config: {e:#}"));
+            return;
+        }
+    };
+    if let Err(e) = std::process::Command::new(CONFIG_EDITOR).arg(&path).spawn() {
+        crate::user_notify::notify_user(&format!(
+            "could not open {} in {CONFIG_EDITOR}: {e}",
+            path.display()
+        ));
+    }
+}
+
 const TAPE_CONFIG_SKIP: &[&str] = &[
     "layouts",
     "record_file",

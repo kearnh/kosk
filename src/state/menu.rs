@@ -180,6 +180,7 @@ impl MenuState {
             PagePrev => self.commit(events, source, |form, _, _| form.shift_page(-1)),
             PageNext => self.commit(events, source, |form, _, _| form.shift_page(1)),
             Back => self.commit(events, source, |form, _, _| form.back()),
+            OpenConfig => config::open_user_config_in_editor(),
             SwitchState(state) => {
                 self.write_settings();
                 let _ = events.push(Event::ChangeState(*state), source);
@@ -276,6 +277,9 @@ fn buttons_for(
                 }
             }
             found
+        }
+        FooterButtons::OpenConfig => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::OpenConfig))
         }
     }
 }
