@@ -4,7 +4,7 @@ This document describes how a controller snapshot becomes a list of typed action
 
 ## What problem does this solve?
 
-`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStick"` and `"options + faceTop" = "switchState.settings"`. A few keys mean two things: accept a highlighted chip, or type. Those use a `when` clause on the same key, not a composite action name. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
+`mappings.toml` says things like `"triggerLeft" = "sendKeyUnderLeftStick"` and `"share + faceTop" = "switchState.settings"`. A few keys mean two things: accept a highlighted chip, or type. Those use a `when` clause on the same key, not a composite action name. The keyboard should not parse TOML on every poll. At init (and on config reload) each mode asks `load_bindings` for a `BindingEngine<ThatMode's Action>`. Every controller poll, the engine returns which mappings fired.
 
 Two complications sit in that sentence. Some actions should run on the rising edge only (open settings once). Others should run on every poll while the button is held (type the highlighted letter, with debounce later). And two-button chords have to coexist with single-button mappings on the follower without firing both.
 
@@ -45,7 +45,7 @@ The user-facing list of button names, action names, and flags is [MAPPINGS.md](.
 
 ## Building the engine
 
-`BindingEngine::try_from_raw` splits the map into singles and chords. A button that is a chord **leader** must not also have a standalone mapping. That rule is load-time: `"options" = "something"` together with `"options + faceTop" = "switchState.settings"` is an error. The **follower** may have its own single mapping. In the checked-in file, `faceTop` toggles Shift, and `options + faceTop` still opens settings because of the suppress rule below.
+`BindingEngine::try_from_raw` splits the map into singles and chords. A button that is a chord **leader** must not also have a standalone mapping. That rule is load-time: `"share" = "something"` together with `"share + faceTop" = "switchState.settings"` is an error. The **follower** may have its own single mapping. In the checked-in file, `faceTop` toggles Shift, and `share + faceTop` still opens settings because of the suppress rule below.
 
 The engine stores the set of buttons that appear in any mapping so each poll only queries those buttons.
 

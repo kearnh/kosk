@@ -22,8 +22,8 @@ The shipped file is the built-in default. A user `mappings.toml` next to the use
 | `shoulderLeft` `shoulderRight` | L1 / R1 | L1 / R1 |
 | `triggerLeft` `triggerRight` | L2 / R2 (past the threshold in `config.toml`) | L2 / R2 |
 | `stickLeft` `stickRight` | L3 / R3 (stick click) | stick click |
-| `options` | Options | Start / Menu |
-| `share` | Share | |
+| `options` (`menu` is the same button) | Options | right of Steam |
+| `share` (`view` is the same button) | Share | left of Steam |
 | `system` | PS | Steam |
 | `padLeft` `padRight` | unused | left / right pad click |
 | `l4` `l5` `r4` `r5` | unused | paddles |
@@ -95,7 +95,7 @@ These names are true or false while you hold the button. You can combine them wi
 
 `selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `switchState.…`
 
-Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between option pages while one is open. `back` climbs one level, and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, and `options` to `openConfig`. On a Steam Controller, `options` is the menu button to the right of Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
+Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between option pages while one is open. `back` climbs one level, and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, and `share` to `openConfig`. On a Steam Controller, `share` is the left button beside Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
 
 ## Text input actions
 

@@ -4,7 +4,7 @@ This document describes the settings screen. `StateId::Settings` is still one mo
 
 ## What the screen shows
 
-The keyboard opens settings with a chord. In the checked-in mappings, `options + faceTop` is `switchState.settings`.
+The keyboard opens settings with a chord. In the checked-in mappings, `share + faceTop` is `switchState.settings`.
 
 The hub lists **Move window**, **Mappings**, **Layouts**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Options opens a second list: Suggestions, Overlay, Typing, Sticks, Controller, and Debug. Each of those is a short page of values. Back, and the `back` action, return to the keyboard from the hub.
 
@@ -30,7 +30,7 @@ A click on the hub or the category list opens that row. On a value page, the fir
 
 Up and down wrap the current list. Left and right change the highlighted value: toggles flip, choices wrap, numbers step and stop at their ends. Activate opens a hub or category row, and flips a toggle. `pagePrev` and `pageNext` change page only while a page is open; they wrap from Debug back to Suggestions. `back` goes up one level. From the hub it returns to the keyboard.
 
-The checked-in map binds `faceRight` to `back`, and `options` to `openConfig`. On a Steam Controller, `options` is the menu button to the right of Steam. On the Options list the footer shows that button as "open config", unless a config path was given on the command line, in which case the hint is hidden and the action does nothing. `openConfig` opens `%LOCALAPPDATA%\kosk\config.toml` in `$EDITOR` when that is set, otherwise Notepad, creating the file when it is missing. `switchState.keyboard` is still a valid action and leaves for the keyboard immediately. The left stick is emulated as a d-pad, so it moves the highlight and adjusts values the same way.
+The checked-in map binds `faceRight` to `back`, and `share` to `openConfig`. On a Steam Controller, `share` is the left button beside Steam. On the Options list the footer shows that button as "open config", unless a config path was given on the command line, in which case the hint is hidden and the action does nothing. `openConfig` opens `%LOCALAPPDATA%\kosk\config.toml` in `$EDITOR` when that is set, otherwise Notepad, creating the file when it is missing. `switchState.keyboard` is still a valid action and leaves for the keyboard immediately. The left stick is emulated as a d-pad, so it moves the highlight and adjusts values the same way.
 
 Idle `None` input resets the binding engine so edges do not fire on the next reconnect.
 

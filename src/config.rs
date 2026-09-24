@@ -577,23 +577,24 @@ fn editor_invocation(editor: Option<&str>) -> (String, Vec<String>) {
         .next()
         .filter(|part| !part.is_empty())
         .unwrap_or(DEFAULT_CONFIG_EDITOR);
-    (
-        program.to_owned(),
-        parts.map(str::to_owned).collect(),
-    )
+    (program.to_owned(), parts.map(str::to_owned).collect())
 }
 
 /// Open `%LOCALAPPDATA%\kosk\config.toml` in a text editor, creating it when absent.
-/// A config path on the command line does nothing.
-pub(crate) fn open_user_config_in_editor() {
-    if !uses_user_config() {
-        return;
+/// A config path on the command line does nothing. Returns whether it acted.
+pub(crate) fn open_user_config_in_editor() -> bool {
+    open_user_config_for_source(config_source())
+}
+
+fn open_user_config_for_source(source: ConfigSource) -> bool {
+    if source != ConfigSource::User {
+        return false;
     }
     let path = match crate::config_overlay::ensure_user_config_file() {
         Ok(path) => path,
         Err(e) => {
             crate::user_notify::notify_user(&format!("could not open config: {e:#}"));
-            return;
+            return false;
         }
     };
     let (program, args) = editor_invocation(std::env::var("EDITOR").ok().as_deref());
@@ -607,6 +608,7 @@ pub(crate) fn open_user_config_in_editor() {
             path.display()
         ));
     }
+    true
 }
 
 const TAPE_CONFIG_SKIP: &[&str] = &[
@@ -1544,6 +1546,11 @@ mod tests {
             args.replay.as_deref(),
             Some(Path::new("captures/kosk-000.krec"))
         );
+    }
+
+    #[test]
+    fn explicit_config_skips_open_in_editor() {
+        assert!(!open_user_config_for_source(ConfigSource::Explicit));
     }
 
     #[test]

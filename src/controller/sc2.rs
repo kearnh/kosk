@@ -435,8 +435,9 @@ impl ControllerInput for Sc2State {
             ControllerButton::StickRight => self.bit(BTN_R3),
             ControllerButton::TriggerLeft => self.trigger_left().is_some(),
             ControllerButton::TriggerRight => self.trigger_right().is_some(),
-            ControllerButton::Options => self.bit(BTN_MENU),
-            ControllerButton::Share => self.bit(BTN_VIEW),
+            // Triton MENU is the left button beside Steam, VIEW the right one.
+            ControllerButton::Options => self.bit(BTN_VIEW),
+            ControllerButton::Share => self.bit(BTN_MENU),
             ControllerButton::System => self.bit(BTN_STEAM),
             ControllerButton::PadLeft => self.bit(BTN_LPAD_CLICK),
             ControllerButton::PadRight => self.bit(BTN_RPAD_CLICK),
@@ -508,6 +509,20 @@ mod tests {
         assert!(!paddles.query(ControllerButton::L5));
         assert!(!paddles.query(ControllerButton::R4));
         assert!(paddles.query(ControllerButton::R5));
+    }
+
+    #[test]
+    fn menu_bit_is_left_share_view_bit_is_right_options() {
+        let mut r = [0u8; 54];
+        r[0] = REPORT_STATE;
+        put_u32(&mut r, 2, BTN_MENU);
+        let left = parse_input_report(&r).expect("parse menu bit");
+        assert!(left.query(ControllerButton::Share));
+        assert!(!left.query(ControllerButton::Options));
+        put_u32(&mut r, 2, BTN_VIEW);
+        let right = parse_input_report(&r).expect("parse view bit");
+        assert!(right.query(ControllerButton::Options));
+        assert!(!right.query(ControllerButton::Share));
     }
 
     #[test]

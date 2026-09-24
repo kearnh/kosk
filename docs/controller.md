@@ -6,7 +6,7 @@ This document describes the device-independent layer in `src/controller/mod.rs`:
 
 KOSK should not care, in keyboard code, whether a left-stick sample came from a DualShock analog stick or from a Steam Controller pad. Every device, including a replay tape, implements `ControllerInput`. The rest of the program reads sticks as `(f32, f32)` in roughly −1…1 and buttons as booleans (triggers as `Option<u8>` so “not pulled” is distinct from “pulled a little”).
 
-The same module is also the parser for mapping keys. `mappings.toml` uses strings such as `faceTop` and `options + faceTop`. Those strings have to mean the same button on every device family.
+The same module is also the parser for mapping keys. `mappings.toml` uses strings such as `faceTop` and `share + faceTop`. Those strings have to mean the same button on every device family.
 
 ## `ControllerInput`
 
@@ -32,7 +32,7 @@ That function is applied on every `left_stick` / `right_stick` read unless the i
 
 `ControllerButton` is the unit used in mappings: dpad, face, shoulders, stick clicks, triggers, Options/Share/System, pads, L4/L5/R4/R5, and SC2 Quick Access (`quickAccess` / `qam`). Pads, paddles, and Quick Access default to not held on DualShock 4. `FromStr` is case-insensitive and ignores `-` and `_`, so `stick-left`, `stick_left`, and `stickLeft` are the same button. Arguments on a button (the old `triggerLeft,threshold=40` form) are rejected; thresholds belong in `[ps4]` / `[sc2]`.
 
-`ControllerBinding` is either one button or a two-button chord `leader + follower`. Chord strings also parse through `FromStr`. Leader and follower must differ. These types serialize as the canonical display strings (`faceTop`, `options + faceTop`) so they can be TOML table keys.
+`ControllerBinding` is either one button or a two-button chord `leader + follower`. Chord strings also parse through `FromStr`. Leader and follower must differ. These types serialize as the canonical display strings (`faceTop`, `share + faceTop`) so they can be TOML table keys. `view` parses as `share` and `menu` as `options`; both spellings load, and files are saved with the canonical names.
 
 `ControllerButton::query` reads the corresponding `ControllerInput` method. Triggers query `is_some()` on the analog optional.
 

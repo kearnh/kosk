@@ -33,9 +33,9 @@
 ]
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
-"options + faceTop" = "switchState.settings"
-"options + faceRight" = "switchState.textInput"
-"options + quickAccess" = "rotateWindow"
+"share + faceTop" = "switchState.settings"
+"share + faceRight" = "switchState.textInput"
+"share + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
 "faceBottom" = [
   { action = "acceptSuggestion", when = "suggestionSelected" },
@@ -57,7 +57,7 @@
 "dpadDown" = "sendKey.down"
 "shoulderLeft" = "cycleSuggestionPrev"
 "shoulderRight" = "cycleSuggestion"
-"options + faceLeft" = "toggleCompletion"
+"share + faceLeft" = "toggleCompletion"
 quickAccess = "switchState.mappings"
 
 [Settings]
@@ -67,7 +67,7 @@ quickAccess = "switchState.mappings"
 "dpadRight" = "selectRight"
 "faceBottom" = "activate"
 "faceRight" = "back"
-"options" = "openConfig"
+"share" = "openConfig"
 "shoulderLeft" = "pagePrev"
 "shoulderRight" = "pageNext"
 
@@ -82,7 +82,7 @@ quickAccess = "switchState.mappings"
   { action = "submit" },
 ]
 "faceRight" = { action = "cancelSuggestion", when = "suggestionSelected" }
-"options + faceLeft" = "toggleCompletion"
+"share + faceLeft" = "toggleCompletion"
 
 [MoveWindow]
 "faceBottom" = "save"

@@ -59,10 +59,7 @@ impl MenuState {
         let focus = self.form.focus();
         let focused = rows.get(focus);
 
-        let mut hints = self.form.footer(kind);
-        if !config::uses_user_config() {
-            hints.retain(|hint| hint.buttons != FooterButtons::OpenConfig);
-        }
+        let hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
         Frame::NONE
             .inner_margin(Margin {
                 left: EDGE_INSET,
@@ -183,7 +180,9 @@ impl MenuState {
             PagePrev => self.commit(events, source, |form, _, _| form.shift_page(-1)),
             PageNext => self.commit(events, source, |form, _, _| form.shift_page(1)),
             Back => self.commit(events, source, |form, _, _| form.back()),
-            OpenConfig => config::open_user_config_in_editor(),
+            OpenConfig => {
+                config::open_user_config_in_editor();
+            }
             SwitchState(state) => {
                 self.write_settings();
                 let _ = events.push(Event::ChangeState(*state), source);
@@ -347,5 +346,47 @@ pub(crate) fn flush_pending_notify() {
     let pending = with_mut(|m| m.take_pending_notify());
     if pending {
         config::notify_changed();
+    }
+}
+
+fn filter_open_config_hint(mut hints: Vec<FooterHint>, uses_user_config: bool) -> Vec<FooterHint> {
+    if !uses_user_config {
+        hints.retain(|hint| hint.buttons != FooterButtons::OpenConfig);
+    }
+    hints
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_hints() -> Vec<FooterHint> {
+        vec![
+            FooterHint {
+                buttons: FooterButtons::Activate,
+                label: "open",
+            },
+            FooterHint {
+                buttons: FooterButtons::OpenConfig,
+                label: "open config",
+            },
+        ]
+    }
+
+    #[test]
+    fn user_config_keeps_open_config_hint() {
+        let kept = filter_open_config_hint(test_hints(), true);
+        assert!(kept
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::OpenConfig));
+    }
+
+    #[test]
+    fn explicit_config_hides_open_config_hint() {
+        let kept = filter_open_config_hint(test_hints(), false);
+        assert_eq!(kept.len(), 1);
+        assert!(kept
+            .iter()
+            .all(|hint| hint.buttons != FooterButtons::OpenConfig));
     }
 }

@@ -214,8 +214,8 @@ impl FromStr for ControllerButton {
             }
             "stickleft" => no_args("stickLeft", &args).map(|_| ControllerButton::StickLeft),
             "stickright" => no_args("stickRight", &args).map(|_| ControllerButton::StickRight),
-            "options" => no_args("options", &args).map(|_| ControllerButton::Options),
-            "share" => no_args("share", &args).map(|_| ControllerButton::Share),
+            "options" | "menu" => no_args("options", &args).map(|_| ControllerButton::Options),
+            "share" | "view" => no_args("share", &args).map(|_| ControllerButton::Share),
             "system" => no_args("system", &args).map(|_| ControllerButton::System),
             "padleft" => no_args("padLeft", &args).map(|_| ControllerButton::PadLeft),
             "padright" => no_args("padRight", &args).map(|_| ControllerButton::PadRight),
@@ -651,6 +651,16 @@ mod tests {
             parse(&ControllerButton::R5.to_string()),
             ControllerButton::R5
         );
+    }
+
+    #[test]
+    fn parses_menu_view_aliases() {
+        assert_eq!(parse("view"), ControllerButton::Share);
+        assert_eq!(parse("menu"), ControllerButton::Options);
+        assert_eq!(parse("share"), ControllerButton::Share);
+        assert_eq!(parse("options"), ControllerButton::Options);
+        assert_eq!(ControllerButton::Share.to_string(), "share");
+        assert_eq!(ControllerButton::Options.to_string(), "options");
     }
 
     #[test]

@@ -54,7 +54,7 @@ Relative paths (layouts, mappings file, record template, replay file, keys log) 
 
 Serde sees `controller_map` as either a nested table or a string. A string is opened relative to the config directory, parsed, and stored on `Config` as the expanded map. The path string is remembered beside the struct, from the raw file, so a later save can keep `controller_map = "mappings.toml"` and write binding changes into that sidecar. An inline table leaves the remembered path empty, and save patches the tables inside `config.toml`.
 
-`mappings.toml` is grouped by mode (`[Keyboard]`, `[Settings]`, `[TextInput]`, `[MoveWindow]`, `[SelectLayout]`). Keys are binding specs such as `"triggerLeft"` or `"options + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.settings"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
+`mappings.toml` is grouped by mode (`[Keyboard]`, `[Settings]`, `[TextInput]`, `[MoveWindow]`, `[SelectLayout]`). Keys are binding specs such as `"triggerLeft"` or `"share + faceTop"`. Values are action names such as `"sendKeyUnderLeftStick"` or `"switchState.settings"`. Parsing of those strings is owned by each mode’s action enum; config only stores the text. See [bindings.md](bindings.md).
 
 ## Live reload
 
