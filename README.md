@@ -42,7 +42,7 @@ cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv -
 
 The last printed line includes how many two-word pairs were kept. If that number is zero, `--bigrams` was probably omitted, and after a space you will only see the most common English words (`you`, `i`, `the`).
 
-The built-in config has `[completion.ngram] model_dir = "data/completion/en"`. That path is beside the user config if present, otherwise the working directory, and should match `--out`. The English word list is built into the binary when the file is not on disk.
+The built-in config has `[completion.ngram] model_dir = "data/completion/en"`. That path is resolved beside the active config file. For next-word tables during development, set an absolute `model_dir` in the user config, or run with an explicit config that sits beside `data/`. The English word list is built into the binary when the file is not on disk.
 
 If you have your own text, `--corpus FILE` counts pairs from one sentence per line. There is no corpus in this repo. For three-word sequences, add `--trigrams` and [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
 

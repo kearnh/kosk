@@ -3,8 +3,8 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_VERSION: i64 = 1;
-pub const UNBIND_ACTION: &str = "none";
+pub(crate) const CONFIG_VERSION: i64 = 1;
+pub(crate) const UNBIND_ACTION: &str = "none";
 
 const BUILTIN_CONFIG: &str = include_str!("../config.toml");
 const BUILTIN_MAPPINGS: &str = include_str!("../mappings.toml");
@@ -12,33 +12,33 @@ const BUILTIN_LAYOUT_MAIN: &str = include_str!("../old_sc.toml");
 const BUILTIN_LAYOUT_SYMBOLS: &str = include_str!("../old_sc_symbols.toml");
 const BUILTIN_UNIGRAMS: &str = include_str!("../data/completion/en/unigrams.tsv");
 
-pub fn builtin_config_toml() -> &'static str {
+pub(crate) fn builtin_config_toml() -> &'static str {
     BUILTIN_CONFIG
 }
 
-pub fn builtin_mappings_toml() -> &'static str {
+pub(crate) fn builtin_mappings_toml() -> &'static str {
     BUILTIN_MAPPINGS
 }
 
-pub fn builtin_unigrams() -> &'static str {
+pub(crate) fn builtin_unigrams() -> &'static str {
     BUILTIN_UNIGRAMS
 }
 
-pub fn builtin_layout(rel: &str) -> Option<&'static str> {
-    match file_name(rel) {
+pub(crate) fn builtin_layout(rel: &str) -> Option<&'static str> {
+    match rel {
         "old_sc.toml" => Some(BUILTIN_LAYOUT_MAIN),
         "old_sc_symbols.toml" => Some(BUILTIN_LAYOUT_SYMBOLS),
         _ => None,
     }
 }
 
-pub fn user_config_path() -> Result<PathBuf> {
+pub(crate) fn user_config_path() -> Result<PathBuf> {
     let root = std::env::var("LOCALAPPDATA").context("LOCALAPPDATA is not set")?;
     Ok(PathBuf::from(root).join("kosk").join("config.toml"))
 }
 
 /// `%LOCALAPPDATA%\kosk\config.toml`, creating `config_version = 1` when absent.
-pub fn ensure_user_config_file() -> Result<PathBuf> {
+pub(crate) fn ensure_user_config_file() -> Result<PathBuf> {
     let path = user_config_path()?;
     if path.exists() {
         return Ok(path);
@@ -51,42 +51,75 @@ pub fn ensure_user_config_file() -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn file_version(doc: &toml_edit::DocumentMut) -> i64 {
+pub(crate) fn file_version(doc: &toml_edit::DocumentMut) -> i64 {
     doc.get("config_version")
         .and_then(|item| item.as_integer())
         .unwrap_or(0)
 }
 
-/// Raise `doc` to [`CONFIG_VERSION`]. Returns whether the document changed.
-pub fn migrate_document(doc: &mut toml_edit::DocumentMut) -> Result<bool> {
-    let mut version = file_version(doc);
-    if version > CONFIG_VERSION {
-        bail!("config_version {version} is newer than this program ({CONFIG_VERSION})");
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MigrateOutcome {
+    Unchanged,
+    Migrated,
+    /// File was written by a newer kosk. Loaded as-is.
+    Newer,
+}
+
+fn migrate_0_to_1(doc: &mut toml_edit::DocumentMut) {
+    doc["config_version"] = toml_edit::value(1_i64);
+}
+
+const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] = &[migrate_0_to_1];
+
+/// Raise `doc` to [`CONFIG_VERSION`]. A newer file is left unchanged.
+pub(crate) fn migrate_document(doc: &mut toml_edit::DocumentMut) -> Result<MigrateOutcome> {
+    const _: () = assert!(MIGRATIONS.len() as i64 == CONFIG_VERSION);
+    apply_migrations(doc, MIGRATIONS, CONFIG_VERSION)
+}
+
+fn apply_migrations(
+    doc: &mut toml_edit::DocumentMut,
+    steps: &[fn(&mut toml_edit::DocumentMut)],
+    target: i64,
+) -> Result<MigrateOutcome> {
+    let version = file_version(doc);
+    if version > target {
+        return Ok(MigrateOutcome::Newer);
     }
-    let start = version;
-    while version < CONFIG_VERSION {
-        match version {
-            0 => {
-                doc["config_version"] = toml_edit::value(CONFIG_VERSION);
-            }
-            _ => bail!("no migration from config_version {version}"),
-        }
-        version = CONFIG_VERSION;
+    if version == target {
+        return Ok(MigrateOutcome::Unchanged);
     }
-    Ok(version != start)
+    if version < 0 {
+        bail!("config_version {version} is invalid");
+    }
+    let from = version as usize;
+    if from > steps.len() {
+        bail!("no migration from config_version {version}");
+    }
+    for step in &steps[from..] {
+        step(doc);
+    }
+    doc["config_version"] = toml_edit::value(target);
+    Ok(MigrateOutcome::Migrated)
 }
 
 /// Run migrations on a config blob (a user file or a recording). Does not write.
-pub fn migrate_toml(text: &str) -> Result<String> {
+/// A newer blob is returned unchanged after [`crate::user_notify::notify_user`].
+pub(crate) fn migrate_toml(text: &str) -> Result<String> {
     let mut doc = text
         .parse::<toml_edit::DocumentMut>()
         .context("parse config for migration")?;
-    migrate_document(&mut doc)?;
+    if migrate_document(&mut doc)? == MigrateOutcome::Newer {
+        crate::user_notify::notify_user(&format!(
+            "config_version {} is newer than this kosk ({CONFIG_VERSION}); unknown settings are ignored",
+            file_version(&doc)
+        ));
+    }
     Ok(doc.to_string())
 }
 
 /// Tables merge key by key. Arrays and scalars in `overlay` replace `base`.
-pub fn merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
+pub(crate) fn merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
     let (Some(base_table), Some(over_table)) = (base.as_table_mut(), overlay.as_table()) else {
         *base = overlay.clone();
         return;
@@ -107,7 +140,7 @@ pub fn merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
 }
 
 /// Per-binding merge. A value of [`UNBIND_ACTION`] drops that binding.
-pub fn merge_mappings(base: &mut toml::Value, overlay: &toml::Value) {
+pub(crate) fn merge_mappings(base: &mut toml::Value, overlay: &toml::Value) {
     let (Some(base_table), Some(over_table)) = (base.as_table_mut(), overlay.as_table()) else {
         return;
     };
@@ -132,7 +165,7 @@ pub fn merge_mappings(base: &mut toml::Value, overlay: &toml::Value) {
     }
 }
 
-pub fn read_user_mappings(config_dir: &Path, rel: &str) -> Result<Option<toml::Value>> {
+pub(crate) fn read_user_mappings(config_dir: &Path, rel: &str) -> Result<Option<toml::Value>> {
     let path = config_dir.join(rel);
     if !path.is_file() {
         return Ok(None);
@@ -145,9 +178,18 @@ pub fn read_user_mappings(config_dir: &Path, rel: &str) -> Result<Option<toml::V
     Ok(Some(value))
 }
 
-/// Config directory, then the working directory, then a built-in layout.
-pub fn read_layout(config_dir: Option<&Path>, rel: &str) -> Result<String> {
-    if let Some(path) = existing_file(config_dir, rel) {
+/// Beside the config file, then the built-in copy. No working-directory fallback.
+pub(crate) fn read_layout(config_dir: Option<&Path>, rel: &str) -> Result<String> {
+    let rel_path = Path::new(rel);
+    let on_disk = if rel_path.is_absolute() {
+        rel_path.is_file().then(|| rel_path.to_path_buf())
+    } else {
+        config_dir.and_then(|dir| {
+            let path = dir.join(rel_path);
+            path.is_file().then_some(path)
+        })
+    };
+    if let Some(path) = on_disk {
         return std::fs::read_to_string(&path)
             .with_context(|| format!("read layout {}", path.display()));
     }
@@ -156,42 +198,27 @@ pub fn read_layout(config_dir: Option<&Path>, rel: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("cannot find layout file \"{rel}\""))
 }
 
-/// A file beside the config, else the same relative path from the working directory.
-pub fn existing_file(config_dir: Option<&Path>, rel: &str) -> Option<PathBuf> {
-    let rel_path = Path::new(rel);
-    if rel_path.is_absolute() {
-        return rel_path.is_file().then(|| rel_path.to_path_buf());
-    }
-    if let Some(dir) = config_dir {
-        let path = dir.join(rel_path);
-        if path.is_file() {
-            return Some(path);
+/// Absolute layout files that sit outside the config directory. Built-ins are omitted.
+pub(crate) fn external_layout_paths(
+    config_dir: &Path,
+    layouts: &[(String, String)],
+) -> Vec<PathBuf> {
+    let config_dir = std::fs::canonicalize(config_dir).unwrap_or_else(|_| config_dir.to_path_buf());
+    let mut out = Vec::new();
+    for (_, rel) in layouts {
+        let path = PathBuf::from(rel);
+        if !path.is_absolute() || !path.is_file() {
+            continue;
         }
-    }
-    let from_cwd = std::env::current_dir().ok()?.join(rel_path);
-    from_cwd.is_file().then_some(from_cwd)
-}
-
-/// Directory beside the config, else the same relative path from the working directory.
-pub fn existing_dir(config_dir: Option<&Path>, rel: &Path) -> Option<PathBuf> {
-    if rel.is_absolute() {
-        return rel.is_dir().then(|| rel.to_path_buf());
-    }
-    if let Some(dir) = config_dir {
-        let path = dir.join(rel);
-        if path.is_dir() {
-            return Some(path);
+        let Ok(canon) = std::fs::canonicalize(&path) else {
+            continue;
+        };
+        if canon.parent() == Some(config_dir.as_path()) {
+            continue;
         }
+        out.push(canon);
     }
-    let from_cwd = std::env::current_dir().ok()?.join(rel);
-    from_cwd.is_dir().then_some(from_cwd)
-}
-
-fn file_name(rel: &str) -> &str {
-    Path::new(rel)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(rel)
+    out
 }
 
 #[cfg(test)]
@@ -267,17 +294,43 @@ mod tests {
         let mut doc = "keyboard_opacity = 0.7\n"
             .parse::<toml_edit::DocumentMut>()
             .unwrap();
-        assert!(migrate_document(&mut doc).unwrap());
+        assert_eq!(
+            migrate_document(&mut doc).unwrap(),
+            MigrateOutcome::Migrated
+        );
         assert_eq!(file_version(&doc), CONFIG_VERSION);
         assert!(doc.to_string().contains("keyboard_opacity"));
     }
 
     #[test]
-    fn newer_version_is_rejected() {
-        let mut doc = "config_version = 99\n"
+    fn newer_version_is_left_unchanged() {
+        let mut doc = "config_version = 99\nunknown = true\n"
             .parse::<toml_edit::DocumentMut>()
             .unwrap();
-        assert!(migrate_document(&mut doc).is_err());
+        assert_eq!(migrate_document(&mut doc).unwrap(), MigrateOutcome::Newer);
+        assert_eq!(file_version(&doc), 99);
+        assert!(doc.to_string().contains("unknown"));
+    }
+
+    #[test]
+    fn two_steps_run_in_order() {
+        fn step0(doc: &mut toml_edit::DocumentMut) {
+            doc["first"] = toml_edit::value(1_i64);
+        }
+        fn step1(doc: &mut toml_edit::DocumentMut) {
+            doc["second"] = toml_edit::value(2_i64);
+        }
+        let mut doc = "keyboard_opacity = 0.7\n"
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap();
+        assert_eq!(
+            apply_migrations(&mut doc, &[step0, step1], 2).unwrap(),
+            MigrateOutcome::Migrated
+        );
+        assert_eq!(doc["first"].as_integer(), Some(1));
+        assert_eq!(doc["second"].as_integer(), Some(2));
+        assert_eq!(file_version(&doc), 2);
+        assert!(doc.to_string().contains("keyboard_opacity"));
     }
 
     #[test]
@@ -287,5 +340,25 @@ mod tests {
             .contains("stick_rest_left"));
         assert!(builtin_layout("old_sc_symbols.toml").is_some());
         assert!(builtin_layout("missing.toml").is_none());
+        assert!(builtin_layout("foo/old_sc.toml").is_none());
+    }
+
+    #[test]
+    fn layout_beside_config_beats_builtin() {
+        let dir = std::env::temp_dir().join(format!(
+            "kosk-layout-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("old_sc.toml"), "custom layout\n").unwrap();
+        let text = read_layout(Some(&dir), "old_sc.toml").unwrap();
+        assert_eq!(text, "custom layout\n");
+        let builtin = read_layout(Some(&dir), "old_sc_symbols.toml").unwrap();
+        assert!(builtin.contains("stick_rest"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

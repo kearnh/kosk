@@ -120,8 +120,14 @@ fn try_backend(
     }
 }
 
-fn resolve(_dir: Option<&std::path::Path>, path: &std::path::Path) -> std::path::PathBuf {
-    crate::config::resolve_data_path(path)
+fn resolve(dir: Option<&std::path::Path>, path: &std::path::Path) -> std::path::PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match dir {
+        Some(dir) => dir.join(path),
+        None => path.to_path_buf(),
+    }
 }
 
 pub fn load_type_wordlists(

@@ -8,4 +8,5 @@ pub mod debug;
 pub mod platform;
 pub mod state;
 pub(crate) mod ui;
+mod user_notify;
 pub mod when;

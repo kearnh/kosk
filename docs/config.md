@@ -46,7 +46,7 @@ The checked-in `config.toml`, `mappings.toml`, `old_sc.toml`, and `old_sc_symbol
 
 Saving writes a changed value into the user file and deletes a key whose value again matches the default. Bindings work the same way in the user `mappings.toml`: a changed binding is written, a removed default binding is `"none"`, and a binding that matches the default is removed. `"none"` is not an action.
 
-Layouts, the word list, and `model_dir` are looked up beside the user config, then from the working directory, then (for the default layouts and the English word list) from the binary. Recordings, replay tapes, and `completion-cache.bin` stay beside the user config.
+Layouts, the word list, and `model_dir` are resolved beside the active config file (the user folder, or the folder of a config path given on the command line), then from the built-in copy for the default layouts and the English word list. There is no working-directory fallback. Recordings, replay tapes, and `completion-cache.bin` stay beside that same config file. A path on the command line is not written: saves change the running process only.
 
 Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file, with the lookup above for layouts and completion data.
 
@@ -62,7 +62,7 @@ After the first successful load, `init_from_path` starts a `notify` watcher on t
 
 When a file in that directory is modified or created, `load_config` runs again. Reloads within the same second are ignored (“Reload debounced”) so editors that write in two steps do not apply a half-written file.
 
-`load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout can be found (user folder, working directory, or built-in copy), and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
+`load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout can be found beside the active config file or as a built-in copy, and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
 
 Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher watches the user config directory, so an edit to `config.toml`, `mappings.toml`, or a layout file in that directory reloads. The mappings screen calls `config::notify_changed` after it saves.
 

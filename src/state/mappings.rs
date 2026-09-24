@@ -67,6 +67,45 @@ fn hint_group(ui: &mut Ui, family: GlyphFamily, buttons: &[ControllerButton], la
     ui.label(label);
 }
 
+/// Keep bindings this version does not understand, so a save does not drop them.
+fn retain_unrecognised_bindings(
+    new_map: &mut HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
+    live: &HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
+) {
+    for (mode, live_bindings) in live {
+        let mode_new = new_map.entry(*mode).or_default();
+        for (binding, value) in live_bindings {
+            let Ok(rules) = value.rules() else {
+                mode_new
+                    .entry(binding.clone())
+                    .or_insert_with(|| value.clone());
+                continue;
+            };
+            let unknown: Vec<MappingRule> = rules
+                .into_iter()
+                .filter(|rule| get_action(*mode, &rule.action).is_none())
+                .collect();
+            if unknown.is_empty() {
+                continue;
+            }
+            match mode_new.get_mut(binding) {
+                None => {
+                    mode_new.insert(binding.clone(), value.clone());
+                }
+                Some(existing) => {
+                    let mut kept = existing.rules().unwrap_or_default();
+                    for rule in unknown {
+                        if !kept.iter().any(|known| known == &rule) {
+                            kept.push(rule);
+                        }
+                    }
+                    *existing = MappingValue::Rules(kept);
+                }
+            }
+        }
+    }
+}
+
 const EDITABLE_MODES: [StateId; 5] = [
     StateId::Keyboard,
     StateId::Settings,
@@ -794,6 +833,7 @@ impl MappingsState {
         }
 
         let mut cfg = config::get();
+        retain_unrecognised_bindings(&mut new_map, &cfg.controller_map);
         cfg.controller_map = new_map;
         if let Err(e) = config::save(cfg) {
             self.status = format!("save failed: {e:#}");
@@ -1270,6 +1310,20 @@ mod tests {
 
     fn chord(leader: ControllerButton, follower: ControllerButton) -> ControllerBinding {
         ControllerBinding::Chord { leader, follower }
+    }
+
+    #[test]
+    fn save_keeps_an_action_this_version_does_not_know() {
+        let binding = single(ControllerButton::FaceTop);
+        let mut live_mode = HashMap::new();
+        live_mode.insert(binding.clone(), MappingValue::from_action("fromTheFuture"));
+        let mut live = HashMap::new();
+        live.insert(StateId::Keyboard, live_mode);
+        let mut new_map = HashMap::new();
+        new_map.insert(StateId::Keyboard, HashMap::new());
+        retain_unrecognised_bindings(&mut new_map, &live);
+        let kept = &new_map[&StateId::Keyboard][&binding];
+        assert_eq!(kept.rules().unwrap()[0].action, "fromTheFuture");
     }
 
     fn pill(b: ControllerBinding) -> MappingPill {
