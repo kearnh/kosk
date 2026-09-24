@@ -93,17 +93,33 @@ fn retain_unrecognised_bindings(
                     mode_new.insert(binding.clone(), value.clone());
                 }
                 Some(existing) => {
-                    let mut kept = existing.rules().unwrap_or_default();
-                    for rule in unknown {
-                        if !kept.iter().any(|known| known == &rule) {
-                            kept.push(rule);
-                        }
-                    }
-                    *existing = MappingValue::Rules(kept);
+                    let known = existing.rules().unwrap_or_default();
+                    *existing = MappingValue::Rules(merge_rules_keeping_order(known, unknown));
                 }
             }
         }
     }
+}
+
+/// `when` rules first, then at most one fallback; a known fallback beats an unknown one.
+fn merge_rules_keeping_order(
+    known: Vec<MappingRule>,
+    unknown: Vec<MappingRule>,
+) -> Vec<MappingRule> {
+    let mut merged: Vec<MappingRule> = Vec::new();
+    let mut fallback: Option<MappingRule> = None;
+    for rule in known.into_iter().chain(unknown) {
+        if rule.when.is_none() {
+            fallback.get_or_insert(rule);
+            continue;
+        }
+        if !merged.contains(&rule) {
+            merged.push(rule);
+        }
+    }
+
+    merged.extend(fallback);
+    merged
 }
 
 const EDITABLE_MODES: [StateId; 5] = [
@@ -1324,6 +1340,35 @@ mod tests {
         retain_unrecognised_bindings(&mut new_map, &live);
         let kept = &new_map[&StateId::Keyboard][&binding];
         assert_eq!(kept.rules().unwrap()[0].action, "fromTheFuture");
+    }
+
+    #[test]
+    fn save_keeps_unknown_when_rule_before_fallback() {
+        let binding = single(ControllerButton::FaceTop);
+        let unknown = MappingRule {
+            action: "fromTheFuture".to_owned(),
+            when: Some("shiftActive".to_owned()),
+        };
+        let fallback = MappingRule {
+            action: "toggleShift".to_owned(),
+            when: None,
+        };
+        let mut live_mode = HashMap::new();
+        live_mode.insert(
+            binding.clone(),
+            MappingValue::Rules(vec![unknown.clone(), fallback.clone()]),
+        );
+        let mut live = HashMap::new();
+        live.insert(StateId::Keyboard, live_mode);
+        let mut new_mode = HashMap::new();
+        new_mode.insert(binding.clone(), MappingValue::Rules(vec![fallback.clone()]));
+        let mut new_map = HashMap::new();
+        new_map.insert(StateId::Keyboard, new_mode);
+
+        retain_unrecognised_bindings(&mut new_map, &live);
+
+        let kept = new_map[&StateId::Keyboard][&binding].rules().unwrap();
+        assert_eq!(kept, vec![unknown, fallback]);
     }
 
     fn pill(b: ControllerBinding) -> MappingPill {

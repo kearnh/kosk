@@ -4,7 +4,15 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 pub(crate) const CONFIG_VERSION: i64 = 1;
+pub(crate) const CONFIG_VERSION_KEY: &str = "config_version";
+pub(crate) const CONTROLLER_MAP_KEY: &str = "controller_map";
 pub(crate) const UNBIND_ACTION: &str = "none";
+
+pub(crate) fn newer_version_message(file_version: i64) -> String {
+    format!(
+        "{CONFIG_VERSION_KEY} {file_version} is newer than this kosk ({CONFIG_VERSION}); unknown settings are ignored"
+    )
+}
 
 const BUILTIN_CONFIG: &str = include_str!("../config.toml");
 const BUILTIN_MAPPINGS: &str = include_str!("../mappings.toml");
@@ -52,7 +60,7 @@ pub(crate) fn ensure_user_config_file() -> Result<PathBuf> {
 }
 
 pub(crate) fn file_version(doc: &toml_edit::DocumentMut) -> i64 {
-    doc.get("config_version")
+    doc.get(CONFIG_VERSION_KEY)
         .and_then(|item| item.as_integer())
         .unwrap_or(0)
 }
@@ -66,7 +74,7 @@ pub(crate) enum MigrateOutcome {
 }
 
 fn migrate_0_to_1(doc: &mut toml_edit::DocumentMut) {
-    doc["config_version"] = toml_edit::value(1_i64);
+    doc[CONFIG_VERSION_KEY] = toml_edit::value(1_i64);
 }
 
 const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] = &[migrate_0_to_1];
@@ -99,7 +107,7 @@ fn apply_migrations(
     for step in &steps[from..] {
         step(doc);
     }
-    doc["config_version"] = toml_edit::value(target);
+    doc[CONFIG_VERSION_KEY] = toml_edit::value(target);
     Ok(MigrateOutcome::Migrated)
 }
 
@@ -110,10 +118,7 @@ pub(crate) fn migrate_toml(text: &str) -> Result<String> {
         .parse::<toml_edit::DocumentMut>()
         .context("parse config for migration")?;
     if migrate_document(&mut doc)? == MigrateOutcome::Newer {
-        crate::user_notify::notify_user(&format!(
-            "config_version {} is newer than this kosk ({CONFIG_VERSION}); unknown settings are ignored",
-            file_version(&doc)
-        ));
+        crate::user_notify::notify_user(&newer_version_message(file_version(&doc)));
     }
     Ok(doc.to_string())
 }
@@ -125,7 +130,7 @@ pub(crate) fn merge_toml(base: &mut toml::Value, overlay: &toml::Value) {
         return;
     };
     for (key, value) in over_table {
-        if key == "controller_map" {
+        if key == CONTROLLER_MAP_KEY {
             continue;
         }
         match base_table.get_mut(key) {

@@ -1,6 +1,7 @@
 use crate::controller::mapping::MappingValue;
 
 pub(crate) use crate::config_overlay::{builtin_unigrams, UNBIND_ACTION};
+use crate::config_overlay::{CONFIG_VERSION_KEY, CONTROLLER_MAP_KEY};
 use crate::controller::ControllerBinding;
 use crate::state::window_pos::WindowPos;
 use crate::state::StateId;
@@ -783,60 +784,14 @@ fn load_config() -> Result<Vec<PathBuf>> {
         return Err(anyhow::anyhow!("Reload debounced"));
     }
 
-    let user_text = fs::read_to_string(config_path)
-        .with_context(|| format!("Could not read {}", config_path.display()))?;
-    let mut user_doc = user_text
-        .parse::<toml_edit::DocumentMut>()
-        .context("Could not parse config TOML")?;
-    match crate::config_overlay::migrate_document(&mut user_doc)? {
-        crate::config_overlay::MigrateOutcome::Newer => {
-            crate::user_notify::notify_user(&format!(
-                "config_version {} is newer than this kosk ({}); unknown settings are ignored",
-                crate::config_overlay::file_version(&user_doc),
-                crate::config_overlay::CONFIG_VERSION
-            ));
+    static NEWER_VERSION_NOTIFIED: AtomicBool = AtomicBool::new(false);
+    let notify_once = |message: &str| {
+        if !NEWER_VERSION_NOTIFIED.swap(true, Ordering::Relaxed) {
+            crate::user_notify::notify_user(message);
         }
-        crate::config_overlay::MigrateOutcome::Migrated
-            if config_source() == ConfigSource::User =>
-        {
-            fs::write(config_path, user_doc.to_string())
-                .with_context(|| format!("Could not write {}", config_path.display()))?;
-        }
-        crate::config_overlay::MigrateOutcome::Migrated
-        | crate::config_overlay::MigrateOutcome::Unchanged => {}
-    }
-
-    let user_value: toml::Value = user_doc
-        .to_string()
-        .parse()
-        .context("Could not parse config TOML")?;
-    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
-        .parse()
-        .context("built-in config")?;
-    let map_rel = controller_map_rel(&user_value, &merged);
-    store_controller_map_file(map_rel.clone());
-    crate::config_overlay::merge_toml(&mut merged, &user_value);
-
-    let mut mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
-        .parse()
-        .context("built-in mappings")?;
-    if let Some(dir) = config_path.parent() {
-        if let Some(rel) = &map_rel {
-            if let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)? {
-                crate::config_overlay::merge_mappings(&mut mappings, &over);
-            }
-        }
-    }
-    if let Some(inline) = user_value.get("controller_map").filter(|v| v.is_table()) {
-        crate::config_overlay::merge_mappings(&mut mappings, inline);
-    }
-    if let Some(table) = merged.as_table_mut() {
-        table.insert("controller_map".to_owned(), mappings);
-    }
-
-    let new_config: Config = merged
-        .try_into()
-        .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
+    };
+    let (new_config, map_rel) = read_merged_config(config_path, config_source(), &notify_once)?;
+    store_controller_map_file(map_rel);
 
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
@@ -906,12 +861,70 @@ fn load_config() -> Result<Vec<PathBuf>> {
     ))
 }
 
+/// Read `config_path`, migrate it, and merge it onto the built-in defaults.
+/// A migration is written back only for [`ConfigSource::User`].
+/// Returns the config and the `controller_map` file name, if any.
+fn read_merged_config(
+    config_path: &Path,
+    source: ConfigSource,
+    notify: &dyn Fn(&str),
+) -> Result<(Config, Option<String>)> {
+    let user_text = fs::read_to_string(config_path)
+        .with_context(|| format!("Could not read {}", config_path.display()))?;
+    let mut user_doc = user_text
+        .parse::<toml_edit::DocumentMut>()
+        .context("Could not parse config TOML")?;
+    match crate::config_overlay::migrate_document(&mut user_doc)? {
+        crate::config_overlay::MigrateOutcome::Newer => {
+            notify(&crate::config_overlay::newer_version_message(
+                crate::config_overlay::file_version(&user_doc),
+            ));
+        }
+        crate::config_overlay::MigrateOutcome::Migrated if source == ConfigSource::User => {
+            fs::write(config_path, user_doc.to_string())
+                .with_context(|| format!("Could not write {}", config_path.display()))?;
+        }
+        crate::config_overlay::MigrateOutcome::Migrated
+        | crate::config_overlay::MigrateOutcome::Unchanged => {}
+    }
+
+    let user_value: toml::Value = user_doc
+        .to_string()
+        .parse()
+        .context("Could not parse config TOML")?;
+    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
+        .parse()
+        .context("built-in config")?;
+    let map_rel = controller_map_rel(&user_value, &merged);
+    crate::config_overlay::merge_toml(&mut merged, &user_value);
+
+    let mut mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
+        .parse()
+        .context("built-in mappings")?;
+    if let (Some(dir), Some(rel)) = (config_path.parent(), &map_rel) {
+        if let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)? {
+            crate::config_overlay::merge_mappings(&mut mappings, &over);
+        }
+    }
+    if let Some(inline) = user_value.get(CONTROLLER_MAP_KEY).filter(|v| v.is_table()) {
+        crate::config_overlay::merge_mappings(&mut mappings, inline);
+    }
+    if let Some(table) = merged.as_table_mut() {
+        table.insert(CONTROLLER_MAP_KEY.to_owned(), mappings);
+    }
+
+    let config: Config = merged
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
+    Ok((config, map_rel))
+}
+
 fn controller_map_rel(user: &toml::Value, builtin: &toml::Value) -> Option<String> {
-    match user.get("controller_map") {
+    match user.get(CONTROLLER_MAP_KEY) {
         Some(toml::Value::String(path)) => Some(path.clone()),
         Some(_) => None,
         None => builtin
-            .get("controller_map")
+            .get(CONTROLLER_MAP_KEY)
             .and_then(|v| v.as_str())
             .map(str::to_owned),
     }
@@ -920,6 +933,18 @@ fn controller_map_rel(user: &toml::Value, builtin: &toml::Value) -> Option<Strin
 /// Layout TOML beside the active config file, then the built-in copy.
 pub(crate) fn read_layout_source(rel: &str) -> Result<String> {
     crate::config_overlay::read_layout(config_dir().as_deref(), rel)
+}
+
+/// `config_dir` and `external_layouts` are canonical; event paths from the OS may not be.
+fn is_watched_path(path: &Path, config_dir: &Path, external_layouts: &[PathBuf]) -> bool {
+    if let Ok(canon) = std::fs::canonicalize(path) {
+        if external_layouts.contains(&canon) {
+            return true;
+        }
+    }
+    path.parent()
+        .and_then(|parent| std::fs::canonicalize(parent).ok())
+        .is_some_and(|parent| parent == config_dir)
 }
 
 /// Watch the config directory and layout files that live outside it.
@@ -952,23 +977,23 @@ fn start_watcher_thread(config_path: PathBuf, external_layouts: Vec<PathBuf>) ->
                             | EventKind::Create(_)
                     ) =>
                 {
-                    let relevant = event.paths.iter().any(|p| {
-                        external_layouts.iter().any(|layout| layout == p)
-                            || p.parent()
-                                .and_then(|parent| std::fs::canonicalize(parent).ok())
-                                == Some(config_dir.clone())
-                    });
+                    let relevant = event
+                        .paths
+                        .iter()
+                        .any(|p| is_watched_path(p, &config_dir, &external_layouts));
                     if !relevant {
                         continue;
                     }
                     match load_config() {
                         Ok(new_external) => {
-                            if new_external != external_layouts {
-                                let _ = start_watcher_thread(config_path.clone(), new_external);
-                                notify_config_changed();
-                                break;
-                            }
                             notify_config_changed();
+                            if new_external == external_layouts {
+                                continue;
+                            }
+                            match start_watcher_thread(config_path.clone(), new_external) {
+                                Ok(()) => break,
+                                Err(e) => eprintln!("Failed to restart config watcher: {e}"),
+                            }
                         }
                         Err(e) => {
                             if e.to_string() != "Reload debounced" {
@@ -1160,7 +1185,7 @@ fn builtin_merged_config() -> Result<Config> {
         .parse()
         .context("built-in mappings")?;
     if let Some(table) = merged.as_table_mut() {
-        table.insert("controller_map".to_owned(), mappings);
+        table.insert(CONTROLLER_MAP_KEY.to_owned(), mappings);
     }
     merged
         .try_into()
@@ -1173,10 +1198,10 @@ fn write_user_overlay(path: &Path, new: &Config, mappings_file: Option<&str>) ->
     let mut default_val = toml::Value::try_from(&builtin).context("serialize built-in config")?;
     let mut new_val = toml::Value::try_from(new).context("serialize config")?;
     if let Some(table) = default_val.as_table_mut() {
-        table.remove("controller_map");
+        table.remove(CONTROLLER_MAP_KEY);
     }
     if let Some(table) = new_val.as_table_mut() {
-        table.remove("controller_map");
+        table.remove(CONTROLLER_MAP_KEY);
     }
 
     let content = fs::read_to_string(path).unwrap_or_default();
@@ -1190,7 +1215,7 @@ fn write_user_overlay(path: &Path, new: &Config, mappings_file: Option<&str>) ->
     sync_overlay("", doc.as_table_mut(), &default_val, &new_val)?;
     let kept_version =
         crate::config_overlay::file_version(&doc).max(crate::config_overlay::CONFIG_VERSION);
-    doc["config_version"] = toml_edit::value(kept_version);
+    doc[CONFIG_VERSION_KEY] = toml_edit::value(kept_version);
     fs::write(path, doc.to_string())
         .with_context(|| format!("Could not write {}", path.display()))?;
 
@@ -1218,7 +1243,7 @@ fn sync_overlay(
         .ok_or_else(|| anyhow::anyhow!("sync_overlay: new must be a table"))?;
 
     for (key, new_child) in new_table {
-        if key == "config_version" {
+        if key == CONFIG_VERSION_KEY {
             continue;
         }
         let child_path = child_config_path(path, key);
@@ -1365,15 +1390,32 @@ pub(crate) fn persist_settings(live: &Config, copy_edits: impl FnOnce(&mut Confi
 }
 
 fn write_if_user_config(path: &Path, cfg: &Config) -> Result<()> {
-    if config_source() != ConfigSource::User {
+    let notify_once = |message: &str| {
         if !EXPLICIT_SAVE_NOTIFIED.swap(true, Ordering::Relaxed) {
-            crate::user_notify::notify_user(
-                "change not saved: config was given on the command line",
-            );
+            crate::user_notify::notify_user(message);
         }
+    };
+    write_for_source(
+        config_source(),
+        path,
+        cfg,
+        controller_map_file().as_deref(),
+        &notify_once,
+    )
+}
+
+fn write_for_source(
+    source: ConfigSource,
+    path: &Path,
+    cfg: &Config,
+    mappings_file: Option<&str>,
+    notify: &dyn Fn(&str),
+) -> Result<()> {
+    if source != ConfigSource::User {
+        notify("change not saved: config was given on the command line");
         return Ok(());
     }
-    write_user_overlay(path, cfg, controller_map_file().as_deref())
+    write_user_overlay(path, cfg, mappings_file)
 }
 
 pub fn save(new_config: Config) -> Result<()> {
@@ -1722,10 +1764,102 @@ show_stick_cursors = false\n\
         let config_path = dir.join("config.toml");
         let original = "config_version = 0\nkeyboard_opacity = 0.2\n";
         fs::write(&config_path, original).unwrap();
-        CONFIG_SOURCE.set(ConfigSource::Explicit).ok();
+        let notices = std::cell::RefCell::new(Vec::new());
         let cfg = builtin_merged_config().unwrap();
-        write_if_user_config(&config_path, &cfg).unwrap();
+        write_for_source(
+            ConfigSource::Explicit,
+            &config_path,
+            &cfg,
+            Some("mappings.toml"),
+            &|m: &str| notices.borrow_mut().push(m.to_owned()),
+        )
+        .unwrap();
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+        assert!(!dir.join("mappings.toml").exists());
+        assert_eq!(notices.borrow().len(), 1);
+    }
+
+    #[test]
+    fn explicit_load_does_not_write_migration() {
+        let dir = temp_dir("explicit-migrate");
+        let config_path = dir.join("config.toml");
+        let original = "keyboard_opacity = 0.2\n";
+        fs::write(&config_path, original).unwrap();
+        let (cfg, _) =
+            read_merged_config(&config_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        assert_eq!(cfg.config_version, crate::config_overlay::CONFIG_VERSION);
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+    }
+
+    #[test]
+    fn user_load_writes_migration() {
+        let dir = temp_dir("user-migrate");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "keyboard_opacity = 0.2\n").unwrap();
+        read_merged_config(&config_path, ConfigSource::User, &|_: &str| {}).unwrap();
+        let text = fs::read_to_string(&config_path).unwrap();
+        assert!(text.contains("config_version = 1"), "{text}");
+        assert!(text.contains("keyboard_opacity = 0.2"), "{text}");
+    }
+
+    #[test]
+    fn explicit_config_uses_only_mappings_beside_it() {
+        let dir = temp_dir("explicit-mappings");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(
+            dir.join("mappings.toml"),
+            "[Keyboard]\n\"faceTop\" = \"toggleCtrl\"\n",
+        )
+        .unwrap();
+        let (cfg, map_rel) =
+            read_merged_config(&config_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        assert_eq!(map_rel.as_deref(), Some("mappings.toml"));
+        let face_top = ControllerBinding::from(crate::controller::ControllerButton::FaceTop);
+        assert_eq!(
+            cfg.controller_map[&StateId::Keyboard][&face_top],
+            MappingValue::Action("toggleCtrl".into())
+        );
+
+        let other = temp_dir("explicit-no-mappings");
+        let other_path = other.join("config.toml");
+        fs::write(&other_path, "config_version = 1\n").unwrap();
+        let (cfg, _) =
+            read_merged_config(&other_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        assert_eq!(
+            cfg.controller_map[&StateId::Keyboard][&face_top],
+            MappingValue::Action("toggleShift".into())
+        );
+    }
+
+    #[test]
+    fn newer_version_notifies_user() {
+        let dir = temp_dir("newer-notify");
+        let config_path = dir.join("config.toml");
+        let original = "config_version = 99\nfuture_key = 1\n";
+        fs::write(&config_path, original).unwrap();
+        let notices = std::cell::RefCell::new(Vec::new());
+        let (cfg, _) = read_merged_config(&config_path, ConfigSource::User, &|m: &str| {
+            notices.borrow_mut().push(m.to_owned())
+        })
+        .unwrap();
+        assert_eq!(cfg.config_version, 99);
+        assert_eq!(notices.borrow().len(), 1);
+        assert!(notices.borrow()[0].contains("99"), "{:?}", notices.borrow());
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+    }
+
+    #[test]
+    fn watched_path_matches_non_canonical_event_path() {
+        let dir = temp_dir("watch-path");
+        let layout = dir.join("layout.toml");
+        fs::write(&layout, "x\n").unwrap();
+        let canon_layout = fs::canonicalize(&layout).unwrap();
+        let other_dir = fs::canonicalize(temp_dir("watch-other")).unwrap();
+        assert!(is_watched_path(&layout, &other_dir, &[canon_layout]));
+        assert!(!is_watched_path(&layout, &other_dir, &[]));
+        let canon_dir = fs::canonicalize(&dir).unwrap();
+        assert!(is_watched_path(&layout, &canon_dir, &[]));
     }
 
     #[test]
@@ -1741,7 +1875,7 @@ show_stick_cursors = false\n\
         merged
             .as_table_mut()
             .unwrap()
-            .insert("controller_map".into(), mappings);
+            .insert(CONTROLLER_MAP_KEY.into(), mappings);
         let cfg: Config = merged.try_into().unwrap();
         assert!(!cfg.debug.unwrap().show_stick_cursors);
     }
