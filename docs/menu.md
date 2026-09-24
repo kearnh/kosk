@@ -30,7 +30,7 @@ A click on the hub or the category list opens that row. On a value page, the fir
 
 Up and down wrap the current list. Left and right change the highlighted value: toggles flip, choices wrap, numbers step and stop at their ends. Activate opens a hub or category row, and flips a toggle. `pagePrev` and `pageNext` change page only while a page is open; they wrap from Debug back to Suggestions. `back` goes up one level. From the hub it returns to the keyboard.
 
-The checked-in map binds `faceRight` to `back`, and `options` to `openConfig`. On the Options list the footer shows that button as "open config". `openConfig` opens `%LOCALAPPDATA%\kosk\config.toml` in Notepad, creating the file when it is missing. `switchState.keyboard` is still a valid action and leaves for the keyboard immediately. The left stick is emulated as a d-pad, so it moves the highlight and adjusts values the same way.
+The checked-in map binds `faceRight` to `back`, and `options` to `openConfig`. On a Steam Controller, `options` is the menu button to the right of Steam. On the Options list the footer shows that button as "open config", unless a config path was given on the command line, in which case the hint is hidden and the action does nothing. `openConfig` opens `%LOCALAPPDATA%\kosk\config.toml` in `$EDITOR` when that is set, otherwise Notepad, creating the file when it is missing. `switchState.keyboard` is still a valid action and leaves for the keyboard immediately. The left stick is emulated as a d-pad, so it moves the highlight and adjusts values the same way.
 
 Idle `None` input resets the binding engine so edges do not fire on the next reconnect.
 

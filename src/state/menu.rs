@@ -59,7 +59,10 @@ impl MenuState {
         let focus = self.form.focus();
         let focused = rows.get(focus);
 
-        let hints = self.form.footer(kind);
+        let mut hints = self.form.footer(kind);
+        if !config::uses_user_config() {
+            hints.retain(|hint| hint.buttons != FooterButtons::OpenConfig);
+        }
         Frame::NONE
             .inner_margin(Margin {
                 left: EDGE_INSET,

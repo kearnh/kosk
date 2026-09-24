@@ -95,7 +95,7 @@ These names are true or false while you hold the button. You can combine them wi
 
 `selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `switchState.…`
 
-Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between option pages while one is open. `back` climbs one level, and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, and `options` to `openConfig`, which opens the user config file in a text editor. `switchState.keyboard` still leaves for the keyboard immediately.
+Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between option pages while one is open. `back` climbs one level, and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, and `options` to `openConfig`. On a Steam Controller, `options` is the menu button to the right of Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
 
 ## Text input actions
 

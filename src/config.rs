@@ -564,10 +564,31 @@ fn config_source() -> ConfigSource {
         .unwrap_or(ConfigSource::Explicit)
 }
 
-const CONFIG_EDITOR: &str = "notepad";
+pub(crate) fn uses_user_config() -> bool {
+    config_source() == ConfigSource::User
+}
+
+const DEFAULT_CONFIG_EDITOR: &str = "notepad";
+
+/// `EDITOR` when set, otherwise Notepad. Extra words in `EDITOR` are arguments.
+fn editor_invocation(editor: Option<&str>) -> (String, Vec<String>) {
+    let mut parts = editor.unwrap_or("").split_whitespace();
+    let program = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or(DEFAULT_CONFIG_EDITOR);
+    (
+        program.to_owned(),
+        parts.map(str::to_owned).collect(),
+    )
+}
 
 /// Open `%LOCALAPPDATA%\kosk\config.toml` in a text editor, creating it when absent.
+/// A config path on the command line does nothing.
 pub(crate) fn open_user_config_in_editor() {
+    if !uses_user_config() {
+        return;
+    }
     let path = match crate::config_overlay::ensure_user_config_file() {
         Ok(path) => path,
         Err(e) => {
@@ -575,9 +596,14 @@ pub(crate) fn open_user_config_in_editor() {
             return;
         }
     };
-    if let Err(e) = std::process::Command::new(CONFIG_EDITOR).arg(&path).spawn() {
+    let (program, args) = editor_invocation(std::env::var("EDITOR").ok().as_deref());
+    if let Err(e) = std::process::Command::new(&program)
+        .args(&args)
+        .arg(&path)
+        .spawn()
+    {
         crate::user_notify::notify_user(&format!(
-            "could not open {} in {CONFIG_EDITOR}: {e}",
+            "could not open {} in {program}: {e}",
             path.display()
         ));
     }
@@ -1518,6 +1544,15 @@ mod tests {
             args.replay.as_deref(),
             Some(Path::new("captures/kosk-000.krec"))
         );
+    }
+
+    #[test]
+    fn editor_falls_back_to_notepad() {
+        assert_eq!(editor_invocation(None).0, "notepad");
+        assert_eq!(editor_invocation(Some("  ")).0, "notepad");
+        let (program, args) = editor_invocation(Some("code --wait"));
+        assert_eq!(program, "code");
+        assert_eq!(args, ["--wait"]);
     }
 
     #[test]
