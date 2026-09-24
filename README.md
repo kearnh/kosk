@@ -6,11 +6,13 @@ The process is an [eframe](https://github.com/emilk/egui) application. Configura
 
 ## Running
 
-From the repository root, pass a config file as the first argument:
+From the repository root:
 
 ```text
-cargo run -- config.toml
+cargo run
 ```
+
+That uses `%LOCALAPPDATA%\kosk\config.toml` (created on first launch) on top of the built-in defaults. Pass a path to load a different user file: `cargo run -- path\to\config.toml`.
 
 Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them. `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`.
 
@@ -40,7 +42,7 @@ cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv -
 
 The last printed line includes how many two-word pairs were kept. If that number is zero, `--bigrams` was probably omitted, and after a space you will only see the most common English words (`you`, `i`, `the`).
 
-`config.toml` already has `[completion.ngram] model_dir = "data/completion/en"`. The path is relative to the config file and should match `--out`.
+The built-in config has `[completion.ngram] model_dir = "data/completion/en"`. That path is beside the user config if present, otherwise the working directory, and should match `--out`. The English word list is built into the binary when the file is not on disk.
 
 If you have your own text, `--corpus FILE` counts pairs from one sentence per line. There is no corpus in this repo. For three-word sequences, add `--trigrams` and [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
 

@@ -10,7 +10,7 @@ That singleton is also why saving has to be careful. `Config` holds the expanded
 
 ## Command line
 
-`config::init` uses clap. The first positional argument is the path to the main TOML file. It is required; there is no implicit `config.toml` if you omit it.
+`config::init` uses clap. The first positional argument is an optional path to a user TOML file. When it is omitted, kosk uses `%LOCALAPPDATA%\kosk\config.toml`, creating that file with `config_version = 1` if it does not exist. A path on the command line is also applied on top of the built-in defaults, and a migration is not written back to that path.
 
 Optional flags:
 
@@ -42,7 +42,13 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`[text_input]`** styles the single-line field in text-input mode.
 - **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../README.md#completion-next-word-setup).
 
-Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file.
+The checked-in `config.toml`, `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
+
+Saving writes a changed value into the user file and deletes a key whose value again matches the default. Bindings work the same way in the user `mappings.toml`: a changed binding is written, a removed default binding is `"none"`, and a binding that matches the default is removed. `"none"` is not an action.
+
+Layouts, the word list, and `model_dir` are looked up beside the user config, then from the working directory, then (for the default layouts and the English word list) from the binary. Recordings, replay tapes, and `completion-cache.bin` stay beside the user config.
+
+Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file, with the lookup above for layouts and completion data.
 
 ## `controller_map` as a file
 
@@ -52,27 +58,23 @@ Serde sees `controller_map` as either a nested table or a string. A string is op
 
 ## Live reload
 
-After the first successful load, `init_from_path` starts a `notify` watcher on the config file and on every layout file. Replay mode skips the watcher, because playback should not pick up live edits.
+After the first successful load, `init_from_path` starts a `notify` watcher on the user config directory. Replay mode skips the watcher, because playback should not pick up live edits.
 
-When a watched file is modified, `load_config` runs again. Reloads within the same second are ignored (“Reload debounced”) so editors that write in two steps do not apply a half-written file. If the set of layout paths changes, the watcher thread starts a replacement watcher and exits.
+When a file in that directory is modified or created, `load_config` runs again. Reloads within the same second are ignored (“Reload debounced”) so editors that write in two steps do not apply a half-written file.
 
-`load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout file exists on disk, and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
+`load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout can be found (user folder, working directory, or built-in copy), and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
 
-Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher does **not** watch `mappings.toml`. An edit to that file in an external editor is ignored until something else reloads config (for example a change to `config.toml`, or a restart). The mappings screen calls `config::notify_changed` after it saves, so its own write still reloads bindings.
-
-**Footnote:** Not watching `mappings.toml` is a bug. See [todo.md](../todo.md).
+Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher watches the user config directory, so an edit to `config.toml`, `mappings.toml`, or a layout file in that directory reloads. The mappings screen calls `config::notify_changed` after it saves.
 
 ## Saving
 
-`config::save` diffs the last disk snapshot against the new `Config` and patches the existing file with `toml_edit`. Unchanged keys and comments stay. `AppState` calls it when the user confirms a new overlay position in Move Window (`SaveWindowPos`). The mappings editor calls it after replacing `controller_map`. Analog motion in that mode updates the live position only and does not save.
-
-When the loaded file used a path string, that key is left out of the config diff. If the string is missing or different, save writes it back. If the binding map changed, the same diff is applied to the sidecar. An inline map is patched in `config.toml` instead.
+`config::save` compares the new `Config` with the built-in default and patches the user file with `toml_edit`. A value that differs is written. A value that matches the default is removed. `AppState` calls it when the user confirms a new overlay position in Move Window (`SaveWindowPos`). The mappings editor calls it after replacing `controller_map`, which updates the user `mappings.toml` the same way (`"none"` drops a default binding). Analog motion in that mode updates the live position only and does not save.
 
 When a recording’s config overlay is active, `save` copies `window_pos` onto the remembered disk config and writes that, so a replay does not persist tape-only values. The path string is still kept.
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` merges the blob onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

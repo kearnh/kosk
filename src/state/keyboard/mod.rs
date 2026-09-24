@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -1268,7 +1267,7 @@ impl KeyboardState {
         // Reload all layouts
         self.layouts = HashMap::new();
         for (name, path) in &cfg.layouts {
-            let toml = fs::read_to_string(path)?;
+            let toml = crate::config::read_layout_source(path)?;
             let layout = KeyboardLayout::load_with_scales(
                 &toml,
                 cfg.scale_x,

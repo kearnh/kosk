@@ -8,7 +8,7 @@ Two buttons joined with `+` are a chord. Hold the first, then press the second. 
 
 One button can do different things in different situations. Write a list; the first entry whose `when` condition is true (or that has no `when`) is used. Put the default last, with no `when`. A single `{ action, when }` with no fallback does nothing when the condition is false.
 
-The shipped file is the working example.
+The shipped file is the built-in default. A user `mappings.toml` next to the user config lists only bindings that differ. Set a binding to `"none"` to drop a default binding.
 
 ## Buttons
 

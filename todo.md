@@ -18,6 +18,3 @@ Bugs
 ----
 
 - Debounce no 100% right. Easy to send triple key when intending to only send 2.
-- The config watcher does not watch `mappings.toml`. An edit in an external
-  editor is ignored until something else reloads config (or the process
-  restarts). An in-app mappings save notifies listeners itself.

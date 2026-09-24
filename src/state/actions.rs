@@ -106,6 +106,9 @@ fn compile_mapping_value<A: Action + Clone + 'static>(
     value: &MappingValue,
 ) -> Result<Option<BindingTarget<A>>, String> {
     if let MappingValue::Action(name) = value {
+        if name == crate::config::UNBIND_ACTION {
+            return Ok(None);
+        }
         if let Some((when_action, otherwise)) = expand_or_accept(state, name) {
             return compile_rules::<A>(
                 state,

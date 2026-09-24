@@ -1,3 +1,4 @@
+config_version = 1
 start_layout = "main"
 stick_scale_x = 3.8
 stick_scale_y = 2.8

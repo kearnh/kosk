@@ -1,4 +1,6 @@
 use crate::controller::mapping::MappingValue;
+
+pub use crate::config_overlay::{builtin_unigrams, UNBIND_ACTION};
 use crate::controller::ControllerBinding;
 use crate::state::window_pos::WindowPos;
 use crate::state::StateId;
@@ -17,8 +19,8 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 #[derive(Parser, Debug)]
 #[command(name = "kosk")]
 pub struct Args {
-    /// Path to the configuration TOML file
-    pub config_path: String,
+    /// Path to the user configuration TOML file. Omitted: `%LOCALAPPDATA%\kosk\config.toml`.
+    pub config_path: Option<String>,
 
     /// Play this recording instead of the configured controller (`[replay]` / preferred_controller).
     #[arg(long, value_name = "FILE")]
@@ -113,6 +115,10 @@ impl Default for TextInputStyle {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
+    /// Schema version of the user file. Missing counts as 0.
+    #[serde(default)]
+    pub config_version: u64,
+
     /// Named layouts: map from layout name to file path
     /// Must contain at least "main" layout
     pub layouts: std::collections::HashMap<String, String>,
@@ -539,6 +545,8 @@ static CLI_MCP_CONTROLLER: OnceLock<bool> = OnceLock::new();
 static CLI_AT_MOUSE: OnceLock<bool> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
+/// Write a migrated user file back. Off when the path was passed on the command line.
+static PERSIST_MIGRATION: AtomicBool = AtomicBool::new(false);
 
 const TAPE_CONFIG_SKIP: &[&str] = &[
     "layouts",
@@ -570,8 +578,9 @@ pub fn tape_config_toml(cfg: &Config) -> Result<String> {
 
 /// Merge recorded config onto `live`. Blacklisted keys in the blob are ignored.
 pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
+    let recorded = crate::config_overlay::migrate_toml(recorded)?;
     let mut overlay: toml::Value =
-        toml::from_str(recorded).context("parse recorded config TOML")?;
+        toml::from_str(&recorded).context("parse recorded config TOML")?;
     if let Some(table) = overlay.as_table_mut() {
         for k in TAPE_CONFIG_SKIP {
             table.remove(*k);
@@ -742,6 +751,7 @@ fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
 }
 
 /// Diff `old` → `new` into an existing `toml_edit` table, preserving unrelated formatting.
+#[cfg(test)]
 fn apply_toml_diff(
     path: &str,
     table: &mut toml_edit::Table,
@@ -786,6 +796,7 @@ fn apply_toml_diff(
     Ok(())
 }
 
+#[cfg(test)]
 fn write_toml_diff_preserving(path: &Path, old: &toml::Value, new: &toml::Value) -> Result<()> {
     if !old.is_table() || !new.is_table() {
         bail!("write_toml_diff_preserving: old and new must be tables");
@@ -801,6 +812,7 @@ fn write_toml_diff_preserving(path: &Path, old: &toml::Value, new: &toml::Value)
     Ok(())
 }
 
+#[cfg(test)]
 fn write_config_preserving(
     path: &Path,
     old: &Config,
@@ -861,8 +873,8 @@ fn write_config_preserving(
     Ok(())
 }
 
-/// Load configuration file and return all resolved layout paths
-fn load_config() -> Result<Vec<PathBuf>> {
+/// Load the built-in defaults, then the user file on top.
+fn load_config() -> Result<()> {
     let config_path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
@@ -878,17 +890,48 @@ fn load_config() -> Result<Vec<PathBuf>> {
         return Err(anyhow::anyhow!("Reload debounced"));
     }
 
-    let config_content = fs::read_to_string(config_path).context("Could not read config file")?;
-    let raw_root: toml::Value = config_content
+    let user_text = fs::read_to_string(config_path)
+        .with_context(|| format!("Could not read {}", config_path.display()))?;
+    let mut user_doc = user_text
+        .parse::<toml_edit::DocumentMut>()
+        .context("Could not parse config TOML")?;
+    let migrated = crate::config_overlay::migrate_document(&mut user_doc)?;
+    if migrated && PERSIST_MIGRATION.load(Ordering::Relaxed) {
+        fs::write(config_path, user_doc.to_string())
+            .with_context(|| format!("Could not write {}", config_path.display()))?;
+    }
+
+    let user_value: toml::Value = user_doc
+        .to_string()
         .parse()
         .context("Could not parse config TOML")?;
-    let map_file = match raw_root.get("controller_map") {
-        Some(toml::Value::String(s)) => Some(s.clone()),
-        _ => None,
-    };
-    store_controller_map_file(map_file);
-    let new_config: Config =
-        toml::from_str(&config_content).context("Could not parse config TOML")?;
+    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
+        .parse()
+        .context("built-in config")?;
+    let map_rel = controller_map_rel(&user_value, &merged);
+    store_controller_map_file(map_rel.clone());
+    crate::config_overlay::merge_toml(&mut merged, &user_value);
+
+    let mut mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
+        .parse()
+        .context("built-in mappings")?;
+    if let Some(dir) = config_path.parent() {
+        if let Some(rel) = &map_rel {
+            if let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)? {
+                crate::config_overlay::merge_mappings(&mut mappings, &over);
+            }
+        }
+    }
+    if let Some(inline) = user_value.get("controller_map").filter(|v| v.is_table()) {
+        crate::config_overlay::merge_mappings(&mut mappings, inline);
+    }
+    if let Some(table) = merged.as_table_mut() {
+        table.insert("controller_map".to_owned(), mappings);
+    }
+
+    let new_config: Config = merged
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
 
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
@@ -903,25 +946,10 @@ fn load_config() -> Result<Vec<PathBuf>> {
         );
     }
 
-    let mut layout_paths = Vec::new();
+    let config_parent = config_path.parent();
     for (name, path) in &new_config.layouts {
-        let layout_path = if PathBuf::from(path).is_absolute() {
-            PathBuf::from(path)
-        } else {
-            config_path
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("Config file has no parent directory"))?
-                .join(path)
-        };
-
-        if !fs::exists(&layout_path)? {
-            bail!(
-                r#"cannot find layout file "{}" for layout "{}""#,
-                layout_path.display(),
-                name
-            );
-        }
-        layout_paths.push(layout_path);
+        crate::config_overlay::read_layout(config_parent, path)
+            .with_context(|| format!(r#"cannot find layout file "{path}" for layout "{name}""#))?;
     }
 
     if let Some(template) = &new_config.record_file {
@@ -964,30 +992,57 @@ fn load_config() -> Result<Vec<PathBuf>> {
 
     LAST_LOAD.store(now, Ordering::Relaxed);
 
-    Ok(layout_paths)
+    Ok(())
 }
 
-/// Start a watcher thread that monitors config and all layout files
-fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Result<()> {
-    let config_path = std::fs::canonicalize(config_path)?;
-    let layout_paths: Vec<PathBuf> = layout_paths
-        .into_iter()
-        .map(std::fs::canonicalize)
-        .collect::<Result<_, _>>()?;
+fn controller_map_rel(user: &toml::Value, builtin: &toml::Value) -> Option<String> {
+    match user.get("controller_map") {
+        Some(toml::Value::String(path)) => Some(path.clone()),
+        Some(_) => None,
+        None => builtin
+            .get("controller_map")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+    }
+}
+
+/// Layout TOML: user folder, working directory, then the built-in copy.
+pub fn read_layout_source(rel: &str) -> Result<String> {
+    crate::config_overlay::read_layout(config_dir().as_deref(), rel)
+}
+
+/// Word list or model directory: beside the config file, else the working directory.
+pub fn resolve_data_path(rel: &Path) -> PathBuf {
+    if rel.is_absolute() {
+        return rel.to_path_buf();
+    }
+    if let Some(path) =
+        crate::config_overlay::existing_file(config_dir().as_deref(), &rel.to_string_lossy())
+    {
+        return path;
+    }
+    if let Some(path) = crate::config_overlay::existing_dir(config_dir().as_deref(), rel) {
+        return path;
+    }
+    config_dir()
+        .map(|dir| dir.join(rel))
+        .unwrap_or_else(|| rel.to_path_buf())
+}
+
+/// Watch the user config directory so config, mappings, and layouts reload together.
+fn start_watcher_thread(config_path: PathBuf) -> Result<()> {
+    let config_dir = config_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?
+        .to_path_buf();
+    let config_dir = std::fs::canonicalize(&config_dir)
+        .with_context(|| format!("watch {}", config_dir.display()))?;
 
     std::thread::spawn(move || -> Result<()> {
         let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-
         let mut watcher = notify::recommended_watcher(tx)?;
-
-        if let Err(e) = watcher.watch(&config_path, notify::RecursiveMode::NonRecursive) {
-            eprintln!("Failed to watch config file: {}", e);
-        }
-
-        for path in &layout_paths {
-            if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
-                eprintln!("Failed to watch layout file {}: {}", path.display(), e);
-            }
+        if let Err(e) = watcher.watch(&config_dir, notify::RecursiveMode::NonRecursive) {
+            eprintln!("Failed to watch config directory: {e}");
         }
 
         for res in rx {
@@ -996,42 +1051,27 @@ fn start_watcher_thread(config_path: PathBuf, layout_paths: Vec<PathBuf>) -> Res
                     if matches!(
                         event.kind,
                         EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_))
+                            | EventKind::Create(_)
                     ) =>
                 {
-                    let should_reload = event
-                        .paths
-                        .iter()
-                        .flat_map(std::fs::canonicalize)
-                        .any(|p| p == config_path || layout_paths.contains(&p));
-
-                    if should_reload {
-                        match load_config() {
-                            Ok(new_layout_paths) => {
-                                // Check if layout paths changed
-                                let new_set: std::collections::HashSet<_> =
-                                    new_layout_paths.iter().collect();
-                                let old_set: std::collections::HashSet<_> =
-                                    layout_paths.iter().collect();
-
-                                if new_set != old_set {
-                                    start_watcher_thread(config_path.clone(), new_layout_paths)?;
-
-                                    notify_config_changed();
-
-                                    break;
-                                } else {
-                                    notify_config_changed();
-                                }
-                            }
-                            Err(e) => {
-                                if e.to_string() != "Reload debounced" {
-                                    eprintln!("Failed to reload config: {}", e);
-                                }
+                    let in_dir = event.paths.iter().any(|p| {
+                        p.parent()
+                            .and_then(|parent| std::fs::canonicalize(parent).ok())
+                            == Some(config_dir.clone())
+                    });
+                    if !in_dir {
+                        continue;
+                    }
+                    match load_config() {
+                        Ok(()) => notify_config_changed(),
+                        Err(e) => {
+                            if e.to_string() != "Reload debounced" {
+                                eprintln!("Failed to reload config: {e}");
                             }
                         }
                     }
                 }
-                Err(e) => eprintln!("watch error: {:?}", e),
+                Err(e) => eprintln!("watch error: {e:?}"),
                 _ => {}
             }
         }
@@ -1064,7 +1104,12 @@ pub fn init() -> Result<()> {
     CLI_AT_MOUSE
         .set(args.at_mouse)
         .expect("CLI at-mouse was already set");
-    init_from_path(PathBuf::from(&args.config_path))?;
+    let (path, persist) = match &args.config_path {
+        Some(path) => (PathBuf::from(path), false),
+        None => (crate::config_overlay::ensure_user_config_file()?, true),
+    };
+    PERSIST_MIGRATION.store(persist, Ordering::Relaxed);
+    init_from_path(path)?;
     if mcp_controller_mode() && preferred_is_replay() {
         bail!(
             "mcp-controller mode cannot be combined with replay (--replay / preferred_controller=replay)"
@@ -1079,11 +1124,11 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
         .set(config_path.clone())
         .expect("Config path was already set");
 
-    let initial_layout_paths = load_config()?;
+    load_config()?;
 
     let skip_watcher = preferred_is_replay();
     if !skip_watcher {
-        start_watcher_thread(config_path, initial_layout_paths)?;
+        start_watcher_thread(config_path)?;
     }
 
     Ok(())
@@ -1195,6 +1240,202 @@ pub(crate) fn replace_live(cfg: Config) {
     }
 }
 
+fn builtin_merged_config() -> Result<Config> {
+    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
+        .parse()
+        .context("built-in config")?;
+    let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
+        .parse()
+        .context("built-in mappings")?;
+    if let Some(table) = merged.as_table_mut() {
+        table.insert("controller_map".to_owned(), mappings);
+    }
+    merged
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("built-in config: {e}"))
+}
+
+/// Write `new` into the user file as values that differ from the built-in default.
+fn write_user_overlay(path: &Path, new: &Config) -> Result<()> {
+    let builtin = builtin_merged_config()?;
+    let mut default_val = toml::Value::try_from(&builtin).context("serialize built-in config")?;
+    let mut new_val = toml::Value::try_from(new).context("serialize config")?;
+    if let Some(table) = default_val.as_table_mut() {
+        table.remove("controller_map");
+    }
+    if let Some(table) = new_val.as_table_mut() {
+        table.remove("controller_map");
+    }
+
+    let content = fs::read_to_string(path).unwrap_or_default();
+    let mut doc = if content.trim().is_empty() {
+        toml_edit::DocumentMut::new()
+    } else {
+        content
+            .parse::<toml_edit::DocumentMut>()
+            .with_context(|| format!("Could not parse {}", path.display()))?
+    };
+    sync_overlay("", doc.as_table_mut(), &default_val, &new_val)?;
+    doc["config_version"] = toml_edit::value(crate::config_overlay::CONFIG_VERSION);
+    fs::write(path, doc.to_string())
+        .with_context(|| format!("Could not write {}", path.display()))?;
+
+    if let Some(rel) = controller_map_file() {
+        let mappings_path = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?
+            .join(rel);
+        write_mappings_overlay(&mappings_path, &builtin.controller_map, &new.controller_map)?;
+    }
+    Ok(())
+}
+
+fn sync_overlay(
+    path: &str,
+    user: &mut toml_edit::Table,
+    default: &toml::Value,
+    new: &toml::Value,
+) -> Result<()> {
+    let default_table = default
+        .as_table()
+        .ok_or_else(|| anyhow::anyhow!("sync_overlay: default must be a table"))?;
+    let new_table = new
+        .as_table()
+        .ok_or_else(|| anyhow::anyhow!("sync_overlay: new must be a table"))?;
+
+    for (key, new_child) in new_table {
+        if key == "config_version" {
+            continue;
+        }
+        let child_path = child_config_path(path, key);
+        match default_table.get(key) {
+            Some(default_child) if default_child == new_child => {
+                user.remove(key);
+            }
+            Some(default_child) if default_child.is_table() && new_child.is_table() => {
+                if !user.get(key).is_some_and(|item| item.is_table()) {
+                    user.insert(key, toml_edit::Item::Table(toml_edit::Table::new()));
+                }
+                let child = user
+                    .get_mut(key)
+                    .and_then(|item| item.as_table_mut())
+                    .expect("inserted table");
+                sync_overlay(&child_path, child, default_child, new_child)?;
+                if child.is_empty() {
+                    user.remove(key);
+                }
+            }
+            _ => {
+                user.insert(key, toml_to_item(&child_path, new_child)?);
+            }
+        }
+    }
+
+    let stale: Vec<String> = user
+        .iter()
+        .map(|(key, _)| key.to_owned())
+        .filter(|key| key != "config_version" && !new_table.contains_key(key))
+        .collect();
+    for key in stale {
+        user.remove(&key);
+    }
+    Ok(())
+}
+
+fn write_mappings_overlay(
+    path: &Path,
+    default_map: &HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
+    new_map: &HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
+) -> Result<()> {
+    let default_val = toml::Value::try_from(default_map).context("serialize default mappings")?;
+    let new_val = toml::Value::try_from(new_map).context("serialize mappings")?;
+    let content = fs::read_to_string(path).unwrap_or_default();
+    let mut doc = if content.trim().is_empty() {
+        toml_edit::DocumentMut::new()
+    } else {
+        content
+            .parse::<toml_edit::DocumentMut>()
+            .with_context(|| format!("Could not parse {}", path.display()))?
+    };
+    sync_mappings(doc.as_table_mut(), &default_val, &new_val)?;
+    if doc.as_table().is_empty() {
+        if path.exists() {
+            fs::remove_file(path)
+                .with_context(|| format!("Could not remove {}", path.display()))?;
+        }
+        return Ok(());
+    }
+    fs::write(path, doc.to_string())
+        .with_context(|| format!("Could not write {}", path.display()))?;
+    Ok(())
+}
+
+fn sync_mappings(
+    user: &mut toml_edit::Table,
+    default: &toml::Value,
+    new: &toml::Value,
+) -> Result<()> {
+    let empty = toml::map::Map::new();
+    let default_modes = default.as_table().unwrap_or(&empty);
+    let new_modes = new.as_table().unwrap_or(&empty);
+    let mut modes: Vec<String> = default_modes.keys().cloned().collect();
+    for key in new_modes.keys() {
+        if !modes.contains(key) {
+            modes.push(key.clone());
+        }
+    }
+    for mode in modes {
+        let default_mode = default_modes
+            .get(&mode)
+            .and_then(|v| v.as_table())
+            .cloned()
+            .unwrap_or_default();
+        let new_mode = new_modes
+            .get(&mode)
+            .and_then(|v| v.as_table())
+            .cloned()
+            .unwrap_or_default();
+        if !user.get(&mode).is_some_and(|item| item.is_table()) {
+            user.insert(&mode, toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let mode_user = user
+            .get_mut(&mode)
+            .and_then(|item| item.as_table_mut())
+            .expect("inserted mode table");
+        let mut bindings: Vec<String> = default_mode.keys().cloned().collect();
+        for key in new_mode.keys() {
+            if !bindings.contains(key) {
+                bindings.push(key.clone());
+            }
+        }
+        for binding in bindings {
+            match (default_mode.get(&binding), new_mode.get(&binding)) {
+                (Some(default_action), Some(action)) if default_action == action => {
+                    mode_user.remove(&binding);
+                }
+                (Some(_), None) => {
+                    mode_user.insert(
+                        &binding,
+                        toml_edit::Item::Value(toml_edit::Value::from(
+                            crate::config_overlay::UNBIND_ACTION,
+                        )),
+                    );
+                }
+                (None, None) => {
+                    mode_user.remove(&binding);
+                }
+                (_, Some(action)) => {
+                    mode_user.insert(&binding, toml_to_item("", action)?);
+                }
+            }
+        }
+        if mode_user.is_empty() {
+            user.remove(&mode);
+        }
+    }
+    Ok(())
+}
+
 /// Write settings edits. While a tape config is overlaid, `copy_edits` copies only
 /// the changed fields onto the disk snapshot so tape-merged values stay off disk.
 /// Otherwise the whole live config is saved, same as [`save`].
@@ -1206,14 +1447,13 @@ pub(crate) fn persist_settings(live: &Config, copy_edits: impl FnOnce(&mut Confi
     let path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
-    let map_file = controller_map_file();
     let disk = DISK_CONFIG
         .get()
         .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?;
     let disk_before = disk.lock().unwrap().clone();
     let mut persist = disk_before.clone();
     copy_edits(&mut persist);
-    write_config_preserving(path, &disk_before, &persist, map_file.as_deref())?;
+    write_user_overlay(path, &persist)?;
     *disk.lock().unwrap() = persist;
     Ok(())
 }
@@ -1222,8 +1462,6 @@ pub fn save(new_config: Config) -> Result<()> {
     let path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
-    let map_file = controller_map_file();
-    let map_file_ref = map_file.as_deref();
 
     if TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
         let disk = DISK_CONFIG
@@ -1232,7 +1470,7 @@ pub fn save(new_config: Config) -> Result<()> {
         let disk_before = disk.lock().unwrap().clone();
         let mut persist = disk_before.clone();
         persist.window_pos = new_config.window_pos;
-        write_config_preserving(path, &disk_before, &persist, map_file_ref)?;
+        write_user_overlay(path, &persist)?;
         *disk.lock().unwrap() = persist;
         if let Some(instance) = CONFIG_INSTANCE.get() {
             instance.lock().unwrap().window_pos = new_config.window_pos;
@@ -1240,13 +1478,10 @@ pub fn save(new_config: Config) -> Result<()> {
         return Ok(());
     }
 
-    let disk_snapshot = DISK_CONFIG
-        .get()
-        .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?
-        .lock()
-        .unwrap()
-        .clone();
-    write_config_preserving(path, &disk_snapshot, &new_config, map_file_ref)?;
+    if DISK_CONFIG.get().is_none() {
+        bail!("disk config is not initialized");
+    }
+    write_user_overlay(path, &new_config)?;
 
     store_disk_config(new_config.clone());
     if let Some(instance) = CONFIG_INSTANCE.get() {
@@ -1299,7 +1534,7 @@ mod tests {
         let args =
             Args::try_parse_from(["kosk", "config.toml", "--replay", "captures/kosk-000.krec"])
                 .unwrap();
-        assert_eq!(args.config_path, "config.toml");
+        assert_eq!(args.config_path.as_deref(), Some("config.toml"));
         assert_eq!(
             args.replay.as_deref(),
             Some(Path::new("captures/kosk-000.krec"))
@@ -1747,5 +1982,68 @@ stick_select_sticky = 1.00\n\
         assert!(main.contains("scale_x = 30.0"), "{main}");
         assert!(main.contains("stick_select_sticky = 1.25"), "{main}");
         assert!(!main.contains("699999"), "{main}");
+    }
+
+    #[test]
+    fn parse_without_config_path() {
+        let args = Args::try_parse_from(["kosk"]).unwrap();
+        assert!(args.config_path.is_none());
+    }
+
+    #[test]
+    fn overlay_save_keeps_only_differences() {
+        let dir = temp_dir("overlay-save");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 1\n").unwrap();
+        store_controller_map_file(Some("mappings.toml".into()));
+
+        let mut cfg = builtin_merged_config().unwrap();
+        cfg.keyboard_opacity = 0.7;
+        cfg.completion.ui.columns = 4;
+        write_user_overlay(&config_path, &cfg).unwrap();
+
+        let text = fs::read_to_string(&config_path).unwrap();
+        assert!(text.contains("config_version = 1"), "{text}");
+        assert!(text.contains("keyboard_opacity = 0.70"), "{text}");
+        assert!(text.contains("columns = 4"), "{text}");
+        assert!(!text.contains("stick_scale_x"), "{text}");
+        assert!(!dir.join("mappings.toml").exists());
+
+        cfg.keyboard_opacity = builtin_merged_config().unwrap().keyboard_opacity;
+        write_user_overlay(&config_path, &cfg).unwrap();
+        let text = fs::read_to_string(&config_path).unwrap();
+        assert!(!text.contains("keyboard_opacity"), "{text}");
+        assert!(text.contains("columns = 4"), "{text}");
+    }
+
+    #[test]
+    fn overlay_save_unbinds_default_mapping() {
+        let dir = temp_dir("overlay-unbind");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 1\n").unwrap();
+        store_controller_map_file(Some("mappings.toml".into()));
+
+        let mut cfg = builtin_merged_config().unwrap();
+        cfg.controller_map
+            .get_mut(&StateId::Keyboard)
+            .unwrap()
+            .remove(&ControllerBinding::from(
+                crate::controller::ControllerButton::FaceTop,
+            ));
+        write_user_overlay(&config_path, &cfg).unwrap();
+
+        let mappings = fs::read_to_string(dir.join("mappings.toml")).unwrap();
+        assert!(
+            mappings.contains("\"faceTop\" = \"none\"") || mappings.contains("faceTop = \"none\""),
+            "{mappings}"
+        );
+    }
+
+    #[test]
+    fn recorded_config_migrates_before_overlay() {
+        let live = sample_cfg();
+        let merged = overlay_tape_config(&live, "event_debounce_ms = 12\n").unwrap();
+        assert_eq!(merged.event_debounce_ms, 12);
+        assert!(crate::config_overlay::migrate_toml("config_version = 99\n").is_err());
     }
 }

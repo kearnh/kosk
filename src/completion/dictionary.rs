@@ -226,7 +226,10 @@ impl DictionaryEngine {
                 .with_context(|| format!("read wordlist {}", path.display()))?;
             Ok(Self::from_wordlist_text(&raw, cfg))
         } else {
-            Ok(Self::embedded_demo(cfg))
+            Ok(Self::from_wordlist_text(
+                crate::config::builtin_unigrams(),
+                cfg,
+            ))
         }
     }
 
