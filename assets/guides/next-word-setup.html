@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kosk next-word setup</title>
+<style>
+  body {
+    background: #1c1c1e;
+    color: #e6e6e6;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    max-width: 640px;
+    margin: 48px auto;
+    padding: 0 24px;
+    line-height: 1.6;
+  }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin-top: 32px; color: #9ecfff; }
+  code {
+    background: #2c2c2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  pre {
+    background: #2c2c2e;
+    padding: 12px 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 14px;
+  }
+  .note { color: #aaa; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Better next-word suggestions</h1>
+<p>
+  kosk already completes the word you are typing. Guessing the
+  <em>next</em> word after a space needs a table of common two-word pairs.
+  That table is large, so it is not shipped with kosk. Build it once on this
+  machine with the steps below.
+</p>
+
+<h2>1. Download the word-pair counts</h2>
+<p>
+  Download Peter Norvig's
+  <a href="https://norvig.com/ngrams/count_2w.txt">count_2w.txt</a>
+  and save it as <code>{{CONFIG_DIR}}\count_2w.txt</code>.
+  Each line is two words and how often they appear together.
+</p>
+
+<h2>2. Build the tables kosk loads</h2>
+<p>From the kosk folder, run:</p>
+<pre>cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --bigrams {{CONFIG_DIR}}\count_2w.txt --out {{MODEL_DIR}}</pre>
+<p class="note">
+  <code>--out</code> is the folder kosk reads for next-word tables.
+  The generated files (<code>vocab.txt</code>, <code>unigrams.bin</code>,
+  <code>bigrams.bin</code>) stay on this machine.
+</p>
+
+<h2>3. Restart kosk</h2>
+<p>
+  kosk picks the new tables up on launch. If you edited settings instead of
+  restarting, saving the settings file reloads them too.
+</p>
+
+<h2>How to check it worked</h2>
+<p>
+  Type a word and a space, for example <code>going </code>. You should see
+  words that follow it, like <code>to</code>. If you still only see common
+  words like <code>the</code>, the pair table did not load.
+</p>
+
+<h2 class="note">Optional: three-word pairs</h2>
+<p class="note">
+  For longer context, also download
+  <a href="https://norvig.com/ngrams/count_3w.txt">count_3w.txt</a>
+  and add <code>--trigrams</code> with its path to the command above.
+  With your own text, <code>--corpus FILE</code> counts pairs from one
+  sentence per line.
+</p>
+</body>
+</html>

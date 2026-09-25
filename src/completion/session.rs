@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 
 use super::app_type::AppTypeMap;
-use super::backend::{backend_from_config, Abort, Candidate, CompletionBackend, Source};
+use super::backend::{
+    backend_from_config, Abort, Candidate, CompletionBackend, NextWordTables, Source,
+};
 use super::context::CompletionContext;
 use super::settings::{CompletionConfig, CurrentWordChip, Preselect};
 use super::typed_log::{LogEvent, TypedLog};
@@ -105,8 +107,24 @@ impl Session {
             &cfg.user_cache,
             resolve_cache_path(config_dir, &cfg.user_cache.path),
         )));
-        let backend = backend_from_config(&cfg, config_dir, Arc::clone(&user))?;
-        Self::open_worker(backend, cfg, user, notify, fg)
+        let load = backend_from_config(&cfg, config_dir, Arc::clone(&user))?;
+        if load.next_word == NextWordTables::Missing {
+            let shown = crate::config::try_get()
+                .map(|c| c.tips.completion_next_word_setup_shown)
+                .unwrap_or(false);
+            let tip = crate::user_notify::Notice::next_word_setup_tip(
+                shown,
+                cfg.enabled,
+                true,
+                crate::config::uses_user_config()
+                    && !crate::config::preferred_is_replay()
+                    && !crate::config::mcp_controller_mode(),
+            );
+            if let Some(tip) = tip {
+                crate::user_notify::notify(tip);
+            }
+        }
+        Self::open_worker(load.backend, cfg, user, notify, fg)
     }
 
     fn spawn_with_backend(
@@ -759,6 +777,7 @@ pub fn init() -> Result<()> {
             *g = None;
             if let Err(e) = rebuild_locked(&mut g) {
                 eprintln!("Failed to reload completion: {e}");
+                crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
             }
         }
     })?;

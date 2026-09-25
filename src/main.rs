@@ -264,8 +264,95 @@ impl eframe::App for App {
         };
         self.last_outer = Some(outer);
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(outer));
+
+        self.show_toast_satellite(&ctx, state, outer, size, monitor_size);
     }
 }
+
+fn toast_viewport_id() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("kosk-toast")
+}
+
+impl App {
+    /// Satellite toast window beside the keyboard. Hidden on MoveWindow.
+    fn show_toast_satellite(
+        &self,
+        ctx: &egui::Context,
+        state: StateId,
+        outer: egui::Pos2,
+        size: Vec2,
+        monitor_size: Vec2,
+    ) {
+        if state == StateId::MoveWindow {
+            return;
+        }
+
+        let Some(view) = kosk::state::toasts::snapshot_for_ui() else {
+            return;
+        };
+        // Keep both viewports alive for the grace hint and fade-in.
+        ctx.request_repaint();
+
+        let toast_size = kosk::state::toasts::card_size(&view);
+        let pos = kosk::state::toasts::dock_position(outer, size, toast_size, monitor_size);
+        let builder = kosk::state::toasts::viewport_builder(pos, toast_size);
+        ctx.show_viewport_immediate(toast_viewport_id(), builder, move |ui, _| {
+            kosk::state::toasts::draw_satellite(ui, &view);
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+        });
+        style_satellite_window();
+    }
+}
+
+/// Best-effort Win32 styling for the satellite: never activate, no taskbar
+/// button, layered + blurred like the root overlay. winit builder flags cover
+/// the rest; failures leave a readable card.
+#[cfg(target_os = "windows")]
+fn style_satellite_window() {
+    use windows_sys::Win32::Foundation::{COLORREF, HWND};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+        LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    unsafe {
+        let title = wide(kosk::state::toasts::SATELLITE_TITLE);
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if hwnd == 0 {
+            return;
+        }
+        let hwnd = hwnd as HWND;
+
+        let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let wanted = current
+            | (WS_EX_NOACTIVATE as isize)
+            | (WS_EX_TOOLWINDOW as isize)
+            | (WS_EX_LAYERED as isize);
+        if wanted != current {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted);
+        }
+        let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
+
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE,
+            fEnable: 1,
+            hRgnBlur: 0,
+            fTransitionOnMaximized: 0,
+        };
+        let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn style_satellite_window() {}
 
 fn main() -> Result<()> {
     config::init()?;
@@ -346,6 +433,7 @@ fn main() -> Result<()> {
                                         s.reset_controller_input(&ctx)
                                     }
                                     Some(snap) if !snap.is_engaged() => {
+                                        kosk::user_notify::note_no_input();
                                         s.note_battery(snap.as_ref());
                                         Ok(())
                                     }

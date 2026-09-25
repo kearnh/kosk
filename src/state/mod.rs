@@ -31,6 +31,7 @@ mod select_layout_action;
 mod settings_form;
 mod text_input;
 mod text_input_action;
+pub mod toasts;
 pub mod window_pos;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash, strum::VariantNames)]
@@ -65,6 +66,7 @@ pub struct AppState {
     pointer_snapshot: Option<PointerSnapshot>,
     events: EventQueue,
     key_sink: Box<dyn KeySink>,
+    unsupported_checked_for: Option<ControllerKind>,
 }
 
 impl AppState {
@@ -95,6 +97,7 @@ impl AppState {
             pointer_snapshot: None,
             events: EventQueue::new(),
             key_sink: open_key_sink()?,
+            unsupported_checked_for: None,
         })
     }
 
@@ -204,11 +207,13 @@ impl AppState {
                     Event::SendKey(key, direction) => {
                         if let Err(e) = self.key_sink.key(key, direction) {
                             eprintln!("key sink: {e:#}");
+                            crate::user_notify::note_type_failure();
                         }
                     }
                     Event::SendText(text) => {
                         if let Err(e) = self.key_sink.text(&text) {
                             eprintln!("key sink: {e:#}");
+                            crate::user_notify::note_type_failure();
                         }
                     }
                     Event::ChangeState(state) => {
@@ -261,6 +266,7 @@ impl AppState {
                     Event::ToggleRecord => {
                         if let Err(e) = toggle_recording() {
                             eprintln!("toggleRecord: {e:#}");
+                            crate::user_notify::notify(crate::user_notify::Notice::record_failed());
                         }
                     }
                     Event::ToggleShift => {
@@ -420,6 +426,23 @@ impl AppState {
 
         self.controller_kind = input.family();
 
+        if let crate::user_notify::InputOutcome::Swallowed { notice, open_guide } =
+            crate::user_notify::offer_input(input)
+        {
+            if toasts::is_tip_acknowledge(&notice.key) {
+                toasts::acknowledge_tip();
+            }
+            if open_guide {
+                if let Err(e) = toasts::open_setup_guide() {
+                    eprintln!("setup guide: {e:#}");
+                    crate::user_notify::notify(crate::user_notify::Notice::guide_failed());
+                }
+            }
+            self.reset_current_mode_controller(Some(input));
+            self.events.end_controller_tick();
+            return Ok(());
+        }
+
         if cfg.debug.is_some() {
             ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
         }
@@ -463,6 +486,10 @@ impl AppState {
         }
         self.events.end_controller_tick();
         self.process_events(ctx, Some(input));
+        if self.unsupported_checked_for != Some(self.controller_kind) {
+            self.unsupported_checked_for = Some(self.controller_kind);
+            toasts::check_unsupported(self.controller_kind);
+        }
         Ok(())
     }
 
@@ -484,6 +511,7 @@ impl AppState {
             });
         }
         self.reset_current_mode_controller(None);
+        crate::user_notify::note_no_input();
         if config::get().debug.is_some() {
             ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = None);
         }
@@ -513,12 +541,15 @@ fn toggle_recording() -> Result<()> {
         return Ok(());
     }
     let cfg = config::get();
-    let template = cfg
-        .record_file
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("record_file is not set in config"))?;
-    input_record::validate_record_template(template)?;
-    let resolved = input_record::resolve_against_config_dir(template)?;
+    let template = match cfg.record_file.as_ref() {
+        Some(template) => template.clone(),
+        None => {
+            crate::user_notify::notify(crate::user_notify::Notice::record_needs_location());
+            return Ok(());
+        }
+    };
+    input_record::validate_record_template(&template)?;
+    let resolved = input_record::resolve_against_config_dir(&template)?;
     let path = input_record::next_record_path(&resolved)?;
     let header = keyboard::with_mut(|kb| kb.tape_header())?;
     session.start(path.clone(), header)?;

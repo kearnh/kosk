@@ -225,6 +225,10 @@ pub struct Config {
     /// Where to send outgoing keys/text. Omitted → Enigo injection.
     #[serde(default)]
     pub key_sink: KeySinkConfig,
+
+    /// One-time tutorial cards.
+    #[serde(default)]
+    pub tips: TipsConfig,
 }
 
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
@@ -377,6 +381,13 @@ pub enum KeySinkConfig {
     Log {
         file: String,
     },
+}
+
+/// One-time tutorial cards. kosk marks each shown after acknowledgement.
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub struct TipsConfig {
+    #[serde(default)]
+    pub completion_next_word_setup_shown: bool,
 }
 
 /// Pad haptic tick strength. `none` skips the HID pulse.
@@ -555,7 +566,6 @@ enum ConfigSource {
 }
 
 static CONFIG_SOURCE: OnceLock<ConfigSource> = OnceLock::new();
-static EXPLICIT_SAVE_NOTIFIED: AtomicBool = AtomicBool::new(false);
 
 fn config_source() -> ConfigSource {
     CONFIG_SOURCE
@@ -592,21 +602,19 @@ fn open_user_config_for_source(source: ConfigSource) -> bool {
     }
     let path = match crate::config_overlay::ensure_user_config_file() {
         Ok(path) => path,
-        Err(e) => {
-            crate::user_notify::notify_user(&format!("could not open config: {e:#}"));
+        Err(_) => {
+            crate::user_notify::notify(crate::user_notify::Notice::open_config_failed());
             return false;
         }
     };
     let (program, args) = editor_invocation(std::env::var("EDITOR").ok().as_deref());
-    if let Err(e) = std::process::Command::new(&program)
+    if std::process::Command::new(&program)
         .args(&args)
         .arg(&path)
         .spawn()
+        .is_err()
     {
-        crate::user_notify::notify_user(&format!(
-            "could not open {} in {program}: {e}",
-            path.display()
-        ));
+        crate::user_notify::notify(crate::user_notify::Notice::open_config_failed());
     }
     true
 }
@@ -624,6 +632,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "window_pos",
     "text_input",
     "completion",
+    "tips",
 ];
 
 /// Config TOML stored in a recording: live config minus [`TAPE_CONFIG_SKIP`].
@@ -831,13 +840,7 @@ fn load_config() -> Result<Vec<PathBuf>> {
         return Err(anyhow::anyhow!("Reload debounced"));
     }
 
-    static NEWER_VERSION_NOTIFIED: AtomicBool = AtomicBool::new(false);
-    let notify_once = |message: &str| {
-        if !NEWER_VERSION_NOTIFIED.swap(true, Ordering::Relaxed) {
-            crate::user_notify::notify_user(message);
-        }
-    };
-    let (new_config, map_rel) = read_merged_config(config_path, config_source(), &notify_once)?;
+    let (new_config, map_rel) = read_merged_config(config_path, config_source())?;
     store_controller_map_file(map_rel.clone());
 
     // Validate that layouts contains "main"
@@ -913,7 +916,6 @@ fn load_config() -> Result<Vec<PathBuf>> {
 fn read_merged_config(
     config_path: &Path,
     source: ConfigSource,
-    notify: &dyn Fn(&str),
 ) -> Result<(Config, Option<String>)> {
     let user_text = fs::read_to_string(config_path)
         .with_context(|| format!("Could not read {}", config_path.display()))?;
@@ -922,7 +924,7 @@ fn read_merged_config(
         .context("Could not parse config TOML")?;
     match crate::config_overlay::migrate_document(&mut user_doc)? {
         crate::config_overlay::MigrateOutcome::Newer => {
-            notify(&crate::config_overlay::newer_version_message(
+            crate::user_notify::notify(crate::user_notify::Notice::newer_settings(
                 crate::config_overlay::file_version(&user_doc),
             ));
         }
@@ -1040,6 +1042,9 @@ fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Res
                         Err(e) => {
                             if e.to_string() != "Reload debounced" {
                                 eprintln!("Failed to reload config: {e}");
+                                crate::user_notify::notify(
+                                    crate::user_notify::Notice::reload_failed(),
+                                );
                             }
                         }
                     }
@@ -1432,18 +1437,7 @@ pub(crate) fn persist_settings(live: &Config, copy_edits: impl FnOnce(&mut Confi
 }
 
 fn write_if_user_config(path: &Path, cfg: &Config) -> Result<()> {
-    let notify_once = |message: &str| {
-        if !EXPLICIT_SAVE_NOTIFIED.swap(true, Ordering::Relaxed) {
-            crate::user_notify::notify_user(message);
-        }
-    };
-    write_for_source(
-        config_source(),
-        path,
-        cfg,
-        controller_map_file().as_deref(),
-        &notify_once,
-    )
+    write_for_source(config_source(), path, cfg, controller_map_file().as_deref())
 }
 
 fn write_for_source(
@@ -1451,10 +1445,9 @@ fn write_for_source(
     path: &Path,
     cfg: &Config,
     mappings_file: Option<&str>,
-    notify: &dyn Fn(&str),
 ) -> Result<()> {
     if source != ConfigSource::User {
-        notify("change not saved: config was given on the command line");
+        crate::user_notify::notify(crate::user_notify::Notice::not_saved());
         return Ok(());
     }
     write_user_overlay(path, cfg, mappings_file)
@@ -1820,19 +1813,16 @@ show_stick_cursors = false\n\
         let config_path = dir.join("config.toml");
         let original = "config_version = 0\nkeyboard_opacity = 0.2\n";
         fs::write(&config_path, original).unwrap();
-        let notices = std::cell::RefCell::new(Vec::new());
         let cfg = builtin_merged_config().unwrap();
         write_for_source(
             ConfigSource::Explicit,
             &config_path,
             &cfg,
             Some("mappings.toml"),
-            &|m: &str| notices.borrow_mut().push(m.to_owned()),
         )
         .unwrap();
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
         assert!(!dir.join("mappings.toml").exists());
-        assert_eq!(notices.borrow().len(), 1);
     }
 
     #[test]
@@ -1841,8 +1831,7 @@ show_stick_cursors = false\n\
         let config_path = dir.join("config.toml");
         let original = "keyboard_opacity = 0.2\n";
         fs::write(&config_path, original).unwrap();
-        let (cfg, _) =
-            read_merged_config(&config_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        let (cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(cfg.config_version, crate::config_overlay::CONFIG_VERSION);
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
@@ -1852,7 +1841,7 @@ show_stick_cursors = false\n\
         let dir = temp_dir("user-migrate");
         let config_path = dir.join("config.toml");
         fs::write(&config_path, "keyboard_opacity = 0.2\n").unwrap();
-        read_merged_config(&config_path, ConfigSource::User, &|_: &str| {}).unwrap();
+        read_merged_config(&config_path, ConfigSource::User).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("config_version = 1"), "{text}");
         assert!(text.contains("keyboard_opacity = 0.2"), "{text}");
@@ -1868,8 +1857,7 @@ show_stick_cursors = false\n\
             "[Keyboard]\n\"faceTop\" = \"toggleCtrl\"\n",
         )
         .unwrap();
-        let (cfg, map_rel) =
-            read_merged_config(&config_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        let (cfg, map_rel) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(map_rel.as_deref(), Some("mappings.toml"));
         let face_top = ControllerBinding::from(crate::controller::ControllerButton::FaceTop);
         assert_eq!(
@@ -1880,8 +1868,7 @@ show_stick_cursors = false\n\
         let other = temp_dir("explicit-no-mappings");
         let other_path = other.join("config.toml");
         fs::write(&other_path, "config_version = 1\n").unwrap();
-        let (cfg, _) =
-            read_merged_config(&other_path, ConfigSource::Explicit, &|_: &str| {}).unwrap();
+        let (cfg, _) = read_merged_config(&other_path, ConfigSource::Explicit).unwrap();
         assert_eq!(
             cfg.controller_map[&StateId::Keyboard][&face_top],
             MappingValue::Action("toggleShift".into())
@@ -1889,20 +1876,42 @@ show_stick_cursors = false\n\
     }
 
     #[test]
-    fn newer_version_notifies_user() {
+    fn newer_version_message_is_user_facing() {
+        let message = crate::config_overlay::newer_version_message(99);
+        assert!(message.contains("99"), "{message}");
+        assert!(!message.contains("config_version"), "{message}");
+    }
+
+    #[test]
+    fn newer_version_loads_unchanged() {
         let dir = temp_dir("newer-notify");
         let config_path = dir.join("config.toml");
         let original = "config_version = 99\nfuture_key = 1\n";
         fs::write(&config_path, original).unwrap();
-        let notices = std::cell::RefCell::new(Vec::new());
-        let (cfg, _) = read_merged_config(&config_path, ConfigSource::User, &|m: &str| {
-            notices.borrow_mut().push(m.to_owned())
-        })
-        .unwrap();
+        let (cfg, _) = read_merged_config(&config_path, ConfigSource::User).unwrap();
         assert_eq!(cfg.config_version, 99);
-        assert_eq!(notices.borrow().len(), 1);
-        assert!(notices.borrow()[0].contains("99"), "{:?}", notices.borrow());
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+    }
+
+    #[test]
+    fn tips_flag_round_trips() {
+        let dir = temp_dir("tips-flag");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 1\n").unwrap();
+        let (cfg, _) = read_merged_config(&config_path, ConfigSource::User).unwrap();
+        assert!(!cfg.tips.completion_next_word_setup_shown);
+
+        let mut shown = cfg.clone();
+        shown.tips.completion_next_word_setup_shown = true;
+        write_user_overlay(&config_path, &shown, None).unwrap();
+        let text = fs::read_to_string(&config_path).unwrap();
+        assert!(
+            text.contains("completion_next_word_setup_shown = true"),
+            "{text}"
+        );
+
+        let (reloaded, _) = read_merged_config(&config_path, ConfigSource::User).unwrap();
+        assert!(reloaded.tips.completion_next_word_setup_shown);
     }
 
     fn watched_files(dir: &Path, external_layout: &Path) -> Vec<PathBuf> {

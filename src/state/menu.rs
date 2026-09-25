@@ -143,6 +143,7 @@ impl MenuState {
             }
         }) {
             eprintln!("settings save: {e:#}");
+            crate::user_notify::notify(crate::user_notify::Notice::settings_save_failed());
             return;
         }
         self.form.clear_dirty();

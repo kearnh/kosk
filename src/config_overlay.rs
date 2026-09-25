@@ -10,7 +10,7 @@ pub(crate) const UNBIND_ACTION: &str = "none";
 
 pub(crate) fn newer_version_message(file_version: i64) -> String {
     format!(
-        "{CONFIG_VERSION_KEY} {file_version} is newer than this kosk ({CONFIG_VERSION}); unknown settings are ignored"
+        "Your settings file was saved by a newer kosk (version {file_version}); unknown settings are ignored"
     )
 }
 
@@ -112,13 +112,15 @@ fn apply_migrations(
 }
 
 /// Run migrations on a config blob (a user file or a recording). Does not write.
-/// A newer blob is returned unchanged after [`crate::user_notify::notify_user`].
+/// A newer blob is returned unchanged and posts a one-time notice.
 pub(crate) fn migrate_toml(text: &str) -> Result<String> {
     let mut doc = text
         .parse::<toml_edit::DocumentMut>()
         .context("parse config for migration")?;
     if migrate_document(&mut doc)? == MigrateOutcome::Newer {
-        crate::user_notify::notify_user(&newer_version_message(file_version(&doc)));
+        crate::user_notify::notify(crate::user_notify::Notice::newer_settings(file_version(
+            &doc,
+        )));
     }
     Ok(doc.to_string())
 }

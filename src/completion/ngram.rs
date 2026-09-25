@@ -107,6 +107,11 @@ pub struct NgramEngine {
 }
 
 impl NgramEngine {
+    /// True when pair tables exist, so next-word suggestions use context.
+    pub fn has_bigrams(&self) -> bool {
+        !self.bigrams.is_empty()
+    }
+
     pub fn from_dictionary(
         dict: DictionaryEngine,
         cfg: &CompletionConfig,

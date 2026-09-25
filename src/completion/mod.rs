@@ -17,8 +17,8 @@ mod user_cache;
 pub use app_type::{validate_app_types, AppTypeMap, CATCH_ALL_TYPE};
 pub use apply::{is_case_insensitive_prefix, remainder, splice};
 pub use backend::{
-    backend_from_config, load_type_wordlists, Abort, Candidate, CompletionBackend, MatchKind,
-    Source,
+    backend_from_config, load_type_wordlists, Abort, BackendLoad, Candidate, CompletionBackend,
+    MatchKind, NextWordTables, Source,
 };
 pub use case::restore_case;
 pub use context::{split_at_cursor, tokens_in, word_prefix_token, CompletionContext};
