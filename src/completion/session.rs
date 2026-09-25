@@ -1088,8 +1088,10 @@ mod tests {
 
     #[test]
     fn eat_space_skips_when_accept_has_no_space() {
-        let mut cfg = CompletionConfig::default();
-        cfg.insert_space_on_accept = false;
+        let cfg = CompletionConfig {
+            insert_space_on_accept: false,
+            ..CompletionConfig::default()
+        };
         let mut s = session_with(cfg);
         let out = accept_hello(&mut s);
         assert!(!out.inject.ends_with(' '));
