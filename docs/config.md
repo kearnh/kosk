@@ -60,11 +60,11 @@ Serde sees `controller_map` as either a nested table or a string. A string is op
 
 After the first successful load, `init_from_path` starts a `notify` watcher on the user config directory. Replay mode skips the watcher, because playback should not pick up live edits.
 
-When a file in that directory is modified or created, `load_config` runs again. Reloads within the same second are ignored (“Reload debounced”) so editors that write in two steps do not apply a half-written file.
+Only the files that make up the config trigger a reload: the config file, its `controller_map` file, and each layout file, whether it sits in that directory or elsewhere. Other files in the directory, such as `completion-cache.bin`, which is rewritten every time a suggestion is accepted, are ignored. When one of the config files is modified or created, `load_config` runs again. Reloads within the same second are ignored (“Reload debounced”) so editors that write in two steps do not apply a half-written file.
 
 `load_config` validates that `main` exists, that `start_layout` names a real layout, that every layout can be found beside the active config file or as a built-in copy, and that `record_file` contains exactly one `%`. A parse or validation error prints to stderr and leaves the previous in-memory config in place.
 
-Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. The watcher watches the user config directory, so an edit to `config.toml`, `mappings.toml`, or a layout file in that directory reloads. The mappings screen calls `config::notify_changed` after it saves.
+Modules register with `config::on_changed`. Keyboard, settings, move-window, and text-input each reload their bindings (and the keyboard reloads layouts). The UI thread registers a callback that only calls `request_repaint`. An edit to `config.toml`, `mappings.toml`, or a layout file reloads. The mappings screen calls `config::notify_changed` after it saves.
 
 ## Saving
 

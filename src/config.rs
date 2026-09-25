@@ -814,7 +814,7 @@ fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
 }
 
 /// Load the built-in defaults, then the active config file on top.
-/// Returns absolute layout paths that sit outside the config directory.
+/// Returns the files that define this config (see [`crate::config_overlay::config_file_paths`]).
 fn load_config() -> Result<Vec<PathBuf>> {
     let config_path = CONFIG_PATH
         .get()
@@ -838,7 +838,7 @@ fn load_config() -> Result<Vec<PathBuf>> {
         }
     };
     let (new_config, map_rel) = read_merged_config(config_path, config_source(), &notify_once)?;
-    store_controller_map_file(map_rel);
+    store_controller_map_file(map_rel.clone());
 
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
@@ -899,12 +899,11 @@ fn load_config() -> Result<Vec<PathBuf>> {
 
     LAST_LOAD.store(now, Ordering::Relaxed);
 
-    let parent = config_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?;
     let layouts: Vec<(String, String)> = new_config.layouts.into_iter().collect();
-    Ok(crate::config_overlay::external_layout_paths(
-        parent, &layouts,
+    Ok(crate::config_overlay::config_file_paths(
+        config_path,
+        map_rel.as_deref(),
+        &layouts,
     ))
 }
 
@@ -982,20 +981,13 @@ pub(crate) fn read_layout_source(rel: &str) -> Result<String> {
     crate::config_overlay::read_layout(config_dir().as_deref(), rel)
 }
 
-/// `config_dir` and `external_layouts` are canonical; event paths from the OS may not be.
-fn is_watched_path(path: &Path, config_dir: &Path, external_layouts: &[PathBuf]) -> bool {
-    if let Ok(canon) = std::fs::canonicalize(path) {
-        if external_layouts.contains(&canon) {
-            return true;
-        }
-    }
-    path.parent()
-        .and_then(|parent| std::fs::canonicalize(parent).ok())
-        .is_some_and(|parent| parent == config_dir)
+/// `config_files` are [`crate::config_overlay::watch_key`]s; event paths from the OS may not be.
+fn is_watched_path(path: &Path, config_files: &[PathBuf]) -> bool {
+    config_files.contains(&crate::config_overlay::watch_key(path))
 }
 
-/// Watch the config directory and layout files that live outside it.
-fn start_watcher_thread(config_path: PathBuf, external_layouts: Vec<PathBuf>) -> Result<()> {
+/// Watch the config directory, and config files outside it. Reload only for `config_files`.
+fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Result<()> {
     let config_dir = config_path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?
@@ -1009,9 +1001,12 @@ fn start_watcher_thread(config_path: PathBuf, external_layouts: Vec<PathBuf>) ->
         if let Err(e) = watcher.watch(&config_dir, notify::RecursiveMode::NonRecursive) {
             eprintln!("Failed to watch config directory: {e}");
         }
-        for path in &external_layouts {
+        for path in &config_files {
+            if path.parent() == Some(config_dir.as_path()) || !path.is_file() {
+                continue;
+            }
             if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
-                eprintln!("Failed to watch layout file {}: {e}", path.display());
+                eprintln!("Failed to watch config file {}: {e}", path.display());
             }
         }
 
@@ -1027,17 +1022,17 @@ fn start_watcher_thread(config_path: PathBuf, external_layouts: Vec<PathBuf>) ->
                     let relevant = event
                         .paths
                         .iter()
-                        .any(|p| is_watched_path(p, &config_dir, &external_layouts));
+                        .any(|p| is_watched_path(p, &config_files));
                     if !relevant {
                         continue;
                     }
                     match load_config() {
-                        Ok(new_external) => {
+                        Ok(new_files) => {
                             notify_config_changed();
-                            if new_external == external_layouts {
+                            if new_files == config_files {
                                 continue;
                             }
-                            match start_watcher_thread(config_path.clone(), new_external) {
+                            match start_watcher_thread(config_path.clone(), new_files) {
                                 Ok(()) => break,
                                 Err(e) => eprintln!("Failed to restart config watcher: {e}"),
                             }
@@ -1108,11 +1103,11 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
         .expect("Config path was already set");
     let _ = CONFIG_SOURCE.set(ConfigSource::Explicit);
 
-    let external = load_config()?;
+    let config_files = load_config()?;
 
     let skip_watcher = preferred_is_replay();
     if !skip_watcher {
-        start_watcher_thread(config_path, external)?;
+        start_watcher_thread(config_path, config_files)?;
     }
 
     Ok(())
@@ -1910,17 +1905,49 @@ show_stick_cursors = false\n\
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
 
+    fn watched_files(dir: &Path, external_layout: &Path) -> Vec<PathBuf> {
+        let layouts = vec![
+            ("main".to_owned(), "layout.toml".to_owned()),
+            (
+                "symbols".to_owned(),
+                external_layout.to_string_lossy().into_owned(),
+            ),
+        ];
+        crate::config_overlay::config_file_paths(
+            &dir.join("config.toml"),
+            Some("mappings.toml"),
+            &layouts,
+        )
+    }
+
     #[test]
     fn watched_path_matches_non_canonical_event_path() {
         let dir = temp_dir("watch-path");
-        let layout = dir.join("layout.toml");
-        fs::write(&layout, "x\n").unwrap();
-        let canon_layout = fs::canonicalize(&layout).unwrap();
-        let other_dir = fs::canonicalize(temp_dir("watch-other")).unwrap();
-        assert!(is_watched_path(&layout, &other_dir, &[canon_layout]));
-        assert!(!is_watched_path(&layout, &other_dir, &[]));
-        let canon_dir = fs::canonicalize(&dir).unwrap();
-        assert!(is_watched_path(&layout, &canon_dir, &[]));
+        let other = temp_dir("watch-other");
+        let external = other.join("symbols.toml");
+        fs::write(&external, "x\n").unwrap();
+        let files = watched_files(&dir, &external);
+
+        assert!(is_watched_path(&dir.join("config.toml"), &files));
+        assert!(is_watched_path(&dir.join("mappings.toml"), &files));
+        assert!(is_watched_path(&dir.join("layout.toml"), &files));
+        assert!(is_watched_path(&dir.join(".").join("layout.toml"), &files));
+        assert!(is_watched_path(&external, &files));
+        assert!(!is_watched_path(&other.join("other.toml"), &files));
+    }
+
+    #[test]
+    fn watcher_ignores_completion_cache() {
+        let dir = temp_dir("watch-cache");
+        let cache = dir.join("completion-cache.bin");
+        fs::write(&cache, "x").unwrap();
+        let files = watched_files(&dir, &dir.join("symbols.toml"));
+
+        assert!(!is_watched_path(&cache, &files));
+        assert!(!is_watched_path(
+            &dir.join("completion-cache.bin.tmp"),
+            &files
+        ));
     }
 
     #[test]

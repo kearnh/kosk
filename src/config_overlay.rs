@@ -203,27 +203,37 @@ pub(crate) fn read_layout(config_dir: Option<&Path>, rel: &str) -> Result<String
         .ok_or_else(|| anyhow::anyhow!("cannot find layout file \"{rel}\""))
 }
 
-/// Absolute layout files that sit outside the config directory. Built-ins are omitted.
-pub(crate) fn external_layout_paths(
-    config_dir: &Path,
+/// The config file, its mappings file, and its layout files, as [`watch_key`]s.
+/// Files that do not exist yet are included so creating one reloads.
+pub(crate) fn config_file_paths(
+    config_path: &Path,
+    mappings: Option<&str>,
     layouts: &[(String, String)],
 ) -> Vec<PathBuf> {
-    let config_dir = std::fs::canonicalize(config_dir).unwrap_or_else(|_| config_dir.to_path_buf());
-    let mut out = Vec::new();
-    for (_, rel) in layouts {
-        let path = PathBuf::from(rel);
-        if !path.is_absolute() || !path.is_file() {
-            continue;
+    let config_dir = config_path.parent().unwrap_or(Path::new(""));
+    let mut out = vec![watch_key(config_path)];
+    let rels = mappings
+        .into_iter()
+        .chain(layouts.iter().map(|(_, rel)| rel.as_str()));
+    for rel in rels {
+        let key = watch_key(&config_dir.join(rel));
+        if !out.contains(&key) {
+            out.push(key);
         }
-        let Ok(canon) = std::fs::canonicalize(&path) else {
-            continue;
-        };
-        if canon.parent() == Some(config_dir.as_path()) {
-            continue;
-        }
-        out.push(canon);
     }
     out
+}
+
+/// Canonical parent joined with the file name, so a file that does not exist
+/// yet compares equal to the path of a later event.
+pub(crate) fn watch_key(path: &Path) -> PathBuf {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return path.to_path_buf();
+    };
+    match std::fs::canonicalize(parent) {
+        Ok(parent) => parent.join(name),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 #[cfg(test)]
