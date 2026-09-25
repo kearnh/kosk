@@ -6,7 +6,20 @@ use kosk::controller_glyph::{self, GlyphFamily};
 use strum::VariantArray;
 
 const GLYPH_SIZE: f32 = 32.0;
+const COLUMN_GAP: f32 = 20.0;
+const ROW_GAP: f32 = 8.0;
 const BACKGROUND: egui::Color32 = egui::Color32::from_rgb(20, 20, 20);
+
+fn column_rule(ui: &mut egui::Ui, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, height), egui::Sense::hover());
+    let pad = ROW_GAP * 0.5;
+
+    ui.painter().vline(
+        rect.center().x,
+        (rect.top() - pad)..=(rect.bottom() + pad),
+        ui.visuals().widgets.noninteractive.bg_stroke,
+    );
+}
 
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
@@ -47,16 +60,21 @@ impl eframe::App for Gallery {
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("glyphs")
                 .striped(true)
-                .min_col_width(GLYPH_SIZE)
+                .spacing(egui::vec2(COLUMN_GAP, ROW_GAP))
                 .show(ui, |ui| {
+                    let header_h = ui.spacing().interact_size.y;
                     ui.label("Button");
+                    column_rule(ui, header_h);
                     ui.label("Sc2");
+                    column_rule(ui, header_h);
                     ui.label("Ps4");
                     ui.end_row();
 
                     for button in ControllerButton::VARIANTS {
                         ui.label(format!("{button:?}"));
+                        column_rule(ui, GLYPH_SIZE);
                         controller_glyph::show(ui, GlyphFamily::Sc2, *button, GLYPH_SIZE);
+                        column_rule(ui, GLYPH_SIZE);
                         controller_glyph::show(ui, GlyphFamily::Ps4, *button, GLYPH_SIZE);
                         ui.end_row();
                     }
