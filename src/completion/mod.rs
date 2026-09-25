@@ -8,6 +8,7 @@ mod dictionary;
 mod fuzzy;
 mod insert;
 mod ngram;
+mod recorded;
 mod session;
 pub mod settings;
 mod typed_log;
@@ -24,8 +25,8 @@ pub use context::{split_at_cursor, tokens_in, word_prefix_token, CompletionConte
 pub use dictionary::DictionaryEngine;
 pub use ngram::NgramEngine;
 pub use session::{
-    ensure, init, with_mut, AcceptOutcome, CancelSuggestion, EatAcceptSpace, RetractOutcome,
-    Session,
+    ensure, init, showing_recorded, with_mut, AcceptOutcome, CancelSuggestion, EatAcceptSpace,
+    RetractOutcome, Session, ShownChip, ShownSuggestions,
 };
 pub use settings::CompletionConfig;
 pub use typed_log::LogEvent;

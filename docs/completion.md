@@ -6,7 +6,7 @@ Word and next-token prediction for Keyboard and TextInput. UI talks only to the 
 
 1. **Context** — `(text, cursor_byte)` → current token, `token_range`, previous words, case flags (`context.rs`). Keyboard uses a session-scoped log of keys kosk actually sent; TextInput uses the local buffer and caret.
 2. **Session** — debounce, latest-wins worker slot, generation filter, highlight, armed latch (`session.rs`). `None` from a backend means abort (stale generation), not “no suggestions.”
-3. **`CompletionBackend`** — `suggest(ctx, abort) -> Option<Vec<Candidate>>`. Factory: `backend_from_config`. Default `ngram`; `fallback = "dictionary"` if model files are missing.
+3. **`CompletionBackend`** — `suggest(ctx, abort) -> Option<Vec<Candidate>>`. Factory: `backend_from_config`. Default `ngram`; `fallback = "dictionary"` if model files are missing. A process started for replay of a version 2 tape uses `RecordedSuggestions` instead (`recorded.rs`): the lists that were on screen, keyed by the text before the cursor. That choice is made when the session is created. Restart to leave playback.
 4. **Chips** — reserved strip above the keys (`state/completion_ui.rs`). Cycle never injects. Accept injects.
 
 Config lives in `[completion]` (`src/completion/settings.rs`). Relative paths resolve against the config directory. `completion` is in `TAPE_CONFIG_SKIP`.
@@ -29,6 +29,8 @@ Green / gray dot on the chip strip shows armed vs disarmed.
 - **Current-word chip**: Session inserts the typed token when it is non-empty and unknown for this app type (not in the base dictionary, that type’s wordlist, or that type’s user-cache unigram). Omitted after a space and when the token is already known. `[completion] current_word_chip = "first" | "last"` (default `last`) places it; the engine is truncated to `N - 1` slots while it is shown. Accept injects a trailing space (if `insert_space_on_accept`) and learns the token into the current type. Keyboard suffix / backspace-replace do not apply. Retract undoes the space and requests chips, not the learn.
 
 ## Backends
+
+**Recorded** (`recorded.rs`): used only when this process was started to replay a version 2 tape. `suggest` pops the next stored list for `CompletionContext.prefix`. An unknown prefix, or a prefix whose lists are exhausted, is an empty strip. `knows_word` is always true, because the stored list already includes a current-word chip when one was shown. Accept and the `+` mark still follow `Source::CurrentWord` on those chips. The backend does not read or write the dictionary or `completion-cache.bin`.
 
 **Ngram** (default): prefix scan of the frequency dictionary, then stupid backoff over prev words, with user-cache counts added as extra dictionary mass. Unigrams alone are enough for prefix completion. Packed 21-bit ids in `bigrams.bin` / `trigrams.bin` if present. Empty pair tables still load; next-word then falls back to top unigrams (`you` / `i` / `the`) and the process prints a warning. User-cache continuations of the previous word are merged into next-word candidates before that fallback.
 

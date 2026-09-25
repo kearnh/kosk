@@ -49,6 +49,11 @@ pub trait CompletionBackend: Send + Sync {
     fn suggest(&self, ctx: &CompletionContext, abort: &Abort<'_>) -> Option<Vec<Candidate>>;
 
     fn knows_word(&self, ctx: &CompletionContext) -> bool;
+
+    /// Live engines persist accepted words. Playback does not.
+    fn writes_user_cache(&self) -> bool {
+        true
+    }
 }
 
 pub fn backend_from_config(

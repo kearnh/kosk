@@ -63,7 +63,7 @@ impl ReplayDevice {
                 RecordEvent::Idle { t_us } => Some(TimedItem::Idle(t_us)),
                 RecordEvent::Snapshot { t_us, snap } => Some(TimedItem::Snapshot(t_us, snap)),
                 RecordEvent::Layout { t_us, name } => Some(TimedItem::Layout(t_us, name)),
-                RecordEvent::Debounce { .. } => None,
+                RecordEvent::Debounce { .. } | RecordEvent::Suggestions { .. } => None,
             })
             .collect();
         Self {
@@ -229,6 +229,34 @@ mod tests {
             }
             other => panic!("expected second snapshot, got {other:?}"),
         }
+        assert!(dev.next_immediate().is_none());
+    }
+
+    #[test]
+    fn suggestions_are_not_controller_frames() {
+        let mut tape = sample_tape();
+        tape.events.insert(
+            1,
+            RecordEvent::Suggestions {
+                t_us: 1,
+                prefix: "hello you".into(),
+                chips: vec![crate::controller::record::RecordedChip {
+                    text: "hello".into(),
+                    current_word: false,
+                }],
+            },
+        );
+        let mut dev = ReplayDevice::from_tape(tape, false);
+        assert!(matches!(
+            dev.next_immediate(),
+            Some(ReplayStep::Snapshot(_))
+        ));
+        assert!(matches!(dev.next_immediate(), Some(ReplayStep::Idle)));
+        assert!(matches!(dev.next_immediate(), Some(ReplayStep::Layout(_))));
+        assert!(matches!(
+            dev.next_immediate(),
+            Some(ReplayStep::Snapshot(_))
+        ));
         assert!(dev.next_immediate().is_none());
     }
 

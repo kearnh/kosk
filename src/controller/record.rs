@@ -17,7 +17,7 @@ use strum::VariantArray;
 use crate::controller::{ControllerButton, ControllerInput, ControllerKind};
 
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
-pub const CURRENT_TAPE_VERSION: u32 = 1;
+pub const CURRENT_TAPE_VERSION: u32 = 2;
 
 /// Bit *i* in snapshots is `VARIANTS[i]`; append new buttons at the end of the enum.
 pub(crate) const BUTTON_ORDER: &[ControllerButton] = ControllerButton::VARIANTS;
@@ -178,6 +178,13 @@ impl ControllerInput for PostMapInput {
     }
 }
 
+/// One chip as shown. `current_word` is the typed token, not a dictionary hit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedChip {
+    pub text: String,
+    pub current_word: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecordEvent {
     Idle {
@@ -197,6 +204,12 @@ pub enum RecordEvent {
         source: String,
         elapsed_us: u64,
         armed: bool,
+    },
+    /// Chips applied for `prefix` (text before the cursor). Empty `chips` is an empty strip.
+    Suggestions {
+        t_us: u64,
+        prefix: String,
+        chips: Vec<RecordedChip>,
     },
 }
 
@@ -399,7 +412,26 @@ pub fn encode_event(ev: &RecordEvent) -> String {
             let verdict = if *accept { "accept" } else { "drop" };
             format!("{t_us} debounce {verdict} {source} elapsed_us={elapsed_us} armed={armed}")
         }
+        RecordEvent::Suggestions {
+            t_us,
+            prefix,
+            chips,
+        } => {
+            let mut line = format!("{t_us} suggestions {}", encode_len_text(prefix));
+            for chip in chips {
+                line.push(' ');
+                if chip.current_word {
+                    line.push('+');
+                }
+                line.push_str(&encode_len_text(&chip.text));
+            }
+            line
+        }
     }
+}
+
+fn encode_len_text(text: &str) -> String {
+    format!("{}:{text}", text.len())
 }
 
 fn parse_event_line(line: &str) -> Result<RecordEvent> {
@@ -447,6 +479,9 @@ fn parse_event_line(line: &str) -> Result<RecordEvent> {
             armed,
         });
     }
+    if let Some(rest) = rest.strip_prefix("suggestions ") {
+        return parse_suggestions(t_us, rest);
+    }
     let mut parts = rest.split_whitespace();
     let lx: f32 = parts
         .next()
@@ -490,6 +525,45 @@ fn parse_event_line(line: &str) -> Result<RecordEvent> {
             rpad,
         },
     })
+}
+
+fn parse_suggestions(t_us: u64, rest: &str) -> Result<RecordEvent> {
+    let (prefix, _, mut rest) = take_len_field(rest, false)?;
+    let mut chips = Vec::new();
+    while !rest.trim_start().is_empty() {
+        let (text, current_word, next) = take_len_field(rest, true)?;
+        chips.push(RecordedChip { text, current_word });
+        rest = next;
+    }
+    Ok(RecordEvent::Suggestions {
+        t_us,
+        prefix,
+        chips,
+    })
+}
+
+/// `N:text`, or `+N:text` when `allow_mark`. Length is bytes.
+fn take_len_field(input: &str, allow_mark: bool) -> Result<(String, bool, &str)> {
+    let rest = input.trim_start();
+    if rest.is_empty() {
+        bail!("missing length-prefixed field");
+    }
+
+    let (current_word, rest) = if allow_mark && rest.starts_with('+') {
+        (true, &rest[1..])
+    } else {
+        (false, rest)
+    };
+    let colon = rest
+        .find(':')
+        .ok_or_else(|| anyhow::anyhow!("missing ':' in length-prefixed field"))?;
+    let n: usize = rest[..colon].parse().context("length prefix")?;
+    let after = &rest[colon + 1..];
+    if after.len() < n || !after.is_char_boundary(n) {
+        bail!("length-prefixed field truncated");
+    }
+
+    Ok((after[..n].to_string(), current_word, &after[n..]))
 }
 
 fn read_len_prefixed_blob(reader: &mut impl Read, nbytes: usize) -> Result<String> {
@@ -784,6 +858,18 @@ impl RecordSession {
             armed,
         });
     }
+
+    pub fn tap_suggestions(&self, prefix: &str, chips: &[RecordedChip]) {
+        let g = self.inner.lock().unwrap();
+        let Some(rec) = g.as_ref() else {
+            return;
+        };
+        rec.try_send(RecordEvent::Suggestions {
+            t_us: rec.t_us(),
+            prefix: prefix.to_string(),
+            chips: chips.to_vec(),
+        });
+    }
 }
 
 static SESSION: OnceLock<Arc<RecordSession>> = OnceLock::new();
@@ -1047,7 +1133,7 @@ mod tests {
 
     fn sample_v1_header() -> TapeHeader {
         TapeHeader {
-            version: CURRENT_TAPE_VERSION,
+            version: 1,
             current_layout: "main".into(),
             scales: MappingScales {
                 scale_x: 30.0,
@@ -1066,12 +1152,56 @@ mod tests {
             header: sample_v1_header(),
             events: vec![RecordEvent::Idle { t_us: 1 }],
         });
-        assert_eq!(parsed.header.version, CURRENT_TAPE_VERSION);
+        assert_eq!(parsed.header.version, 1);
         assert_eq!(
             parsed.header.config_toml.as_deref(),
             Some("event_debounce_ms = 123\n")
         );
         assert_eq!(parsed.events.len(), 1);
+    }
+
+    #[test]
+    fn suggestions_line_round_trip() {
+        let ev = RecordEvent::Suggestions {
+            t_us: 1000,
+            prefix: "hello you".into(),
+            chips: vec![
+                RecordedChip {
+                    text: "hello".into(),
+                    current_word: false,
+                },
+                RecordedChip {
+                    text: "you".into(),
+                    current_word: true,
+                },
+            ],
+        };
+        assert_eq!(parse_event_line(&encode_event(&ev)).unwrap(), ev);
+
+        let empty = RecordEvent::Suggestions {
+            t_us: 2,
+            prefix: "hel".into(),
+            chips: vec![],
+        };
+        assert_eq!(parse_event_line(&encode_event(&empty)).unwrap(), empty);
+
+        let parsed = roundtrip(&Tape {
+            header: TapeHeader {
+                version: CURRENT_TAPE_VERSION,
+                current_layout: "main".into(),
+                scales: MappingScales {
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    stick_scale_x: 1.0,
+                    stick_scale_y: 1.0,
+                },
+                config_toml: Some("event_debounce_ms = 1\n".into()),
+                layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
+            },
+            events: vec![ev, empty],
+        });
+        assert_eq!(parsed.header.version, CURRENT_TAPE_VERSION);
+        assert_eq!(parsed.events.len(), 2);
     }
 
     #[test]

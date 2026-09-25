@@ -5,7 +5,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::app_type::AppTypeMap;
 use super::backend::{backend_from_config, Abort, Candidate, CompletionBackend, Source};
@@ -57,6 +57,18 @@ pub struct EatAcceptSpace {
     pub space_after: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShownChip {
+    pub text: String,
+    pub current_word: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShownSuggestions {
+    pub prefix: String,
+    pub chips: Vec<ShownChip>,
+}
+
 pub struct Session {
     slot: Arc<(Mutex<Slot>, Condvar)>,
     gen: Arc<AtomicU64>,
@@ -79,6 +91,7 @@ pub struct Session {
     neighbors: HashMap<char, Vec<char>>,
     pending_eat_space: bool,
     suggestion_just_accepted: bool,
+    shown_out: Vec<ShownSuggestions>,
 }
 
 impl Session {
@@ -88,13 +101,36 @@ impl Session {
         notify: Arc<dyn Fn() + Send + Sync>,
         fg: Arc<dyn ForegroundExe>,
     ) -> Result<Self> {
-        let types = AppTypeMap::from_config(&cfg.app_types)?;
         let user = Arc::new(Mutex::new(UserCache::load(
             &cfg.user_cache,
             resolve_cache_path(config_dir, &cfg.user_cache.path),
         )));
         let backend = backend_from_config(&cfg, config_dir, Arc::clone(&user))?;
+        Self::open_worker(backend, cfg, user, notify, fg)
+    }
 
+    fn spawn_with_backend(
+        backend: Arc<dyn CompletionBackend>,
+        cfg: CompletionConfig,
+        config_dir: Option<&std::path::Path>,
+        notify: Arc<dyn Fn() + Send + Sync>,
+        fg: Arc<dyn ForegroundExe>,
+    ) -> Result<Self> {
+        let user = Arc::new(Mutex::new(UserCache::load(
+            &cfg.user_cache,
+            resolve_cache_path(config_dir, &cfg.user_cache.path),
+        )));
+        Self::open_worker(backend, cfg, user, notify, fg)
+    }
+
+    fn open_worker(
+        backend: Arc<dyn CompletionBackend>,
+        cfg: CompletionConfig,
+        user: Arc<Mutex<UserCache>>,
+        notify: Arc<dyn Fn() + Send + Sync>,
+        fg: Arc<dyn ForegroundExe>,
+    ) -> Result<Self> {
+        let types = AppTypeMap::from_config(&cfg.app_types)?;
         let (tx, rx) = mpsc::channel();
         let slot = Arc::new((
             Mutex::new(Slot {
@@ -136,6 +172,7 @@ impl Session {
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
+            shown_out: Vec::new(),
         })
     }
 
@@ -235,6 +272,7 @@ impl Session {
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
+            shown_out: Vec::new(),
         }
     }
 
@@ -435,6 +473,7 @@ impl Session {
         if let Some(text) = prev {
             if let Some(i) = self.candidates.iter().position(|c| c.text == text) {
                 self.highlight = Some(i);
+                self.remember_shown();
                 return;
             }
         }
@@ -450,6 +489,30 @@ impl Session {
                 self.highlight = None;
             }
         }
+
+        self.remember_shown();
+    }
+
+    fn remember_shown(&mut self) {
+        let Some(ctx) = self.last_ctx.as_ref() else {
+            return;
+        };
+        let chips = self
+            .candidates
+            .iter()
+            .map(|c| ShownChip {
+                text: c.text.clone(),
+                current_word: c.source == Source::CurrentWord,
+            })
+            .collect();
+        self.shown_out.push(ShownSuggestions {
+            prefix: ctx.prefix.clone(),
+            chips,
+        });
+    }
+
+    pub fn take_shown(&mut self) -> Vec<ShownSuggestions> {
+        std::mem::take(&mut self.shown_out)
     }
 
     fn request_now(&mut self, ctx: CompletionContext) {
@@ -528,6 +591,10 @@ impl Session {
     }
 
     pub fn learn(&mut self, words: &[String]) {
+        if !self.backend.writes_user_cache() {
+            return;
+        }
+
         if !self.cfg.learn_on_accept && !self.cfg.learn_on_submit {
             return;
         }
@@ -635,7 +702,9 @@ impl Drop for Session {
         if let Some(j) = self.join.take() {
             let _ = j.join();
         }
-        let _ = self.user.lock().unwrap().persist();
+        if self.backend.writes_user_cache() {
+            let _ = self.user.lock().unwrap().persist();
+        }
     }
 }
 
@@ -707,11 +776,30 @@ pub fn ensure(notify: Arc<dyn Fn() + Send + Sync>) -> Result<()> {
 
 fn rebuild_locked(g: &mut Option<Session>) -> Result<()> {
     let cfg = crate::config::get();
+    let dir = crate::config::config_dir();
+    if crate::config::preferred_is_replay() {
+        let path = crate::config::replay_tape_path()?;
+        let tape = crate::controller::record::parse_tape(
+            std::fs::File::open(&path)
+                .with_context(|| format!("open replay {}", path.display()))?,
+        )
+        .with_context(|| format!("parse {}", path.display()))?;
+        if let Some(backend) = super::recorded::playback_backend(&tape) {
+            let session = Session::spawn_with_backend(
+                backend,
+                cfg.completion.clone(),
+                dir.as_deref(),
+                current_notify(),
+                Arc::new(OsForeground),
+            )?;
+            *g = Some(session);
+            return Ok(());
+        }
+    }
     if !cfg.completion.enabled {
         *g = None;
         return Ok(());
     }
-    let dir = crate::config::config_dir();
     let session = Session::spawn(
         cfg.completion.clone(),
         dir.as_deref(),
@@ -744,6 +832,10 @@ pub fn with_mut<R>(f: impl FnOnce(Option<&mut Session>) -> R) -> R {
     };
     let mut guard = lock.lock().unwrap();
     f(guard.as_mut())
+}
+
+pub fn showing_recorded() -> bool {
+    with_mut(|s| s.is_some_and(|s| !s.backend.writes_user_cache()))
 }
 
 #[cfg(test)]

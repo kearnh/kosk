@@ -1008,8 +1008,8 @@ impl KeyboardState {
         let display_ctx = self.when_context();
 
         let show_chips = self.feed_completion_log
-            && self.cfg().completion.enabled
-            && self.cfg().completion.show_in_keyboard;
+            && (crate::completion::showing_recorded()
+                || (self.cfg().completion.enabled && self.cfg().completion.show_in_keyboard));
 
         let publish_geometry = self.config.is_none();
         let batt_cfg = self.cfg().battery;

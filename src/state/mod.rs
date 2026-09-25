@@ -285,11 +285,26 @@ impl AppState {
         })) {
             eprintln!("completion ensure: {e:#}");
         }
-        crate::completion::with_mut(|s| {
-            if let Some(s) = s {
-                s.tick();
-            }
+        let shown = crate::completion::with_mut(|s| {
+            let Some(s) = s else {
+                return Vec::new();
+            };
+            s.tick();
+            s.take_shown()
         });
+        if input_record::session().is_recording() {
+            for shot in shown {
+                let chips: Vec<input_record::RecordedChip> = shot
+                    .chips
+                    .into_iter()
+                    .map(|c| input_record::RecordedChip {
+                        text: c.text,
+                        current_word: c.current_word,
+                    })
+                    .collect();
+                input_record::session().tap_suggestions(&shot.prefix, &chips);
+            }
+        }
 
         let cfg = config::get();
         self.events

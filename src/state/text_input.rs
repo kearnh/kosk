@@ -369,7 +369,8 @@ impl TextInputState {
         );
         let font_size = ti.font_size.max(1.0);
         let font_id = FontId::proportional(font_size);
-        let show_chips = cfg.completion.enabled && cfg.completion.show_in_text_input;
+        let show_chips = crate::completion::showing_recorded()
+            || (cfg.completion.enabled && cfg.completion.show_in_text_input);
         let placement = cfg.completion.ui.placement;
         let strip_w = keyboard::with_mut(|kb| kb.content_width());
         let token = crate::completion::CompletionContext::from_buffer(
