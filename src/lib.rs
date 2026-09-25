@@ -8,5 +8,6 @@ pub mod debug;
 pub mod platform;
 pub mod state;
 pub(crate) mod ui;
+pub use ui::controller_glyph;
 mod user_notify;
 pub mod when;

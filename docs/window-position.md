@@ -1,6 +1,6 @@
 # Window position (`window_pos.rs`, `move_window.rs`)
 
-This document describes how the overlay is placed on screen. `src/state/window_pos.rs` stores and resolves positions. `src/state/move_window.rs` and `src/state/move_window_action.rs` are the on-screen “Move Window” mode. Button glyphs used while placing live in `src/ui/controller_glyph.rs`. `AppState::get_position` applies this every frame and sends the result to eframe; see [overview.md](overview.md).
+This document describes how the overlay is placed on screen. `src/state/window_pos.rs` stores and resolves positions. `src/state/move_window.rs` and `src/state/move_window_action.rs` are the on-screen “Move Window” mode. `AppState::get_position` applies this every frame and sends the result to eframe; see [overview.md](overview.md).
 
 ## What problem does this solve?
 
@@ -51,11 +51,7 @@ Entry (Settings **Move**) snapshots the current `WindowPos`. Analog does not go 
 - Sticks stay velocity: deadzone `0.15` on the max axis, full deflection crosses the monitor in one second. Stick up decreases window `y`.
 - The live position becomes `WindowPos::Absolute` and is not written to config.
 
-`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to settings. `switchState.settings` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show Steam Input knockout glyphs plus Save/Cancel as labels, not buttons.
-
-## Button glyphs
-
-`src/ui/controller_glyph.rs` maps every `ControllerButton` for Steam Controller 2 and DualShock 4 to an embedded knockout SVG from Steam’s `controller_base/images/api/knockout`. Replay and the virtual controller pick a family from `preferred_controller` (first non-replay name, else SC2). Later screens can call `controller_glyph::show` with a family and button.
+`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to settings. `switchState.settings` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show the bound buttons as knockout glyphs plus Save/Cancel as labels, not buttons. The art is described in [controller-glyphs.md](controller-glyphs.md).
 
 ## What this does not cover
 

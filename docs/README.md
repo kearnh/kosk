@@ -19,8 +19,9 @@ Start with [overview.md](overview.md) if you are new to the repository. After th
 11. [keyboard.md](keyboard.md) — stick highlighting, sending keys, and sticky modifiers.
 12. [keyboard-layout.md](keyboard-layout.md) — layout TOML, hitboxes, and `when` display clauses.
 13. [menu.md](menu.md) — the settings screen.
-14. [text-input.md](text-input.md) — the single-line field that intercepts typing.
-15. [completion.md](completion.md) — ngram/dictionary prediction, app types, current-word chip, and `completion_dev`.
+14. [controller-glyphs.md](controller-glyphs.md) — knockout button art for on-screen prompts, and the glyph gallery.
+15. [text-input.md](text-input.md) — the single-line field that intercepts typing.
+16. [completion.md](completion.md) — ngram/dictionary prediction, app types, current-word chip, and `completion_dev`.
 
 ## Plans
 
