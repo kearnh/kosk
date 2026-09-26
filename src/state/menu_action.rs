@@ -16,8 +16,7 @@ pub enum MenuAction {
     PageNext,
     Back,
     OpenConfig,
-    ToggleShowAllControllers,
-    ToggleShowAllSettings,
+    ToggleShowMore,
     SwitchState(StateId),
 }
 

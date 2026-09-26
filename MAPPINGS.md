@@ -95,9 +95,9 @@ These names are true or false while you hold the button. You can combine them wi
 
 ## Settings actions
 
-`selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `toggleShowAllControllers`, `toggleShowAllSettings`, `switchState.…`
+`selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `toggleShowMore`, `switchState.…`
 
-Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between value pages while one is open, following the visible device filter. `back` climbs one level (value page to device index to Options to hub), and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, `faceTop` to `toggleShowAllControllers`, `faceLeft` to `toggleShowAllSettings`, and `share` to `openConfig`. On a Steam Controller, `share` is the left button beside Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
+Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between value pages while one is open, following the visible device filter. `back` climbs one level (value page to device index to Options to hub), and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, `faceTop` to `toggleShowMore`, and `share` to `openConfig`. `toggleShowMore` reveals the hidden device on the Options list, or the extra settings on a value page. On a Steam Controller, `share` is the left button beside Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
 
 ## Text input actions
 

@@ -205,11 +205,8 @@ impl MenuState {
             OpenConfig => {
                 config::open_user_config_in_editor();
             }
-            ToggleShowAllControllers => {
-                self.form.toggle_show_all(self.kind);
-            }
-            ToggleShowAllSettings => {
-                self.form.toggle_show_all_settings(self.kind);
+            ToggleShowMore => {
+                self.form.toggle_show_more(self.kind);
             }
             SwitchState(state) => {
                 self.write_settings();
@@ -335,10 +332,8 @@ fn buttons_for(
         FooterButtons::OpenConfig => {
             bindings.buttons_matching(|action| matches!(action, MenuAction::OpenConfig))
         }
-        FooterButtons::ShowAllControllers => bindings
-            .buttons_matching(|action| matches!(action, MenuAction::ToggleShowAllControllers)),
-        FooterButtons::ShowAllSettings => {
-            bindings.buttons_matching(|action| matches!(action, MenuAction::ToggleShowAllSettings))
+        FooterButtons::ShowAllControllers | FooterButtons::ShowAllSettings => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::ToggleShowMore))
         }
     }
 }

@@ -309,6 +309,16 @@ impl SettingsForm {
         self.ensure_focus(kind);
     }
 
+    pub(in crate::state) fn toggle_show_more(&mut self, kind: ControllerKind) {
+        match self.view {
+            View::Index => self.toggle_show_all(kind),
+            View::Page(_) | View::DevicePage(..) if self.has_hidden_rows() => {
+                self.toggle_show_all_settings(kind);
+            }
+            _ => {}
+        }
+    }
+
     pub(in crate::state) fn toggle_show_all_settings(&mut self, kind: ControllerKind) {
         self.show_all_settings = !self.show_all_settings;
         self.ensure_focus(kind);
@@ -2700,6 +2710,30 @@ mod tests {
         assert!(labels.contains(&"Pad click"));
         assert!(labels.contains(&"Stretch limit"));
         assert!(labels.contains(&"Touch settle time"));
+    }
+
+    #[test]
+    fn show_more_toggles_what_is_visible() {
+        let mut form = SettingsForm::new();
+
+        form.view = View::Index;
+        form.toggle_show_more(ControllerKind::Sc2);
+        assert!(form.show_all_controllers);
+        assert!(!form.show_all_settings);
+
+        form.view = View::Page(Page::Suggestions);
+        form.toggle_show_more(ControllerKind::Sc2);
+        assert!(form.show_all_settings);
+
+        form.view = View::Page(Page::Typing);
+        form.show_all_settings = false;
+        form.toggle_show_more(ControllerKind::Sc2);
+        assert!(!form.show_all_settings);
+
+        form.view = View::Hub;
+        form.show_all_controllers = false;
+        form.toggle_show_more(ControllerKind::Sc2);
+        assert!(!form.show_all_controllers);
     }
 
     #[test]
