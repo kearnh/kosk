@@ -208,9 +208,9 @@ impl Notice {
         }
     }
 
-    /// One-time setup tip. `None` when it must not show: already shown, a
-    /// custom settings file (it could not persist), replay or MCP mode, or
-    /// suggestions not using next-word tables.
+    /// One-time setup tip. `None` when it must not show: already shown, the
+    /// settings file cannot store the acknowledgement (custom path, unreadable
+    /// file, replay, or MCP mode), or suggestions not using next-word tables.
     pub fn next_word_setup_tip(
         already_shown: bool,
         suggestions_on: bool,

@@ -568,6 +568,8 @@ enum ConfigSource {
 }
 
 static CONFIG_SOURCE: OnceLock<ConfigSource> = OnceLock::new();
+/// Startup could not read the user file, so live settings are the built-in defaults.
+static USER_CONFIG_UNREADABLE: AtomicBool = AtomicBool::new(false);
 
 fn config_source() -> ConfigSource {
     CONFIG_SOURCE
@@ -578,6 +580,14 @@ fn config_source() -> ConfigSource {
 
 pub(crate) fn uses_user_config() -> bool {
     config_source() == ConfigSource::User
+}
+
+pub(crate) fn user_config_unreadable() -> bool {
+    USER_CONFIG_UNREADABLE.load(Ordering::Relaxed)
+}
+
+fn set_user_config_unreadable(unreadable: bool) {
+    USER_CONFIG_UNREADABLE.store(unreadable, Ordering::Relaxed);
 }
 
 const DEFAULT_CONFIG_EDITOR: &str = "notepad";
@@ -920,6 +930,7 @@ fn load_config() -> Result<Vec<PathBuf>> {
 
     let (new_config, map_rel) = read_merged_config(config_path, config_source())?;
     validate_loaded_config(&new_config, config_path)?;
+    set_user_config_unreadable(false);
 
     Ok(publish_loaded_config(new_config, map_rel, config_path))
 }
@@ -1116,7 +1127,7 @@ pub fn init() -> Result<()> {
 }
 
 /// Startup load that never fails hard. An unusable file posts a notice and
-/// yields the built-in defaults, so kosk still opens and a later save retries.
+/// yields the built-in defaults. Saves wait until a later load succeeds.
 /// Returns the config, the `controller_map` file name, and whether defaults won.
 fn load_initial(config_path: &Path, source: ConfigSource) -> (Config, Option<String>, bool) {
     let loaded = read_merged_config(config_path, source).and_then(|(cfg, map_rel)| {
@@ -1153,7 +1164,8 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
         .expect("Config path was already set");
     let _ = CONFIG_SOURCE.set(ConfigSource::Explicit);
 
-    let (new_config, map_rel, _) = load_initial(&config_path, config_source());
+    let (new_config, map_rel, used_defaults) = load_initial(&config_path, config_source());
+    set_user_config_unreadable(used_defaults);
     let config_files = publish_loaded_config(new_config, map_rel, &config_path);
 
     let skip_watcher = preferred_is_replay();
@@ -1486,8 +1498,23 @@ fn write_if_user_config(path: &Path, cfg: &Config) -> Result<()> {
     write_for_source(config_source(), path, cfg, controller_map_file().as_deref())
 }
 
-fn write_for_source(
+/// The setup tip may be acknowledged only when that acknowledgement can be stored.
+fn can_persist_tips_when(user_file: bool, unreadable: bool, replay: bool, mcp: bool) -> bool {
+    user_file && !unreadable && !replay && !mcp
+}
+
+pub(crate) fn can_persist_tips() -> bool {
+    can_persist_tips_when(
+        uses_user_config(),
+        user_config_unreadable(),
+        preferred_is_replay(),
+        mcp_controller_mode(),
+    )
+}
+
+fn write_user_file(
     source: ConfigSource,
+    unreadable: bool,
     path: &Path,
     cfg: &Config,
     mappings_file: Option<&str>,
@@ -1496,7 +1523,19 @@ fn write_for_source(
         crate::user_notify::notify(crate::user_notify::Notice::not_saved());
         return Ok(());
     }
+    if unreadable {
+        return Ok(());
+    }
     write_user_overlay(path, cfg, mappings_file)
+}
+
+fn write_for_source(
+    source: ConfigSource,
+    path: &Path,
+    cfg: &Config,
+    mappings_file: Option<&str>,
+) -> Result<()> {
+    write_user_file(source, user_config_unreadable(), path, cfg, mappings_file)
 }
 
 pub fn save(new_config: Config) -> Result<()> {
@@ -1851,6 +1890,20 @@ show_stick_cursors = false\n\
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("config_version = 9"), "{text}");
         assert!(text.contains("show_stick_cursors = false"), "{text}");
+    }
+
+    #[test]
+    fn unreadable_config_hides_setup_tip_and_skips_save() {
+        assert!(!can_persist_tips_when(true, true, false, false));
+        assert!(can_persist_tips_when(true, false, false, false));
+
+        let dir = temp_dir("unreadable-save");
+        let config_path = dir.join("config.toml");
+        let original = "keyboard_opacity = \"abc\"\n";
+        fs::write(&config_path, original).unwrap();
+        let cfg = builtin_merged_config().unwrap();
+        write_user_file(ConfigSource::User, true, &config_path, &cfg, None).unwrap();
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
     }
 
     #[test]

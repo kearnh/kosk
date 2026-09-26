@@ -116,9 +116,7 @@ impl Session {
                 shown,
                 cfg.enabled,
                 true,
-                crate::config::uses_user_config()
-                    && !crate::config::preferred_is_replay()
-                    && !crate::config::mcp_controller_mode(),
+                crate::config::can_persist_tips(),
             );
             if let Some(tip) = tip {
                 crate::user_notify::notify(tip);
