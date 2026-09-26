@@ -1127,7 +1127,7 @@ fn load_initial(config_path: &Path, source: ConfigSource) -> (Config, Option<Str
         Ok((cfg, map_rel)) => (cfg, map_rel, false),
         Err(e) => {
             eprintln!("Failed to load config (using defaults): {e:#}");
-            crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
+            crate::user_notify::notify(crate::user_notify::Notice::load_failed());
             let builtin = builtin_merged_config().expect("built-in config is valid");
             (builtin, builtin_controller_map_rel(), true)
         }

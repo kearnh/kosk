@@ -119,6 +119,20 @@ impl Notice {
         }
     }
 
+    /// Settings file was already unusable at launch. Same identity as
+    /// [`Self::reload_failed`], but it must show on the first frame.
+    pub fn load_failed() -> Self {
+        Self {
+            key: NoticeKey::ReloadFailed,
+            severity: Severity::Error,
+            title: "Settings not loaded",
+            body: "Your settings file could not be read. kosk is using defaults until you fix the file and save it.".to_owned(),
+            action: None,
+            wide: false,
+            immediate: true,
+        }
+    }
+
     pub fn wordlist_missing(name: &str) -> Self {
         Self {
             key: NoticeKey::Wordlist(name.to_owned()),
@@ -274,8 +288,12 @@ impl Notice {
 struct Visible {
     notice: Notice,
     shown_at: Instant,
-    /// Buttons held when the toast appeared. They must release first.
+    /// Buttons already down on the first sample after the toast is shown.
+    /// That sample is the launch press, not a dismiss.
     baseline: HashSet<ControllerButton>,
+    /// When dismiss listening started. `None` until the toast has been shown
+    /// and one input sample has been taken after that.
+    listening_since: Option<Instant>,
 }
 
 struct Queued {
@@ -315,13 +333,13 @@ impl Store {
 
         if let Some(visible) = &mut self.visible {
             if visible.notice.key == notice.key {
-                visible.notice = notice;
+                keep_immediate(&mut visible.notice, notice);
                 return;
             }
         }
 
         if let Some(queued) = self.queue.iter_mut().find(|q| q.notice.key == notice.key) {
-            queued.notice = notice;
+            keep_immediate(&mut queued.notice, notice);
             return;
         }
 
@@ -363,8 +381,7 @@ impl Store {
         self.last_input = Some(now);
         self.family = input.family();
 
-        let Some(shown_at) = self.visible.as_ref().map(|v| v.shown_at) else {
-            self.held = held_now;
+        let Some(listening_since) = self.begin_listening(&held_now, now) else {
             return InputOutcome::Passthrough;
         };
 
@@ -375,7 +392,7 @@ impl Store {
             return InputOutcome::Passthrough;
         }
 
-        if now.duration_since(shown_at) < GRACE {
+        if now.duration_since(listening_since) < GRACE {
             return InputOutcome::Passthrough;
         }
 
@@ -410,11 +427,34 @@ impl Store {
             index: 1,
             total,
             more: self.overflow_dropped,
-            hint_visible: elapsed >= GRACE,
+            hint_visible: visible
+                .listening_since
+                .is_some_and(|t| now.duration_since(t) >= GRACE),
             family: self.family,
             appear: (elapsed.as_secs_f32() / APPEAR.as_secs_f32()).clamp(0.0, 1.0),
         })
     }
+    /// Time until the next queued notice can appear. `None` when nothing is waiting.
+    fn queued_delay(&self, now: Instant) -> Option<Duration> {
+        if self.visible.is_some() || self.queue.is_empty() {
+            return None;
+        }
+
+        self.queue.iter().map(|q| self.delay_for(q, now)).min()
+    }
+
+    fn delay_for(&self, queued: &Queued, now: Instant) -> Duration {
+        if queued.notice.immediate {
+            return Duration::ZERO;
+        }
+
+        let elapsed = match self.last_input {
+            Some(last) => now.saturating_duration_since(last),
+            None => now.saturating_duration_since(queued.enqueued_at),
+        };
+        IDLE_GATE.saturating_sub(elapsed)
+    }
+
     fn idle_since(&self, enqueued_at: Instant, now: Instant) -> bool {
         match self.last_input {
             Some(last) => now.duration_since(last) >= IDLE_GATE,
@@ -434,12 +474,34 @@ impl Store {
 
         if let Some(i) = ready {
             let queued = self.queue.remove(i);
+            self.held.clear();
             self.visible = Some(Visible {
                 notice: queued.notice,
                 shown_at: now,
-                baseline: self.held.clone(),
+                baseline: HashSet::new(),
+                listening_since: None,
             });
         }
+    }
+
+    /// `None` until the toast is on screen and this sample has been taken.
+    /// The first sample only records what is already down.
+    fn begin_listening(
+        &mut self,
+        held_now: &HashSet<ControllerButton>,
+        now: Instant,
+    ) -> Option<Instant> {
+        let state = self.visible.as_ref().map(|v| v.listening_since)?;
+        if let Some(since) = state {
+            return Some(since);
+        }
+
+        if let Some(visible) = self.visible.as_mut() {
+            visible.baseline = held_now.clone();
+            visible.listening_since = Some(now);
+        }
+        self.held = held_now.clone();
+        None
     }
 }
 
@@ -454,6 +516,38 @@ fn lock_store() -> std::sync::MutexGuard<'static, Store> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+fn wake_slot() -> &'static Mutex<Option<Wake>> {
+    static WAKE: OnceLock<Mutex<Option<Wake>>> = OnceLock::new();
+    WAKE.get_or_init(|| Mutex::new(None))
+}
+
+/// Ask the UI to redraw when a notice is posted. The launch path posts before
+/// this exists; later posts (the file watcher) use it to wake an idle window.
+pub fn on_posted(callback: impl Fn() + Send + Sync + 'static) {
+    *wake_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(std::sync::Arc::new(callback));
+}
+
+fn wake() {
+    let callback = wake_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(callback) = callback {
+        callback();
+    }
+}
+
+/// A refresh must not hide a notice that was already allowed to show immediately.
+fn keep_immediate(current: &mut Notice, incoming: Notice) {
+    let immediate = current.immediate || incoming.immediate;
+    *current = incoming;
+    current.immediate = immediate;
+}
+
 /// Post a notice. Session-once keys show at most once; recurring failures are
 /// cooldown-gated; re-posts refresh instead of duplicating.
 pub fn notify(notice: Notice) {
@@ -461,6 +555,7 @@ pub fn notify(notice: Notice) {
 
     let now = Instant::now();
     lock_store().post(notice, now);
+    wake();
 }
 
 /// Aggregate key-injection failures into one cooldown-gated notice.
@@ -478,8 +573,9 @@ pub enum InputOutcome {
 
 /// Offer an engaged input. Returns whether the screen may still see it.
 ///
-/// Swallowed presses are deliberate: a button newly down after the grace
-/// period. Motion, held-since-before presses, and grace-period presses pass
+/// Swallowed presses are deliberate: a button newly down after the toast is
+/// displayed and the grace period has passed. Presses before the toast is
+/// shown, the first sample after it is shown, and grace-period presses pass
 /// through. Call only for engaged snapshots, never the idle path.
 pub fn offer_input(input: &dyn ControllerInput) -> InputOutcome {
     lock_store().offer(input, Instant::now())
@@ -514,6 +610,11 @@ pub fn snapshot() -> Option<ToastSnapshot> {
     snapshot_at(Instant::now())
 }
 
+/// How long until a queued notice can appear. `None` when nothing is waiting.
+pub fn queued_delay() -> Option<Duration> {
+    lock_store().queued_delay(Instant::now())
+}
+
 fn snapshot_at(now: Instant) -> Option<ToastSnapshot> {
     lock_store().view(now)
 }
@@ -543,6 +644,7 @@ mod tests {
             Notice::newer_settings(99),
             Notice::not_saved(),
             Notice::reload_failed(),
+            Notice::load_failed(),
             Notice::wordlist_missing("browser"),
             Notice::wordlist_failed("browser"),
             Notice::type_failed(),
@@ -604,6 +706,36 @@ mod tests {
     }
 
     #[test]
+    fn load_failure_shows_while_input_is_active() {
+        let mut store = Store::new();
+        let t0 = Instant::now();
+        store.offer(&buttons(&[ControllerButton::FaceBottom]), t0);
+        store.post(Notice::load_failed(), t0);
+        assert_eq!(
+            store.view(t0).map(|s| s.title),
+            Some("Settings not loaded".to_owned())
+        );
+
+        let mut store = Store::new();
+        store.offer(&buttons(&[ControllerButton::FaceBottom]), t0);
+        store.post(Notice::load_failed(), t0);
+        store.post(Notice::reload_failed(), t0);
+        assert!(store.view(t0).is_some());
+    }
+
+    #[test]
+    fn deferred_notice_reports_remaining_wait() {
+        let mut store = Store::new();
+        let t0 = Instant::now();
+        store.post(Notice::reload_failed(), t0);
+        let wait = store.queued_delay(t0).expect("waiting");
+        assert!(wait + Duration::from_millis(50) >= IDLE_GATE);
+        assert_eq!(store.queued_delay(t0 + IDLE_GATE), Some(Duration::ZERO));
+        assert!(store.view(t0 + IDLE_GATE).is_some());
+        assert!(store.queued_delay(t0 + IDLE_GATE).is_none());
+    }
+
+    #[test]
     fn background_waits_for_idle() {
         let mut store = Store::new();
         let t0 = Instant::now();
@@ -632,6 +764,7 @@ mod tests {
         assert!(store.view(t0).is_none());
         let shown_at = t0 + IDLE_GATE + Duration::from_millis(10);
         assert!(store.view(shown_at).is_some());
+        store.offer(&buttons(&[]), shown_at);
         let dismiss_at = shown_at + GRACE + Duration::from_millis(10);
         assert!(matches!(
             store.offer(&buttons(&[ControllerButton::FaceRight]), dismiss_at),
@@ -655,11 +788,30 @@ mod tests {
     }
 
     #[test]
+    fn launch_press_after_display_does_not_dismiss() {
+        let mut store = Store::new();
+        let t0 = Instant::now();
+        let launch = buttons(&[ControllerButton::R4]);
+        store.offer(&launch, t0);
+        store.held.clear();
+        store.post(Notice::load_failed(), t0);
+        assert!(store.view(t0).is_some());
+
+        let late = t0 + GRACE + Duration::from_secs(2);
+        assert!(matches!(
+            store.offer(&launch, late),
+            InputOutcome::Passthrough
+        ));
+        assert!(store.view(late).is_some());
+    }
+
+    #[test]
     fn dismiss_needs_fresh_press_after_grace() {
         let mut store = Store::new();
         let t0 = Instant::now();
         store.post(Notice::record_failed(), t0);
         assert!(store.view(t0).is_some());
+        store.offer(&buttons(&[]), t0);
 
         // Grace-period press passes through.
         let pressed = buttons(&[ControllerButton::FaceRight]);
@@ -713,6 +865,7 @@ mod tests {
         let mut store = Store::new();
         store.post(tip(), t0);
         assert!(store.view(shown_at).is_some());
+        store.offer(&buttons(&[]), shown_at);
         match store.offer(&buttons(&[ControllerButton::FaceBottom]), dismiss_at) {
             InputOutcome::Swallowed { notice, open_guide } => {
                 assert_eq!(notice.key, NoticeKey::NextWordSetup);
@@ -724,6 +877,7 @@ mod tests {
         let mut store = Store::new();
         store.post(tip(), t0);
         assert!(store.view(shown_at).is_some());
+        store.offer(&buttons(&[]), shown_at);
         match store.offer(&buttons(&[ControllerButton::FaceRight]), dismiss_at) {
             InputOutcome::Swallowed { notice, open_guide } => {
                 assert_eq!(notice.key, NoticeKey::NextWordSetup);

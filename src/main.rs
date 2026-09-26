@@ -288,6 +288,9 @@ impl App {
         }
 
         let Some(view) = kosk::state::toasts::snapshot_for_ui() else {
+            if let Some(wait) = kosk::user_notify::queued_delay() {
+                ctx.request_repaint_after(wait);
+            }
             return;
         };
         // Keep both viewports alive for the grace hint and fade-in.
@@ -440,6 +443,9 @@ fn main() -> Result<()> {
             config::on_changed(move || {
                 ctx.request_repaint();
             })?;
+
+            let ctx = cc.egui_ctx.clone();
+            kosk::user_notify::on_posted(move || ctx.request_repaint());
 
             let ctx = cc.egui_ctx.clone();
             let state_clone = state.clone();
