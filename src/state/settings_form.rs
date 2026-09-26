@@ -49,21 +49,26 @@ const COLUMNS_MAX: usize = 6;
 const ROWS_MIN: usize = 1;
 const ROWS_MAX: usize = 3;
 
-const PAGES: [Page; 7] = [
-    Page::Suggestions,
-    Page::Overlay,
-    Page::Typing,
-    Page::Pads,
-    Page::Sticks,
-    Page::Controller,
-    Page::Debug,
-];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::state) enum View {
     Hub,
     Index,
+    DeviceIndex(ControllerKind),
     Page(Page),
+    DevicePage(ControllerKind, DevicePage),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::state) enum OptionEntry {
+    Page(Page),
+    Device(ControllerKind),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::state) enum DevicePage {
+    Pads,
+    Stick,
+    Device,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,9 +76,6 @@ pub(in crate::state) enum Page {
     Suggestions,
     Overlay,
     Typing,
-    Pads,
-    Sticks,
-    Controller,
     Debug,
 }
 
@@ -155,6 +157,7 @@ pub(in crate::state) enum FooterButtons {
     Adjust,
     Page,
     OpenConfig,
+    ShowAllControllers,
 }
 
 pub(in crate::state) struct FooterHint {
@@ -165,7 +168,8 @@ pub(in crate::state) struct FooterHint {
 pub(in crate::state) struct SettingsForm {
     view: View,
     focus: usize,
-    dirty: Vec<RowId>,
+    dirty: Vec<(RowId, ControllerKind)>,
+    show_all_controllers: bool,
 }
 
 impl SettingsForm {
@@ -174,7 +178,13 @@ impl SettingsForm {
             view: View::Hub,
             focus: 0,
             dirty: Vec::new(),
+            show_all_controllers: false,
         }
+    }
+
+    pub(in crate::state) fn toggle_show_all(&mut self, kind: ControllerKind) {
+        self.show_all_controllers = !self.show_all_controllers;
+        self.ensure_focus(kind);
     }
 
     pub(in crate::state) fn focus(&self) -> usize {
@@ -182,7 +192,7 @@ impl SettingsForm {
     }
 
     pub(in crate::state) fn on_page(&self) -> bool {
-        matches!(self.view, View::Page(_))
+        matches!(self.view, View::Page(_) | View::DevicePage(..))
     }
 
     pub(in crate::state) fn set_focus(&mut self, index: usize, kind: ControllerKind) {
@@ -190,7 +200,7 @@ impl SettingsForm {
         self.ensure_focus(kind);
     }
 
-    pub(in crate::state) fn dirty_rows(&self) -> &[RowId] {
+    pub(in crate::state) fn dirty_rows(&self) -> &[(RowId, ControllerKind)] {
         &self.dirty
     }
 
@@ -234,9 +244,27 @@ impl SettingsForm {
                     changed: false,
                 }
             }
+            View::DeviceIndex(target) => {
+                self.view = View::Index;
+                self.focus = device_entry_index(target, kind, self.show_all_controllers);
+                Effect {
+                    open: None,
+                    persist,
+                    changed: false,
+                }
+            }
             View::Page(page) => {
                 self.view = View::Index;
-                self.focus = page_index(page, kind);
+                self.focus = page_entry_index(page, kind, self.show_all_controllers);
+                Effect {
+                    open: None,
+                    persist,
+                    changed: false,
+                }
+            }
+            View::DevicePage(target, device_page) => {
+                self.view = View::DeviceIndex(target);
+                self.focus = device_page_index(target, device_page);
                 Effect {
                     open: None,
                     persist,
@@ -261,13 +289,26 @@ impl SettingsForm {
                 _ => Effect::open(StateId::Keyboard),
             },
             View::Index => {
-                let page = pages_for(kind)[self.focus];
-                self.view = View::Page(page);
+                let entry = options_entries(kind, self.show_all_controllers)[self.focus];
+                match entry {
+                    OptionEntry::Page(page) => {
+                        self.view = View::Page(page);
+                    }
+                    OptionEntry::Device(target) => {
+                        self.view = View::DeviceIndex(target);
+                    }
+                }
                 self.focus = 0;
                 Effect::none()
             }
-            View::Page(_) => {
-                let Some(id) = self.focused_row(kind) else {
+            View::DeviceIndex(target) => {
+                let device_page = device_pages(target)[self.focus];
+                self.view = View::DevicePage(target, device_page);
+                self.focus = 0;
+                Effect::none()
+            }
+            View::Page(_) | View::DevicePage(..) => {
+                let Some((id, _)) = self.focused_edit(kind) else {
                     return Effect::none();
                 };
                 if !is_toggle(id) {
@@ -284,14 +325,22 @@ impl SettingsForm {
     }
 
     pub(in crate::state) fn shift_page(&mut self, dir: i32, kind: ControllerKind) -> Effect {
-        let View::Page(page) = self.view else {
-            return Effect::none();
+        let current = match self.view {
+            View::Page(page) => ValueRef::Page(page),
+            View::DevicePage(target, device_page) => ValueRef::Device(target, device_page),
+            _ => return Effect::none(),
         };
         let persist = !self.dirty.is_empty();
-        let pages = pages_for(kind);
-        let n = pages.len() as i32;
-        let next = pages[(page_index(page, kind) as i32 + dir).rem_euclid(n) as usize];
-        self.view = View::Page(next);
+        let sequence = value_sequence(kind, self.show_all_controllers);
+        let n = sequence.len() as i32;
+        let position = sequence.iter().position(|v| *v == current).unwrap_or(0);
+        let next = sequence[(position as i32 + dir).rem_euclid(n) as usize];
+        match next {
+            ValueRef::Page(page) => self.view = View::Page(page),
+            ValueRef::Device(target, device_page) => {
+                self.view = View::DevicePage(target, device_page)
+            }
+        }
         self.focus = 0;
         Effect {
             open: None,
@@ -307,16 +356,16 @@ impl SettingsForm {
         kind: ControllerKind,
     ) -> bool {
         self.ensure_focus(kind);
-        let Some(id) = self.focused_row(kind) else {
+        let Some((id, target)) = self.focused_edit(kind) else {
             return false;
         };
-        let before = format_value(cfg, id, kind);
-        apply_dir(cfg, id, dir, kind);
-        if format_value(cfg, id, kind) == before {
+        let before = format_value(cfg, id, target);
+        apply_dir(cfg, id, dir, target);
+        if format_value(cfg, id, target) == before {
             return false;
         }
-        if !self.dirty.contains(&id) {
-            self.dirty.push(id);
+        if !self.dirty.contains(&(id, target)) {
+            self.dirty.push((id, target));
         }
         true
     }
@@ -325,7 +374,9 @@ impl SettingsForm {
         match self.view {
             View::Hub => "Settings",
             View::Index => "Options",
+            View::DeviceIndex(target) => device_name(target),
             View::Page(page) => page.title(),
+            View::DevicePage(target, device_page) => device_page_title(target, device_page),
         }
     }
 
@@ -351,13 +402,27 @@ impl SettingsForm {
                     label: "back",
                 },
                 FooterHint {
+                    buttons: FooterButtons::ShowAllControllers,
+                    label: "all controllers",
+                },
+                FooterHint {
                     buttons: FooterButtons::OpenConfig,
                     label: "open config",
                 },
             ],
-            View::Page(_) => {
+            View::DeviceIndex(_) => vec![
+                FooterHint {
+                    buttons: FooterButtons::Activate,
+                    label: "open",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "back",
+                },
+            ],
+            View::Page(_) | View::DevicePage(..) => {
                 let mut hints = Vec::new();
-                if self.focused_row(kind).is_some_and(is_toggle) {
+                if self.focused_edit(kind).is_some_and(|(id, _)| is_toggle(id)) {
                     hints.push(FooterHint {
                         buttons: FooterButtons::Activate,
                         label: "toggle",
@@ -389,16 +454,24 @@ impl SettingsForm {
                     value: None,
                 })
                 .collect(),
-            View::Index => pages_for(kind)
+            View::Index => options_entries(kind, self.show_all_controllers)
                 .iter()
-                .map(|page| DrawnRow {
-                    label: page.title(),
+                .map(|entry| DrawnRow {
+                    label: entry.title(),
+                    explain: None,
+                    value: None,
+                })
+                .collect(),
+            View::DeviceIndex(target) => device_pages(target)
+                .iter()
+                .map(|device_page| DrawnRow {
+                    label: device_page.title_suffix(),
                     explain: None,
                     value: None,
                 })
                 .collect(),
             View::Page(page) => page
-                .rows(kind)
+                .rows()
                 .iter()
                 .copied()
                 .map(|id| {
@@ -410,22 +483,42 @@ impl SettingsForm {
                     }
                 })
                 .collect(),
+            View::DevicePage(target, device_page) => device_page
+                .rows(target)
+                .iter()
+                .copied()
+                .map(|id| {
+                    let (label, explain) = row_text(id);
+                    DrawnRow {
+                        label,
+                        explain: Some(explain),
+                        value: Some(format_value(cfg, id, target)),
+                    }
+                })
+                .collect(),
         }
     }
 
     fn len(&self, kind: ControllerKind) -> usize {
         match self.view {
             View::Hub => HUB_LEN,
-            View::Index => pages_for(kind).len(),
-            View::Page(page) => page.rows(kind).len(),
+            View::Index => options_entries(kind, self.show_all_controllers).len(),
+            View::DeviceIndex(target) => device_pages(target).len(),
+            View::Page(page) => page.rows().len(),
+            View::DevicePage(target, device_page) => device_page.rows(target).len(),
         }
     }
 
-    fn focused_row(&self, kind: ControllerKind) -> Option<RowId> {
-        let View::Page(page) = self.view else {
-            return None;
-        };
-        page.rows(kind).get(self.focus).copied()
+    fn focused_edit(&self, kind: ControllerKind) -> Option<(RowId, ControllerKind)> {
+        match self.view {
+            View::Page(page) => page.rows().get(self.focus).copied().map(|id| (id, kind)),
+            View::DevicePage(target, device_page) => device_page
+                .rows(target)
+                .get(self.focus)
+                .copied()
+                .map(|id| (id, target)),
+            _ => None,
+        }
     }
 }
 
@@ -435,14 +528,11 @@ impl Page {
             Page::Suggestions => "Suggestions",
             Page::Overlay => "Overlay",
             Page::Typing => "Typing",
-            Page::Pads => "Pads",
-            Page::Sticks => "Sticks",
-            Page::Controller => "Controller",
             Page::Debug => "Debug",
         }
     }
 
-    fn rows(self, kind: ControllerKind) -> &'static [RowId] {
+    fn rows(self) -> &'static [RowId] {
         match self {
             Page::Suggestions => &[
                 RowId::Suggestions,
@@ -462,30 +552,6 @@ impl Page {
                 RowId::KeyHeight,
             ],
             Page::Typing => &[RowId::DelayBeforeRepeat, RowId::RepeatInterval],
-            Page::Pads => &[
-                RowId::PadHorizontalRange,
-                RowId::PadVerticalRange,
-                RowId::PadSquare,
-                RowId::PadStickiness,
-                RowId::PadHoldAfterKey,
-            ],
-            Page::Sticks => &[
-                RowId::HorizontalRange,
-                RowId::VerticalRange,
-                RowId::SquareStick,
-                RowId::Stickiness,
-                RowId::HoldAfterKey,
-            ],
-            Page::Controller => match kind {
-                ControllerKind::Ps4 => &[RowId::Ps4TriggerLeft, RowId::Ps4TriggerRight],
-                ControllerKind::Sc2 | ControllerKind::Replay => &[
-                    RowId::ThumbRest,
-                    RowId::StretchShortSide,
-                    RowId::PadClick,
-                    RowId::Sc2TriggerLeft,
-                    RowId::Sc2TriggerRight,
-                ],
-            },
             Page::Debug => &[
                 RowId::StickCursors,
                 RowId::Hitboxes,
@@ -496,18 +562,146 @@ impl Page {
     }
 }
 
-fn pages_for(kind: ControllerKind) -> Vec<Page> {
-    PAGES.into_iter().filter(|page| page.shown(kind)).collect()
-}
-
-fn page_index(page: Page, kind: ControllerKind) -> usize {
-    pages_for(kind).iter().position(|p| *p == page).unwrap_or(0)
-}
-
-impl Page {
-    fn shown(self, kind: ControllerKind) -> bool {
-        !matches!((self, kind), (Page::Pads, ControllerKind::Ps4))
+impl OptionEntry {
+    fn title(self) -> &'static str {
+        match self {
+            OptionEntry::Page(page) => page.title(),
+            OptionEntry::Device(target) => device_name(target),
+        }
     }
+}
+
+impl DevicePage {
+    fn title_suffix(self) -> &'static str {
+        match self {
+            DevicePage::Pads => "Pads",
+            DevicePage::Stick => "Stick",
+            DevicePage::Device => "Device",
+        }
+    }
+
+    fn rows(self, target: ControllerKind) -> &'static [RowId] {
+        match (self, target) {
+            (DevicePage::Pads, _) => &[
+                RowId::PadHorizontalRange,
+                RowId::PadVerticalRange,
+                RowId::PadSquare,
+                RowId::PadStickiness,
+                RowId::PadHoldAfterKey,
+            ],
+            (DevicePage::Stick, _) => &[
+                RowId::HorizontalRange,
+                RowId::VerticalRange,
+                RowId::SquareStick,
+                RowId::Stickiness,
+                RowId::HoldAfterKey,
+            ],
+            (DevicePage::Device, ControllerKind::Ps4) => {
+                &[RowId::Ps4TriggerLeft, RowId::Ps4TriggerRight]
+            }
+            (DevicePage::Device, _) => &[
+                RowId::ThumbRest,
+                RowId::StretchShortSide,
+                RowId::PadClick,
+                RowId::Sc2TriggerLeft,
+                RowId::Sc2TriggerRight,
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ValueRef {
+    Page(Page),
+    Device(ControllerKind, DevicePage),
+}
+
+fn canonical_device(kind: ControllerKind) -> ControllerKind {
+    match crate::config::resolved_controller(kind) {
+        ControllerKind::Ps4 => ControllerKind::Ps4,
+        _ => ControllerKind::Sc2,
+    }
+}
+
+fn device_name(target: ControllerKind) -> &'static str {
+    match target {
+        ControllerKind::Ps4 => "DualShock 4",
+        _ => "Steam Controller",
+    }
+}
+
+fn device_page_title(target: ControllerKind, device_page: DevicePage) -> &'static str {
+    match (target, device_page) {
+        (ControllerKind::Ps4, DevicePage::Stick) => "DualShock 4 Stick",
+        (ControllerKind::Ps4, DevicePage::Device) => "DualShock 4 Device",
+        (_, DevicePage::Pads) => "Steam Controller Pads",
+        (_, DevicePage::Stick) => "Steam Controller Stick",
+        _ => "Steam Controller Device",
+    }
+}
+
+fn visible_devices(kind: ControllerKind, show_all: bool) -> Vec<ControllerKind> {
+    if show_all {
+        vec![ControllerKind::Sc2, ControllerKind::Ps4]
+    } else {
+        vec![canonical_device(kind)]
+    }
+}
+
+fn options_entries(kind: ControllerKind, show_all: bool) -> Vec<OptionEntry> {
+    let mut entries = vec![
+        OptionEntry::Page(Page::Suggestions),
+        OptionEntry::Page(Page::Overlay),
+        OptionEntry::Page(Page::Typing),
+    ];
+    for target in visible_devices(kind, show_all) {
+        entries.push(OptionEntry::Device(target));
+    }
+    entries.push(OptionEntry::Page(Page::Debug));
+    entries
+}
+
+fn value_sequence(kind: ControllerKind, show_all: bool) -> Vec<ValueRef> {
+    let mut sequence = vec![
+        ValueRef::Page(Page::Suggestions),
+        ValueRef::Page(Page::Overlay),
+        ValueRef::Page(Page::Typing),
+    ];
+    for target in visible_devices(kind, show_all) {
+        for device_page in device_pages(target) {
+            sequence.push(ValueRef::Device(target, *device_page));
+        }
+    }
+    sequence.push(ValueRef::Page(Page::Debug));
+    sequence
+}
+
+fn device_pages(target: ControllerKind) -> &'static [DevicePage] {
+    match target {
+        ControllerKind::Ps4 => &[DevicePage::Stick, DevicePage::Device],
+        _ => &[DevicePage::Pads, DevicePage::Stick, DevicePage::Device],
+    }
+}
+
+fn page_entry_index(page: Page, kind: ControllerKind, show_all: bool) -> usize {
+    options_entries(kind, show_all)
+        .iter()
+        .position(|entry| *entry == OptionEntry::Page(page))
+        .unwrap_or(0)
+}
+
+fn device_entry_index(target: ControllerKind, kind: ControllerKind, show_all: bool) -> usize {
+    options_entries(kind, show_all)
+        .iter()
+        .position(|entry| *entry == OptionEntry::Device(target))
+        .unwrap_or(0)
+}
+
+fn device_page_index(target: ControllerKind, device_page: DevicePage) -> usize {
+    device_pages(target)
+        .iter()
+        .position(|page| *page == device_page)
+        .unwrap_or(0)
 }
 
 fn hub_label(index: usize) -> &'static str {
@@ -1183,12 +1377,17 @@ mod tests {
             .footer(ControllerKind::Sc2)
             .iter()
             .any(|hint| hint.buttons == FooterButtons::OpenConfig && hint.label == "open config"));
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::ShowAllControllers
+                && hint.label == "all controllers"));
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);
         assert_eq!(form.view, View::Page(Page::Suggestions));
 
-        form.dirty.push(RowId::Suggestions);
+        form.dirty.push((RowId::Suggestions, ControllerKind::Sc2));
         let back_page = form.back(ControllerKind::Sc2);
         assert!(back_page.persist);
         assert!(back_page.open.is_none());
@@ -1209,7 +1408,7 @@ mod tests {
         assert_eq!(form.view, View::Hub);
 
         form.view = View::Page(Page::Debug);
-        form.dirty.push(RowId::Hitboxes);
+        form.dirty.push((RowId::Hitboxes, ControllerKind::Sc2));
         let wrapped = form.shift_page(1, ControllerKind::Sc2);
         assert!(wrapped.persist);
         assert_eq!(form.view, View::Page(Page::Suggestions));
@@ -1222,13 +1421,111 @@ mod tests {
     }
 
     #[test]
-    fn ps4_page_is_only_the_triggers() {
+    fn options_lists_only_connected_device_until_toggled() {
         let mut form = SettingsForm::new();
-        form.view = View::Page(Page::Controller);
+        form.view = View::Index;
+
+        let connected = form.drawn(&sample(), ControllerKind::Sc2);
+        let labels: Vec<&str> = connected.iter().map(|row| row.label).collect();
+        assert!(labels.contains(&"Steam Controller"));
+        assert!(!labels.contains(&"DualShock 4"));
+
+        form.toggle_show_all(ControllerKind::Sc2);
+        let both = form.drawn(&sample(), ControllerKind::Sc2);
+        let labels: Vec<&str> = both.iter().map(|row| row.label).collect();
+        assert!(labels.contains(&"Steam Controller"));
+        assert!(labels.contains(&"DualShock 4"));
+
+        let ps4_only = SettingsForm::new();
+        let rows = ps4_only.drawn(&sample(), ControllerKind::Ps4);
+        let _ = (rows, ps4_only);
+    }
+
+    #[test]
+    fn device_index_sizes_match_family() {
+        let mut form = SettingsForm::new();
+        form.view = View::DeviceIndex(ControllerKind::Sc2);
+        assert_eq!(form.len(ControllerKind::Sc2), 3);
+        form.view = View::DeviceIndex(ControllerKind::Ps4);
         assert_eq!(form.len(ControllerKind::Ps4), 2);
-        assert_eq!(form.len(ControllerKind::Sc2), 5);
+        assert_eq!(
+            device_pages(ControllerKind::Ps4),
+            &[DevicePage::Stick, DevicePage::Device]
+        );
+    }
+
+    #[test]
+    fn stick_edits_follow_target_device() {
+        let mut form = SettingsForm::new();
+        form.view = View::DevicePage(ControllerKind::Ps4, DevicePage::Stick);
+        form.focus = 0;
+        let mut cfg = sample();
+        cfg.ps4.stick.scale_x = 1.0;
+        cfg.sc2.stick.scale_x = 1.0;
+
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert!((cfg.ps4.stick.scale_x - 1.1).abs() < 0.001);
+        assert!((cfg.sc2.stick.scale_x - 1.0).abs() < f32::EPSILON);
+        assert_eq!(
+            form.dirty_rows(),
+            &[(RowId::HorizontalRange, ControllerKind::Ps4)]
+        );
+    }
+
+    #[test]
+    fn back_walks_device_value_to_index_to_options() {
+        let mut form = SettingsForm::new();
+        form.view = View::DevicePage(ControllerKind::Sc2, DevicePage::Stick);
+        form.focus = 0;
+
+        let to_index = form.back(ControllerKind::Sc2);
+        assert!(!to_index.persist);
+        assert_eq!(form.view, View::DeviceIndex(ControllerKind::Sc2));
+        assert_eq!(form.focus, 1);
+
+        let _to_options = form.back(ControllerKind::Sc2);
+        assert_eq!(form.view, View::Index);
+        assert_eq!(
+            form.focus,
+            device_entry_index(
+                ControllerKind::Sc2,
+                ControllerKind::Sc2,
+                form.show_all_controllers
+            )
+        );
+    }
+
+    #[test]
+    fn ps4_device_page_is_only_the_triggers() {
+        let mut form = SettingsForm::new();
+        form.view = View::DevicePage(ControllerKind::Ps4, DevicePage::Device);
+        assert_eq!(form.len(ControllerKind::Ps4), 2);
         let rows = form.drawn(&sample(), ControllerKind::Ps4);
         assert_eq!(rows[0].label, "Left trigger");
         assert_eq!(rows[1].label, "Right trigger");
+    }
+
+    #[test]
+    fn device_page_titles_carry_device() {
+        assert_eq!(
+            device_page_title(ControllerKind::Sc2, DevicePage::Pads),
+            "Steam Controller Pads"
+        );
+        assert_eq!(
+            device_page_title(ControllerKind::Sc2, DevicePage::Stick),
+            "Steam Controller Stick"
+        );
+        assert_eq!(
+            device_page_title(ControllerKind::Sc2, DevicePage::Device),
+            "Steam Controller Device"
+        );
+        assert_eq!(
+            device_page_title(ControllerKind::Ps4, DevicePage::Stick),
+            "DualShock 4 Stick"
+        );
+        assert_eq!(
+            device_page_title(ControllerKind::Ps4, DevicePage::Device),
+            "DualShock 4 Device"
+        );
     }
 }

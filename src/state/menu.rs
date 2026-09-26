@@ -138,8 +138,8 @@ impl MenuState {
         }
         let live = config::get();
         if let Err(e) = config::persist_settings(&live, |disk| {
-            for row in &rows {
-                copy_row(disk, &live, *row, self.kind);
+            for (row, target) in &rows {
+                copy_row(disk, &live, *row, *target);
             }
         }) {
             eprintln!("settings save: {e:#}");
@@ -183,6 +183,9 @@ impl MenuState {
             Back => self.commit(events, source, |form, _, kind| form.back(kind)),
             OpenConfig => {
                 config::open_user_config_in_editor();
+            }
+            ToggleShowAllControllers => {
+                self.form.toggle_show_all(self.kind);
             }
             SwitchState(state) => {
                 self.write_settings();
@@ -284,6 +287,8 @@ fn buttons_for(
         FooterButtons::OpenConfig => {
             bindings.buttons_matching(|action| matches!(action, MenuAction::OpenConfig))
         }
+        FooterButtons::ShowAllControllers => bindings
+            .buttons_matching(|action| matches!(action, MenuAction::ToggleShowAllControllers)),
     }
 }
 
