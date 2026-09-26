@@ -15,6 +15,9 @@ use strum::VariantArray;
 
 use crate::controller::{ControllerButton, ControllerInput, ControllerKind};
 
+/// Presses within this long of a toast appearing do not dismiss it.
+const GRACE: Duration = Duration::from_millis(1200);
+
 /// Fade plus slide-in length for a newly shown toast.
 const APPEAR: Duration = Duration::from_millis(150);
 
@@ -302,6 +305,8 @@ struct Store {
     last_fire: HashMap<NoticeKey, Instant>,
     last_input: Option<Instant>,
     held: HashSet<ControllerButton>,
+    /// Buttons that went down during the grace period. Held copies stay off the keyboard.
+    suppressed: HashSet<ControllerButton>,
     family: ControllerKind,
     overflow_dropped: usize,
 }
@@ -315,6 +320,7 @@ impl Store {
             last_fire: HashMap::new(),
             last_input: None,
             held: HashSet::new(),
+            suppressed: HashSet::new(),
             family: ControllerKind::Sc2,
             overflow_dropped: 0,
         }
@@ -377,20 +383,34 @@ impl Store {
 
         if self.visible.is_none() {
             self.held = held_now;
+            self.suppressed.clear();
             return InputOutcome::Passthrough;
         }
 
         let fresh: Vec<ControllerButton> = held_now.difference(&self.held).copied().collect();
         self.held = held_now;
 
-        if fresh.is_empty() {
-            return InputOutcome::Passthrough;
+        let (shown_at, baseline) = {
+            let visible = self.visible.as_ref().unwrap();
+            (visible.shown_at, visible.baseline.clone())
+        };
+        if now.duration_since(shown_at) < GRACE {
+            for button in &fresh {
+                if !baseline.contains(button) {
+                    self.suppressed.insert(*button);
+                }
+            }
+        }
+        self.suppressed.retain(|button| self.held.contains(button));
+        if self
+            .held
+            .iter()
+            .any(|button| self.suppressed.contains(button))
+        {
+            return InputOutcome::Consumed;
         }
 
-        let Some(visible) = self.visible.as_ref() else {
-            return InputOutcome::Passthrough;
-        };
-        if fresh.iter().any(|b| visible.baseline.contains(b)) {
+        if fresh.is_empty() || fresh.iter().any(|button| baseline.contains(button)) {
             return InputOutcome::Passthrough;
         }
 
@@ -418,7 +438,7 @@ impl Store {
             index: 1,
             total,
             more: self.overflow_dropped,
-            hint_visible: true,
+            hint_visible: elapsed >= GRACE,
             family: self.family,
             appear: (elapsed.as_secs_f32() / APPEAR.as_secs_f32()).clamp(0.0, 1.0),
         })
@@ -463,6 +483,7 @@ impl Store {
 
         if let Some(i) = ready {
             let queued = self.queue.remove(i);
+            self.suppressed.clear();
             self.visible = Some(Visible {
                 notice: queued.notice,
                 shown_at: now,
@@ -531,19 +552,23 @@ pub fn note_type_failure() {
 }
 
 /// What an engaged controller input does to the toast layer.
+#[derive(Debug)]
 pub enum InputOutcome {
     /// Reaches the current screen unchanged.
     Passthrough,
+    /// A press during the grace period. Not typed, and not a dismiss.
+    Consumed,
     /// Dismissed the toast. The press must not reach the screen.
     Swallowed { notice: Notice, open_guide: bool },
 }
 
 /// Offer an engaged input. Returns whether the screen may still see it.
 ///
-/// Swallowed presses are a button newly down while the toast is shown. That
-/// press dismisses and must not reach the keyboard. A button already down
-/// when the toast appeared passes through. Call only for engaged snapshots,
-/// never the idle path.
+/// A button newly down while the toast is shown does not reach the keyboard.
+/// During the grace period it is [`InputOutcome::Consumed`] and the toast stays.
+/// After that it is [`InputOutcome::Swallowed`] and the toast closes. A button
+/// already down when the toast appeared passes through. Call only for engaged
+/// snapshots, never the idle path.
 pub fn offer_input(input: &dyn ControllerInput) -> InputOutcome {
     lock_store().offer(input, Instant::now())
 }
@@ -732,7 +757,7 @@ mod tests {
         let shown_at = t0 + IDLE_GATE + Duration::from_millis(10);
         assert!(store.view(shown_at).is_some());
         store.offer(&buttons(&[]), shown_at);
-        let dismiss_at = shown_at + Duration::from_millis(20);
+        let dismiss_at = shown_at + GRACE + Duration::from_millis(10);
         assert!(matches!(
             store.offer(&buttons(&[ControllerButton::FaceRight]), dismiss_at),
             InputOutcome::Swallowed { .. }
@@ -779,17 +804,31 @@ mod tests {
         store.post(Notice::record_failed(), t0);
         assert!(store.view(t0).is_some());
 
-        match store.offer(
-            &buttons(&[ControllerButton::TriggerRight]),
-            t0 + Duration::from_millis(20),
-        ) {
+        let pressed = buttons(&[ControllerButton::TriggerRight]);
+        let during = t0 + Duration::from_millis(20);
+        assert!(
+            matches!(store.offer(&pressed, during), InputOutcome::Consumed),
+            "grace press reached the keyboard or dismissed"
+        );
+        assert!(store.view(during).is_some());
+
+        let still_held = t0 + GRACE + Duration::from_millis(10);
+        assert!(
+            matches!(store.offer(&pressed, still_held), InputOutcome::Consumed),
+            "grace hold reached the keyboard or dismissed"
+        );
+        assert!(store.view(still_held).is_some());
+
+        store.offer(&buttons(&[]), still_held);
+        let dismiss_at = still_held + Duration::from_millis(20);
+        match store.offer(&pressed, dismiss_at) {
             InputOutcome::Swallowed { notice, open_guide } => {
                 assert_eq!(notice.key, NoticeKey::RecordFailed);
                 assert!(!open_guide);
             }
-            InputOutcome::Passthrough => panic!("dismiss press reached the keyboard"),
+            other => panic!("expected dismiss, got {other:?}"),
         }
-        assert!(store.view(t0 + Duration::from_millis(20)).is_none());
+        assert!(store.view(dismiss_at).is_none());
     }
 
     #[test]
@@ -818,7 +857,7 @@ mod tests {
         let tip = || Notice::next_word_setup_tip(false, true, true, true).unwrap();
         let t0 = Instant::now();
         let shown_at = t0 + IDLE_GATE + Duration::from_millis(10);
-        let dismiss_at = shown_at + Duration::from_millis(20);
+        let dismiss_at = shown_at + GRACE + Duration::from_millis(10);
 
         let mut store = Store::new();
         store.post(tip(), t0);
@@ -829,7 +868,7 @@ mod tests {
                 assert_eq!(notice.key, NoticeKey::NextWordSetup);
                 assert!(open_guide);
             }
-            InputOutcome::Passthrough => panic!("expected swallow"),
+            InputOutcome::Passthrough | InputOutcome::Consumed => panic!("expected swallow"),
         }
 
         let mut store = Store::new();
@@ -841,7 +880,7 @@ mod tests {
                 assert_eq!(notice.key, NoticeKey::NextWordSetup);
                 assert!(!open_guide);
             }
-            InputOutcome::Passthrough => panic!("expected swallow"),
+            InputOutcome::Passthrough | InputOutcome::Consumed => panic!("expected swallow"),
         }
     }
 }

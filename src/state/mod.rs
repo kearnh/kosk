@@ -426,21 +426,27 @@ impl AppState {
 
         self.controller_kind = input.family();
 
-        if let crate::user_notify::InputOutcome::Swallowed { notice, open_guide } =
-            crate::user_notify::offer_input(input)
-        {
-            if toasts::is_tip_acknowledge(&notice.key) {
-                toasts::acknowledge_tip();
+        match crate::user_notify::offer_input(input) {
+            crate::user_notify::InputOutcome::Passthrough => {}
+            crate::user_notify::InputOutcome::Consumed => {
+                self.reset_current_mode_controller(Some(input));
+                self.events.end_controller_tick();
+                return Ok(());
             }
-            if open_guide {
-                if let Err(e) = toasts::open_setup_guide() {
-                    eprintln!("setup guide: {e:#}");
-                    crate::user_notify::notify(crate::user_notify::Notice::guide_failed());
+            crate::user_notify::InputOutcome::Swallowed { notice, open_guide } => {
+                if toasts::is_tip_acknowledge(&notice.key) {
+                    toasts::acknowledge_tip();
                 }
+                if open_guide {
+                    if let Err(e) = toasts::open_setup_guide() {
+                        eprintln!("setup guide: {e:#}");
+                        crate::user_notify::notify(crate::user_notify::Notice::guide_failed());
+                    }
+                }
+                self.reset_current_mode_controller(Some(input));
+                self.events.end_controller_tick();
+                return Ok(());
             }
-            self.reset_current_mode_controller(Some(input));
-            self.events.end_controller_tick();
-            return Ok(());
         }
 
         if cfg.debug.is_some() {
