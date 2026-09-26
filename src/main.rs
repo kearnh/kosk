@@ -299,6 +299,8 @@ impl App {
         ctx.show_viewport_immediate(toast_viewport_id(), builder, move |ui, _| {
             kosk::state::toasts::draw_satellite(ui, &view);
             ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::InnerSize(toast_size));
+            ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
         });
         style_satellite_window();
@@ -306,14 +308,18 @@ impl App {
 }
 
 /// Best-effort Win32 styling for the satellite: never activate, no taskbar
-/// button, layered + blurred like the root overlay. winit builder flags cover
-/// the rest; failures leave a readable card.
+/// button, truly transparent. A full-window blur paints a glass rectangle
+/// past the card; the borderless drop shadow outlines that rectangle.
+/// Failures leave a readable card.
 #[cfg(target_os = "windows")]
 fn style_satellite_window() {
     use windows_sys::Win32::Foundation::{COLORREF, HWND};
     use windows_sys::Win32::Graphics::Dwm::{
-        DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND,
+        DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR,
+        DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
     };
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         FindWindowW, GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
         LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
@@ -341,13 +347,39 @@ fn style_satellite_window() {
         }
         let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
 
+        // Empty blur region keeps unused pixels invisible. Blurring the whole
+        // window draws a glass pane under the card.
+        let region = CreateRectRgn(0, 0, -1, -1);
         let bb = DWM_BLURBEHIND {
-            dwFlags: DWM_BB_ENABLE,
+            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
             fEnable: 1,
-            hRgnBlur: 0,
+            hRgnBlur: region,
             fTransitionOnMaximized: 0,
         };
         let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+        let _ = DeleteObject(region);
+
+        let policy = DWMNCRP_DISABLED;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_POLICY as u32,
+            &policy as *const _ as *const _,
+            std::mem::size_of_val(&policy) as u32,
+        );
+        let border = DWMWA_COLOR_NONE;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR as u32,
+            &border as *const _ as *const _,
+            std::mem::size_of_val(&border) as u32,
+        );
+        let corners = DWMWCP_DONOTROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &corners as *const _ as *const _,
+            std::mem::size_of_val(&corners) as u32,
+        );
     }
 }
 

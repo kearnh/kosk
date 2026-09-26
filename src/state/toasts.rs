@@ -123,6 +123,7 @@ pub fn viewport_builder(pos: Pos2, size: Vec2) -> egui::ViewportBuilder {
         .with_active(false)
         .with_mouse_passthrough(true)
         .with_resizable(false)
+        .with_has_shadow(false)
         .with_inner_size(size)
         .with_position(pos)
 }
@@ -178,6 +179,12 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
                 .corner_radius(CARD_RADIUS)
                 .inner_margin(CARD_MARGIN)
                 .show(ui, |ui| {
+                    // Fill the window. A shorter card leaves a transparent band
+                    // that DWM paints as the bottom of a larger window.
+                    ui.set_min_size(Vec2::new(
+                        size.x - CARD_MARGIN * 2.0,
+                        size.y - CARD_MARGIN * 2.0,
+                    ));
                     ui.set_width(size.x - CARD_MARGIN * 2.0 + slide);
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
@@ -436,6 +443,7 @@ mod tests {
         assert_eq!(builder.mouse_passthrough, Some(true));
         assert_eq!(builder.decorations, Some(false));
         assert_eq!(builder.transparent, Some(true));
+        assert_eq!(builder.has_shadow, Some(false));
         assert_eq!(builder.taskbar, Some(false));
         assert_eq!(builder.resizable, Some(false));
         assert!(matches!(
