@@ -36,7 +36,7 @@ pub(crate) fn compute_stick_envelope(
         .into_iter()
         .map(|raw| {
             let warped = warp(raw, stick_warp);
-            cursor_point(layout, side, warped)
+            cursor_point(layout, side, warped, false)
         })
         .collect();
 
@@ -108,15 +108,16 @@ fn compute_pad_envelope_with_origin_range(
         for raw in &raw_samples {
             let stretched = stretch_stick(*raw, origin, stretch_k, stretch_max_gain);
             let warped = warp(stretched, stick_warp);
-            points.push(cursor_point(layout, side, warped));
+            points.push(cursor_point(layout, side, warped, true));
         }
     }
 
     Some(build_envelope(layout, side, points))
 }
 
-fn cursor_point(layout: &KeyboardLayout, side: StickSide, stick: (f32, f32)) -> Pos2 {
-    let (x, y) = layout.stick_to_cursor(side, stick);
+fn cursor_point(layout: &KeyboardLayout, side: StickSide, stick: (f32, f32), pad: bool) -> Pos2 {
+    let (sx, sy) = layout.aim_scale(layout.aim_kind_for_reach(), pad);
+    let (x, y) = layout.stick_to_cursor_scaled(side, stick, sx, sy);
     Pos2::new(x, y)
 }
 

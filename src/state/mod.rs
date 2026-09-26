@@ -264,7 +264,7 @@ impl AppState {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                     Event::ToggleRecord => {
-                        if let Err(e) = toggle_recording() {
+                        if let Err(e) = toggle_recording(self.controller_kind) {
                             eprintln!("toggleRecord: {e:#}");
                             crate::user_notify::notify(crate::user_notify::Notice::record_failed());
                         }
@@ -530,12 +530,13 @@ impl AppState {
         &mut self,
         header: &crate::controller::record::TapeHeader,
     ) -> Result<()> {
+        config::set_replay_aim_family(header.controller);
         config::apply_recorded_tape_config(header)?;
         keyboard::with_mut(|kb| kb.install_recorded_layouts(header))
     }
 }
 
-fn toggle_recording() -> Result<()> {
+fn toggle_recording(kind: crate::controller::ControllerKind) -> Result<()> {
     let session = input_record::session();
     if session.is_replay() {
         eprintln!("toggleRecord: ignored on replay controller");
@@ -557,7 +558,7 @@ fn toggle_recording() -> Result<()> {
     input_record::validate_record_template(&template)?;
     let resolved = input_record::resolve_against_config_dir(&template)?;
     let path = input_record::next_record_path(&resolved)?;
-    let header = keyboard::with_mut(|kb| kb.tape_header())?;
+    let header = keyboard::with_mut(|kb| kb.tape_header(kind))?;
     session.start(path.clone(), header)?;
     eprintln!("recording {}", path.display());
     Ok(())

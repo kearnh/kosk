@@ -3,7 +3,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(crate) const CONFIG_VERSION: i64 = 1;
+pub(crate) const CONFIG_VERSION: i64 = 2;
 pub(crate) const CONFIG_VERSION_KEY: &str = "config_version";
 pub(crate) const CONTROLLER_MAP_KEY: &str = "controller_map";
 pub(crate) const UNBIND_ACTION: &str = "none";
@@ -45,7 +45,7 @@ pub(crate) fn user_config_path() -> Result<PathBuf> {
     Ok(PathBuf::from(root).join("kosk").join("config.toml"))
 }
 
-/// `%LOCALAPPDATA%\kosk\config.toml`, creating `config_version = 1` when absent.
+/// `%LOCALAPPDATA%\kosk\config.toml`, creating `config_version` at [`CONFIG_VERSION`] when absent.
 pub(crate) fn ensure_user_config_file() -> Result<PathBuf> {
     let path = user_config_path()?;
     if path.exists() {
@@ -77,7 +77,59 @@ fn migrate_0_to_1(doc: &mut toml_edit::DocumentMut) {
     doc[CONFIG_VERSION_KEY] = toml_edit::value(1_i64);
 }
 
-const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] = &[migrate_0_to_1];
+const AIM_KEY_MOVES: &[(&str, &str)] = &[
+    ("stick_scale_x", "scale_x"),
+    ("stick_scale_y", "scale_y"),
+    ("stick_warp", "warp"),
+    ("stick_select_sticky", "select_sticky"),
+    ("stick_select_lock_ms", "select_lock_ms"),
+];
+
+const AIM_PROFILES: &[(&str, &str)] = &[("sc2", "pad"), ("sc2", "stick"), ("ps4", "stick")];
+
+fn migrate_1_to_2(doc: &mut toml_edit::DocumentMut) {
+    for (old, new) in AIM_KEY_MOVES {
+        let Some(value) = doc.get(old).cloned() else {
+            continue;
+        };
+        for (family, profile) in AIM_PROFILES {
+            insert_aim_key(doc, family, profile, new, value.clone());
+        }
+        doc.remove(old);
+    }
+}
+
+fn insert_aim_key(
+    doc: &mut toml_edit::DocumentMut,
+    family: &str,
+    profile: &str,
+    key: &str,
+    value: toml_edit::Item,
+) {
+    let root = doc.as_table_mut();
+    if !root.get(family).is_some_and(|item| item.is_table()) {
+        root.insert(family, toml_edit::Item::Table(toml_edit::Table::new()));
+    }
+    let family_table = root
+        .get_mut(family)
+        .and_then(|item| item.as_table_mut())
+        .expect("controller table");
+    if !family_table
+        .get(profile)
+        .is_some_and(|item| item.is_table())
+    {
+        family_table.insert(profile, toml_edit::Item::Table(toml_edit::Table::new()));
+    }
+    let profile_table = family_table
+        .get_mut(profile)
+        .and_then(|item| item.as_table_mut())
+        .expect("aim profile table");
+    if !profile_table.contains_key(key) {
+        profile_table.insert(key, value);
+    }
+}
+
+const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] = &[migrate_0_to_1, migrate_1_to_2];
 
 /// Raise `doc` to [`CONFIG_VERSION`]. A newer file is left unchanged.
 pub(crate) fn migrate_document(doc: &mut toml_edit::DocumentMut) -> Result<MigrateOutcome> {
@@ -348,6 +400,32 @@ mod tests {
         assert_eq!(doc["second"].as_integer(), Some(2));
         assert_eq!(file_version(&doc), 2);
         assert!(doc.to_string().contains("keyboard_opacity"));
+    }
+
+    #[test]
+    fn aim_keys_copy_into_each_profile() {
+        let mut doc = "\
+config_version = 1
+stick_scale_x = 4.2
+stick_warp = 0.5
+[sc2.stick]
+scale_x = 9.0
+"
+        .parse::<toml_edit::DocumentMut>()
+        .unwrap();
+        assert_eq!(
+            migrate_document(&mut doc).unwrap(),
+            MigrateOutcome::Migrated
+        );
+        assert_eq!(file_version(&doc), CONFIG_VERSION);
+        assert!(doc.get("stick_scale_x").is_none());
+        assert!(doc.get("stick_warp").is_none());
+        assert_eq!(doc["sc2"]["pad"]["scale_x"].as_float(), Some(4.2));
+        assert_eq!(doc["sc2"]["pad"]["warp"].as_float(), Some(0.5));
+        assert_eq!(doc["sc2"]["stick"]["scale_x"].as_float(), Some(9.0));
+        assert_eq!(doc["sc2"]["stick"]["warp"].as_float(), Some(0.5));
+        assert_eq!(doc["ps4"]["stick"]["scale_x"].as_float(), Some(4.2));
+        assert_eq!(doc["ps4"]["stick"]["warp"].as_float(), Some(0.5));
     }
 
     #[test]

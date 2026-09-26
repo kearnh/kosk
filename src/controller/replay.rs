@@ -150,12 +150,8 @@ mod tests {
             header: TapeHeader {
                 version: 0,
                 current_layout: "main".into(),
-                scales: MappingScales {
-                    scale_x: 1.0,
-                    scale_y: 1.0,
-                    stick_scale_x: 1.0,
-                    stick_scale_y: 1.0,
-                },
+                controller: None,
+                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
                 config_toml: None,
                 layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
             },

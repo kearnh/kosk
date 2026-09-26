@@ -12,7 +12,7 @@ The same module is also the parser for mapping keys. `mappings.toml` uses string
 
 The trait is a snapshot. One value is “this poll.” Implementations are `Debug` and cloneable through `box_clone`, because the debug plugin and the recording session need to keep a copy.
 
-Raw sticks are `left_stick_raw` / `right_stick_raw`. The default `left_stick` / `right_stick` methods apply `warp(..., config.stick_warp)` and then clamp to the square. Steam Controller 2’s mapped input overrides `left_pad` / `right_pad` so pad-origin mapping runs *before* warp (see [devices.md](devices.md)). Replay overrides them too: a tape already stored warped (and, for SC2, origin-mapped) coordinates, so playing them back must not warp again.
+Raw sticks are `left_stick_raw` / `right_stick_raw`. The default `left_stick` / `right_stick` methods apply `warp` with that controller’s stick profile (`sc2.stick.warp` or `ps4.stick.warp`) and then clamp to the square. Pad methods use `sc2.pad.warp`. Steam Controller 2’s mapped input overrides `left_pad` / `right_pad` so pad-origin mapping runs *before* warp (see [devices.md](devices.md)). Replay overrides them too: a tape already stored warped (and, for SC2, origin-mapped) coordinates, so playing them back must not warp again.
 
 Digital controls are one method per button. Names are semantic rather than PlayStation- or Steam-specific: `face_bottom` is Cross on a DualShock 4 and A on a Steam Controller. Pads (`pad_left`, `pad_right`), paddles (`l4`, `l5`, `r4`, `r5`), and Quick Access (`btn_quick_access`) default to false so DualShock 4 does not have to mention them.
 
@@ -24,9 +24,9 @@ Digital controls are one method per button. Names are semantic rather than PlayS
 
 ## Stick warp
 
-Physical analog sticks move in a circle. The on-screen keyboard is a rectangle of keys. `warp` pushes samples toward the square corners as `stick_warp` goes from 0 (leave the circle) to 1 (fill the square). It then clamps to −1…1.
+Physical analog sticks move in a circle. The on-screen keyboard is a rectangle of keys. `warp` pushes samples toward the square corners as the profile’s `warp` goes from 0 (leave the circle) to 1 (fill the square). It then clamps to −1…1. Pads and sticks on a Steam Controller 2, and the DualShock 4 stick, each have their own value.
 
-That function is applied on every `left_stick` / `right_stick` read unless the implementation bypasses the default. Keyboard hit-testing uses the warped coordinates, not the raw circle.
+That function is applied on every `left_stick` / `right_stick` / `left_pad` / `right_pad` read unless the implementation bypasses the default. Keyboard hit-testing uses the warped coordinates, not the raw circle.
 
 ## Buttons and bindings as strings
 
@@ -51,7 +51,7 @@ That function is applied on every `left_stick` / `right_stick` read unless the i
 
 **This module does not fire actions.** It only names buttons and produces snapshots. `BindingEngine` consumes those snapshots.
 
-**Warp is not stick-to-key mapping.** After warp, layout code scales the sample by `stick_scale_*` and looks up a hitbox. That is [keyboard-layout.md](keyboard-layout.md).
+**Warp is not stick-to-key mapping.** After warp, layout code scales the sample by that profile’s `scale_x` / `scale_y` and looks up a hitbox. That is [keyboard-layout.md](keyboard-layout.md).
 
 **Haptics, lizard mode, and report IDs** are inside the device files.
 

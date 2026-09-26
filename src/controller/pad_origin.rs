@@ -3,7 +3,7 @@
 //! First-touch `T` is stored after a short settle. Each frame the stick origin
 //! is `T * relative` (`0` = pad center, `1` = the touch). Output is `pos` minus
 //! that origin, with leftover travel on the short edge stretched toward ±1.
-//! Circle-to-square `stick_warp` runs after this, via [`ControllerInput::left_pad`].
+//! Circle-to-square warp runs after this, via [`ControllerInput::left_pad`].
 //! Lift is `None`; analog sticks are not stretched.
 
 use std::time::{Duration, Instant};
@@ -167,10 +167,16 @@ impl ControllerInput for MappedSc2Input {
         self.inner.right_pad_raw()
     }
     fn left_pad(&self) -> Option<(f32, f32)> {
-        self.left.map(|p| warp(p, config::get().stick_warp))
+        let warp_amount = config::get()
+            .aim(self.family(), config::AimSurface::Pad)
+            .warp;
+        self.left.map(|p| warp(p, warp_amount))
     }
     fn right_pad(&self) -> Option<(f32, f32)> {
-        self.right.map(|p| warp(p, config::get().stick_warp))
+        let warp_amount = config::get()
+            .aim(self.family(), config::AimSurface::Pad)
+            .warp;
+        self.right.map(|p| warp(p, warp_amount))
     }
     fn trigger_left(&self) -> Option<u8> {
         self.inner.trigger_left()

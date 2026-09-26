@@ -49,6 +49,8 @@ pub struct GeometrySnapshot {
     pub scale_y: f32,
     pub stick_scale_x: f32,
     pub stick_scale_y: f32,
+    pub pad_scale_x: Option<f32>,
+    pub pad_scale_y: Option<f32>,
     pub left_rest: (f32, f32),
     pub right_rest: (f32, f32),
     pub left_bounds: Vec<SnapRect>,
@@ -223,6 +225,8 @@ mod tests {
             scale_y: 32.0,
             stick_scale_x: 3.0,
             stick_scale_y: 2.5,
+            pad_scale_x: Some(3.0),
+            pad_scale_y: Some(2.5),
             left_rest: (100.0, 100.0),
             right_rest: (300.0, 100.0),
             left_bounds: vec![SnapRect {

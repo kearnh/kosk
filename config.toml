@@ -1,8 +1,5 @@
-config_version = 1
+config_version = 2
 start_layout = "main"
-stick_scale_x = 3.8
-stick_scale_y = 2.8
-stick_warp = 1.0
 preferred_controller = ["sc2"]
 transparent = true
 keyboard_opacity = 1.00
@@ -12,9 +9,6 @@ scale_x = 30.0
 scale_y = 32.0
 event_debounce_ms = 240
 event_debounce_repeat_ms = 55
-stick_select_lock_ms = 100
-# Current key keeps the highlight until a neighbor is this times closer (1 = off).
-stick_select_sticky = 1.25
 controller_map = "mappings.toml"
 record_file = "captures/kosk-%.krec"
 
@@ -50,9 +44,30 @@ trigger_right_threshold = 40
 touchpad_left_haptic = "low"
 touchpad_right_haptic = "low"
 
+[sc2.pad]
+scale_x = 3.8
+scale_y = 2.8
+warp = 1.0
+select_sticky = 1.25
+select_lock_ms = 100
+
+[sc2.stick]
+scale_x = 3.8
+scale_y = 2.8
+warp = 1.0
+select_sticky = 1.25
+select_lock_ms = 100
+
 [ps4]
 trigger_left_threshold = 40
 trigger_right_threshold = 40
+
+[ps4.stick]
+scale_x = 3.8
+scale_y = 2.8
+warp = 1.0
+select_sticky = 1.25
+select_lock_ms = 100
 
 [battery]
 draw_button = false

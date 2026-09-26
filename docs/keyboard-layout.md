@@ -45,13 +45,13 @@ After egui draws, `update_geometry` stores centers and calls `calculate_hitboxes
 
 Stick rest positions come from optional top-level `stick_rest_left` / `stick_rest_right` fields: each is a `[row, column]` index into `rows` / `rows.keys` (0-based). The referenced key must exist and must not be `Skip` (Skip has no captured centre). If a field is omitted, that side’s rest centre is `(0, 0)`. The checked-in `main` layout points at home-row `d` / `k`; `symbols` uses the same row/column slots. A layout may use a different rest. After a switch, analog mapping is offset by the rest delta so the cursor does not jump; idle clears that offset.
 
-`stick_to_cursor_left` / `_right` take a warped stick in −1…1, multiply by `scale_* * stick_scale_*`, and add the rest center. That point is then hit-tested.
+`stick_to_cursor` takes a warped sample in −1…1, multiplies by `scale_*` times the aim profile’s `scale_x` / `scale_y`, and adds the rest center. A pad sample uses `[sc2.pad]`. A stick sample uses `[sc2.stick]` or `[ps4.stick]`. That point is then hit-tested.
 
 ## Stick bounds
 
 Optional `stick_bounds.left` / `right` are lists of rectangles in unscaled units. They are scaled at load. When key centers later move, the same translation is applied so clamping stays on the keys. If they are present and the cursor is outside all of them, the cursor is clamped to the nearest point on the nearest rectangle before hit-testing. That keeps the left stick from highlighting keys on the right half of a split keyboard when you push to the edge.
 
-`get_key_at` walks hitboxes and picks the containing shape with the smallest rim-fraction score: `0` at that key’s centre and `1` on its rim (`distance² / r²` for circles; the usual ellipse implicit value for wide keys). Overlapping hitboxes therefore resolve to the key whose centre you are closer to relative to that key’s own size, not to draw order, and not to raw pixel distance (which would let a wide ellipse beat a letter almost everywhere they overlap). Keyboard mode can pass the previous cell and `stick_select_sticky` into the same picker so that cell keeps winning until a neighbor is clearly closer; `get_key_at` itself does not apply that margin.
+`get_key_at` walks hitboxes and picks the containing shape with the smallest rim-fraction score: `0` at that key’s centre and `1` on its rim (`distance² / r²` for circles; the usual ellipse implicit value for wide keys). Overlapping hitboxes therefore resolve to the key whose centre you are closer to relative to that key’s own size, not to draw order, and not to raw pixel distance (which would let a wide ellipse beat a letter almost everywhere they overlap). Keyboard mode can pass the previous cell and that profile’s `select_sticky` into the same picker so that cell keeps winning until a neighbor is clearly closer; `get_key_at` itself does not apply that margin.
 
 ## Debug drawing
 
@@ -61,7 +61,7 @@ When `[debug]` is set, `draw_debug` can paint the warped stick positions (`show_
 
 **This module does not enqueue events.** It answers “which `RawKey` is under this stick?” and “what should this button look like?”
 
-**Config `scale_*` and `stick_scale_*` are applied here, but defined in config.** Replay can override them via the tape header without editing the layout file.
+**Config `scale_*` and each aim profile’s `scale_*` are applied here, but defined in config.** Replay can override them via the tape header without editing the layout file.
 
 ## Summary
 

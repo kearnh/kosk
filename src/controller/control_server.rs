@@ -371,7 +371,9 @@ fn handle_geometry_command(cmd: &str, id: Value, req: &Value) -> Value {
                         "scale_x": snap.scale_x,
                         "scale_y": snap.scale_y,
                         "stick_scale_x": snap.stick_scale_x,
-                        "stick_scale_y": snap.stick_scale_y
+                        "stick_scale_y": snap.stick_scale_y,
+                        "pad_scale_x": snap.pad_scale_x,
+                        "pad_scale_y": snap.pad_scale_y
                     }
                 }),
             )
@@ -522,6 +524,8 @@ mod tests {
             scale_y: 32.0,
             stick_scale_x: 3.0,
             stick_scale_y: 2.5,
+            pad_scale_x: Some(3.0),
+            pad_scale_y: Some(2.5),
             left_rest: (100.0, 100.0),
             right_rest: (300.0, 100.0),
             left_bounds: vec![SnapRect {

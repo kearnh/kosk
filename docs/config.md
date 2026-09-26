@@ -26,15 +26,11 @@ Auxiliary binaries that need config without parsing those flags call `init_from_
 The deserialized struct is the source of truth after a successful load. Fields that matter across the rest of the docs:
 
 - **`layouts`** maps layout names to file paths. A layout named `main` is required. `start_layout` must name an entry in that map.
-- **`stick_scale_x` / `stick_scale_y`** multiply analog deflection after it is mapped onto the keyboard (see [keyboard-layout.md](keyboard-layout.md)).
-- **`stick_warp`** is the circle-to-square warp applied in `ControllerInput::left_stick` / `right_stick` (see [controller.md](controller.md)).
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
 - **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `0.92`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
-- **`stick_select_lock_ms`** holds stick highlighting still after a letter is sent ([keyboard.md](keyboard.md)).
-- **`stick_select_sticky`** is the extra hit-test margin for the key a stick is already on (`1` is off; default `1.25`). See [keyboard.md](keyboard.md).
 - **`controller_map`** is either an inline table or a string path to another TOML file. The checked-in config uses `controller_map = "mappings.toml"`.
-- **`[sc2]`** and **`[ps4]`** are device feel: trigger thresholds, pad-origin relative/stretch, haptics. They are not binding names.
+- **`[sc2]`** and **`[ps4]`** are device feel: trigger thresholds, pad-origin relative/stretch, haptics. They are not binding names. Aim is nested under them: **`[sc2.pad]`**, **`[sc2.stick]`**, and **`[ps4.stick]`**. Each profile has `scale_x` / `scale_y` (how far a full deflection reaches on the keyboard), `warp` (circle-to-square, `0` leaves the circle and `1` fills the corners), `select_sticky` (extra hit-test margin for the current key; `1` is off), and `select_lock_ms` (how long the highlight stays after a letter is sent). There is no `ps4.pad`. A touched pad uses the pad profile; a stick uses that controller’s stick profile. Replay uses the family stored on the tape, or Steam Controller 2 when the tape has none. See [keyboard.md](keyboard.md), [keyboard-layout.md](keyboard-layout.md), and [controller.md](controller.md).
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
@@ -82,7 +78,7 @@ Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.
 
 **Action semantics are not in this module.** Config stores `"toggleShift"` as a string. `KeyboardAction::try_from` decides what that means.
 
-**Device HID is not configured here beyond thresholds and pad origin.** Button-to-action mapping is `controller_map`. Pad origin and trigger dead zones are `[sc2]` / `[ps4]`.
+**Device HID is not configured here beyond thresholds, pad origin, and aim profiles.** Button-to-action mapping is `controller_map`. Pad origin, trigger dead zones, and aim live on `[sc2]` / `[ps4]`.
 
 ## Summary
 

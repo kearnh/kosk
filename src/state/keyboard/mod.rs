@@ -7,6 +7,7 @@ use crate::controller::bindings::BindingEngine;
 use crate::controller::record as input_record;
 use crate::controller::record::{MappingScales, TapeHeader};
 use crate::controller::BatteryStatus;
+use crate::controller::ControllerKind;
 use crate::controller::StickSide;
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
@@ -173,8 +174,6 @@ pub struct KeyboardState {
     bindings: BindingEngine<KeyboardAction>,
     last_left_stick_action: Option<Instant>,
     last_right_stick_action: Option<Instant>,
-    stick_select_lock_ms: Duration,
-    stick_select_sticky: f32,
     label_cache: display_icon::LabelCache,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
@@ -709,7 +708,7 @@ impl KeyboardState {
         Ok(())
     }
 
-    pub(crate) fn tape_header(&self) -> Result<TapeHeader> {
+    pub(crate) fn tape_header(&self, kind: ControllerKind) -> Result<TapeHeader> {
         let cfg = self.cfg();
         let mut layouts: Vec<(String, String)> = self
             .layouts
@@ -717,14 +716,23 @@ impl KeyboardState {
             .map(|(name, layout)| (name.clone(), layout.source().to_owned()))
             .collect();
         layouts.sort_by(|a, b| a.0.cmp(&b.0));
+        let family = match config::resolved_controller(kind) {
+            ControllerKind::Ps4 => ControllerKind::Ps4,
+            _ => ControllerKind::Sc2,
+        };
         Ok(TapeHeader {
             version: crate::controller::record::CURRENT_TAPE_VERSION,
             current_layout: self.current_layout.clone(),
+            controller: Some(family),
             scales: MappingScales {
                 scale_x: cfg.scale_x,
                 scale_y: cfg.scale_y,
-                stick_scale_x: cfg.stick_scale_x,
-                stick_scale_y: cfg.stick_scale_y,
+                sc2_pad_scale_x: cfg.sc2.pad.scale_x,
+                sc2_pad_scale_y: cfg.sc2.pad.scale_y,
+                sc2_stick_scale_x: cfg.sc2.stick.scale_x,
+                sc2_stick_scale_y: cfg.sc2.stick.scale_y,
+                ps4_stick_scale_x: cfg.ps4.stick.scale_x,
+                ps4_stick_scale_y: cfg.ps4.stick.scale_y,
             },
             config_toml: Some(config::tape_config_toml(&cfg)?),
             layouts,
@@ -736,12 +744,19 @@ impl KeyboardState {
         for (name, toml) in &header.layouts {
             map.insert(
                 name.clone(),
-                KeyboardLayout::load_with_scales(
+                KeyboardLayout::load_with_profiles(
                     toml,
                     header.scales.scale_x,
                     header.scales.scale_y,
-                    header.scales.stick_scale_x,
-                    header.scales.stick_scale_y,
+                    (header.scales.sc2_pad_scale_x, header.scales.sc2_pad_scale_y),
+                    (
+                        header.scales.sc2_stick_scale_x,
+                        header.scales.sc2_stick_scale_y,
+                    ),
+                    (
+                        header.scales.ps4_stick_scale_x,
+                        header.scales.ps4_stick_scale_y,
+                    ),
                 )?,
             );
         }
@@ -888,20 +903,58 @@ impl KeyboardState {
         events: &mut EventQueue,
     ) -> Result<()> {
         self.note_battery(input.battery());
+        if let Some(layout) = self.layouts.get_mut(&self.current_layout) {
+            layout.set_aim_kind(input.family());
+        }
+        let cfg = self.cfg();
 
         let current_layout = self
             .layouts
             .get(&self.current_layout)
             .ok_or_else(|| anyhow::anyhow!("Current layout '{}' not found", self.current_layout))?;
 
-        let analog_left = input.left_pad().unwrap_or_else(|| input.left_stick());
-        let analog_right = input.right_pad().unwrap_or_else(|| input.right_stick());
+        let (analog_left, left_pad) = match input.left_pad() {
+            Some(p) => (p, true),
+            None => (input.left_stick(), false),
+        };
+        let (analog_right, right_pad) = match input.right_pad() {
+            Some(p) => (p, true),
+            None => (input.right_stick(), false),
+        };
+        let left_aim = cfg.aim(
+            input.family(),
+            if left_pad {
+                config::AimSurface::Pad
+            } else {
+                config::AimSurface::Stick
+            },
+        );
+        let right_aim = cfg.aim(
+            input.family(),
+            if right_pad {
+                config::AimSurface::Pad
+            } else {
+                config::AimSurface::Stick
+            },
+        );
+        let (left_sx, left_sy) = current_layout.aim_scale(input.family(), left_pad);
+        let (right_sx, right_sy) = current_layout.aim_scale(input.family(), right_pad);
         let left_px = {
-            let c = current_layout.stick_to_cursor(StickSide::Left, analog_left);
+            let c = current_layout.stick_to_cursor_scaled(
+                StickSide::Left,
+                analog_left,
+                left_sx,
+                left_sy,
+            );
             layout::clamp_stick_cursor(c, &current_layout.left_stick_bounds)
         };
         let right_px = {
-            let c = current_layout.stick_to_cursor(StickSide::Right, analog_right);
+            let c = current_layout.stick_to_cursor_scaled(
+                StickSide::Right,
+                analog_right,
+                right_sx,
+                right_sy,
+            );
             layout::clamp_stick_cursor(c, &current_layout.right_stick_bounds)
         };
 
@@ -909,25 +962,29 @@ impl KeyboardState {
         let layout_before = self.current_layout.clone();
 
         if current_layout.captured_centres.is_some() {
-            let selected_left = current_layout.nearest_cell(
+            let selected_left = current_layout.nearest_cell_scaled(
                 StickSide::Left,
                 analog_left,
                 prev_selected.left,
-                self.stick_select_sticky,
+                left_aim.select_sticky,
+                left_sx,
+                left_sy,
             );
-            let selected_right = current_layout.nearest_cell(
+            let selected_right = current_layout.nearest_cell_scaled(
                 StickSide::Right,
                 analog_right,
                 prev_selected.right,
-                self.stick_select_sticky,
+                right_aim.select_sticky,
+                right_sx,
+                right_sy,
             );
 
             let lock_left = self
                 .last_left_stick_action
-                .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+                .is_some_and(|t| t.elapsed() <= Duration::from_millis(left_aim.select_lock_ms));
             let lock_right = self
                 .last_right_stick_action
-                .is_some_and(|t| t.elapsed() <= self.stick_select_lock_ms);
+                .is_some_and(|t| t.elapsed() <= Duration::from_millis(right_aim.select_lock_ms));
 
             let nearest_left = if lock_left {
                 prev_selected.left
@@ -1268,20 +1325,18 @@ impl KeyboardState {
         self.layouts = HashMap::new();
         for (name, path) in &cfg.layouts {
             let toml = crate::config::read_layout_source(path)?;
-            let layout = KeyboardLayout::load_with_scales(
+            let layout = KeyboardLayout::load_with_profiles(
                 &toml,
                 cfg.scale_x,
                 cfg.scale_y,
-                cfg.stick_scale_x,
-                cfg.stick_scale_y,
+                (cfg.sc2.pad.scale_x, cfg.sc2.pad.scale_y),
+                (cfg.sc2.stick.scale_x, cfg.sc2.stick.scale_y),
+                (cfg.ps4.stick.scale_x, cfg.ps4.stick.scale_y),
             )?;
             self.layouts.insert(name.clone(), layout);
         }
 
         self.bindings = load_bindings(StateId::Keyboard)?;
-
-        self.stick_select_lock_ms = Duration::from_millis(cfg.stick_select_lock_ms);
-        self.stick_select_sticky = cfg.stick_select_sticky;
 
         self.on_layouts_changed();
 

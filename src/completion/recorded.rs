@@ -116,12 +116,8 @@ mod tests {
             header: TapeHeader {
                 version,
                 current_layout: "main".into(),
-                scales: MappingScales {
-                    scale_x: 1.0,
-                    scale_y: 1.0,
-                    stick_scale_x: 1.0,
-                    stick_scale_y: 1.0,
-                },
+                controller: None,
+                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
                 config_toml: (version >= 1).then(|| "event_debounce_ms = 1\n".into()),
                 layouts: Vec::new(),
             },

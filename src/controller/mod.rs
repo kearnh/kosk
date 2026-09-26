@@ -69,13 +69,22 @@ pub trait ControllerInput: Debug {
     fn left_stick_raw(&self) -> (f32, f32);
     fn right_stick_raw(&self) -> (f32, f32);
 
-    /// Analog stick after circle-to-square `stick_warp` only (no pad-origin stretch).
-    // FIXME can we cache stick_warp somehow so we don't have to constantly lock config mutex?
+    /// Analog stick after circle-to-square warp only (no pad-origin stretch).
     fn left_stick(&self) -> (f32, f32) {
-        warp(self.left_stick_raw(), config::get().stick_warp)
+        warp(
+            self.left_stick_raw(),
+            config::get()
+                .aim(self.family(), config::AimSurface::Stick)
+                .warp,
+        )
     }
     fn right_stick(&self) -> (f32, f32) {
-        warp(self.right_stick_raw(), config::get().stick_warp)
+        warp(
+            self.right_stick_raw(),
+            config::get()
+                .aim(self.family(), config::AimSurface::Stick)
+                .warp,
+        )
     }
 
     /// Trackpad sample, or `None` when the thumb is lifted. Centered touch is
@@ -87,12 +96,16 @@ pub trait ControllerInput: Debug {
         None
     }
     fn left_pad(&self) -> Option<(f32, f32)> {
-        self.left_pad_raw()
-            .map(|p| warp(p, config::get().stick_warp))
+        let warp_amount = config::get()
+            .aim(self.family(), config::AimSurface::Pad)
+            .warp;
+        self.left_pad_raw().map(|p| warp(p, warp_amount))
     }
     fn right_pad(&self) -> Option<(f32, f32)> {
-        self.right_pad_raw()
-            .map(|p| warp(p, config::get().stick_warp))
+        let warp_amount = config::get()
+            .aim(self.family(), config::AimSurface::Pad)
+            .warp;
+        self.right_pad_raw().map(|p| warp(p, warp_amount))
     }
 
     fn trigger_left(&self) -> Option<u8>;
@@ -455,6 +468,7 @@ impl ConnectedController {
 pub fn find_device() -> Option<ConnectedController> {
     if config::mcp_controller_mode() {
         record::session().set_replay(false);
+        config::set_replay_aim_family(None);
         return Some(ConnectedController::Virtual);
     }
     let preferred = config::get().preferred_controller.clone();
@@ -469,6 +483,7 @@ pub fn find_device() -> Option<ConnectedController> {
         };
     }
     record::session().set_replay(false);
+    config::set_replay_aim_family(None);
 
     let hid = HidApi::new().ok()?;
     let order = resolve_controller_order(&preferred);

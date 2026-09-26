@@ -17,7 +17,7 @@ use strum::VariantArray;
 use crate::controller::{ControllerButton, ControllerInput, ControllerKind};
 
 pub const TAPE_MAGIC: &str = "KOSKREC 1";
-pub const CURRENT_TAPE_VERSION: u32 = 2;
+pub const CURRENT_TAPE_VERSION: u32 = 3;
 
 /// Bit *i* in snapshots is `VARIANTS[i]`; append new buttons at the end of the enum.
 pub(crate) const BUTTON_ORDER: &[ControllerButton] = ControllerButton::VARIANTS;
@@ -26,8 +26,28 @@ pub(crate) const BUTTON_ORDER: &[ControllerButton] = ControllerButton::VARIANTS;
 pub struct MappingScales {
     pub scale_x: f32,
     pub scale_y: f32,
-    pub stick_scale_x: f32,
-    pub stick_scale_y: f32,
+    pub sc2_pad_scale_x: f32,
+    pub sc2_pad_scale_y: f32,
+    pub sc2_stick_scale_x: f32,
+    pub sc2_stick_scale_y: f32,
+    pub ps4_stick_scale_x: f32,
+    pub ps4_stick_scale_y: f32,
+}
+
+impl MappingScales {
+    /// One range for every profile. Tapes older than version 3 store only this.
+    pub fn legacy(scale_x: f32, scale_y: f32, stick_x: f32, stick_y: f32) -> Self {
+        Self {
+            scale_x,
+            scale_y,
+            sc2_pad_scale_x: stick_x,
+            sc2_pad_scale_y: stick_y,
+            sc2_stick_scale_x: stick_x,
+            sc2_stick_scale_y: stick_y,
+            ps4_stick_scale_x: stick_x,
+            ps4_stick_scale_y: stick_y,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +55,8 @@ pub struct TapeHeader {
     /// Missing `version` line in the file is 0.
     pub version: u32,
     pub current_layout: String,
+    /// `None` on tapes older than version 3. Playback treats that as SC2.
+    pub controller: Option<ControllerKind>,
     pub scales: MappingScales,
     /// Recorded config TOML (version >= 1). Blacklisted keys already stripped.
     pub config_toml: Option<String>,
@@ -364,14 +386,34 @@ pub fn encode_header(header: &TapeHeader) -> Result<Vec<u8>> {
         writeln!(out, "version {}", header.version)?;
     }
     writeln!(out, "current_layout {}", header.current_layout)?;
-    writeln!(
-        out,
-        "scale {} {} {} {}",
-        header.scales.scale_x,
-        header.scales.scale_y,
-        header.scales.stick_scale_x,
-        header.scales.stick_scale_y
-    )?;
+    if header.version >= 3 {
+        let family = match header.controller {
+            Some(ControllerKind::Ps4) => "ps4",
+            Some(ControllerKind::Sc2) | Some(ControllerKind::Replay) | None => "sc2",
+        };
+        writeln!(out, "controller {family}")?;
+        writeln!(
+            out,
+            "scale {} {} {} {} {} {} {} {}",
+            header.scales.scale_x,
+            header.scales.scale_y,
+            header.scales.sc2_pad_scale_x,
+            header.scales.sc2_pad_scale_y,
+            header.scales.sc2_stick_scale_x,
+            header.scales.sc2_stick_scale_y,
+            header.scales.ps4_stick_scale_x,
+            header.scales.ps4_stick_scale_y
+        )?;
+    } else {
+        writeln!(
+            out,
+            "scale {} {} {} {}",
+            header.scales.scale_x,
+            header.scales.scale_y,
+            header.scales.sc2_stick_scale_x,
+            header.scales.sc2_stick_scale_y
+        )?;
+    }
     if let Some(toml) = &header.config_toml {
         write_len_prefixed_blob(&mut out, "config", None, toml)?;
     }
@@ -621,6 +663,22 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         (0, current_layout)
     };
 
+    let controller = if version >= 3 {
+        line.clear();
+        reader.read_line(&mut line)?;
+        let name = line
+            .trim()
+            .strip_prefix("controller ")
+            .ok_or_else(|| anyhow::anyhow!("missing controller"))?;
+        Some(match name {
+            "sc2" => ControllerKind::Sc2,
+            "ps4" => ControllerKind::Ps4,
+            other => bail!("unknown recording controller '{other}'"),
+        })
+    } else {
+        None
+    };
+
     line.clear();
     reader.read_line(&mut line)?;
     let scale = line
@@ -628,23 +686,53 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         .strip_prefix("scale ")
         .ok_or_else(|| anyhow::anyhow!("missing scale"))?;
     let mut sp = scale.split_whitespace();
-    let scales = MappingScales {
-        scale_x: sp
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("scale_x"))?
-            .parse()?,
-        scale_y: sp
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("scale_y"))?
-            .parse()?,
-        stick_scale_x: sp
+    let scale_x = sp
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("scale_x"))?
+        .parse()?;
+    let scale_y = sp
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("scale_y"))?
+        .parse()?;
+    let scales = if version >= 3 {
+        MappingScales {
+            scale_x,
+            scale_y,
+            sc2_pad_scale_x: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_x"))?
+                .parse()?,
+            sc2_pad_scale_y: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_y"))?
+                .parse()?,
+            sc2_stick_scale_x: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_x"))?
+                .parse()?,
+            sc2_stick_scale_y: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_y"))?
+                .parse()?,
+            ps4_stick_scale_x: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_x"))?
+                .parse()?,
+            ps4_stick_scale_y: sp
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_y"))?
+                .parse()?,
+        }
+    } else {
+        let stick_x = sp
             .next()
             .ok_or_else(|| anyhow::anyhow!("stick_scale_x"))?
-            .parse()?,
-        stick_scale_y: sp
+            .parse()?;
+        let stick_y = sp
             .next()
             .ok_or_else(|| anyhow::anyhow!("stick_scale_y"))?
-            .parse()?,
+            .parse()?;
+        MappingScales::legacy(scale_x, scale_y, stick_x, stick_y)
     };
 
     let mut layouts = Vec::new();
@@ -694,6 +782,7 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
             header: TapeHeader {
                 version,
                 current_layout,
+                controller,
                 scales,
                 config_toml,
                 layouts,
@@ -709,6 +798,7 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         header: TapeHeader {
             version,
             current_layout,
+            controller,
             scales,
             config_toml,
             layouts,
@@ -897,12 +987,8 @@ mod tests {
         TapeHeader {
             version: 0,
             current_layout: "main".into(),
-            scales: MappingScales {
-                scale_x: 30.0,
-                scale_y: 32.0,
-                stick_scale_x: 3.0,
-                stick_scale_y: 2.5,
-            },
+            controller: None,
+            scales: MappingScales::legacy(30.0, 32.0, 3.0, 2.5),
             config_toml: None,
             layouts: vec![
                 ("other".into(), "pad_x = 1\n[[rows]]\nitems = []\n".into()),
@@ -1135,12 +1221,8 @@ mod tests {
         TapeHeader {
             version: 1,
             current_layout: "main".into(),
-            scales: MappingScales {
-                scale_x: 30.0,
-                scale_y: 32.0,
-                stick_scale_x: 3.0,
-                stick_scale_y: 2.5,
-            },
+            controller: None,
+            scales: MappingScales::legacy(30.0, 32.0, 3.0, 2.5),
             config_toml: Some("event_debounce_ms = 123\n".into()),
             layouts: vec![("main".into(), "pad_x = 0.1\n[[rows]]\nitems = []\n".into())],
         }
@@ -1189,12 +1271,8 @@ mod tests {
             header: TapeHeader {
                 version: CURRENT_TAPE_VERSION,
                 current_layout: "main".into(),
-                scales: MappingScales {
-                    scale_x: 1.0,
-                    scale_y: 1.0,
-                    stick_scale_x: 1.0,
-                    stick_scale_y: 1.0,
-                },
+                controller: Some(ControllerKind::Sc2),
+                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
                 config_toml: Some("event_debounce_ms = 1\n".into()),
                 layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
             },

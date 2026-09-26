@@ -18,15 +18,16 @@ The session is a process-wide object. The controller thread calls `tap_input` on
 
 ## Tape header
 
-A file begins with the magic line `KOSKREC 1`. Version 2 (current) then includes:
+A file begins with the magic line `KOSKREC 1`. Version 3 (current) then includes:
 
-- `version 2`
+- `version 3`
 - `current_layout` and the name of the layout that was active when recording started
-- `scale` with four floats: `scale_x`, `scale_y`, `stick_scale_x`, `stick_scale_y`
+- `controller` `sc2` or `ps4`
+- `scale` with eight floats: layout `scale_x`, `scale_y`, then `sc2.pad`, `sc2.stick`, and `ps4.stick` ranges (`scale_x` `scale_y` each)
 - a length-prefixed `config` blob: live config with a blacklist of keys stripped (see [config.md](config.md))
 - length-prefixed `layout` blobs, one per named layout, containing the TOML source
 
-Version 1 tapes have the same header and no suggestion lines. Version 0 tapes (no `version` line, no config blob) still parse. On replay, version 0 and 1 keep the process’s on-disk config, install layouts from the header, and keep the live completion engine. A version 2 tape does not store the dictionary or the user cache. `[completion]` stays off the config blob.
+Version 2 tapes have the same header as version 1 plus suggestion lines, and a four-float `scale` (`scale_x`, `scale_y`, and one stick range). That one range is applied to every aim profile, and playback uses Steam Controller 2. Version 1 tapes have that header and no suggestion lines. Version 0 tapes (no `version` line, no config blob) still parse. On replay, version 0 and 1 keep the process’s on-disk config, install layouts from the header, and keep the live completion engine. A version 2 or 3 tape does not store the dictionary or the user cache. `[completion]` stays off the config blob.
 
 The header exists so replay can reconstruct the keyboard the user saw: key sizes, stick scales, debounce milliseconds, and which layout was current. Window position, transparency, preferred controller, and the keys sink are intentionally not taken from the tape; those are operator settings.
 
@@ -70,4 +71,4 @@ The keys log, if enabled, uses `playback_origin` for timestamps so a line’s mi
 
 ## Summary
 
-A `.krec` file is a header (layouts plus a stripped config) followed by a timestamped stream of stick/button snapshots, idle marks, layout changes, debounce traces, and the completion chips that were shown. Recording is a side session tapped from the HID thread, the event queue, and the completion session. Replay is a `ControllerInput` that sleeps to the original timeline and feeds those snapshots back into `AppState`, using stored stick values as already-mapped coordinates. A version 2 playback serves the recorded chips from a completion backend and does not load the dictionary or the user cache.
+A `.krec` file is a header (layouts plus a stripped config) followed by a timestamped stream of stick/button snapshots, idle marks, layout changes, debounce traces, and the completion chips that were shown. Recording is a side session tapped from the HID thread, the event queue, and the completion session. Replay is a `ControllerInput` that sleeps to the original timeline and feeds those snapshots back into `AppState`, using stored stick values as already-mapped coordinates. A version 2 or newer playback serves the recorded chips from a completion backend and does not load the dictionary or the user cache.

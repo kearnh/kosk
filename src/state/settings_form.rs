@@ -49,10 +49,11 @@ const COLUMNS_MAX: usize = 6;
 const ROWS_MIN: usize = 1;
 const ROWS_MAX: usize = 3;
 
-const PAGES: [Page; 6] = [
+const PAGES: [Page; 7] = [
     Page::Suggestions,
     Page::Overlay,
     Page::Typing,
+    Page::Pads,
     Page::Sticks,
     Page::Controller,
     Page::Debug,
@@ -70,6 +71,7 @@ pub(in crate::state) enum Page {
     Suggestions,
     Overlay,
     Typing,
+    Pads,
     Sticks,
     Controller,
     Debug,
@@ -92,6 +94,11 @@ pub(in crate::state) enum RowId {
     KeyHeight,
     DelayBeforeRepeat,
     RepeatInterval,
+    PadHorizontalRange,
+    PadVerticalRange,
+    PadSquare,
+    PadStickiness,
+    PadHoldAfterKey,
     HorizontalRange,
     VerticalRange,
     SquareStick,
@@ -210,7 +217,7 @@ impl SettingsForm {
         self.focus = (self.focus as i32 + delta).rem_euclid(n as i32) as usize;
     }
 
-    pub(in crate::state) fn back(&mut self) -> Effect {
+    pub(in crate::state) fn back(&mut self, kind: ControllerKind) -> Effect {
         let persist = !self.dirty.is_empty();
         match self.view {
             View::Hub => Effect {
@@ -229,7 +236,7 @@ impl SettingsForm {
             }
             View::Page(page) => {
                 self.view = View::Index;
-                self.focus = page_index(page);
+                self.focus = page_index(page, kind);
                 Effect {
                     open: None,
                     persist,
@@ -254,7 +261,7 @@ impl SettingsForm {
                 _ => Effect::open(StateId::Keyboard),
             },
             View::Index => {
-                let page = PAGES[self.focus];
+                let page = pages_for(kind)[self.focus];
                 self.view = View::Page(page);
                 self.focus = 0;
                 Effect::none()
@@ -276,13 +283,14 @@ impl SettingsForm {
         }
     }
 
-    pub(in crate::state) fn shift_page(&mut self, dir: i32) -> Effect {
+    pub(in crate::state) fn shift_page(&mut self, dir: i32, kind: ControllerKind) -> Effect {
         let View::Page(page) = self.view else {
             return Effect::none();
         };
         let persist = !self.dirty.is_empty();
-        let n = PAGES.len() as i32;
-        let next = PAGES[(page_index(page) as i32 + dir).rem_euclid(n) as usize];
+        let pages = pages_for(kind);
+        let n = pages.len() as i32;
+        let next = pages[(page_index(page, kind) as i32 + dir).rem_euclid(n) as usize];
         self.view = View::Page(next);
         self.focus = 0;
         Effect {
@@ -302,9 +310,9 @@ impl SettingsForm {
         let Some(id) = self.focused_row(kind) else {
             return false;
         };
-        let before = format_value(cfg, id);
-        apply_dir(cfg, id, dir);
-        if format_value(cfg, id) == before {
+        let before = format_value(cfg, id, kind);
+        apply_dir(cfg, id, dir, kind);
+        if format_value(cfg, id, kind) == before {
             return false;
         }
         if !self.dirty.contains(&id) {
@@ -381,7 +389,7 @@ impl SettingsForm {
                     value: None,
                 })
                 .collect(),
-            View::Index => PAGES
+            View::Index => pages_for(kind)
                 .iter()
                 .map(|page| DrawnRow {
                     label: page.title(),
@@ -398,7 +406,7 @@ impl SettingsForm {
                     DrawnRow {
                         label,
                         explain: Some(explain),
-                        value: Some(format_value(cfg, id)),
+                        value: Some(format_value(cfg, id, kind)),
                     }
                 })
                 .collect(),
@@ -408,7 +416,7 @@ impl SettingsForm {
     fn len(&self, kind: ControllerKind) -> usize {
         match self.view {
             View::Hub => HUB_LEN,
-            View::Index => PAGES.len(),
+            View::Index => pages_for(kind).len(),
             View::Page(page) => page.rows(kind).len(),
         }
     }
@@ -427,6 +435,7 @@ impl Page {
             Page::Suggestions => "Suggestions",
             Page::Overlay => "Overlay",
             Page::Typing => "Typing",
+            Page::Pads => "Pads",
             Page::Sticks => "Sticks",
             Page::Controller => "Controller",
             Page::Debug => "Debug",
@@ -453,6 +462,13 @@ impl Page {
                 RowId::KeyHeight,
             ],
             Page::Typing => &[RowId::DelayBeforeRepeat, RowId::RepeatInterval],
+            Page::Pads => &[
+                RowId::PadHorizontalRange,
+                RowId::PadVerticalRange,
+                RowId::PadSquare,
+                RowId::PadStickiness,
+                RowId::PadHoldAfterKey,
+            ],
             Page::Sticks => &[
                 RowId::HorizontalRange,
                 RowId::VerticalRange,
@@ -480,8 +496,18 @@ impl Page {
     }
 }
 
-fn page_index(page: Page) -> usize {
-    PAGES.iter().position(|p| *p == page).unwrap_or(0)
+fn pages_for(kind: ControllerKind) -> Vec<Page> {
+    PAGES.into_iter().filter(|page| page.shown(kind)).collect()
+}
+
+fn page_index(page: Page, kind: ControllerKind) -> usize {
+    pages_for(kind).iter().position(|p| *p == page).unwrap_or(0)
+}
+
+impl Page {
+    fn shown(self, kind: ControllerKind) -> bool {
+        !matches!((self, kind), (Page::Pads, ControllerKind::Ps4))
+    }
 }
 
 fn hub_label(index: usize) -> &'static str {
@@ -553,6 +579,26 @@ fn row_text(id: RowId) -> (&'static str, &'static str) {
             "Repeat interval",
             "Time between repeats after the first one. 0 uses the delay before repeat for every step.",
         ),
+        RowId::PadHorizontalRange => (
+            "Horizontal range",
+            "A full slide left or right on the pad covers this much of the keyboard. Raise it when the outer columns stay out of reach.",
+        ),
+        RowId::PadVerticalRange => (
+            "Vertical range",
+            "A full slide up or down on the pad covers this much of the keyboard.",
+        ),
+        RowId::PadSquare => (
+            "Square the pad",
+            "0 leaves diagonals where the pad reports them. 1 stretches a full diagonal out to the corner keys. A value in between is a partial stretch.",
+        ),
+        RowId::PadStickiness => (
+            "Stickiness",
+            "The key you are already on keeps the highlight until another key is this many times closer to the pad. At 1.25 a neighbor has to be noticeably closer before the highlight moves. 1 turns that off, and the nearest key wins immediately.",
+        ),
+        RowId::PadHoldAfterKey => (
+            "Hold after a key",
+            "After a letter is sent, the highlight stays on that key for this long. 0 releases it immediately.",
+        ),
         RowId::HorizontalRange => (
             "Horizontal range",
             "A full deflection left or right covers this much of the keyboard. Raise it when the outer columns stay out of reach.",
@@ -618,7 +664,21 @@ fn is_toggle(id: RowId) -> bool {
     )
 }
 
-pub(in crate::state) fn format_value(cfg: &Config, id: RowId) -> String {
+fn stick_aim(cfg: &Config, kind: ControllerKind) -> &crate::config::AimProfile {
+    match crate::config::resolved_controller(kind) {
+        ControllerKind::Ps4 => &cfg.ps4.stick,
+        _ => &cfg.sc2.stick,
+    }
+}
+
+fn stick_aim_mut(cfg: &mut Config, kind: ControllerKind) -> &mut crate::config::AimProfile {
+    match crate::config::resolved_controller(kind) {
+        ControllerKind::Ps4 => &mut cfg.ps4.stick,
+        _ => &mut cfg.sc2.stick,
+    }
+}
+
+pub(in crate::state) fn format_value(cfg: &Config, id: RowId, kind: ControllerKind) -> String {
     match id {
         RowId::Suggestions => on_off(cfg.completion.enabled),
         RowId::OnKeyboard => on_off(cfg.completion.show_in_keyboard),
@@ -638,11 +698,16 @@ pub(in crate::state) fn format_value(cfg: &Config, id: RowId) -> String {
         RowId::KeyHeight => format_f32(cfg.scale_y, 0),
         RowId::DelayBeforeRepeat => format!("{} ms", cfg.event_debounce_ms),
         RowId::RepeatInterval => format!("{} ms", cfg.event_debounce_repeat_ms),
-        RowId::HorizontalRange => format_f32(cfg.stick_scale_x, STICK_RANGE_DIGITS),
-        RowId::VerticalRange => format_f32(cfg.stick_scale_y, STICK_RANGE_DIGITS),
-        RowId::SquareStick => format_f32(cfg.stick_warp, UNIT_DIGITS),
-        RowId::Stickiness => format_f32(cfg.stick_select_sticky, UNIT_DIGITS),
-        RowId::HoldAfterKey => format!("{} ms", cfg.stick_select_lock_ms),
+        RowId::PadHorizontalRange => format_f32(cfg.sc2.pad.scale_x, STICK_RANGE_DIGITS),
+        RowId::PadVerticalRange => format_f32(cfg.sc2.pad.scale_y, STICK_RANGE_DIGITS),
+        RowId::PadSquare => format_f32(cfg.sc2.pad.warp, UNIT_DIGITS),
+        RowId::PadStickiness => format_f32(cfg.sc2.pad.select_sticky, UNIT_DIGITS),
+        RowId::PadHoldAfterKey => format!("{} ms", cfg.sc2.pad.select_lock_ms),
+        RowId::HorizontalRange => format_f32(stick_aim(cfg, kind).scale_x, STICK_RANGE_DIGITS),
+        RowId::VerticalRange => format_f32(stick_aim(cfg, kind).scale_y, STICK_RANGE_DIGITS),
+        RowId::SquareStick => format_f32(stick_aim(cfg, kind).warp, UNIT_DIGITS),
+        RowId::Stickiness => format_f32(stick_aim(cfg, kind).select_sticky, UNIT_DIGITS),
+        RowId::HoldAfterKey => format!("{} ms", stick_aim(cfg, kind).select_lock_ms),
         RowId::ThumbRest => format_f32(cfg.sc2.pad_origin_relative, UNIT_DIGITS),
         RowId::StretchShortSide => format_f32(cfg.sc2.pad_origin_stretch, UNIT_DIGITS),
         RowId::PadClick => haptic_label(cfg.sc2.touchpad_left_haptic),
@@ -657,7 +722,7 @@ pub(in crate::state) fn format_value(cfg: &Config, id: RowId) -> String {
     }
 }
 
-pub(in crate::state) fn copy_row(dst: &mut Config, src: &Config, id: RowId) {
+pub(in crate::state) fn copy_row(dst: &mut Config, src: &Config, id: RowId, kind: ControllerKind) {
     match id {
         RowId::Suggestions => dst.completion.enabled = src.completion.enabled,
         RowId::OnKeyboard => dst.completion.show_in_keyboard = src.completion.show_in_keyboard,
@@ -674,11 +739,20 @@ pub(in crate::state) fn copy_row(dst: &mut Config, src: &Config, id: RowId) {
         RowId::KeyHeight => dst.scale_y = src.scale_y,
         RowId::DelayBeforeRepeat => dst.event_debounce_ms = src.event_debounce_ms,
         RowId::RepeatInterval => dst.event_debounce_repeat_ms = src.event_debounce_repeat_ms,
-        RowId::HorizontalRange => dst.stick_scale_x = src.stick_scale_x,
-        RowId::VerticalRange => dst.stick_scale_y = src.stick_scale_y,
-        RowId::SquareStick => dst.stick_warp = src.stick_warp,
-        RowId::Stickiness => dst.stick_select_sticky = src.stick_select_sticky,
-        RowId::HoldAfterKey => dst.stick_select_lock_ms = src.stick_select_lock_ms,
+        RowId::PadHorizontalRange => dst.sc2.pad.scale_x = src.sc2.pad.scale_x,
+        RowId::PadVerticalRange => dst.sc2.pad.scale_y = src.sc2.pad.scale_y,
+        RowId::PadSquare => dst.sc2.pad.warp = src.sc2.pad.warp,
+        RowId::PadStickiness => dst.sc2.pad.select_sticky = src.sc2.pad.select_sticky,
+        RowId::PadHoldAfterKey => dst.sc2.pad.select_lock_ms = src.sc2.pad.select_lock_ms,
+        RowId::HorizontalRange => stick_aim_mut(dst, kind).scale_x = stick_aim(src, kind).scale_x,
+        RowId::VerticalRange => stick_aim_mut(dst, kind).scale_y = stick_aim(src, kind).scale_y,
+        RowId::SquareStick => stick_aim_mut(dst, kind).warp = stick_aim(src, kind).warp,
+        RowId::Stickiness => {
+            stick_aim_mut(dst, kind).select_sticky = stick_aim(src, kind).select_sticky
+        }
+        RowId::HoldAfterKey => {
+            stick_aim_mut(dst, kind).select_lock_ms = stick_aim(src, kind).select_lock_ms
+        }
         RowId::ThumbRest => dst.sc2.pad_origin_relative = src.sc2.pad_origin_relative,
         RowId::StretchShortSide => dst.sc2.pad_origin_stretch = src.sc2.pad_origin_stretch,
         RowId::PadClick => {
@@ -695,7 +769,7 @@ pub(in crate::state) fn copy_row(dst: &mut Config, src: &Config, id: RowId) {
     }
 }
 
-fn apply_dir(cfg: &mut Config, id: RowId, dir: i32) {
+fn apply_dir(cfg: &mut Config, id: RowId, dir: i32, kind: ControllerKind) {
     match id {
         RowId::Suggestions => cfg.completion.enabled = !cfg.completion.enabled,
         RowId::OnKeyboard => cfg.completion.show_in_keyboard = !cfg.completion.show_in_keyboard,
@@ -768,9 +842,54 @@ fn apply_dir(cfg: &mut Config, id: RowId, dir: i32) {
                 dir,
             )
         }
+        RowId::PadHorizontalRange => {
+            cfg.sc2.pad.scale_x = step_f32(
+                cfg.sc2.pad.scale_x,
+                STICK_RANGE_MIN,
+                STICK_RANGE_MAX,
+                STICK_RANGE_STEP,
+                dir,
+                STICK_RANGE_DIGITS,
+            )
+        }
+        RowId::PadVerticalRange => {
+            cfg.sc2.pad.scale_y = step_f32(
+                cfg.sc2.pad.scale_y,
+                STICK_RANGE_MIN,
+                STICK_RANGE_MAX,
+                STICK_RANGE_STEP,
+                dir,
+                STICK_RANGE_DIGITS,
+            )
+        }
+        RowId::PadSquare => {
+            cfg.sc2.pad.warp = step_f32(
+                cfg.sc2.pad.warp,
+                UNIT_MIN,
+                UNIT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::PadStickiness => {
+            cfg.sc2.pad.select_sticky = step_f32(
+                cfg.sc2.pad.select_sticky,
+                STICKY_MIN,
+                STICKY_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::PadHoldAfterKey => {
+            cfg.sc2.pad.select_lock_ms =
+                step_u64(cfg.sc2.pad.select_lock_ms, 0, LOCK_MAX, LOCK_STEP, dir)
+        }
         RowId::HorizontalRange => {
-            cfg.stick_scale_x = step_f32(
-                cfg.stick_scale_x,
+            let aim = stick_aim_mut(cfg, kind);
+            aim.scale_x = step_f32(
+                aim.scale_x,
                 STICK_RANGE_MIN,
                 STICK_RANGE_MAX,
                 STICK_RANGE_STEP,
@@ -779,8 +898,9 @@ fn apply_dir(cfg: &mut Config, id: RowId, dir: i32) {
             )
         }
         RowId::VerticalRange => {
-            cfg.stick_scale_y = step_f32(
-                cfg.stick_scale_y,
+            let aim = stick_aim_mut(cfg, kind);
+            aim.scale_y = step_f32(
+                aim.scale_y,
                 STICK_RANGE_MIN,
                 STICK_RANGE_MAX,
                 STICK_RANGE_STEP,
@@ -789,18 +909,13 @@ fn apply_dir(cfg: &mut Config, id: RowId, dir: i32) {
             )
         }
         RowId::SquareStick => {
-            cfg.stick_warp = step_f32(
-                cfg.stick_warp,
-                UNIT_MIN,
-                UNIT_MAX,
-                UNIT_STEP,
-                dir,
-                UNIT_DIGITS,
-            )
+            let aim = stick_aim_mut(cfg, kind);
+            aim.warp = step_f32(aim.warp, UNIT_MIN, UNIT_MAX, UNIT_STEP, dir, UNIT_DIGITS)
         }
         RowId::Stickiness => {
-            cfg.stick_select_sticky = step_f32(
-                cfg.stick_select_sticky,
+            let aim = stick_aim_mut(cfg, kind);
+            aim.select_sticky = step_f32(
+                aim.select_sticky,
                 STICKY_MIN,
                 STICKY_MAX,
                 UNIT_STEP,
@@ -809,8 +924,8 @@ fn apply_dir(cfg: &mut Config, id: RowId, dir: i32) {
             )
         }
         RowId::HoldAfterKey => {
-            cfg.stick_select_lock_ms =
-                step_u64(cfg.stick_select_lock_ms, 0, LOCK_MAX, LOCK_STEP, dir)
+            let aim = stick_aim_mut(cfg, kind);
+            aim.select_lock_ms = step_u64(aim.select_lock_ms, 0, LOCK_MAX, LOCK_STEP, dir)
         }
         RowId::ThumbRest => {
             cfg.sc2.pad_origin_relative = step_f32(
@@ -1054,7 +1169,7 @@ mod tests {
     #[test]
     fn back_walks_hub_index_page() {
         let mut form = SettingsForm::new();
-        let leave = form.back();
+        let leave = form.back(ControllerKind::Sc2);
         assert_eq!(leave.open, Some(StateId::Keyboard));
         assert!(!leave.persist);
         assert_eq!(form.view, View::Hub);
@@ -1074,13 +1189,13 @@ mod tests {
         assert_eq!(form.view, View::Page(Page::Suggestions));
 
         form.dirty.push(RowId::Suggestions);
-        let back_page = form.back();
+        let back_page = form.back(ControllerKind::Sc2);
         assert!(back_page.persist);
         assert!(back_page.open.is_none());
         assert_eq!(form.view, View::Index);
         assert_eq!(form.focus, 0);
 
-        let back_index = form.back();
+        let back_index = form.back(ControllerKind::Sc2);
         assert!(back_index.persist);
         assert_eq!(form.view, View::Hub);
         assert_eq!(form.focus, HUB_OPTIONS);
@@ -1089,19 +1204,19 @@ mod tests {
     #[test]
     fn shoulders_change_page_only_while_one_is_open() {
         let mut form = SettingsForm::new();
-        let idle = form.shift_page(1);
+        let idle = form.shift_page(1, ControllerKind::Sc2);
         assert!(!idle.persist);
         assert_eq!(form.view, View::Hub);
 
         form.view = View::Page(Page::Debug);
         form.dirty.push(RowId::Hitboxes);
-        let wrapped = form.shift_page(1);
+        let wrapped = form.shift_page(1, ControllerKind::Sc2);
         assert!(wrapped.persist);
         assert_eq!(form.view, View::Page(Page::Suggestions));
         assert_eq!(form.focus, 0);
 
         form.clear_dirty();
-        let back = form.shift_page(-1);
+        let back = form.shift_page(-1, ControllerKind::Sc2);
         assert!(!back.persist);
         assert_eq!(form.view, View::Page(Page::Debug));
     }

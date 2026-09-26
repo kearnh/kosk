@@ -39,7 +39,7 @@ enum Cmd {
         /// Hex-dump accepted state reports.
         #[arg(long)]
         raw: bool,
-        /// Load kosk config so warped stick values use stick_warp.
+        /// Load kosk config so warped stick values use the stick profile.
         #[arg(long)]
         config: Option<PathBuf>,
     },

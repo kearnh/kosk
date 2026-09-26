@@ -56,7 +56,7 @@ Until settle finishes there is no frozen `T`. Output is `pos * (1 - relative)`, 
 
 `pad_origin_stretch` (`k`, 0…1) stretches leftover travel on the short remaining edge from that origin so a short-side landing can still approach ±1. `k = 0` is 1:1 `pos - origin`. Extra gain applies only toward the short edge and is capped by `pad_origin_stretch_max_gain`. The long edge is not compressed. Axes are independent. Lift clears `T`.
 
-`MappedSc2Input` stores those mapped coordinates and implements `left_pad` / `right_pad` as `warp(mapped, stick_warp)`. Raw pad methods still report the unstretched sample, which matters for recordings: snapshots taken through `ControllerInput::left_pad` store the **mapped and warped** values, so replay must not apply origin mapping or warp a second time.
+`MappedSc2Input` stores those mapped coordinates and implements `left_pad` / `right_pad` as `warp(mapped, sc2.pad.warp)`. Stick methods use `sc2.stick.warp`. Raw pad methods still report the unstretched sample, which matters for recordings: snapshots taken through `ControllerInput::left_pad` store the **mapped and warped** values, so replay must not apply origin mapping or warp a second time.
 
 The DualShock 4 path never constructs a `PadOriginMapper`.
 

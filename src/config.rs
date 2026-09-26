@@ -128,18 +128,6 @@ pub struct Config {
     #[serde(default = "default_start_layout")]
     pub start_layout: String,
 
-    /// Sensitivity/range multiplier for the horizontal stick axis
-    #[serde(default = "default_stick_scale_x")]
-    pub stick_scale_x: f32,
-
-    /// Sensitivity/range multiplier for the vertical stick axis
-    #[serde(default = "default_stick_scale_y")]
-    pub stick_scale_y: f32,
-
-    /// Stick warp factor (0.0 = circle, 1.0 = square)
-    #[serde(default = "default_stick_warp")]
-    pub stick_warp: f32,
-
     /// Try these controller families first. Omitted families are appended in
     /// built-in default order (`sc2`, then `ps4`). Empty / omitted → that default.
     #[serde(default)]
@@ -194,14 +182,6 @@ pub struct Config {
     #[serde(default, deserialize_with = "deserialize_controller_map")]
     pub controller_map: HashMap<StateId, HashMap<ControllerBinding, MappingValue>>,
 
-    /// Milliseconds for the stick selection to be locked after key under stick is pressed.
-    #[serde(default = "default_stick_select_lock_ms")]
-    pub stick_select_lock_ms: u64,
-
-    /// Extra hit-test margin for the currently selected key (`1` = off).
-    #[serde(default = "default_stick_select_sticky")]
-    pub stick_select_sticky: f32,
-
     /// Steam Controller 2 pad mapping and feel. Omitted → defaults.
     #[serde(default)]
     pub sc2: Sc2Config,
@@ -231,9 +211,56 @@ pub struct Config {
     pub tips: TipsConfig,
 }
 
+/// Which analog surface an aim profile applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AimSurface {
+    Pad,
+    Stick,
+}
+
+/// Range, circle-to-square warp, and selection hold for one analog surface.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+pub struct AimProfile {
+    #[serde(default = "default_aim_scale_x")]
+    pub scale_x: f32,
+
+    #[serde(default = "default_aim_scale_y")]
+    pub scale_y: f32,
+
+    /// `0` keeps the circle. `1` fills the square corners.
+    #[serde(default = "default_aim_warp")]
+    pub warp: f32,
+
+    /// Extra hit-test margin for the current key (`1` = off).
+    #[serde(default = "default_aim_select_sticky")]
+    pub select_sticky: f32,
+
+    /// Milliseconds the highlight stays on a key after it is sent.
+    #[serde(default = "default_aim_select_lock_ms")]
+    pub select_lock_ms: u64,
+}
+
+impl Default for AimProfile {
+    fn default() -> Self {
+        Self {
+            scale_x: default_aim_scale_x(),
+            scale_y: default_aim_scale_y(),
+            warp: default_aim_warp(),
+            select_sticky: default_aim_select_sticky(),
+            select_lock_ms: default_aim_select_lock_ms(),
+        }
+    }
+}
+
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Sc2Config {
+    #[serde(default)]
+    pub pad: AimProfile,
+
+    #[serde(default)]
+    pub stick: AimProfile,
+
     /// Where pad zero sits: `0` = pad center, `1` = first settled touch.
     #[serde(default = "default_pad_origin_relative")]
     pub pad_origin_relative: f32,
@@ -266,6 +293,8 @@ pub struct Sc2Config {
 impl Default for Sc2Config {
     fn default() -> Self {
         Self {
+            pad: AimProfile::default(),
+            stick: AimProfile::default(),
             pad_origin_relative: default_pad_origin_relative(),
             pad_origin_stretch: default_pad_origin_stretch(),
             pad_origin_stretch_max_gain: default_pad_origin_stretch_max_gain(),
@@ -280,6 +309,9 @@ impl Default for Sc2Config {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Ps4Config {
+    #[serde(default)]
+    pub stick: AimProfile,
+
     #[serde(default = "default_trigger_threshold")]
     pub trigger_left_threshold: u8,
 
@@ -290,6 +322,7 @@ pub struct Ps4Config {
 impl Default for Ps4Config {
     fn default() -> Self {
         Self {
+            stick: AimProfile::default(),
             trigger_left_threshold: default_trigger_threshold(),
             trigger_right_threshold: default_trigger_threshold(),
         }
@@ -448,13 +481,13 @@ where
     }
 }
 
-fn default_stick_scale_x() -> f32 {
+fn default_aim_scale_x() -> f32 {
     3.0
 }
-fn default_stick_scale_y() -> f32 {
+fn default_aim_scale_y() -> f32 {
     2.5
 }
-fn default_stick_warp() -> f32 {
+fn default_aim_warp() -> f32 {
     1.0
 }
 fn default_transparent() -> bool {
@@ -493,11 +526,11 @@ fn default_start_layout() -> String {
     "main".to_string()
 }
 
-fn default_stick_select_lock_ms() -> u64 {
+fn default_aim_select_lock_ms() -> u64 {
     100
 }
 
-fn default_stick_select_sticky() -> f32 {
+fn default_aim_select_sticky() -> f32 {
     1.25
 }
 
@@ -519,6 +552,52 @@ fn default_pad_origin_settle_ms() -> u64 {
 
 fn default_trigger_threshold() -> u8 {
     40
+}
+
+static REPLAY_AIM_FAMILY: OnceLock<Mutex<Option<crate::controller::ControllerKind>>> =
+    OnceLock::new();
+
+fn replay_aim_family_slot() -> &'static Mutex<Option<crate::controller::ControllerKind>> {
+    REPLAY_AIM_FAMILY.get_or_init(|| Mutex::new(None))
+}
+
+/// Family stored on the tape being replayed. `None` means old tapes and live play.
+pub fn set_replay_aim_family(kind: Option<crate::controller::ControllerKind>) {
+    let kind = kind.filter(|kind| {
+        matches!(
+            kind,
+            crate::controller::ControllerKind::Sc2 | crate::controller::ControllerKind::Ps4
+        )
+    });
+    *replay_aim_family_slot().lock().unwrap() = kind;
+}
+
+pub fn replay_aim_family() -> Option<crate::controller::ControllerKind> {
+    *replay_aim_family_slot().lock().unwrap()
+}
+
+/// Replay with no stored family uses Steam Controller 2.
+pub fn resolved_controller(
+    kind: crate::controller::ControllerKind,
+) -> crate::controller::ControllerKind {
+    use crate::controller::ControllerKind;
+    match kind {
+        ControllerKind::Replay => replay_aim_family().unwrap_or(ControllerKind::Sc2),
+        other => other,
+    }
+}
+
+impl Config {
+    pub fn aim(&self, kind: crate::controller::ControllerKind, surface: AimSurface) -> &AimProfile {
+        use crate::controller::ControllerKind;
+        match resolved_controller(kind) {
+            ControllerKind::Ps4 => &self.ps4.stick,
+            ControllerKind::Sc2 | ControllerKind::Replay => match surface {
+                AimSurface::Pad => &self.sc2.pad,
+                AimSurface::Stick => &self.sc2.stick,
+            },
+        }
+    }
 }
 
 /// SC2 settings, or defaults when config is not initialized (`sc2_test` without `--config`).
@@ -756,12 +835,20 @@ fn config_float_digits(path: &str) -> Option<usize> {
     match path {
         "keyboard_opacity"
         | "ui_opacity"
-        | "stick_warp"
-        | "stick_select_sticky"
+        | "sc2.pad.warp"
+        | "sc2.pad.select_sticky"
+        | "sc2.stick.warp"
+        | "sc2.stick.select_sticky"
+        | "ps4.stick.warp"
+        | "ps4.stick.select_sticky"
         | "sc2.pad_origin_relative"
         | "sc2.pad_origin_stretch" => Some(2),
-        "stick_scale_x"
-        | "stick_scale_y"
+        "sc2.pad.scale_x"
+        | "sc2.pad.scale_y"
+        | "sc2.stick.scale_x"
+        | "sc2.stick.scale_y"
+        | "ps4.stick.scale_x"
+        | "ps4.stick.scale_y"
         | "scale_x"
         | "scale_y"
         | "sc2.pad_origin_stretch_max_gain"
@@ -1797,10 +1884,10 @@ mod tests {
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
 
         let text = fs::read_to_string(&config_path).unwrap();
-        assert!(text.contains("config_version = 1"), "{text}");
+        assert!(text.contains("config_version = 2"), "{text}");
         assert!(text.contains("keyboard_opacity = 0.70"), "{text}");
         assert!(text.contains("columns = 4"), "{text}");
-        assert!(!text.contains("stick_scale_x"), "{text}");
+        assert!(!text.contains("scale_x"), "{text}");
         assert!(!dir.join("mappings.toml").exists());
 
         cfg.keyboard_opacity = builtin_merged_config().unwrap().keyboard_opacity;
@@ -1942,7 +2029,7 @@ show_stick_cursors = false\n\
         fs::write(&config_path, "keyboard_opacity = 0.2\n").unwrap();
         read_merged_config(&config_path, ConfigSource::User).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
-        assert!(text.contains("config_version = 1"), "{text}");
+        assert!(text.contains("config_version = 2"), "{text}");
         assert!(text.contains("keyboard_opacity = 0.2"), "{text}");
     }
 

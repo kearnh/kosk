@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     config,
-    controller::{ControllerInput, StickSide},
+    controller::{ControllerInput, ControllerKind, StickSide},
     debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
     state::keyboard::when::{DisplayContext, WhenExpr},
@@ -379,9 +379,11 @@ pub struct KeyboardLayout {
     pub pad_x: UnscaledPixelUnitX,
     pub pad_y: UnscaledPixelUnitY,
 
-    // Stick scaling and centers
-    stick_scale_x: f32,
-    stick_scale_y: f32,
+    // Aim ranges. `load_with_scales` copies one pair onto every profile.
+    sc2_pad_scale: (f32, f32),
+    sc2_stick_scale: (f32, f32),
+    ps4_stick_scale: (f32, f32),
+    aim_kind: ControllerKind,
     left_stick_center: (f32, f32),
     right_stick_center: (f32, f32),
     stick_rest_left: Option<StickRest>,
@@ -446,21 +448,36 @@ pub(crate) fn clamp_stick_cursor(cursor: (f32, f32), bounds: &[Rect]) -> (f32, f
 impl KeyboardLayout {
     fn load(toml: &str) -> Result<Self> {
         let cfg = config::get();
-        Self::load_with_scales(
+        Self::load_with_profiles(
             toml,
             cfg.scale_x,
             cfg.scale_y,
-            cfg.stick_scale_x,
-            cfg.stick_scale_y,
+            (cfg.sc2.pad.scale_x, cfg.sc2.pad.scale_y),
+            (cfg.sc2.stick.scale_x, cfg.sc2.stick.scale_y),
+            (cfg.ps4.stick.scale_x, cfg.ps4.stick.scale_y),
         )
     }
 
+    /// One range for every profile. Tests use this.
+    #[cfg(test)]
     pub(crate) fn load_with_scales(
         toml: &str,
         scale_x: f32,
         scale_y: f32,
         stick_scale_x: f32,
         stick_scale_y: f32,
+    ) -> Result<Self> {
+        let pair = (stick_scale_x, stick_scale_y);
+        Self::load_with_profiles(toml, scale_x, scale_y, pair, pair, pair)
+    }
+
+    pub(crate) fn load_with_profiles(
+        toml: &str,
+        scale_x: f32,
+        scale_y: f32,
+        sc2_pad_scale: (f32, f32),
+        sc2_stick_scale: (f32, f32),
+        ps4_stick_scale: (f32, f32),
     ) -> Result<Self> {
         let parsed: KeyboardLayoutFile = toml::from_str(toml)?;
 
@@ -488,8 +505,10 @@ impl KeyboardLayout {
             scale_y,
             pad_x: pad_x.into(),
             pad_y: pad_y.into(),
-            stick_scale_x,
-            stick_scale_y,
+            sc2_pad_scale,
+            sc2_stick_scale,
+            ps4_stick_scale,
+            aim_kind: ControllerKind::Sc2,
             left_stick_center: (0.0, 0.0),
             right_stick_center: (0.0, 0.0),
             stick_rest_left,
@@ -828,7 +847,9 @@ impl KeyboardLayout {
 
     fn build_reach_cache(&self) -> Option<ReachCache> {
         let cfg = config::try_get()?;
-        let overlay = cfg.debug?.reach_overlay;
+        let overlay = cfg.debug.as_ref()?.reach_overlay;
+        let stick = cfg.aim(self.aim_kind, config::AimSurface::Stick);
+        let pad = cfg.aim(ControllerKind::Sc2, config::AimSurface::Pad);
 
         match overlay {
             config::ReachOverlay::None => None,
@@ -836,19 +857,19 @@ impl KeyboardLayout {
                 left: super::reach_extent::compute_stick_envelope(
                     self,
                     StickSide::Left,
-                    cfg.stick_warp,
+                    stick.warp,
                 )?,
                 right: super::reach_extent::compute_stick_envelope(
                     self,
                     StickSide::Right,
-                    cfg.stick_warp,
+                    stick.warp,
                 )?,
             }),
             config::ReachOverlay::Pad => Some(ReachCache::Pad {
                 left_all: super::reach_extent::compute_pad_envelope(
                     self,
                     StickSide::Left,
-                    cfg.stick_warp,
+                    pad.warp,
                     cfg.sc2.pad_origin_relative,
                     cfg.sc2.pad_origin_stretch,
                     cfg.sc2.pad_origin_stretch_max_gain,
@@ -856,7 +877,7 @@ impl KeyboardLayout {
                 right_all: super::reach_extent::compute_pad_envelope(
                     self,
                     StickSide::Right,
-                    cfg.stick_warp,
+                    pad.warp,
                     cfg.sc2.pad_origin_relative,
                     cfg.sc2.pad_origin_stretch,
                     cfg.sc2.pad_origin_stretch_max_gain,
@@ -864,7 +885,7 @@ impl KeyboardLayout {
                 left_safe: super::reach_extent::compute_safe_pad_envelope(
                     self,
                     StickSide::Left,
-                    cfg.stick_warp,
+                    pad.warp,
                     cfg.sc2.pad_origin_relative,
                     cfg.sc2.pad_origin_stretch,
                     cfg.sc2.pad_origin_stretch_max_gain,
@@ -872,7 +893,7 @@ impl KeyboardLayout {
                 right_safe: super::reach_extent::compute_safe_pad_envelope(
                     self,
                     StickSide::Right,
-                    cfg.stick_warp,
+                    pad.warp,
                     cfg.sc2.pad_origin_relative,
                     cfg.sc2.pad_origin_stretch,
                     cfg.sc2.pad_origin_stretch_max_gain,
@@ -919,6 +940,14 @@ impl KeyboardLayout {
             }
         }
 
+        let (stick_scale_x, stick_scale_y) = self.aim_scale(self.aim_kind, false);
+        let (pad_scale_x, pad_scale_y) = if self.aim_kind == ControllerKind::Ps4 {
+            (None, None)
+        } else {
+            let (x, y) = self.aim_scale(ControllerKind::Sc2, true);
+            (Some(x), Some(y))
+        };
+
         let rect_to_snap = |r: &egui::Rect| SnapRect {
             min_x: r.min.x,
             min_y: r.min.y,
@@ -931,8 +960,10 @@ impl KeyboardLayout {
             revision,
             scale_x: self.scale_x,
             scale_y: self.scale_y,
-            stick_scale_x: self.stick_scale_x,
-            stick_scale_y: self.stick_scale_y,
+            stick_scale_x,
+            stick_scale_y,
+            pad_scale_x,
+            pad_scale_y,
             left_rest: self.mapping_rest(StickSide::Left),
             right_rest: self.mapping_rest(StickSide::Right),
             left_bounds: self.left_stick_bounds.iter().map(rect_to_snap).collect(),
@@ -950,13 +981,51 @@ impl KeyboardLayout {
         (rx + bx, ry + by)
     }
 
+    /// Remember which controller's ranges the reach overlay and geometry snapshot use.
+    /// Returns whether the kind changed.
+    pub(crate) fn set_aim_kind(&mut self, kind: ControllerKind) -> bool {
+        let kind = config::resolved_controller(kind);
+        if self.aim_kind == kind {
+            return false;
+        }
+        self.aim_kind = kind;
+        self.reach_cache = None;
+        if self.captured_centres.is_some() {
+            self.reach_cache = self.build_reach_cache();
+        }
+        true
+    }
+
+    pub(crate) fn aim_kind_for_reach(&self) -> ControllerKind {
+        self.aim_kind
+    }
+
+    pub(crate) fn aim_scale(&self, kind: ControllerKind, pad: bool) -> (f32, f32) {
+        match config::resolved_controller(kind) {
+            ControllerKind::Ps4 => self.ps4_stick_scale,
+            _ if pad => self.sc2_pad_scale,
+            _ => self.sc2_stick_scale,
+        }
+    }
+
     pub fn stick_to_cursor(&self, side: StickSide, stick: (f32, f32)) -> (f32, f32) {
+        let (sx, sy) = self.aim_scale(ControllerKind::Sc2, false);
+        self.stick_to_cursor_scaled(side, stick, sx, sy)
+    }
+
+    pub(crate) fn stick_to_cursor_scaled(
+        &self,
+        side: StickSide,
+        stick: (f32, f32),
+        aim_scale_x: f32,
+        aim_scale_y: f32,
+    ) -> (f32, f32) {
         geom::stick_to_cursor(
             self.mapping_rest(side),
             self.scale_x,
             self.scale_y,
-            self.stick_scale_x,
-            self.stick_scale_y,
+            aim_scale_x,
+            aim_scale_y,
             stick,
         )
     }
@@ -1047,7 +1116,20 @@ impl KeyboardLayout {
         sticky: Option<(usize, usize)>,
         k: f32,
     ) -> Option<(usize, usize)> {
-        let cursor = self.stick_to_cursor(side, stick);
+        let (sx, sy) = self.aim_scale(ControllerKind::Sc2, false);
+        self.nearest_cell_scaled(side, stick, sticky, k, sx, sy)
+    }
+
+    pub(crate) fn nearest_cell_scaled(
+        &self,
+        side: StickSide,
+        stick: (f32, f32),
+        sticky: Option<(usize, usize)>,
+        k: f32,
+        aim_scale_x: f32,
+        aim_scale_y: f32,
+    ) -> Option<(usize, usize)> {
+        let cursor = self.stick_to_cursor_scaled(side, stick, aim_scale_x, aim_scale_y);
         let (x, y) = clamp_stick_cursor(cursor, self.stick_bounds(side));
         self.pick_cell_at(x, y, sticky, k)
     }
@@ -1156,12 +1238,21 @@ fn debug_cursor(
     input: Option<&(dyn ControllerInput + Send + Sync)>,
     side: StickSide,
 ) -> (f32, f32) {
-    let stick = match (input, side) {
-        (Some(input), StickSide::Left) => input.left_pad().unwrap_or_else(|| input.left_stick()),
-        (Some(input), StickSide::Right) => input.right_pad().unwrap_or_else(|| input.right_stick()),
-        (None, _) => (0.0, 0.0),
+    let Some(input) = input else {
+        return layout.stick_to_cursor(side, (0.0, 0.0));
     };
-    layout.stick_to_cursor(side, stick)
+    let (stick, pad) = match side {
+        StickSide::Left => match input.left_pad() {
+            Some(p) => (p, true),
+            None => (input.left_stick(), false),
+        },
+        StickSide::Right => match input.right_pad() {
+            Some(p) => (p, true),
+            None => (input.right_stick(), false),
+        },
+    };
+    let (sx, sy) = layout.aim_scale(input.family(), pad);
+    layout.stick_to_cursor_scaled(side, stick, sx, sy)
 }
 
 fn side_color(side: StickSide) -> Color32 {
