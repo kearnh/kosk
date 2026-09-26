@@ -44,7 +44,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 | `select_sticky` | Extra hit-test margin keeping the current key selected; `1` turns the margin off |
 | `select_lock_ms` | How long the highlight freezes after a letter is sent, so a post-press twitch does not slide onto a neighbor |
 
-- The settings screen edits these profiles through per-device entries (`Steam Controller Pads/Stick/Device`, `DualShock 4 Stick/Device`), and each value page writes its named device profile. See [keyboard.md](keyboard.md), [keyboard-layout.md](keyboard-layout.md), [menu.md](menu.md), and [controller.md](controller.md).
+- The settings screen edits these profiles through per-device entries (`Steam Controller Pads/Stick/Triggers`, `DualShock 4 Stick/Triggers`), and each value page writes its named device profile. See [keyboard.md](keyboard.md), [keyboard-layout.md](keyboard-layout.md), [menu.md](menu.md), and [controller.md](controller.md).
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.

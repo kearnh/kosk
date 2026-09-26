@@ -68,7 +68,7 @@ pub(in crate::state) enum OptionEntry {
 pub(in crate::state) enum DevicePage {
     Pads,
     Stick,
-    Device,
+    Triggers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -580,7 +580,7 @@ impl DevicePage {
         match self {
             DevicePage::Pads => "Pads",
             DevicePage::Stick => "Stick",
-            DevicePage::Device => "Device",
+            DevicePage::Triggers => "Triggers",
         }
     }
 
@@ -592,6 +592,9 @@ impl DevicePage {
                 RowId::PadSquare,
                 RowId::PadStickiness,
                 RowId::PadHoldAfterKey,
+                RowId::ThumbRest,
+                RowId::StretchShortSide,
+                RowId::PadClick,
             ],
             (DevicePage::Stick, _) => &[
                 RowId::HorizontalRange,
@@ -600,16 +603,10 @@ impl DevicePage {
                 RowId::Stickiness,
                 RowId::HoldAfterKey,
             ],
-            (DevicePage::Device, ControllerKind::Ps4) => {
+            (DevicePage::Triggers, ControllerKind::Ps4) => {
                 &[RowId::Ps4TriggerLeft, RowId::Ps4TriggerRight]
             }
-            (DevicePage::Device, _) => &[
-                RowId::ThumbRest,
-                RowId::StretchShortSide,
-                RowId::PadClick,
-                RowId::Sc2TriggerLeft,
-                RowId::Sc2TriggerRight,
-            ],
+            (DevicePage::Triggers, _) => &[RowId::Sc2TriggerLeft, RowId::Sc2TriggerRight],
         }
     }
 }
@@ -637,10 +634,10 @@ fn device_name(target: ControllerKind) -> &'static str {
 fn device_page_title(target: ControllerKind, device_page: DevicePage) -> &'static str {
     match (target, device_page) {
         (ControllerKind::Ps4, DevicePage::Stick) => "DualShock 4 Stick",
-        (ControllerKind::Ps4, DevicePage::Device) => "DualShock 4 Device",
+        (ControllerKind::Ps4, DevicePage::Triggers) => "DualShock 4 Triggers",
         (_, DevicePage::Pads) => "Steam Controller Pads",
         (_, DevicePage::Stick) => "Steam Controller Stick",
-        _ => "Steam Controller Device",
+        _ => "Steam Controller Triggers",
     }
 }
 
@@ -682,8 +679,8 @@ fn value_sequence(kind: ControllerKind, show_all: bool) -> Vec<ValueRef> {
 
 fn device_pages(target: ControllerKind) -> &'static [DevicePage] {
     match target {
-        ControllerKind::Ps4 => &[DevicePage::Stick, DevicePage::Device],
-        _ => &[DevicePage::Pads, DevicePage::Stick, DevicePage::Device],
+        ControllerKind::Ps4 => &[DevicePage::Stick, DevicePage::Triggers],
+        _ => &[DevicePage::Pads, DevicePage::Stick, DevicePage::Triggers],
     }
 }
 
@@ -1461,7 +1458,11 @@ mod tests {
         assert_eq!(form.len(ControllerKind::Ps4), 2);
         assert_eq!(
             device_pages(ControllerKind::Ps4),
-            &[DevicePage::Stick, DevicePage::Device]
+            &[DevicePage::Stick, DevicePage::Triggers]
+        );
+        assert_eq!(
+            device_pages(ControllerKind::Sc2),
+            &[DevicePage::Pads, DevicePage::Stick, DevicePage::Triggers]
         );
     }
 
@@ -1509,11 +1510,22 @@ mod tests {
     #[test]
     fn ps4_device_page_is_only_the_triggers() {
         let mut form = SettingsForm::new();
-        form.view = View::DevicePage(ControllerKind::Ps4, DevicePage::Device);
+        form.view = View::DevicePage(ControllerKind::Ps4, DevicePage::Triggers);
         assert_eq!(form.len(ControllerKind::Ps4), 2);
         let rows = form.drawn(&sample(), ControllerKind::Ps4);
         assert_eq!(rows[0].label, "Left trigger");
         assert_eq!(rows[1].label, "Right trigger");
+    }
+
+    #[test]
+    fn pads_page_holds_pad_feel() {
+        let mut form = SettingsForm::new();
+        form.view = View::DevicePage(ControllerKind::Sc2, DevicePage::Pads);
+        assert_eq!(form.len(ControllerKind::Sc2), 8);
+        let rows = form.drawn(&sample(), ControllerKind::Sc2);
+        let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
+        assert!(labels.contains(&"Thumb rest"));
+        assert!(labels.contains(&"Pad click"));
     }
 
     #[test]
@@ -1527,16 +1539,16 @@ mod tests {
             "Steam Controller Stick"
         );
         assert_eq!(
-            device_page_title(ControllerKind::Sc2, DevicePage::Device),
-            "Steam Controller Device"
+            device_page_title(ControllerKind::Sc2, DevicePage::Triggers),
+            "Steam Controller Triggers"
         );
         assert_eq!(
             device_page_title(ControllerKind::Ps4, DevicePage::Stick),
             "DualShock 4 Stick"
         );
         assert_eq!(
-            device_page_title(ControllerKind::Ps4, DevicePage::Device),
-            "DualShock 4 Device"
+            device_page_title(ControllerKind::Ps4, DevicePage::Triggers),
+            "DualShock 4 Triggers"
         );
     }
 }

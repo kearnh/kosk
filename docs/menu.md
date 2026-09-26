@@ -6,7 +6,7 @@ This document describes the settings screen. `StateId::Settings` is still one mo
 
 The keyboard opens settings with a chord. In the checked-in mappings, `share + faceTop` is `switchState.settings`.
 
-The hub lists **Move window**, **Mappings**, **Layouts**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Options opens a second list: Suggestions, Overlay, Typing, one device entry per visible controller family, and Debug. Each device entry opens a device index, and each device index row opens a value page whose title names the device (`Steam Controller Stick`, `DualShock 4 Device`). A Steam Controller index has Pads, Stick, and Device; a DualShock 4 index has Stick and Device. Back, and the `back` action, return to the keyboard from the hub.
+The hub lists **Move window**, **Mappings**, **Layouts**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Options opens a second list: Suggestions, Overlay, Typing, one device entry per visible controller family, and Debug. Each device entry opens a device index, and each device index row opens a value page whose title names the device (`Steam Controller Stick`, `DualShock 4 Triggers`). A Steam Controller index has Pads, Stick, and Triggers; a DualShock 4 index has Stick and Triggers. Back, and the `back` action, return to the keyboard from the hub.
 
 The list sits 16px in from the top and both sides. The screen title is white. The hub and the Options list are one column: the title, the rows, and a footer. The highlighted row is a full-width bar. On a value page the current value sits on the right of that row (`On`, `240 ms`, `1.25`), and a panel appears beside it. The panel title is white. The body is the explainer for that value, including a single sentence. Hub and category rows have no panel. Nothing is drawn under the list.
 
@@ -14,7 +14,7 @@ The footer draws each bound button as a 16px glyph, then a short word. A remappe
 
 Labels name the thing being set (`Thumb rest`, `Delay before repeat`). The TOML key is not shown. The device entry names the family up front, so there is never a bare `Controller` row.
 
-Each value page edits one device profile. Stick rows write that device's stick profile (`sc2.stick` or `ps4.stick`), even when the other family is connected. A DualShock 4 Device page is the two trigger cutoffs. A Steam Controller Device page has thumb rest, short-side stretch, pad click, and both triggers. Pad click writes both pads. Replay edits the Steam Controller profiles, matching the tape-family fallback in `config::resolved_controller`.
+Each value page edits one device profile. Stick rows write that device's stick profile (`sc2.stick` or `ps4.stick`), even when the other family is connected. A Triggers page is the two trigger cutoffs for that family. The Steam Controller Pads page holds pad aim plus pad feel: thumb rest, short-side stretch, and pad click. Pad click writes both pads. Replay edits the Steam Controller profiles, matching the tape-family fallback in `config::resolved_controller`.
 
 By default Options lists only the connected family's device entry. The Options footer has a `show other controllers` hint on its own line, bound to `toggleShowAllControllers`; activating it shows both Steam Controller and DualShock 4 and the hint becomes `hide other controllers` for the rest of the session. The flag is not written to `config.toml`.
 
