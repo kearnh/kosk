@@ -58,6 +58,8 @@ impl MenuState {
         let rows = self.form.drawn(&cfg, kind);
         let focus = self.form.focus();
         let focused = rows.get(focus);
+        let (view_start, view_end) = self.form.visible_range(kind);
+        let (above, below) = self.form.scroll_counts(kind);
 
         let hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
         Frame::NONE
@@ -77,7 +79,19 @@ impl MenuState {
                                 .color(Color32::WHITE),
                         );
                         ui.separator();
-                        for (index, row) in rows.iter().enumerate() {
+                        if above > 0 {
+                            ui.label(
+                                RichText::new(format!("▲ {above} more above"))
+                                    .small()
+                                    .color(Color32::GRAY),
+                            );
+                        }
+                        for (index, row) in rows
+                            .iter()
+                            .enumerate()
+                            .skip(view_start)
+                            .take(view_end - view_start)
+                        {
                             if draw_row(ui, row.label, row.value.as_deref(), index == focus)
                                 .clicked()
                             {
@@ -91,6 +105,13 @@ impl MenuState {
                                     );
                                 }
                             }
+                        }
+                        if below > 0 {
+                            ui.label(
+                                RichText::new(format!("▼ {below} more below"))
+                                    .small()
+                                    .color(Color32::GRAY),
+                            );
                         }
                         ui.separator();
                         draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));

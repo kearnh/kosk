@@ -1,4 +1,7 @@
-use crate::completion::settings::Preselect;
+use crate::completion::settings::{
+    AcceptVia, ArmedDotPlacement, ChipLabel, ChipPlacement, ChipWidth, CompletionBackendKind,
+    CurrentWordChip, Preselect,
+};
 use crate::config::Config;
 use crate::config::{Debug, HapticIntensity, ReachOverlay};
 use crate::controller::ControllerKind;
@@ -48,6 +51,62 @@ const COLUMNS_MIN: usize = 1;
 const COLUMNS_MAX: usize = 6;
 const ROWS_MIN: usize = 1;
 const ROWS_MAX: usize = 3;
+
+const MAX_VISIBLE_ROWS: usize = 8;
+
+const COUNT_MIN: usize = 0;
+const COUNT_STEP: usize = 1;
+const SUGGESTIONS_MIN: usize = 1;
+const SUGGESTIONS_MAX: usize = 12;
+const PREFIX_MIN: usize = 0;
+const PREFIX_MAX: usize = 5;
+const FUZZY_MIN: usize = 2;
+const FUZZY_MAX: usize = 8;
+const COMPLETE_DEBOUNCE_MAX: u64 = 200;
+const COMPLETE_DEBOUNCE_STEP: u64 = 5;
+
+const MAX_CHARS_MIN: usize = 256;
+const MAX_CHARS_MAX: usize = 8192;
+const MAX_CHARS_STEP: usize = 256;
+const IDLE_RESET_MAX: u64 = 5000;
+const IDLE_RESET_STEP: u64 = 100;
+
+const CHIP_WIDTH_MAX: f32 = 400.0;
+const CHIP_WIDTH_MIN: f32 = 80.0;
+const CHIP_WIDTH_STEP: f32 = 4.0;
+const CHIP_MIN_MIN: f32 = 24.0;
+const CHIP_MIN_MAX: f32 = 200.0;
+const CHIP_MIN_STEP: f32 = 2.0;
+const FONT_MIN: f32 = 10.0;
+const FONT_MAX: f32 = 32.0;
+const FONT_STEP: f32 = 1.0;
+const RADIUS_MAX: f32 = 16.0;
+const OUTLINE_MAX: f32 = 6.0;
+const OUTLINE_STEP: f32 = 0.5;
+const PAD_X_MAX: f32 = 32.0;
+const PAD_Y_MAX: f32 = 16.0;
+const GAP_MAX: f32 = 24.0;
+const DOT_RADIUS_MIN: f32 = 1.0;
+const DOT_RADIUS_MAX: f32 = 10.0;
+const DOT_RADIUS_STEP: f32 = 0.5;
+
+const CACHE_MAX: usize = 100_000;
+const CACHE_STEP: usize = 1000;
+
+const NGRAM_ORDER_MIN: u8 = 1;
+const NGRAM_ORDER_MAX: u8 = 5;
+const WEIGHT_MAX: f32 = 2.0;
+const TYPO_WEIGHT_MIN: f32 = -5.0;
+const SCAN_MIN: usize = 512;
+const SCAN_MAX: usize = 32_768;
+const SCAN_STEP: usize = 512;
+const ABORT_MIN: usize = 16;
+const ABORT_MAX: usize = 512;
+const ABORT_STEP: usize = 16;
+
+const SETTLE_MAX: u64 = 100;
+const SETTLE_STEP: u64 = 5;
+const GAIN_MAX: f32 = 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::state) enum View {
@@ -109,6 +168,8 @@ pub(in crate::state) enum RowId {
     ThumbRest,
     StretchShortSide,
     PadClick,
+    StretchMaxGain,
+    PadSettleMs,
     Sc2TriggerLeft,
     Sc2TriggerRight,
     Ps4TriggerLeft,
@@ -117,6 +178,64 @@ pub(in crate::state) enum RowId {
     Hitboxes,
     StickBounds,
     ReachOverlay,
+    InsertSpace,
+    ResetHighlight,
+    HighlightWraps,
+    LearnOnAccept,
+    LearnOnSubmit,
+    UnicodeLetters,
+    NormalizeNfc,
+    Capitalization,
+    TransposeNeighbors,
+    MaxSuggestions,
+    MinPrefixLen,
+    CompleteDebounce,
+    MinFuzzyLen,
+    Backend,
+    Fallback,
+    CurrentWordChip,
+    AcceptVia,
+    RetractAccept,
+    TrackBackspace,
+    ClearOnEnter,
+    IgnoreCtrlAlt,
+    StartArmed,
+    LatchOnArrow,
+    LatchOnPaste,
+    ClearLogOnArm,
+    MaxChars,
+    IdleResetMs,
+    ReserveSlots,
+    ChipWidth,
+    ChipPlacement,
+    ChipLabel,
+    DimTypedPrefix,
+    ShowDebugScores,
+    ArmedDot,
+    ArmedDotPlacement,
+    MaxChipWidth,
+    MinChipWidth,
+    ChipFontSize,
+    CornerRadius,
+    OutlineWidth,
+    PaddingX,
+    PaddingY,
+    Gap,
+    ArmedDotRadius,
+    CacheEnabled,
+    MaxUnigrams,
+    MaxBigrams,
+    NgramOrder,
+    BackoffAlpha,
+    LambdaTri,
+    LambdaBi,
+    LambdaUni,
+    LambdaExact,
+    LambdaTypo,
+    PrefixScanLimit,
+    AbortCheckEvery,
+    TextFontSize,
+    BatteryButton,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -524,6 +643,25 @@ impl SettingsForm {
             _ => None,
         }
     }
+
+    pub(in crate::state) fn visible_range(&self, kind: ControllerKind) -> (usize, usize) {
+        let total = self.len(kind);
+        if total <= MAX_VISIBLE_ROWS {
+            return (0, total);
+        }
+        let max_start = total - MAX_VISIBLE_ROWS;
+        let start = if self.focus < MAX_VISIBLE_ROWS {
+            0
+        } else {
+            (self.focus + 1 - MAX_VISIBLE_ROWS).min(max_start)
+        };
+        (start, start + MAX_VISIBLE_ROWS)
+    }
+
+    pub(in crate::state) fn scroll_counts(&self, kind: ControllerKind) -> (usize, usize) {
+        let (start, end) = self.visible_range(kind);
+        (start, self.len(kind).saturating_sub(end))
+    }
 }
 
 impl Page {
@@ -547,6 +685,62 @@ impl Page {
                 RowId::HighlightAtRest,
                 RowId::Columns,
                 RowId::Rows,
+                RowId::InsertSpace,
+                RowId::ResetHighlight,
+                RowId::HighlightWraps,
+                RowId::LearnOnAccept,
+                RowId::LearnOnSubmit,
+                RowId::UnicodeLetters,
+                RowId::NormalizeNfc,
+                RowId::Capitalization,
+                RowId::TransposeNeighbors,
+                RowId::MaxSuggestions,
+                RowId::MinPrefixLen,
+                RowId::CompleteDebounce,
+                RowId::MinFuzzyLen,
+                RowId::Backend,
+                RowId::Fallback,
+                RowId::CurrentWordChip,
+                RowId::AcceptVia,
+                RowId::RetractAccept,
+                RowId::TrackBackspace,
+                RowId::ClearOnEnter,
+                RowId::IgnoreCtrlAlt,
+                RowId::StartArmed,
+                RowId::LatchOnArrow,
+                RowId::LatchOnPaste,
+                RowId::ClearLogOnArm,
+                RowId::MaxChars,
+                RowId::IdleResetMs,
+                RowId::ReserveSlots,
+                RowId::ChipWidth,
+                RowId::ChipPlacement,
+                RowId::ChipLabel,
+                RowId::DimTypedPrefix,
+                RowId::ShowDebugScores,
+                RowId::ArmedDot,
+                RowId::ArmedDotPlacement,
+                RowId::MaxChipWidth,
+                RowId::MinChipWidth,
+                RowId::ChipFontSize,
+                RowId::CornerRadius,
+                RowId::OutlineWidth,
+                RowId::PaddingX,
+                RowId::PaddingY,
+                RowId::Gap,
+                RowId::ArmedDotRadius,
+                RowId::CacheEnabled,
+                RowId::MaxUnigrams,
+                RowId::MaxBigrams,
+                RowId::NgramOrder,
+                RowId::BackoffAlpha,
+                RowId::LambdaTri,
+                RowId::LambdaBi,
+                RowId::LambdaUni,
+                RowId::LambdaExact,
+                RowId::LambdaTypo,
+                RowId::PrefixScanLimit,
+                RowId::AbortCheckEvery,
             ],
             Page::Overlay => &[
                 RowId::SeeThrough,
@@ -554,6 +748,8 @@ impl Page {
                 RowId::MenuOpacity,
                 RowId::KeyWidth,
                 RowId::KeyHeight,
+                RowId::TextFontSize,
+                RowId::BatteryButton,
             ],
             Page::Typing => &[RowId::DelayBeforeRepeat, RowId::RepeatInterval],
             Page::Debug => &[
@@ -595,6 +791,8 @@ impl DevicePage {
                 RowId::ThumbRest,
                 RowId::StretchShortSide,
                 RowId::PadClick,
+                RowId::StretchMaxGain,
+                RowId::PadSettleMs,
             ],
             (DevicePage::Stick, _) => &[
                 RowId::HorizontalRange,
@@ -841,6 +1039,246 @@ fn row_text(id: RowId) -> (&'static str, &'static str) {
             "Reach overlay",
             "Draw which keys a stick or a pad can reach. None leaves the keyboard as it is.",
         ),
+        RowId::StretchMaxGain => (
+            "Stretch limit",
+            "Caps how much the short direction of the pad can speed up. 1 turns that extra speed-up off.",
+        ),
+        RowId::PadSettleMs => (
+            "Touch settle time",
+            "How long to wait after your thumb lands before reading the touch. Raise it if the first key picked is jumpy.",
+        ),
+        RowId::InsertSpace => (
+            "Space after accepting",
+            "Adds a space right after the word you pick, so you can keep typing the next one.",
+        ),
+        RowId::ResetHighlight => (
+            "Restart highlight on refresh",
+            "When the suggestion list changes, move the highlight back to the start instead of keeping its place.",
+        ),
+        RowId::HighlightWraps => (
+            "Highlight wraps around",
+            "Moving past the last suggestion jumps back to the first one, and the other way around.",
+        ),
+        RowId::LearnOnAccept => (
+            "Learn picked words",
+            "Remember words you pick so they rank higher next time.",
+        ),
+        RowId::LearnOnSubmit => (
+            "Learn submitted lines",
+            "Remember the words in a line you submit, so they rank higher next time.",
+        ),
+        RowId::UnicodeLetters => (
+            "Non-English letters",
+            "Treat letters with accents and other alphabets as word characters while typing.",
+        ),
+        RowId::NormalizeNfc => (
+            "Unify accented letters",
+            "Treat accented letters typed different ways as the same letter when matching words.",
+        ),
+        RowId::Capitalization => (
+            "Fix capitalization",
+            "Offer the word with the right capital letter when what you typed is close but for the case.",
+        ),
+        RowId::TransposeNeighbors => (
+            "Only next-door swaps",
+            "Only suggest a word when the two swapped letters sit right next to each other. Off also allows wider swaps.",
+        ),
+        RowId::MaxSuggestions => (
+            "Max suggestions",
+            "The most suggestions the list will ever show at once.",
+        ),
+        RowId::MinPrefixLen => (
+            "Letters before suggesting",
+            "How many letters you must type before any suggestions appear. 0 shows them right away.",
+        ),
+        RowId::CompleteDebounce => (
+            "Suggestion wait",
+            "How long to wait after you stop typing before the list refreshes. Raise it if the list flickers.",
+        ),
+        RowId::MinFuzzyLen => (
+            "Shortest typo fix",
+            "Words shorter than this never get typo corrections, only exact matches.",
+        ),
+        RowId::Backend => (
+            "Word source",
+            "Where suggestions come from. Smart uses your recent writing; Dictionary uses the plain word list.",
+        ),
+        RowId::Fallback => (
+            "Backup word source",
+            "Where suggestions come from when the main source has nothing to offer.",
+        ),
+        RowId::CurrentWordChip => (
+            "Current word position",
+            "Which end of the suggestion row shows the word you are typing right now.",
+        ),
+        RowId::AcceptVia => (
+            "How a pick is typed",
+            "How the picked word replaces what you typed. One way retypes the ending, the other deletes it first.",
+        ),
+        RowId::RetractAccept => (
+            "Undo a pick on backspace",
+            "Pressing backspace right after picking a word brings your original letters back.",
+        ),
+        RowId::TrackBackspace => (
+            "Follow backspace",
+            "Keep the suggestion list in step when you delete letters.",
+        ),
+        RowId::ClearOnEnter => (
+            "Clear on enter",
+            "Forget what you typed and start fresh after you submit a line.",
+        ),
+        RowId::IgnoreCtrlAlt => (
+            "Ignore ctrl and alt",
+            "Key presses held with ctrl or alt do not disturb the suggestion list.",
+        ),
+        RowId::StartArmed => (
+            "Listen from the start",
+            "Start watching your typing as soon as the keyboard opens, instead of waiting for the first letter.",
+        ),
+        RowId::LatchOnArrow => (
+            "Arrow keys pause listening",
+            "Moving the caret with an arrow key stops suggestions until you type again.",
+        ),
+        RowId::LatchOnPaste => (
+            "Pasting pauses listening",
+            "Pasted text stops suggestions until you type again.",
+        ),
+        RowId::ClearLogOnArm => (
+            "Fresh start on wake",
+            "Throw away the remembered keystrokes each time listening starts again.",
+        ),
+        RowId::MaxChars => (
+            "Longest tracked word",
+            "Letters past this many are forgotten while matching. Lower uses less memory.",
+        ),
+        RowId::IdleResetMs => (
+            "Forget when idle",
+            "Stop listening after this long with no typing. 0 never stops on its own.",
+        ),
+        RowId::ReserveSlots => (
+            "Keep empty slots",
+            "Leave blank space where suggestions will appear, so the keys do not jump when the list pops in.",
+        ),
+        RowId::ChipWidth => (
+            "Suggestion width",
+            "Fill stretches each suggestion across its slot. Hug shrinks each one to fit its word.",
+        ),
+        RowId::ChipPlacement => (
+            "Suggestion position",
+            "Where the suggestion row sits: between the keys, above the text field, or above the keyboard.",
+        ),
+        RowId::ChipLabel => (
+            "Suggestion text",
+            "Show the whole word, or only the ending you have not typed yet.",
+        ),
+        RowId::DimTypedPrefix => (
+            "Fade typed part",
+            "Draw the part of the word you already typed in a dimmer color.",
+        ),
+        RowId::ShowDebugScores => (
+            "Show scores",
+            "Print each suggestion's match score beside it. Useful when tuning, noisy otherwise.",
+        ),
+        RowId::ArmedDot => (
+            "Listening dot",
+            "Show a small dot while the keyboard is watching your typing.",
+        ),
+        RowId::ArmedDotPlacement => (
+            "Dot position",
+            "Which end of the suggestion row the listening dot sits on.",
+        ),
+        RowId::MaxChipWidth => (
+            "Widest suggestion",
+            "A suggestion never grows wider than this, no matter how long the word is.",
+        ),
+        RowId::MinChipWidth => (
+            "Narrowest suggestion",
+            "A suggestion never shrinks narrower than this, no matter how short the word is.",
+        ),
+        RowId::ChipFontSize => (
+            "Suggestion text size",
+            "How big the suggestion words are drawn.",
+        ),
+        RowId::CornerRadius => (
+            "Suggestion roundness",
+            "How rounded the corners of each suggestion look. 0 is a sharp rectangle.",
+        ),
+        RowId::OutlineWidth => (
+            "Highlight outline",
+            "How thick the outline around the highlighted suggestion is. 0 hides it.",
+        ),
+        RowId::PaddingX => (
+            "Side padding",
+            "Empty space left and right inside each suggestion.",
+        ),
+        RowId::PaddingY => (
+            "Top padding",
+            "Empty space above and below inside each suggestion.",
+        ),
+        RowId::Gap => (
+            "Gap between suggestions",
+            "Empty space between one suggestion and the next.",
+        ),
+        RowId::ArmedDotRadius => (
+            "Dot size",
+            "How big the listening dot is drawn.",
+        ),
+        RowId::CacheEnabled => (
+            "Remember my words",
+            "Keep a file of words you use so they keep ranking higher between sessions.",
+        ),
+        RowId::MaxUnigrams => (
+            "Single words kept",
+            "How many single words your personal file holds. 0 keeps none.",
+        ),
+        RowId::MaxBigrams => (
+            "Word pairs kept",
+            "How many two-word pairs your personal file holds. 0 keeps none.",
+        ),
+        RowId::NgramOrder => (
+            "Word memory length",
+            "How many previous words the smart source looks at. 3 means the last two words shape the next suggestion.",
+        ),
+        RowId::BackoffAlpha => (
+            "Trust in longer memory",
+            "How much to trust longer word histories over shorter ones. Higher leans on longer histories.",
+        ),
+        RowId::LambdaTri => (
+            "Two-word history weight",
+            "How much the last two words count when ranking. Higher trusts recent context more.",
+        ),
+        RowId::LambdaBi => (
+            "One-word history weight",
+            "How much the last word counts when ranking. Higher trusts the previous word more.",
+        ),
+        RowId::LambdaUni => (
+            "Common words weight",
+            "How much plain word popularity counts when ranking. Higher favors common words.",
+        ),
+        RowId::LambdaExact => (
+            "Exact match bonus",
+            "Extra score for words that match what you typed letter for letter.",
+        ),
+        RowId::LambdaTypo => (
+            "Typo penalty",
+            "How much to lower the score of a word that differs from what you typed. More negative punishes typos harder.",
+        ),
+        RowId::PrefixScanLimit => (
+            "Words scanned",
+            "How many dictionary words to scan for each keystroke. Higher finds more, but can feel slower.",
+        ),
+        RowId::AbortCheckEvery => (
+            "Slow-search cutoff",
+            "How often to check whether a slow search should give up early. Lower gives up sooner.",
+        ),
+        RowId::TextFontSize => (
+            "Text field size",
+            "How big the text is on the text-input screen.",
+        ),
+        RowId::BatteryButton => (
+            "Battery as key",
+            "Draw the battery readout with the same background as the keys around it.",
+        ),
     }
 }
 
@@ -856,6 +1294,29 @@ fn is_toggle(id: RowId) -> bool {
             | RowId::StickCursors
             | RowId::Hitboxes
             | RowId::StickBounds
+            | RowId::InsertSpace
+            | RowId::ResetHighlight
+            | RowId::HighlightWraps
+            | RowId::LearnOnAccept
+            | RowId::LearnOnSubmit
+            | RowId::UnicodeLetters
+            | RowId::NormalizeNfc
+            | RowId::Capitalization
+            | RowId::TransposeNeighbors
+            | RowId::RetractAccept
+            | RowId::TrackBackspace
+            | RowId::ClearOnEnter
+            | RowId::IgnoreCtrlAlt
+            | RowId::StartArmed
+            | RowId::LatchOnArrow
+            | RowId::LatchOnPaste
+            | RowId::ClearLogOnArm
+            | RowId::ReserveSlots
+            | RowId::DimTypedPrefix
+            | RowId::ShowDebugScores
+            | RowId::ArmedDot
+            | RowId::CacheEnabled
+            | RowId::BatteryButton
     )
 }
 
@@ -914,6 +1375,68 @@ pub(in crate::state) fn format_value(cfg: &Config, id: RowId, kind: ControllerKi
         RowId::Hitboxes => on_off(debug_flag(cfg, |d| d.show_hitboxes)),
         RowId::StickBounds => on_off(debug_flag(cfg, |d| d.show_stick_bounds)),
         RowId::ReachOverlay => reach_label(cfg.debug.as_ref().map(|d| d.reach_overlay)),
+        RowId::StretchMaxGain => format_f32(cfg.sc2.pad_origin_stretch_max_gain, UNIT_DIGITS),
+        RowId::PadSettleMs => format!("{} ms", cfg.sc2.pad_origin_settle_ms),
+        RowId::InsertSpace => on_off(cfg.completion.insert_space_on_accept),
+        RowId::ResetHighlight => on_off(cfg.completion.reset_highlight_on_refresh),
+        RowId::HighlightWraps => on_off(cfg.completion.highlight_wraps),
+        RowId::LearnOnAccept => on_off(cfg.completion.learn_on_accept),
+        RowId::LearnOnSubmit => on_off(cfg.completion.learn_on_submit),
+        RowId::UnicodeLetters => on_off(cfg.completion.unicode_letters),
+        RowId::NormalizeNfc => on_off(cfg.completion.normalize_nfc),
+        RowId::Capitalization => on_off(cfg.completion.capitalization),
+        RowId::TransposeNeighbors => on_off(cfg.completion.transpose_neighbors_only),
+        RowId::MaxSuggestions => cfg.completion.max_suggestions.to_string(),
+        RowId::MinPrefixLen => cfg.completion.min_prefix_len.to_string(),
+        RowId::CompleteDebounce => format!("{} ms", cfg.completion.debounce_ms),
+        RowId::MinFuzzyLen => cfg.completion.min_fuzzy_len.to_string(),
+        RowId::Backend => backend_label(cfg.completion.backend).to_owned(),
+        RowId::Fallback => backend_label(cfg.completion.fallback).to_owned(),
+        RowId::CurrentWordChip => word_chip_label(cfg.completion.current_word_chip).to_owned(),
+        RowId::AcceptVia => accept_via_label(cfg.completion.keyboard.accept_via).to_owned(),
+        RowId::RetractAccept => on_off(cfg.completion.keyboard.retract_last_accept),
+        RowId::TrackBackspace => on_off(cfg.completion.keyboard.track_backspace),
+        RowId::ClearOnEnter => on_off(cfg.completion.keyboard.clear_on_enter),
+        RowId::IgnoreCtrlAlt => on_off(cfg.completion.keyboard.ignore_ctrl_alt),
+        RowId::StartArmed => on_off(cfg.completion.keyboard.start_armed),
+        RowId::LatchOnArrow => on_off(cfg.completion.keyboard.latch_off_on_arrow),
+        RowId::LatchOnPaste => on_off(cfg.completion.keyboard.latch_off_on_paste),
+        RowId::ClearLogOnArm => on_off(cfg.completion.keyboard.clear_log_on_arm),
+        RowId::MaxChars => cfg.completion.keyboard.max_chars.to_string(),
+        RowId::IdleResetMs => format!("{} ms", cfg.completion.keyboard.idle_reset_ms),
+        RowId::ReserveSlots => on_off(cfg.completion.ui.reserve_slots),
+        RowId::ChipWidth => chip_width_label(cfg.completion.ui.chip_width).to_owned(),
+        RowId::ChipPlacement => chip_placement_label(cfg.completion.ui.placement).to_owned(),
+        RowId::ChipLabel => chip_label_label(cfg.completion.ui.label).to_owned(),
+        RowId::DimTypedPrefix => on_off(cfg.completion.ui.dim_typed_prefix),
+        RowId::ShowDebugScores => on_off(cfg.completion.ui.show_debug_scores),
+        RowId::ArmedDot => on_off(cfg.completion.ui.armed_dot),
+        RowId::ArmedDotPlacement => {
+            dot_placement_label(cfg.completion.ui.armed_dot_placement).to_owned()
+        }
+        RowId::MaxChipWidth => format_f32(cfg.completion.ui.max_chip_width, 0),
+        RowId::MinChipWidth => format_f32(cfg.completion.ui.min_chip_width, 0),
+        RowId::ChipFontSize => format_f32(cfg.completion.ui.font_size, 0),
+        RowId::CornerRadius => format_f32(cfg.completion.ui.corner_radius, 0),
+        RowId::OutlineWidth => format_f32(cfg.completion.ui.selected_outline_width, 1),
+        RowId::PaddingX => format_f32(cfg.completion.ui.padding_x, 0),
+        RowId::PaddingY => format_f32(cfg.completion.ui.padding_y, 0),
+        RowId::Gap => format_f32(cfg.completion.ui.gap, 0),
+        RowId::ArmedDotRadius => format_f32(cfg.completion.ui.armed_dot_radius, 1),
+        RowId::CacheEnabled => on_off(cfg.completion.user_cache.enabled),
+        RowId::MaxUnigrams => cfg.completion.user_cache.max_unigrams.to_string(),
+        RowId::MaxBigrams => cfg.completion.user_cache.max_bigrams.to_string(),
+        RowId::NgramOrder => cfg.completion.ngram.order.to_string(),
+        RowId::BackoffAlpha => format_f32(cfg.completion.ngram.backoff_alpha, UNIT_DIGITS),
+        RowId::LambdaTri => format_f32(cfg.completion.ngram.lambda_trigram, UNIT_DIGITS),
+        RowId::LambdaBi => format_f32(cfg.completion.ngram.lambda_bigram, UNIT_DIGITS),
+        RowId::LambdaUni => format_f32(cfg.completion.ngram.lambda_unigram, UNIT_DIGITS),
+        RowId::LambdaExact => format_f32(cfg.completion.ngram.lambda_exact, UNIT_DIGITS),
+        RowId::LambdaTypo => format_f32(cfg.completion.ngram.lambda_typo, 1),
+        RowId::PrefixScanLimit => cfg.completion.ngram.prefix_scan_limit.to_string(),
+        RowId::AbortCheckEvery => cfg.completion.ngram.abort_check_every.to_string(),
+        RowId::TextFontSize => format_f32(cfg.text_input.font_size, 0),
+        RowId::BatteryButton => on_off(cfg.battery.draw_button),
     }
 }
 
@@ -961,6 +1484,121 @@ pub(in crate::state) fn copy_row(dst: &mut Config, src: &Config, id: RowId, kind
         RowId::StickCursors | RowId::Hitboxes | RowId::StickBounds | RowId::ReachOverlay => {
             dst.debug = src.debug.clone();
         }
+        RowId::StretchMaxGain => {
+            dst.sc2.pad_origin_stretch_max_gain = src.sc2.pad_origin_stretch_max_gain
+        }
+        RowId::PadSettleMs => dst.sc2.pad_origin_settle_ms = src.sc2.pad_origin_settle_ms,
+        RowId::InsertSpace => {
+            dst.completion.insert_space_on_accept = src.completion.insert_space_on_accept
+        }
+        RowId::ResetHighlight => {
+            dst.completion.reset_highlight_on_refresh = src.completion.reset_highlight_on_refresh
+        }
+        RowId::HighlightWraps => dst.completion.highlight_wraps = src.completion.highlight_wraps,
+        RowId::LearnOnAccept => dst.completion.learn_on_accept = src.completion.learn_on_accept,
+        RowId::LearnOnSubmit => dst.completion.learn_on_submit = src.completion.learn_on_submit,
+        RowId::UnicodeLetters => dst.completion.unicode_letters = src.completion.unicode_letters,
+        RowId::NormalizeNfc => dst.completion.normalize_nfc = src.completion.normalize_nfc,
+        RowId::Capitalization => dst.completion.capitalization = src.completion.capitalization,
+        RowId::TransposeNeighbors => {
+            dst.completion.transpose_neighbors_only = src.completion.transpose_neighbors_only
+        }
+        RowId::MaxSuggestions => dst.completion.max_suggestions = src.completion.max_suggestions,
+        RowId::MinPrefixLen => dst.completion.min_prefix_len = src.completion.min_prefix_len,
+        RowId::CompleteDebounce => dst.completion.debounce_ms = src.completion.debounce_ms,
+        RowId::MinFuzzyLen => dst.completion.min_fuzzy_len = src.completion.min_fuzzy_len,
+        RowId::Backend => dst.completion.backend = src.completion.backend,
+        RowId::Fallback => dst.completion.fallback = src.completion.fallback,
+        RowId::CurrentWordChip => {
+            dst.completion.current_word_chip = src.completion.current_word_chip
+        }
+        RowId::AcceptVia => dst.completion.keyboard.accept_via = src.completion.keyboard.accept_via,
+        RowId::RetractAccept => {
+            dst.completion.keyboard.retract_last_accept =
+                src.completion.keyboard.retract_last_accept
+        }
+        RowId::TrackBackspace => {
+            dst.completion.keyboard.track_backspace = src.completion.keyboard.track_backspace
+        }
+        RowId::ClearOnEnter => {
+            dst.completion.keyboard.clear_on_enter = src.completion.keyboard.clear_on_enter
+        }
+        RowId::IgnoreCtrlAlt => {
+            dst.completion.keyboard.ignore_ctrl_alt = src.completion.keyboard.ignore_ctrl_alt
+        }
+        RowId::StartArmed => {
+            dst.completion.keyboard.start_armed = src.completion.keyboard.start_armed
+        }
+        RowId::LatchOnArrow => {
+            dst.completion.keyboard.latch_off_on_arrow = src.completion.keyboard.latch_off_on_arrow
+        }
+        RowId::LatchOnPaste => {
+            dst.completion.keyboard.latch_off_on_paste = src.completion.keyboard.latch_off_on_paste
+        }
+        RowId::ClearLogOnArm => {
+            dst.completion.keyboard.clear_log_on_arm = src.completion.keyboard.clear_log_on_arm
+        }
+        RowId::MaxChars => dst.completion.keyboard.max_chars = src.completion.keyboard.max_chars,
+        RowId::IdleResetMs => {
+            dst.completion.keyboard.idle_reset_ms = src.completion.keyboard.idle_reset_ms
+        }
+        RowId::ReserveSlots => dst.completion.ui.reserve_slots = src.completion.ui.reserve_slots,
+        RowId::ChipWidth => dst.completion.ui.chip_width = src.completion.ui.chip_width,
+        RowId::ChipPlacement => dst.completion.ui.placement = src.completion.ui.placement,
+        RowId::ChipLabel => dst.completion.ui.label = src.completion.ui.label,
+        RowId::DimTypedPrefix => {
+            dst.completion.ui.dim_typed_prefix = src.completion.ui.dim_typed_prefix
+        }
+        RowId::ShowDebugScores => {
+            dst.completion.ui.show_debug_scores = src.completion.ui.show_debug_scores
+        }
+        RowId::ArmedDot => dst.completion.ui.armed_dot = src.completion.ui.armed_dot,
+        RowId::ArmedDotPlacement => {
+            dst.completion.ui.armed_dot_placement = src.completion.ui.armed_dot_placement
+        }
+        RowId::MaxChipWidth => dst.completion.ui.max_chip_width = src.completion.ui.max_chip_width,
+        RowId::MinChipWidth => dst.completion.ui.min_chip_width = src.completion.ui.min_chip_width,
+        RowId::ChipFontSize => dst.completion.ui.font_size = src.completion.ui.font_size,
+        RowId::CornerRadius => dst.completion.ui.corner_radius = src.completion.ui.corner_radius,
+        RowId::OutlineWidth => {
+            dst.completion.ui.selected_outline_width = src.completion.ui.selected_outline_width
+        }
+        RowId::PaddingX => dst.completion.ui.padding_x = src.completion.ui.padding_x,
+        RowId::PaddingY => dst.completion.ui.padding_y = src.completion.ui.padding_y,
+        RowId::Gap => dst.completion.ui.gap = src.completion.ui.gap,
+        RowId::ArmedDotRadius => {
+            dst.completion.ui.armed_dot_radius = src.completion.ui.armed_dot_radius
+        }
+        RowId::CacheEnabled => {
+            dst.completion.user_cache.enabled = src.completion.user_cache.enabled
+        }
+        RowId::MaxUnigrams => {
+            dst.completion.user_cache.max_unigrams = src.completion.user_cache.max_unigrams
+        }
+        RowId::MaxBigrams => {
+            dst.completion.user_cache.max_bigrams = src.completion.user_cache.max_bigrams
+        }
+        RowId::NgramOrder => dst.completion.ngram.order = src.completion.ngram.order,
+        RowId::BackoffAlpha => {
+            dst.completion.ngram.backoff_alpha = src.completion.ngram.backoff_alpha
+        }
+        RowId::LambdaTri => {
+            dst.completion.ngram.lambda_trigram = src.completion.ngram.lambda_trigram
+        }
+        RowId::LambdaBi => dst.completion.ngram.lambda_bigram = src.completion.ngram.lambda_bigram,
+        RowId::LambdaUni => {
+            dst.completion.ngram.lambda_unigram = src.completion.ngram.lambda_unigram
+        }
+        RowId::LambdaExact => dst.completion.ngram.lambda_exact = src.completion.ngram.lambda_exact,
+        RowId::LambdaTypo => dst.completion.ngram.lambda_typo = src.completion.ngram.lambda_typo,
+        RowId::PrefixScanLimit => {
+            dst.completion.ngram.prefix_scan_limit = src.completion.ngram.prefix_scan_limit
+        }
+        RowId::AbortCheckEvery => {
+            dst.completion.ngram.abort_check_every = src.completion.ngram.abort_check_every
+        }
+        RowId::TextFontSize => dst.text_input.font_size = src.text_input.font_size,
+        RowId::BatteryButton => dst.battery.draw_button = src.battery.draw_button,
     }
 }
 
@@ -1199,6 +1837,352 @@ fn apply_dir(cfg: &mut Config, id: RowId, dir: i32, kind: ControllerKind) {
             let current = cfg.debug.as_ref().map(|d| d.reach_overlay);
             debug_mut(cfg).reach_overlay = cycle_reach(current, dir);
         }
+        RowId::StretchMaxGain => {
+            cfg.sc2.pad_origin_stretch_max_gain = step_f32(
+                cfg.sc2.pad_origin_stretch_max_gain,
+                1.0,
+                GAIN_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::PadSettleMs => {
+            cfg.sc2.pad_origin_settle_ms = step_u64(
+                cfg.sc2.pad_origin_settle_ms,
+                0,
+                SETTLE_MAX,
+                SETTLE_STEP,
+                dir,
+            )
+        }
+        RowId::InsertSpace => {
+            cfg.completion.insert_space_on_accept = !cfg.completion.insert_space_on_accept
+        }
+        RowId::ResetHighlight => {
+            cfg.completion.reset_highlight_on_refresh = !cfg.completion.reset_highlight_on_refresh
+        }
+        RowId::HighlightWraps => cfg.completion.highlight_wraps = !cfg.completion.highlight_wraps,
+        RowId::LearnOnAccept => cfg.completion.learn_on_accept = !cfg.completion.learn_on_accept,
+        RowId::LearnOnSubmit => cfg.completion.learn_on_submit = !cfg.completion.learn_on_submit,
+        RowId::UnicodeLetters => cfg.completion.unicode_letters = !cfg.completion.unicode_letters,
+        RowId::NormalizeNfc => cfg.completion.normalize_nfc = !cfg.completion.normalize_nfc,
+        RowId::Capitalization => cfg.completion.capitalization = !cfg.completion.capitalization,
+        RowId::TransposeNeighbors => {
+            cfg.completion.transpose_neighbors_only = !cfg.completion.transpose_neighbors_only
+        }
+        RowId::MaxSuggestions => {
+            cfg.completion.max_suggestions = step_usize_by(
+                cfg.completion.max_suggestions,
+                SUGGESTIONS_MIN,
+                SUGGESTIONS_MAX,
+                COUNT_STEP,
+                dir,
+            )
+        }
+        RowId::MinPrefixLen => {
+            cfg.completion.min_prefix_len = step_usize_by(
+                cfg.completion.min_prefix_len,
+                PREFIX_MIN,
+                PREFIX_MAX,
+                COUNT_STEP,
+                dir,
+            )
+        }
+        RowId::CompleteDebounce => {
+            cfg.completion.debounce_ms = step_u64(
+                cfg.completion.debounce_ms,
+                0,
+                COMPLETE_DEBOUNCE_MAX,
+                COMPLETE_DEBOUNCE_STEP,
+                dir,
+            )
+        }
+        RowId::MinFuzzyLen => {
+            cfg.completion.min_fuzzy_len = step_usize_by(
+                cfg.completion.min_fuzzy_len,
+                FUZZY_MIN,
+                FUZZY_MAX,
+                COUNT_STEP,
+                dir,
+            )
+        }
+        RowId::Backend => cfg.completion.backend = cycle_backend(cfg.completion.backend, dir),
+        RowId::Fallback => cfg.completion.fallback = cycle_backend(cfg.completion.fallback, dir),
+        RowId::CurrentWordChip => {
+            cfg.completion.current_word_chip =
+                cycle_word_chip(cfg.completion.current_word_chip, dir)
+        }
+        RowId::AcceptVia => {
+            cfg.completion.keyboard.accept_via =
+                cycle_accept_via(cfg.completion.keyboard.accept_via, dir)
+        }
+        RowId::RetractAccept => {
+            cfg.completion.keyboard.retract_last_accept =
+                !cfg.completion.keyboard.retract_last_accept
+        }
+        RowId::TrackBackspace => {
+            cfg.completion.keyboard.track_backspace = !cfg.completion.keyboard.track_backspace
+        }
+        RowId::ClearOnEnter => {
+            cfg.completion.keyboard.clear_on_enter = !cfg.completion.keyboard.clear_on_enter
+        }
+        RowId::IgnoreCtrlAlt => {
+            cfg.completion.keyboard.ignore_ctrl_alt = !cfg.completion.keyboard.ignore_ctrl_alt
+        }
+        RowId::StartArmed => {
+            cfg.completion.keyboard.start_armed = !cfg.completion.keyboard.start_armed
+        }
+        RowId::LatchOnArrow => {
+            cfg.completion.keyboard.latch_off_on_arrow = !cfg.completion.keyboard.latch_off_on_arrow
+        }
+        RowId::LatchOnPaste => {
+            cfg.completion.keyboard.latch_off_on_paste = !cfg.completion.keyboard.latch_off_on_paste
+        }
+        RowId::ClearLogOnArm => {
+            cfg.completion.keyboard.clear_log_on_arm = !cfg.completion.keyboard.clear_log_on_arm
+        }
+        RowId::MaxChars => {
+            cfg.completion.keyboard.max_chars = step_usize_by(
+                cfg.completion.keyboard.max_chars,
+                MAX_CHARS_MIN,
+                MAX_CHARS_MAX,
+                MAX_CHARS_STEP,
+                dir,
+            )
+        }
+        RowId::IdleResetMs => {
+            cfg.completion.keyboard.idle_reset_ms = step_u64(
+                cfg.completion.keyboard.idle_reset_ms,
+                0,
+                IDLE_RESET_MAX,
+                IDLE_RESET_STEP,
+                dir,
+            )
+        }
+        RowId::ReserveSlots => cfg.completion.ui.reserve_slots = !cfg.completion.ui.reserve_slots,
+        RowId::ChipWidth => {
+            cfg.completion.ui.chip_width = cycle_chip_width(cfg.completion.ui.chip_width, dir)
+        }
+        RowId::ChipPlacement => {
+            cfg.completion.ui.placement = cycle_chip_placement(cfg.completion.ui.placement, dir)
+        }
+        RowId::ChipLabel => {
+            cfg.completion.ui.label = cycle_chip_label(cfg.completion.ui.label, dir)
+        }
+        RowId::DimTypedPrefix => {
+            cfg.completion.ui.dim_typed_prefix = !cfg.completion.ui.dim_typed_prefix
+        }
+        RowId::ShowDebugScores => {
+            cfg.completion.ui.show_debug_scores = !cfg.completion.ui.show_debug_scores
+        }
+        RowId::ArmedDot => cfg.completion.ui.armed_dot = !cfg.completion.ui.armed_dot,
+        RowId::ArmedDotPlacement => {
+            cfg.completion.ui.armed_dot_placement =
+                cycle_dot_placement(cfg.completion.ui.armed_dot_placement, dir)
+        }
+        RowId::MaxChipWidth => {
+            cfg.completion.ui.max_chip_width = step_f32(
+                cfg.completion.ui.max_chip_width,
+                CHIP_WIDTH_MIN,
+                CHIP_WIDTH_MAX,
+                CHIP_WIDTH_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::MinChipWidth => {
+            cfg.completion.ui.min_chip_width = step_f32(
+                cfg.completion.ui.min_chip_width,
+                CHIP_MIN_MIN,
+                CHIP_MIN_MAX,
+                CHIP_MIN_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::ChipFontSize => {
+            cfg.completion.ui.font_size = step_f32(
+                cfg.completion.ui.font_size,
+                FONT_MIN,
+                FONT_MAX,
+                FONT_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::CornerRadius => {
+            cfg.completion.ui.corner_radius = step_f32(
+                cfg.completion.ui.corner_radius,
+                0.0,
+                RADIUS_MAX,
+                FONT_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::OutlineWidth => {
+            cfg.completion.ui.selected_outline_width = step_f32(
+                cfg.completion.ui.selected_outline_width,
+                0.0,
+                OUTLINE_MAX,
+                OUTLINE_STEP,
+                dir,
+                1,
+            )
+        }
+        RowId::PaddingX => {
+            cfg.completion.ui.padding_x = step_f32(
+                cfg.completion.ui.padding_x,
+                0.0,
+                PAD_X_MAX,
+                FONT_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::PaddingY => {
+            cfg.completion.ui.padding_y = step_f32(
+                cfg.completion.ui.padding_y,
+                0.0,
+                PAD_Y_MAX,
+                FONT_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::Gap => {
+            cfg.completion.ui.gap = step_f32(cfg.completion.ui.gap, 0.0, GAP_MAX, FONT_STEP, dir, 0)
+        }
+        RowId::ArmedDotRadius => {
+            cfg.completion.ui.armed_dot_radius = step_f32(
+                cfg.completion.ui.armed_dot_radius,
+                DOT_RADIUS_MIN,
+                DOT_RADIUS_MAX,
+                DOT_RADIUS_STEP,
+                dir,
+                1,
+            )
+        }
+        RowId::CacheEnabled => {
+            cfg.completion.user_cache.enabled = !cfg.completion.user_cache.enabled
+        }
+        RowId::MaxUnigrams => {
+            cfg.completion.user_cache.max_unigrams = step_usize_by(
+                cfg.completion.user_cache.max_unigrams,
+                COUNT_MIN,
+                CACHE_MAX,
+                CACHE_STEP,
+                dir,
+            )
+        }
+        RowId::MaxBigrams => {
+            cfg.completion.user_cache.max_bigrams = step_usize_by(
+                cfg.completion.user_cache.max_bigrams,
+                COUNT_MIN,
+                CACHE_MAX,
+                CACHE_STEP,
+                dir,
+            )
+        }
+        RowId::NgramOrder => {
+            cfg.completion.ngram.order = step_u8(
+                cfg.completion.ngram.order,
+                NGRAM_ORDER_MIN,
+                NGRAM_ORDER_MAX,
+                1,
+                dir,
+            )
+        }
+        RowId::BackoffAlpha => {
+            cfg.completion.ngram.backoff_alpha = step_f32(
+                cfg.completion.ngram.backoff_alpha,
+                UNIT_MIN,
+                UNIT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::LambdaTri => {
+            cfg.completion.ngram.lambda_trigram = step_f32(
+                cfg.completion.ngram.lambda_trigram,
+                UNIT_MIN,
+                WEIGHT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::LambdaBi => {
+            cfg.completion.ngram.lambda_bigram = step_f32(
+                cfg.completion.ngram.lambda_bigram,
+                UNIT_MIN,
+                WEIGHT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::LambdaUni => {
+            cfg.completion.ngram.lambda_unigram = step_f32(
+                cfg.completion.ngram.lambda_unigram,
+                UNIT_MIN,
+                WEIGHT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::LambdaExact => {
+            cfg.completion.ngram.lambda_exact = step_f32(
+                cfg.completion.ngram.lambda_exact,
+                UNIT_MIN,
+                WEIGHT_MAX,
+                UNIT_STEP,
+                dir,
+                UNIT_DIGITS,
+            )
+        }
+        RowId::LambdaTypo => {
+            cfg.completion.ngram.lambda_typo = step_f32(
+                cfg.completion.ngram.lambda_typo,
+                TYPO_WEIGHT_MIN,
+                UNIT_MIN,
+                0.1,
+                dir,
+                1,
+            )
+        }
+        RowId::PrefixScanLimit => {
+            cfg.completion.ngram.prefix_scan_limit = step_usize_by(
+                cfg.completion.ngram.prefix_scan_limit,
+                SCAN_MIN,
+                SCAN_MAX,
+                SCAN_STEP,
+                dir,
+            )
+        }
+        RowId::AbortCheckEvery => {
+            cfg.completion.ngram.abort_check_every = step_usize_by(
+                cfg.completion.ngram.abort_check_every,
+                ABORT_MIN,
+                ABORT_MAX,
+                ABORT_STEP,
+                dir,
+            )
+        }
+        RowId::TextFontSize => {
+            cfg.text_input.font_size = step_f32(
+                cfg.text_input.font_size,
+                FONT_MIN,
+                FONT_MAX,
+                FONT_STEP,
+                dir,
+                0,
+            )
+        }
+        RowId::BatteryButton => cfg.battery.draw_button = !cfg.battery.draw_button,
     }
 }
 
@@ -1234,8 +2218,12 @@ fn step_u8(value: u8, min: u8, max: u8, step: u8, dir: i32) -> u8 {
 }
 
 fn step_usize(value: usize, min: usize, max: usize, dir: i32) -> usize {
-    let next = value as i32 + dir;
-    next.clamp(min as i32, max as i32) as usize
+    step_usize_by(value, min, max, 1, dir)
+}
+
+fn step_usize_by(value: usize, min: usize, max: usize, step: usize, dir: i32) -> usize {
+    let next = value as i64 + dir as i64 * step as i64;
+    next.clamp(min as i64, max as i64) as usize
 }
 
 fn step_index(index: usize, len: usize, dir: i32) -> usize {
@@ -1249,6 +2237,108 @@ fn cycle_preselect(value: Preselect, dir: i32) -> Preselect {
     const OPTIONS: [Preselect; 2] = [Preselect::None, Preselect::First];
     let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
     OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_backend(value: CompletionBackendKind, dir: i32) -> CompletionBackendKind {
+    const OPTIONS: [CompletionBackendKind; 2] = [
+        CompletionBackendKind::Ngram,
+        CompletionBackendKind::Dictionary,
+    ];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_word_chip(value: CurrentWordChip, dir: i32) -> CurrentWordChip {
+    const OPTIONS: [CurrentWordChip; 2] = [CurrentWordChip::First, CurrentWordChip::Last];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_accept_via(value: AcceptVia, dir: i32) -> AcceptVia {
+    const OPTIONS: [AcceptVia; 2] = [AcceptVia::Suffix, AcceptVia::BackspaceReplace];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_chip_width(value: ChipWidth, dir: i32) -> ChipWidth {
+    const OPTIONS: [ChipWidth; 2] = [ChipWidth::Fill, ChipWidth::Hug];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_chip_placement(value: ChipPlacement, dir: i32) -> ChipPlacement {
+    const OPTIONS: [ChipPlacement; 3] = [
+        ChipPlacement::Between,
+        ChipPlacement::AboveField,
+        ChipPlacement::AboveKeyboard,
+    ];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_chip_label(value: ChipLabel, dir: i32) -> ChipLabel {
+    const OPTIONS: [ChipLabel; 2] = [ChipLabel::Full, ChipLabel::Remainder];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn cycle_dot_placement(value: ArmedDotPlacement, dir: i32) -> ArmedDotPlacement {
+    const OPTIONS: [ArmedDotPlacement; 2] = [
+        ArmedDotPlacement::ChipsLeading,
+        ArmedDotPlacement::ChipsTrailing,
+    ];
+    let index = OPTIONS.iter().position(|v| *v == value).unwrap_or(0);
+    OPTIONS[step_index(index, OPTIONS.len(), dir)]
+}
+
+fn backend_label(value: CompletionBackendKind) -> &'static str {
+    match value {
+        CompletionBackendKind::Ngram => "Smart",
+        CompletionBackendKind::Dictionary => "Dictionary",
+    }
+}
+
+fn word_chip_label(value: CurrentWordChip) -> &'static str {
+    match value {
+        CurrentWordChip::First => "First",
+        CurrentWordChip::Last => "Last",
+    }
+}
+
+fn accept_via_label(value: AcceptVia) -> &'static str {
+    match value {
+        AcceptVia::Suffix => "Suffix",
+        AcceptVia::BackspaceReplace => "Backspace",
+    }
+}
+
+fn chip_width_label(value: ChipWidth) -> &'static str {
+    match value {
+        ChipWidth::Fill => "Fill",
+        ChipWidth::Hug => "Hug",
+    }
+}
+
+fn chip_placement_label(value: ChipPlacement) -> &'static str {
+    match value {
+        ChipPlacement::Between => "Between",
+        ChipPlacement::AboveField => "Above field",
+        ChipPlacement::AboveKeyboard => "Above keyboard",
+    }
+}
+
+fn chip_label_label(value: ChipLabel) -> &'static str {
+    match value {
+        ChipLabel::Full => "Full",
+        ChipLabel::Remainder => "Remainder",
+    }
+}
+
+fn dot_placement_label(value: ArmedDotPlacement) -> &'static str {
+    match value {
+        ArmedDotPlacement::ChipsLeading => "Leading",
+        ArmedDotPlacement::ChipsTrailing => "Trailing",
+    }
 }
 
 fn cycle_haptic(value: HapticIntensity, dir: i32) -> HapticIntensity {
@@ -1521,11 +2611,86 @@ mod tests {
     fn pads_page_holds_pad_feel() {
         let mut form = SettingsForm::new();
         form.view = View::DevicePage(ControllerKind::Sc2, DevicePage::Pads);
-        assert_eq!(form.len(ControllerKind::Sc2), 8);
+        assert_eq!(form.len(ControllerKind::Sc2), 10);
         let rows = form.drawn(&sample(), ControllerKind::Sc2);
         let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
         assert!(labels.contains(&"Thumb rest"));
         assert!(labels.contains(&"Pad click"));
+        assert!(labels.contains(&"Stretch limit"));
+        assert!(labels.contains(&"Touch settle time"));
+    }
+
+    #[test]
+    fn long_lists_scroll_eight_at_a_time() {
+        let mut form = SettingsForm::new();
+        form.view = View::Page(Page::Suggestions);
+        let total = form.len(ControllerKind::Sc2);
+        assert!(total > 8);
+
+        form.focus = 0;
+        assert_eq!(form.visible_range(ControllerKind::Sc2), (0, 8));
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2).0, 0);
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2).1, total - 8);
+
+        form.focus = total - 1;
+        assert_eq!(form.visible_range(ControllerKind::Sc2), (total - 8, total));
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2).1, 0);
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2).0, total - 8);
+
+        form.focus = 9;
+        let (start, end) = form.visible_range(ControllerKind::Sc2);
+        assert!(start <= 9 && 9 < end);
+        assert_eq!(end - start, 8);
+    }
+
+    #[test]
+    fn short_lists_show_everything() {
+        let mut form = SettingsForm::new();
+        form.view = View::Page(Page::Typing);
+        assert_eq!(form.visible_range(ControllerKind::Sc2), (0, 2));
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2), (0, 0));
+    }
+
+    #[test]
+    fn new_rows_round_trip() {
+        let mut form = SettingsForm::new();
+        let mut cfg = sample();
+
+        form.view = View::Page(Page::Suggestions);
+        form.focus = row_position(Page::Suggestions, RowId::MaxSuggestions);
+        let before = cfg.completion.max_suggestions;
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert_eq!(cfg.completion.max_suggestions, before + 1);
+
+        form.focus = row_position(Page::Suggestions, RowId::Backend);
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert_ne!(cfg.completion.backend, sample().completion.backend);
+
+        form.focus = row_position(Page::Suggestions, RowId::LearnOnAccept);
+        let enabled = cfg.completion.learn_on_accept;
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert_eq!(cfg.completion.learn_on_accept, !enabled);
+
+        form.view = View::DevicePage(ControllerKind::Sc2, DevicePage::Pads);
+        form.focus = row_position_device(DevicePage::Pads, RowId::PadSettleMs);
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert_eq!(cfg.sc2.pad_origin_settle_ms, 25);
+
+        form.view = View::Page(Page::Overlay);
+        form.focus = row_position(Page::Overlay, RowId::BatteryButton);
+        assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
+        assert!(cfg.battery.draw_button);
+    }
+
+    fn row_position(page: Page, id: RowId) -> usize {
+        page.rows().iter().position(|row| *row == id).unwrap()
+    }
+
+    fn row_position_device(page: DevicePage, id: RowId) -> usize {
+        page.rows(ControllerKind::Sc2)
+            .iter()
+            .position(|row| *row == id)
+            .unwrap()
     }
 
     #[test]
