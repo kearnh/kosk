@@ -548,6 +548,8 @@ pub fn battery() -> BatteryConfig {
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+/// Unix seconds of the last published load. Debounces watcher bursts.
+static LAST_LOAD: AtomicU32 = AtomicU32::new(0);
 static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 /// Relative path string from `controller_map = "…"` on the last successful load, or `None` if inline/absent.
 static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
@@ -822,27 +824,9 @@ fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
     }
 }
 
-/// Load the built-in defaults, then the active config file on top.
-/// Returns the files that define this config (see [`crate::config_overlay::config_file_paths`]).
-fn load_config() -> Result<Vec<PathBuf>> {
-    let config_path = CONFIG_PATH
-        .get()
-        .ok_or(anyhow::anyhow!("Config path not set"))?;
-
-    static LAST_LOAD: AtomicU32 = AtomicU32::new(0);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as u32;
-
-    let last = LAST_LOAD.load(Ordering::Relaxed);
-    if last > 0 && now.wrapping_sub(last) < 1 {
-        return Err(anyhow::anyhow!("Reload debounced"));
-    }
-
-    let (new_config, map_rel) = read_merged_config(config_path, config_source())?;
-    store_controller_map_file(map_rel.clone());
-
+/// Checks a freshly read config. Fails hard: the watcher keeps the previous
+/// config, startup falls back to the built-in defaults.
+fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()> {
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
         bail!("Layouts must contain at least a 'main' layout");
@@ -890,24 +874,54 @@ fn load_config() -> Result<Vec<PathBuf>> {
         }
     }
 
+    Ok(())
+}
+
+fn now_secs() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32
+}
+
+/// Publish a loaded config and return its watched files.
+fn publish_loaded_config(
+    new_config: Config,
+    map_rel: Option<String>,
+    config_path: &Path,
+) -> Vec<PathBuf> {
+    store_controller_map_file(map_rel.clone());
     if let Some(instance) = CONFIG_INSTANCE.get() {
-        let mut config = instance.lock().unwrap();
-        *config = new_config.clone();
+        *instance.lock().unwrap() = new_config.clone();
     } else {
         CONFIG_INSTANCE
             .set(Arc::new(Mutex::new(new_config.clone())))
             .expect("Config was already initialized");
     }
     store_disk_config(new_config.clone());
-
-    LAST_LOAD.store(now, Ordering::Relaxed);
+    LAST_LOAD.store(now_secs(), Ordering::Relaxed);
 
     let layouts: Vec<(String, String)> = new_config.layouts.into_iter().collect();
-    Ok(crate::config_overlay::config_file_paths(
-        config_path,
-        map_rel.as_deref(),
-        &layouts,
-    ))
+    crate::config_overlay::config_file_paths(config_path, map_rel.as_deref(), &layouts)
+}
+
+/// Load the built-in defaults, then the active config file on top.
+/// Returns the files that define this config (see [`crate::config_overlay::config_file_paths`]).
+fn load_config() -> Result<Vec<PathBuf>> {
+    let config_path = CONFIG_PATH
+        .get()
+        .ok_or(anyhow::anyhow!("Config path not set"))?;
+
+    let now = now_secs();
+    let last = LAST_LOAD.load(Ordering::Relaxed);
+    if last > 0 && now.wrapping_sub(last) < 1 {
+        return Err(anyhow::anyhow!("Reload debounced"));
+    }
+
+    let (new_config, map_rel) = read_merged_config(config_path, config_source())?;
+    validate_loaded_config(&new_config, config_path)?;
+
+    Ok(publish_loaded_config(new_config, map_rel, config_path))
 }
 
 /// Read `config_path`, migrate it, and merge it onto the built-in defaults.
@@ -1101,6 +1115,37 @@ pub fn init() -> Result<()> {
     Ok(())
 }
 
+/// Startup load that never fails hard. An unusable file posts a notice and
+/// yields the built-in defaults, so kosk still opens and a later save retries.
+/// Returns the config, the `controller_map` file name, and whether defaults won.
+fn load_initial(config_path: &Path, source: ConfigSource) -> (Config, Option<String>, bool) {
+    let loaded = read_merged_config(config_path, source).and_then(|(cfg, map_rel)| {
+        validate_loaded_config(&cfg, config_path)?;
+        Ok((cfg, map_rel))
+    });
+    match loaded {
+        Ok((cfg, map_rel)) => (cfg, map_rel, false),
+        Err(e) => {
+            eprintln!("Failed to load config (using defaults): {e:#}");
+            crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
+            let builtin = builtin_merged_config().expect("built-in config is valid");
+            (builtin, builtin_controller_map_rel(), true)
+        }
+    }
+}
+
+/// The built-in `controller_map` file name, as a fallback watch target.
+fn builtin_controller_map_rel() -> Option<String> {
+    crate::config_overlay::builtin_config_toml()
+        .parse::<toml::Value>()
+        .ok()
+        .and_then(|v| {
+            v.get(CONTROLLER_MAP_KEY)
+                .and_then(|s| s.as_str())
+                .map(str::to_owned)
+        })
+}
+
 /// Load config from `config_path` without parsing process args (for auxiliary binaries).
 pub fn init_from_path(config_path: PathBuf) -> Result<()> {
     CONFIG_PATH
@@ -1108,7 +1153,8 @@ pub fn init_from_path(config_path: PathBuf) -> Result<()> {
         .expect("Config path was already set");
     let _ = CONFIG_SOURCE.set(ConfigSource::Explicit);
 
-    let config_files = load_config()?;
+    let (new_config, map_rel, _) = load_initial(&config_path, config_source());
+    let config_files = publish_loaded_config(new_config, map_rel, &config_path);
 
     let skip_watcher = preferred_is_replay();
     if !skip_watcher {
@@ -1891,6 +1937,19 @@ show_stick_cursors = false\n\
         let (cfg, _) = read_merged_config(&config_path, ConfigSource::User).unwrap();
         assert_eq!(cfg.config_version, 99);
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+    }
+
+    #[test]
+    fn invalid_config_falls_back_to_defaults() {
+        let dir = temp_dir("invalid-fallback");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "keyboard_opacity = \"abc\"\n").unwrap();
+        let (cfg, _, used_defaults) = super::load_initial(&config_path, ConfigSource::Explicit);
+        assert!(used_defaults);
+        assert_eq!(
+            cfg.keyboard_opacity,
+            super::builtin_merged_config().unwrap().keyboard_opacity
+        );
     }
 
     #[test]
