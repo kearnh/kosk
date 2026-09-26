@@ -403,7 +403,11 @@ impl SettingsForm {
                 },
                 FooterHint {
                     buttons: FooterButtons::ShowAllControllers,
-                    label: "show/hide other controllers",
+                    label: if self.show_all_controllers {
+                        "hide other controllers"
+                    } else {
+                        "show other controllers"
+                    },
                 },
                 FooterHint {
                     buttons: FooterButtons::OpenConfig,
@@ -1381,7 +1385,14 @@ mod tests {
             .footer(ControllerKind::Sc2)
             .iter()
             .any(|hint| hint.buttons == FooterButtons::ShowAllControllers
-                && hint.label == "show/hide other controllers"));
+                && hint.label == "show other controllers"));
+        form.toggle_show_all(ControllerKind::Sc2);
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::ShowAllControllers
+                && hint.label == "hide other controllers"));
+        form.toggle_show_all(ControllerKind::Sc2);
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);
