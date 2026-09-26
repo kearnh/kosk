@@ -1,90 +1,85 @@
-# Text completion (`completion/`)
+# Text completion (`completion/`, `completion_ui.rs`)
 
-Word and next-token prediction for Keyboard and TextInput. UI talks only to the session. Backends never see egui, HID, or `config::get()`.
+This document describes word and next-token prediction: the chips shown above the keyboard, the backends that propose them, and what happens when you accept one. The prediction code lives in `src/completion/` (`settings.rs`, `context.rs`, `session.rs`, `backend.rs`, `ngram.rs`, `dictionary.rs`, `fuzzy.rs`, `user_cache.rs`, `typed_log.rs`, `case.rs`, `apply.rs`, `insert.rs`, `app_type.rs`, `recorded.rs`). The chip strip itself is drawn by `src/state/completion_ui.rs`. Keyboard and text-input modes only talk to the session; backends never see egui, HID, or `config::get()`.
 
-## Layers
+## Why prediction exists
 
-1. **Context** — `(text, cursor_byte)` → current token, `token_range`, previous words, case flags (`context.rs`). Keyboard uses a session-scoped log of keys kosk actually sent; TextInput uses the local buffer and caret.
-2. **Session** — debounce, latest-wins worker slot, generation filter, highlight, armed latch (`session.rs`). `None` from a backend means abort (stale generation), not “no suggestions.”
-3. **`CompletionBackend`** — `suggest(ctx, abort) -> Option<Vec<Candidate>>`. Factory: `backend_from_config`. Default `ngram`; `fallback = "dictionary"` if model files are missing. A process started for replay of a version 2 or newer tape uses `RecordedSuggestions` instead (`recorded.rs`): the lists that were on screen, keyed by the text before the cursor. That choice is made when the session is created. Restart to leave playback.
-4. **Chips** — reserved strip above the keys (`state/completion_ui.rs`). Cycle never injects. Accept injects.
+Typing on a controller is slow: every character costs a stick aim plus a trigger hold. Prediction recovers some of that cost by offering full words after a few letters, and sometimes the next word after a space. The UI for that is a strip of chips drawn above the keys. Highlighting a chip never types anything; accepting it injects the rest of the word. That split matters because the same bumpers and triggers that cycle and accept chips also type letters when no chip is highlighted, with the binding engine latching one meaning per hold (see [bindings.md](bindings.md)).
 
-Config lives in `[completion]` (`src/completion/settings.rs`). Relative paths resolve against the config directory. `completion` is in `TAPE_CONFIG_SKIP`.
+## How a keystroke becomes chips
 
-## Armed latch (Keyboard)
+There are four layers, and a keystroke passes through each of them in order.
 
-Starts armed (`start_armed`). Arrow / Home / End / PageUp / PageDown / Insert / Delete and paste **disarm**: stop logging, hide chips, stop predicting. Stays off until `toggleCompletion`. Re-arm clears the log (`clear_log_on_arm`). Enter does not re-arm. Ctrl/Alt chords are ignored (`ignore_ctrl_alt`), not a latch-off.
+The first layer is the context (`context.rs`). It turns a text buffer and a caret position into the facts backends need: the current token, the range of bytes that token covers (`token_range`), the words before it, and case flags. Keyboard mode and text-input mode feed this layer differently. Keyboard mode keeps a session-scoped log of keys KOSK actually sent (`typed_log.rs`), because the keys are going into another application and KOSK never sees that application's buffer. Text-input mode instead uses its own local buffer and caret, which it owns. Either way, the backend receives the same shape: text before the cursor, token, and previous words.
 
-Green / gray dot on the chip strip shows armed vs disarmed.
+The second layer is the session (`session.rs`). It owns debouncing (it waits `debounce_ms` after the last keystroke before asking for suggestions), a latest-wins worker slot so a slow backend cannot overwrite newer results, a generation filter, the chip highlight, and the armed latch described below. One convention here surprises newcomers: when a backend returns `None`, that means the request was aborted as stale, not that there are no suggestions. An empty list means no suggestions.
 
-## Accept
+The third layer is the backend (`backend.rs`). A backend implements one function, `suggest`, which takes the context plus an abort flag and returns candidates or `None` for abort. Which backend runs is chosen by `backend_from_config`: the configured `backend` first, or the `fallback` (a frequency dictionary) when model files are missing. The default backend is the ngram model. When this process was started to replay a version 2 or newer tape, the session is instead created with `RecordedSuggestions` (`recorded.rs`), which serves the chip lists stored on the tape rather than predicting anything. That choice is made once when the session is created; leaving playback means restarting.
 
-- **Keyboard** default `accept_via = "suffix"`: typed `hel`, chip `hello` → inject `lo` plus optional space. `backspace_replace` deletes the token then sends the full word. If the chip is not a case-insensitive prefix of the token (a typo correction such as `thr` → `the`, or an inserted apostrophe or period such as `dont` → `don't`), accept always uses backspace-replace for that injection, even when the config is suffix. With `retract_last_accept`, cancelling while `suggestionJustAccepted` and no chip is highlighted backspaces that injection and, for backspace-replace, retypes the original token, then requests chips again. Clearing a highlighted chip does not undo. Further typing drops the undo.
-- After accept, if `insert_space_on_accept` added a trailing space and the next typed character is in `[completion].eat_space_before`, that space is deleted so the symbol sits against the word (`hello/` not `hello /`). If the character is also in `[completion].space_after` (default `,.!?;:`), a space is inserted after the mark (`hello? `). The latch is one-shot: a letter, backspace, arrow, or cancel drops it. An empty `eat_space_before` turns eating off; an empty `space_after` still eats but never re-spaces. Keyboard overlay sends a Backspace into the focused app (and an extra space when re-spacing); TextInput edits the local buffer. Layout switch does not consume the latch, so accept then a symbols-board period still eats.
-- **TextInput** splices `token_range` with the candidate (mid-word replaces the whole word). A current-word chip only appends a space; it does not splice.
-- Chip `dim_typed_prefix` and `label = remainder` apply only when the token is a prefix of the chip. A correction paints the full word. A current-word chip always paints the typed token in full, with a green `+` (`[completion.ui] new_word_mark_color`) immediately before it.
-- Highlight does not inject. Bumpers cycle chips. `faceBottom` is `acceptSuggestion` when `suggestionSelected`, else Enter / TextInput `submit`. Triggers are `acceptSuggestion` when `suggestionSelected`, else type under that stick. Pads stay type-only. `faceRight` is `cancelSuggestion` only while a chip is highlighted. The binding engine latches the chosen action until release so accept does not turn into a typed letter on the same hold.
-- Bumpers: `cycleSuggestion` highlights slot 0 from none; `cycleSuggestionPrev` highlights the last slot. `preselect = "none"`. Typing keeps the highlight if that chip is still in the new list (even in another column); otherwise `reset_highlight_on_refresh` clears it.
-- The engine returns at most `max_suggestions`. The strip shows at most `columns * rows` and drops the rest. Raise both to show a reserved full-word correction plus prefix completions. `reserve_slots` sizes the strip to that grid even when empty so key centres do not jump.
-- **Current-word chip**: Session inserts the typed token when it is non-empty and unknown for this app type (not in the base dictionary, that type’s wordlist, or that type’s user-cache unigram). Omitted after a space and when the token is already known. `[completion] current_word_chip = "first" | "last"` (default `last`) places it; the engine is truncated to `N - 1` slots while it is shown. Accept injects a trailing space (if `insert_space_on_accept`) and learns the token into the current type. Keyboard suffix / backspace-replace do not apply. Retract undoes the space and requests chips, not the learn.
+The fourth layer is the chips (`state/completion_ui.rs`). This is the reserved strip above the keys. Cycling the highlight never injects. Accepting injects. The strip is reserved space rather than part of the layout TOML, so key centers do not jump when chips appear or disappear (see [keyboard.md](keyboard.md)).
+
+Configuration for all of this lives in `[completion]` (`src/completion/settings.rs`). Relative paths resolve against the config directory. The `[completion]` table is excluded from tape-recorded config, so replay uses the operator's live completion settings except for the recorded chip lists themselves.
+
+## The armed latch in keyboard mode
+
+Prediction in keyboard mode has an on/off latch called armed. It starts armed when `start_armed` is true. Arrow keys, Home, End, PageUp, PageDown, Insert, Delete, and paste disarm it (controlled by the `latch_off_on_arrow` and `latch_off_on_paste` settings): KOSK stops logging typed keys, hides the chips, and stops predicting. It stays off until the `toggleCompletion` action re-arms it, and re-arming clears the typed log when `clear_log_on_arm` is set. Pressing Enter does not re-arm it. Chords held with Ctrl or Alt are ignored by the log (`ignore_ctrl_alt`) rather than disarming it, so copy-paste style chords do not kill prediction.
+
+A small dot on the chip strip shows the latch state: the `armed_color` (green by default) when predicting, the `disarmed_color` (gray) when disarmed. The dot can be turned off with `armed_dot`.
+
+## Cycling chips
+
+The bumpers move the highlight without typing. `cycleSuggestion` highlights slot 0 when nothing is highlighted; `cycleSuggestionPrev` highlights the last slot. Nothing is preselected by default (`preselect = "none"`). When new suggestions arrive while the user keeps typing, the highlight follows the chip if it is still in the new list, even if it moved to another column; otherwise the highlight clears when `reset_highlight_on_refresh` is set.
+
+The engine returns at most `max_suggestions` candidates, and the strip shows at most `columns * rows`, dropping the rest. If you want a reserved full-word correction plus ordinary prefix completions visible at once, raise both. `reserve_slots` sizes the strip to the full grid even when empty, again so key centers do not jump.
+
+`faceBottom` accepts the highlighted suggestion when `suggestionSelected` is true and presses Enter (or submits, in text-input mode) otherwise. The triggers accept when a chip is highlighted and type the key under that stick otherwise. The pads always type; they never accept. `faceRight` cancels the highlight, but only while a chip is highlighted. The binding engine latches whichever meaning was chosen until the button is released, so accepting on a trigger does not turn into a typed letter on the same hold.
+
+## Accepting in keyboard mode
+
+The default accept style is `accept_via = "suffix"`. If you typed `hel` and accept the chip `hello`, KOSK injects only the remainder `lo`, plus a trailing space when `insert_space_on_accept` is set. The alternative, `backspace_replace`, deletes the typed token and sends the full word. Some accepts always use backspace-replace regardless of the setting: whenever the chip is not a case-insensitive prefix of what you typed. That covers typo corrections (`thr` accepted as `the`) and inserted punctuation (`dont` accepted as `don't`, `eg` as `e.g.`), where sending only a suffix would produce garbage.
+
+Accepting can be undone once. With `retract_last_accept`, pressing cancel while `suggestionJustAccepted` holds and no chip is highlighted deletes the injected text; for a backspace-replace accept it also retypes the original token, then requests chips for that token again. Clearing a highlighted chip is not an undo, and any further typing, backspace, arrow, or cancel drops the pending undo. Typing, backspace, or an arrow also ends the `suggestionJustAccepted` window.
+
+A trailing space added at accept time interacts with the next character you type. If that character appears in `[completion].eat_space_before`, the space is deleted so the symbol sits against the word (`hello/` rather than `hello /`). If the character is additionally in `[completion].space_after` (`,.!?;:` by default), a space is inserted after the mark (`hello? ` with the space after the question mark). This latch fires once: a letter, backspace, arrow, or cancel consumes it. An empty `eat_space_before` turns eating off entirely; an empty `space_after` still eats the space but never adds one back. In keyboard mode the eating is done by sending Backspace (and an extra space when re-spacing) into the focused application; in text-input mode it edits the local buffer. Switching layouts does not consume the latch, so accepting a word and then typing a period on the symbols board still eats the space. Submitted words are learned into the user cache when `learn_on_submit` is on.
+
+## Accepting in text-input mode
+
+Text-input mode splices the candidate into its local buffer over `token_range`, which replaces the whole token even when the caret sits mid-word. The one exception is the current-word chip described next, which only appends a space instead of splicing.
+
+How a chip is painted depends on its relationship to what you typed. `dim_typed_prefix` dims the already-typed part and `label = remainder` shows only the rest, but both apply only when the token is a genuine prefix of the chip. A correction paints the full word. A current-word chip always paints the typed token in full, with a mark (a green `+` by default, colored by `[completion.ui] new_word_mark_color`) immediately before it.
+
+## The current-word chip
+
+When the typed token is non-empty and unknown for the current application type — meaning it appears in neither the base dictionary, that type's wordlist, nor that type's user-cache unigrams — the session inserts the typed token itself as an extra chip. It is omitted after a space and whenever the token is already a known word. The `[completion] current_word_chip` setting places it `"first"` or `"last"` (the default), and the engine is truncated to one fewer ordinary candidate while it is shown so the strip keeps its size.
+
+Accepting the current-word chip injects a trailing space when `insert_space_on_accept` is set and learns the token into the current type's user cache. The suffix versus backspace-replace distinction does not apply to it. Retracting after a current-word accept removes the space and requests chips again, but does not unlearn the word.
 
 ## Backends
 
-**Recorded** (`recorded.rs`): used only when this process was started to replay a version 2 or newer tape. `suggest` pops the next stored list for `CompletionContext.prefix`. An unknown prefix, or a prefix whose lists are exhausted, is an empty strip. `knows_word` is always true, because the stored list already includes a current-word chip when one was shown. Accept and the `+` mark still follow `Source::CurrentWord` on those chips. The backend does not read or write the dictionary or `completion-cache.bin`.
+The recorded backend (`recorded.rs`) runs only during replay of a version 2 or newer tape. Its `suggest` pops the next stored chip list for the text before the cursor. A prefix it has never seen, or one whose stored lists are exhausted, yields an empty strip. Its `knows_word` always returns true, because the stored lists already include a current-word chip whenever one was shown during recording — so no second chip is synthesized. Accepting and the `+` mark still follow the chip's recorded source. This backend never reads or writes the dictionary or `completion-cache.bin`.
 
-**Ngram** (default): prefix scan of the frequency dictionary, then stupid backoff over prev words, with user-cache counts added as extra dictionary mass. Unigrams alone are enough for prefix completion. Packed 21-bit ids in `bigrams.bin` / `trigrams.bin` if present. Empty pair tables still load; next-word then falls back to top unigrams (`you` / `i` / `the`) and the process prints a warning. User-cache continuations of the previous word are merged into next-word candidates before that fallback.
+The ngram backend is the default. It scans the frequency dictionary for the typed prefix, then scores candidates with stupid backoff over the previous words: it prefers the longest matching word history (three words, then two, then one) and backs off to shorter histories with a fractional weight when the longer history was never seen. User-cache counts are added as extra dictionary mass in the same scoring. Prefix completion works from unigrams alone. Packed 21-bit word ids in `bigrams.bin` and `trigrams.bin` supply the pair and triple tables when present. Empty pair tables still load, but next-word prediction then falls back to the most common unigrams (`you`, `i`, `the`) and the process prints a warning. User-cache continuations of the previous word are merged into the candidates before that fallback runs.
 
-**Dictionary**: sorted `word` or `word<TAB>count`; rank by frequency, then length. Used for tests, `completion_dev` without a model dir, and fallback. Prefix matching also includes words that differ only by inserted apostrophes or periods (`dont` → `don't`, `eg` → `e.g.`). Those hits do not take the typo penalty. When the typed letters are exactly the letters of such a word (`im` → `i'm`), one chip slot is reserved so frequent `im*` prefixes cannot bury it. Leading clitics (`'s`, `'the`) are not treated as inserted punctuation. Grave accents in a wordlist fold to apostrophes on load. With `typo_tolerance`, a distance-1 fuzzy prefix scan runs after the exact prefix range: neighbor substitution (layout map injected by the keyboard), adjacent transposition (length ≥ 2), omitted key, extra key. Identity (`the` after typing `the`) is never chipped; longer prefixes (`there`) still are. One slot is reserved for the best full-word correction (`thr` → `the`); remaining slots are exact prefixes, then other fuzzy hits. Accept uses backspace-replace when the token is not a prefix of the chip, including inserted-punctuation hits.
+The dictionary backend reads a sorted word list of `word` or `word`-tab-`count` lines and ranks by frequency, then by length. It is used for tests, for `completion_dev` without a model directory, and as the fallback backend. Its prefix matching also finds words that differ only by inserted apostrophes or periods (`dont` matching `don't`, `eg` matching `e.g.`), and those hits skip the typo penalty. When the typed letters are exactly the letters of such a word (`im` for `i'm`), one chip slot is reserved so frequent `im`-prefixed words cannot bury it. Leading clitics such as `'s` are not treated as inserted punctuation, and grave accents in a wordlist fold to apostrophes on load. With `typo_tolerance`, a distance-1 fuzzy scan (`fuzzy.rs`) runs after the exact prefix range: a neighbor substitution using the layout neighbor map the keyboard injects, an adjacent transposition of two letters, an omitted key, or an extra key. Typing a complete word never chips that identical word, though longer completions of it still appear. One slot is reserved for the best full-word correction (`thr` to `the`); remaining slots go to exact prefixes first, then other fuzzy hits. Accepting any chip that is not a prefix of the token uses backspace-replace, including inserted-punctuation hits.
 
-**User cache**: postcard file next to config (`completion-cache.bin`). Versioned envelope keyed by app type (unversioned files migrate into the implicit catch-all). Lifetime unigram/bigram counts of accepted / submitted words, mixed into dictionary counts (`dict_count + β · user_count`) so personal use accumulates without a few accepts burying high-frequency English. Caps `max_unigrams` / `max_bigrams` apply per type (lowest counts drop when full). Novel words complete as prefix chips for that type after a current-word accept, without rewriting the mmap tables. Learned pairs also generate next-word chips when tables are empty. Named types do not blend catch-all weights.
+The user cache (`user_cache.rs`) is a versioned postcard file beside the config (`completion-cache.bin`) keyed by application type; unversioned files migrate into the implicit catch-all type. It holds lifetime unigram and bigram counts of accepted and submitted words, mixed into dictionary counts with a weight (dictionary count plus a factor times user count) so personal vocabulary accumulates without a few accepts burying high-frequency English. Per-type `max_unigrams` and `max_bigrams` caps drop the lowest counts when full. Newly learned words complete as prefix chips for that type after a current-word accept without rewriting the memory-mapped tables, and learned pairs also generate next-word chips when the pair tables are empty. Named types never blend catch-all weights.
 
-**App types**: `[completion.app_types.<name>]` lists exclusive exe basenames (`exes`) and an optional TSV `wordlist` (`word` / `word<TAB>count`, same as the English unigrams). Foreground process basename (Windows) maps to one type; unlisted / unknown / query failure use an implicit catch-all (do not declare that catch-all as a type). Base English always applies. Type extras and that type’s cache apply only for that type. Duplicate exe across types is a config error. Missing wordlist: warn and continue.
+Application types (`app_type.rs`) let different programs get different vocabularies. Each `[completion.app_types.<name>]` table lists exclusive executable basenames (`exes`) and an optional TSV `wordlist` in the same `word` or `word`-tab-`count` format as the English unigrams. The foreground process basename on Windows maps to one type; anything unlisted, unknown, or unqueryable uses an implicit catch-all that must not be declared as a type. Base English always applies; a type's wordlist extras and that type's cache apply only for that type. Listing the same executable under two types is a config error, while a missing wordlist file only warns and continues.
 
-Neighbor keys are precomputed from letter-key centres when keyboard geometry updates, filtered to keys reachable from the same stick bounds. The last letter-layout map is kept when the current board has fewer than ten letters (symbols layout). Backends see only `HashMap<char, Vec<char>>` on the context; they do not call layout code. Completion never calls Win32; the OS layer is `platform::ForegroundExe`.
+Neighbor keys for typo substitution are precomputed from letter-key centers whenever keyboard geometry updates, filtered to keys reachable from the same stick bounds. When the current board has fewer than ten letters (the symbols layout, for example), the last letter-layout map is kept instead. Backends only ever see a plain map from each character to its neighbors on the context object; they never call layout code. Completion never calls Win32 directly; the operating-system layer is `platform::ForegroundExe`, which text-input and the session use through `app_type.rs`.
 
-English unigrams: `data/completion/en/unigrams.tsv` (FrequencyWords / OpenSubtitles, MIT). Source wordlist for prefix completion, not a pack output. `completion_build` writes gitignored `vocab.txt` and `*.bin` only. Pair counts are required for context next-word. Unigrams-only pack is not enough:
+The English unigrams themselves live at `data/completion/en/unigrams.tsv` and are the source wordlist for prefix completion, not a build output. `completion_build` writes only the generated `vocab.txt` and `*.bin` tables, which stay out of the repo. Pair counts are required for contextual next-word prediction; a unigrams-only pack is not enough, so packing without `--bigrams` writes an empty `bigrams.bin` and still succeeds. The full next-word setup, including where to download the bigram counts, is in the [README](../README.md#next-word-after-a-space).
 
-```text
-cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --out data/completion/en
-```
+## Domain wordlists and headless tools
 
-That command writes empty `bigrams.bin` and still succeeds. Download [count_2w.txt](https://norvig.com/ngrams/count_2w.txt) and pack with `--bigrams`, then confirm the printed bigram count is not zero. Full commands and a `completion_dev` check are in the [README](../README.md#next-word-after-a-space).
+KOSK only reads `word`-tab-`count` lists. The workspace crate `wordlist-convert` (which does not depend on KOSK) converts downloaded lists into that shape; run it with `--help` for the per-source formats. Point a type's `wordlist` at its `--out` file, and do not commit downloaded dumps.
 
-## Domain wordlists
+Without opening the overlay, `completion_dev` pretends a string was typed and prints the chips: `--text` with `--cursor` selects the backend, `--exe` maps through `[completion.app_types]`, and `--eval` replays a corpus file as keystrokes, accepting a chip only on an exact upcoming match. Its summary line reports characters produced, keystrokes spent, and KSR — the keystroke savings rate, one minus keystrokes over characters, so higher means less typing. The eval mode also reports next-word top-1 and top-3 accuracy. Completion tests run under `cargo test --lib completion`.
 
-Kosk only reads `word<TAB>count`. Convert downloaded lists with the workspace crate `wordlist-convert` (no kosk dependency). Point `[completion.app_types.<type>] wordlist` at `--out`. Do not commit dumps.
+## What this does not cover
 
-**Programming** — clone [anvaka/common-words](https://github.com/anvaka/common-words); files `web/static/data/<lang>/context.json` (`rust`, `python`, `js`, `go`, …):
+This page does not cover how chips are highlighted or accepted at the binding level; that is the `when` machinery in [bindings.md](bindings.md), and the keyboard's send path in [keyboard.md](keyboard.md). It does not cover tape recording of chip lists; that is [record-replay.md](record-replay.md). Planned improvements such as neural reranking and next-character hitbox bias are not described here as if they existed; the completion scratch pad is at [plans/completion.md](plans/completion.md), and neural or network backends do not exist in this tree.
 
-```text
-cargo run -p wordlist-convert -- --format anvaka --in rust/context.json --in python/context.json --exclude data/completion/en/unigrams.tsv --out data/completion/programming.tsv
-```
+## Summary
 
-Smaller: [programming-languages-frequency-dictionary](https://github.com/julien-sobczak/programming-languages-frequency-dictionary) `name,total` CSVs with `--format csv-ident`.
-
-**Unix / jargon** — [SCOWL 2020.12.07](https://sourceforge.net/projects/wordlist/files/SCOWL/2020.12.07/) `special-jargon.50` and `unix-terms`:
-
-```text
-cargo run -p wordlist-convert -- --format lines --in special-jargon.50 --in unix-terms --exclude data/completion/en/unigrams.tsv --out data/completion/unix.tsv
-```
-
-**Browser-ish** — [enwiki NFKC-lower TSV](https://github.com/adno/wikipedia-word-frequency-clean) (decompress xz first). Cap size with `--max-words`:
-
-```text
-xz -dk enwiki-frequency-20221020-nfkc-lower.tsv.xz
-cargo run -p wordlist-convert -- --format wiki --in enwiki-frequency-20221020-nfkc-lower.tsv --exclude data/completion/en/unigrams.tsv --max-words 20000 --out data/completion/browser.tsv
-```
-
-`--format tsv` is a two-column extract. `--exclude` drops words already in a unigram TSV. Multiple `--in` of the same format merge (sum).
-
-## Headless
-
-```text
-cargo run --bin completion_dev -- --text "hel" --cursor 3 --backend dictionary
-cargo run --bin completion_dev -- --eval src/completion/fixtures/eval.txt --backend ngram
-cargo run --bin completion_dev -- --text "juju" --cursor 4 --backend dictionary --exe firefox.exe
-```
-
-`--exe` maps through `[completion.app_types]` in `config.toml`; omit it for catch-all. `--eval` replays a corpus as keystrokes, accepts a chip only on an exact upcoming match, and prints KSR plus next-word top-1/top-3.
-
-Tests: `cargo test --lib completion`.
+Completion predicts words through a session that debounces keystrokes, watches an armed latch, and asks one backend at a time, with replay substituting recorded chip lists for live prediction. The UI reserves a strip above the keys where bumpers cycle and triggers accept, and accepting either appends the remainder of the word or replaces the token depending on the accept style and whether the chip is a true prefix. Keyboard mode injects into the focused application while text-input mode edits its own buffer, and both learn accepted words into a per-application user cache that blends into future scores without rewriting the packed tables.

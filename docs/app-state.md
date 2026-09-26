@@ -6,11 +6,13 @@ This document describes `AppState` in `src/state/mod.rs`: the mode enum, the sha
 
 `AppState` is the process’s session. It knows which mode is visible (`StateId`), where the overlay sits (`WindowPos` plus an optional pointer snapshot), how large the monitor is, the `EventQueue` that all modes write into, and the `KeySink` that actually types.
 
-It does not own the keyboard, settings, move-window, or text-input structs. Those live in process-wide `OnceLock<Mutex<…>>` cells initialized from `AppState::new`. `keyboard::with_mut` (and the equivalents) lock one mode at a time. That is a leftover of each mode being a singleton that reloads itself on config change. `AppState` still coordinates them: it chooses which one handles a poll, and it is the only place that drains the event queue into side effects.
+It does not own the mode structs. Those live in seven process-wide `OnceLock<Mutex<…>>` cells initialized from `AppState::new`: keyboard, menu (the settings screen), move-window, text-input, select-layout, select-key, and mappings. `keyboard::with_mut` (and the equivalents) lock one mode at a time. That is a leftover of each mode being a singleton that reloads itself on config change. `AppState` still coordinates them: it chooses which one handles a poll, and it is the only place that drains the event queue into side effects.
 
 ## Modes
 
 `StateId` is `Keyboard`, `Settings`, `MoveWindow`, `TextInput`, `Mappings`, `SelectKey`, or `SelectLayout`. The process starts in `Keyboard`. Modes switch by enqueueing `Event::ChangeState`. `process_events` assigns `self.state`. There is no stack: opening settings replaces keyboard, and “Back” is just a change to `Keyboard` or `Settings` depending on the button.
+
+Sub-UI calls are the exception to that flat switching. A mode can enqueue `Event::CallState` to push the current mode onto a call stack and open a helper on top of it; today the only call is the mappings editor opening the key picker (`Mappings` calls `SelectKey`). The helper answers with `Event::ReturnState`, which pops the stack, returns to the caller, and delivers the result — the key picker hands the chosen binding back to the mappings editor's `on_return`. A `ReturnState` with an empty stack is ignored. `Event::Repaint` requests a frame without changing modes, for in-place UI updates such as the mappings draft changing under the user's hands.
 
 Each mode both draws and handles controller input. Mouse clicks are handled inside `draw_ui` because that is where egui button responses exist. Controller input is handled on the HID thread.
 
@@ -45,7 +47,10 @@ flowchart TD
 This match is the side-effect boundary. Handlers are supposed to enqueue, not type.
 
 - `SendKey` / `SendText` go to the key sink. Errors print and do not panic.
-- `ChangeState` writes `self.state`. Leaving Move Window without `SaveWindowPos` restores the position captured on entry.
+- `ChangeState` writes `self.state`. Leaving Move Window without `SaveWindowPos` restores the position captured on entry. Entering Mappings starts a fresh editor session, entering SelectLayout refreshes the layout list, and entering MoveWindow snapshots the position; switching state also clears the call stack.
+- `CallState` pushes the current mode onto the call stack, switches to the callee, and initializes it with the request (today only the key picker, prefilled with the binding being edited). The newly shown mode resets its controller edge state against the held buttons so a still-held button does not fire on entry.
+- `ReturnState` pops the call stack back to the caller and delivers the result. The mappings editor applies an accepted binding to its draft or discards a cancellation. Follow-up events the caller enqueues while handling the result (such as a repaint) are merged directly into the pending list, bypassing debounce, because they are programmatic rather than held buttons.
+- `Repaint` only asks egui for another frame.
 - `SaveWindowPos` writes `window_pos` through `config::save` (see [config.md](config.md)) and clears the move-window origin so the following `ChangeState` does not restore it.
 - `FlipWindowLeftRight`, `FlipWindowAboveBelow`, and `RotateWindow` only affect a `MousePointer` placement; they are no-ops for corner or absolute positions. See [window-position.md](window-position.md).
 - `Exit` sends `ViewportCommand::Close`.
@@ -54,7 +59,7 @@ This match is the side-effect boundary. Handlers are supposed to enqueue, not ty
 
 ## Construction and replay
 
-`AppState::new` reads config, initializes the four mode singletons, creates an `EventQueue`, and opens the key sink. Monitor size is stored so position clamping has a rectangle to work with; `set_monitor_size` updates it every frame from egui.
+`AppState::new` reads config, initializes the seven mode singletons and the completion session, creates an `EventQueue`, and opens the key sink. Monitor size is stored so position clamping has a rectangle to work with; `set_monitor_size` updates it every frame from egui.
 
 `apply_replay_header` is called once when the controller thread opens a replay device, before snapshots flow. It overlays recorded config and replaces keyboard layouts with the copies from the tape.
 

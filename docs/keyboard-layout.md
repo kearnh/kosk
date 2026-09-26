@@ -1,6 +1,6 @@
-# Keyboard layouts (`layout.rs`, `key.rs`, `when.rs`)
+# Keyboard layouts (`layout.rs`, `key.rs`, `geom.rs`, `display_icon.rs`)
 
-This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and `when.rs`. Checked-in layouts include `old_sc.toml` (`main`) and `old_sc_symbols.toml` (`symbols`) from `config.toml`. Keyboard mode’s use of the layout is in [keyboard.md](keyboard.md).
+This document describes how a layout TOML file becomes an on-screen keyboard: key definitions, display rules, geometry, and stick hit-testing. The code lives in `src/state/keyboard/layout.rs`, `key.rs`, and the shared `when.rs`, with the circle/ellipse hit math in `geom.rs` and label rendering in `display_icon.rs`. Checked-in layouts include `old_sc.toml` (`main`) and `old_sc_symbols.toml` (`symbols`) from `config.toml`. Keyboard mode's use of the layout is in [keyboard.md](keyboard.md).
 
 ## What a layout file is
 
@@ -34,9 +34,11 @@ What is printed on a key is independent of what it sends. `display` may be:
 
 `when` strings parse in `src/when.rs` into a small boolean AST. Canonical flags are `modifier.shift` (alias `shift`), `modifier.ctrl` / `ctrl`, `modifier.alt` / `alt`, `modifier` (any of those three), `recording`, `replay`, `suggestionSelected` (a chip is highlighted), `completionActive`, and `suggestionJustAccepted` (a suggestion chip was just accepted and nothing has been typed since). You can combine them with `&&`, `||`, `!`, and parentheses. `WhenContext` is filled each frame from keyboard state and the record/replay session. That is how a Rec/Stop key can change label while a tape is running without being a different `RawKey`. Layout `when` is display-only. Controller mappings use the same language to choose which action fires; see [bindings.md](bindings.md).
 
+Display strings can also embed icons. A `{icon:name}` token inside a label (for example `{icon:check}`) renders as a Phosphor icon glyph rather than text, with an optional colon style such as `{icon:check:fill}` choosing regular, bold, fill, light, or thin. `display_icon.rs` parses each template once and caches the result per font size and color, so per-frame drawing stays cheap. A template with no icon token renders as ordinary text. An unknown icon name renders as `?`, which is your cue that the token was misspelled, while an unclosed `{icon:` stays literal text.
+
 ## Geometry and hitboxes
 
-After egui draws, `update_geometry` stores centers and calls `calculate_hitboxes`. Selectable, non-skip keys get a circle or an ellipse centered on the button:
+After egui draws, `update_geometry` stores centers and calls `calculate_hitboxes`. The circle/ellipse scoring itself lives in `geom.rs` so the scripted geometry snapshot uses the identical math. Selectable, non-skip keys get a circle or an ellipse centered on the button:
 
 - Wide keys (width / row height ≥ 1.2) get an ellipse whose radii are half-width and half-height times √2, so the ellipse roughly covers the rectangle and a bit more.
 - Narrower keys get a circle of radius `scale_x * 1.125`.

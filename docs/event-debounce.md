@@ -39,6 +39,9 @@ Debouncing is keyed on **who produced the event**, not on what the event says. T
 |---------|---------|-----------------|
 | `MouseClick` | Clicking an on-screen key | One shared `"mouse"` bucket |
 | `Controller(ControllerBinding)` | `padRight`, `triggerLeft`, chord bindings | One bucket per physical binding |
+| `FollowUp` | Programmatic events from `on_return` | One shared `"followUp"` bucket; never a held button |
+
+`FollowUp` marks events the program enqueues for itself rather than events a finger produced. `end_controller_tick` ignores it the same way it ignores `MouseClick`: only `Controller` sources participate in hold tracking. And when `process_events` handles a `ReturnState`, the follow-ups the caller enqueues (a repaint, for example) are merged straight into the pending list with `extend_pending`, bypassing debounce entirely.
 
 Each controller binding has its own timeline. Holding `padLeft` and `padRight` at the same time does not let one button borrow the other's wait. The two sources are timed independently.
 
@@ -155,7 +158,9 @@ A later letter or key on the same binding does not clear the flag. `record_hold_
 
 In code, a lone `push` goes through `commit_allows`, which sends toggles to `toggle_allows` / `record_toggle_accepted` and everything else to the hold-repeat functions above. A `push_seq` of two or more events always goes through `hold_repeat_allows` / `record_hold_repeat_accepted`.
 
-The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths. Accepting a chip is an Edge `acceptSuggestion` latched for the hold in the [binding engine](bindings.md); that is why a still-held trigger does not then type a letter. `suppress_until_release` remains for toggle-style holds. `note_held` keeps the source in `held_this_tick` so release detection still works. `suppress_until_release_survives_held_ticks` and `suppress_until_release_survives_clear_toggle_suppress` cover that.
+The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cleared_when_selection_changes` cover the two suppress paths. Accepting a chip is an Edge `acceptSuggestion` latched for the hold in the [binding engine](bindings.md); that is why a still-held trigger does not then type a letter. The latch lives in the engine, not in this queue: the binding resolved its `when` array at press time and keeps returning the accept action until release, so no stick-send ever reaches the queue on that hold.
+
+Two names you will meet in the tests but never in the live path are `suppress_until_release` and `note_held`. Both are `#[cfg(test)]` helpers. The first forces the block flag on so tests can prove that clearing toggle suppression never accidentally reopens toggle repeats; the second marks a source held without committing so tests can prove that quiet ticks keep release detection working. They are covered by `suppress_until_release_survives_held_ticks` and `suppress_until_release_survives_clear_toggle_suppress`. If you are tracing production behavior, ignore them.
 
 ### `SourceState`
 
@@ -167,7 +172,7 @@ The tests `toggle_hold_suppresses_repeat_until_release` and `toggle_suppress_cle
 | `repeat_armed` | Next wait should use the short repeat interval |
 | `released` | The binding went up since `last`, so the next accept is a new first press |
 | `suppress_until_release` | Further sticky modifier toggles from this source should be dropped |
-| `block_hold_until_release` | Further WhileHeld sends from this source should be dropped (completion accept) |
+| `block_hold_until_release` | Test-only scaffolding: nothing in production sets it or consults it to drop events. It exists so tests can pin the blocked state while proving that other transitions preserve it. |
 
 ### How the queue notices a release
 
@@ -262,6 +267,7 @@ Those lines are the first place to look when a character is missing or duplicate
 | `end_controller_tick()` | After all controller handlers | Treats untouched controller sources as released |
 | `clear_toggle_suppress(sources)` | Stick selection changed | Lets another modifier toggle while the button is still held |
 | `drain_pending()` | Before executing events | Flat list of accepted leaf events |
+| `extend_pending(events)` | Merging `ReturnState` follow-ups in `process_events` | Bypasses debounce; programmatic events only, never a held button |
 
 ## Summary
 

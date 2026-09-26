@@ -22,6 +22,9 @@ Start with [overview.md](overview.md) if you are new to the repository. After th
 14. [controller-glyphs.md](controller-glyphs.md) — knockout button art for on-screen prompts, and the glyph gallery.
 15. [text-input.md](text-input.md) — the single-line field that intercepts typing.
 16. [completion.md](completion.md) — ngram/dictionary prediction, app types, current-word chip, and `completion_dev`.
+17. [mappings-editor.md](mappings-editor.md) — the in-app bindings editor and its key picker.
+18. [select-layout.md](select-layout.md) — the layout list with live preview.
+19. [virtual-controller.md](virtual-controller.md) — scripted input over the local control port, and geometry queries.
 
 ## Plans
 

@@ -17,6 +17,7 @@ Optional flags:
 - `--replay FILE` plays that `.krec` tape instead of opening HID. It overrides `preferred_controller` and `[replay].file`.
 - `--keys-log FILE` sends outgoing keys to a log instead of injecting them. `-` means stdout. This overrides the `[key_sink]` table. See [key-sink.md](key-sink.md).
 - `--ignore-recorded-config` keeps the on-disk config when replaying a tape that embedded one. See [record-replay.md](record-replay.md).
+- `--mcp-controller` opens an exclusive virtual controller instead of any HID device, for scripted or agent-driven input. The same mode can be enabled with the `KOSK_CONTROLLER_MCP` environment variable, which also accepts a `host:port` bind address (the default is `127.0.0.1:5720`). This mode cannot be combined with replay. See the virtual-controller page.
 - `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`. The file is not rewritten unless the user later saves from Move Window.
 
 Auxiliary binaries that need config without parsing those flags call `init_from_path`.
@@ -30,7 +31,20 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `0.92`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`controller_map`** is either an inline table or a string path to another TOML file. The checked-in config uses `controller_map = "mappings.toml"`.
-- **`[sc2]`** and **`[ps4]`** are device feel: trigger thresholds, pad-origin relative/stretch, haptics. They are not binding names. Aim is nested under them: **`[sc2.pad]`**, **`[sc2.stick]`**, and **`[ps4.stick]`**. Each profile has `scale_x` / `scale_y` (how far a full deflection reaches on the keyboard), `warp` (circle-to-square, `0` leaves the circle and `1` fills the corners), `select_sticky` (extra hit-test margin for the current key; `1` is off), and `select_lock_ms` (how long the highlight stays after a letter is sent). There is no `ps4.pad`. A touched pad uses the pad profile; a stick uses that controller's stick profile. Replay uses the family stored on the tape, or Steam Controller 2 when the tape has none. The settings screen edits these profiles from per-device entries (`Steam Controller Pads/Stick/Device`, `DualShock 4 Stick/Device`); each value page writes its named device profile. See [keyboard.md](keyboard.md), [keyboard-layout.md](keyboard-layout.md), [menu.md](menu.md), and [controller.md](controller.md).
+- **`[sc2]`** and **`[ps4]`** describe device feel, not bindings: trigger thresholds, pad-origin mapping, and haptics. Button-to-action mapping is `controller_map`; these tables only change how the hardware feels under your thumbs.
+
+- Aim profiles live nested under those tables: **`[sc2.pad]`**, **`[sc2.stick]`**, and **`[ps4.stick]`**. There is no `ps4.pad`, because the DualShock 4 has no pads. A touched Steam Controller pad uses the pad profile, while a physical stick uses that controller's stick profile. Replay replays already-mapped coordinates, so it uses the aim family stored on the tape (or Steam Controller 2 when the tape names none) without mapping twice.
+
+- Each aim profile holds the same four knobs:
+
+| Knob | Meaning |
+|------|---------|
+| `scale_x` / `scale_y` | How far a full deflection reaches on the keyboard |
+| `warp` | Circle-to-square shaping: `0` leaves the stick circle alone, `1` fills the keyboard corners |
+| `select_sticky` | Extra hit-test margin keeping the current key selected; `1` turns the margin off |
+| `select_lock_ms` | How long the highlight freezes after a letter is sent, so a post-press twitch does not slide onto a neighbor |
+
+- The settings screen edits these profiles through per-device entries (`Steam Controller Pads/Stick/Device`, `DualShock 4 Stick/Device`), and each value page writes its named device profile. See [keyboard.md](keyboard.md), [keyboard-layout.md](keyboard-layout.md), [menu.md](menu.md), and [controller.md](controller.md).
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
@@ -82,4 +96,4 @@ Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.
 
 ## Summary
 
-`config.rs` owns the process-wide TOML singleton, the CLI flags that override pieces of it, a file watcher for the main file and layout files, and a save path that patches the original TOML. A `controller_map` path string is remembered across load and save, and binding edits go to that sidecar; the watcher does not include the sidecar. Device feel and binding tables are separate on purpose: thresholds belong next to the controller family, action names belong next to the mode that interprets them.
+`config.rs` owns the process-wide TOML singleton, the CLI flags that override pieces of it, a file watcher for the main file, the mappings sidecar, and layout files, and a save path that patches the original TOML. A `controller_map` path string is remembered across load and save, and binding edits go to that sidecar; the sidecar is part of the watched set for external edits, and in-app saves additionally call `notify_changed` so the new bindings apply without waiting for the watcher round-trip. Device feel and binding tables are separate on purpose: thresholds belong next to the controller family, action names belong next to the mode that interprets them.

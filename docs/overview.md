@@ -1,6 +1,6 @@
 # Process overview (`main.rs`, `lib.rs`)
 
-This document describes how the KOSK process starts, how the overlay window is created, and how the user-interface thread and the controller thread share one `AppState`. The crate root is `src/lib.rs`. The GUI binary is `src/main.rs`. Auxiliary binaries such as `completion_dev` and `sc2_test` link the same library.
+This document describes how the KOSK process starts, how the overlay window is created, and how the user-interface thread and the controller thread share one `AppState`. The crate root is `src/lib.rs`. The GUI binary is `src/main.rs`. Auxiliary binaries — `completion_dev` and `completion_build` for prediction work, `sc2_test` for HID checks, and `glyph_gallery` for button art — link the same library.
 
 ## What the program is
 

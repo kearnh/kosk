@@ -42,8 +42,9 @@ That function is applied on every `left_stick` / `right_stick` / `left_pad` / `r
 
 `find_device` is what the controller thread calls:
 
-1. If `--replay` was passed, or `preferred_controller` starts with `replay`, open `ReplayDevice` and return. HID is not touched.
-2. Otherwise create `HidApi`, walk the resolved order, and return the first family that opens.
+1. If `--mcp-controller` was passed or `KOSK_CONTROLLER_MCP` is set, return the exclusive virtual controller immediately. HID is not touched. See [virtual-controller.md](virtual-controller.md).
+2. If `--replay` was passed, or `preferred_controller` starts with `replay`, open `ReplayDevice` and return. HID is not touched.
+3. Otherwise create `HidApi`, walk the resolved order, and return the first family that opens.
 
 `ConnectedController` is the enum the thread iterates. Each `next()` is one poll: `Some(Some(snapshot))` when engaged, `Some(None)` when idle, `None` when the device is gone. Steam Controller 2’s variant also holds a `PadOriginMapper` that is reset on idle so the next touch is a new origin.
 
@@ -57,4 +58,4 @@ That function is applied on every `left_stick` / `right_stick` / `left_pad` / `r
 
 ## Summary
 
-`controller/mod.rs` is the vocabulary the rest of KOSK uses for “a controller.” Everything reports sticks and buttons through `ControllerInput`. Mapping files talk about those buttons with a small string language. `find_device` picks replay, Steam Controller 2, or DualShock 4 according to config, and the controller thread iterates whatever it opened until the device disappears.
+`controller/mod.rs` is the vocabulary the rest of KOSK uses for “a controller.” Everything reports sticks and buttons through `ControllerInput`. Mapping files talk about those buttons with a small string language. `find_device` picks the virtual controller, replay, Steam Controller 2, or DualShock 4 according to config, and the controller thread iterates whatever it opened until the device disappears.

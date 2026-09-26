@@ -8,8 +8,6 @@ alwaysApply: false
 
 Applies to `docs/*.md` (the code-explanation series). Does **not** apply to `docs/plans/` or `todo.md`; those may stay notes-like.
 
-`docs/event-debounce.md` is the style to match.
-
 ## Voice
 
 Write full sentences and full explanations. A reader who was not in any prior chat must understand the page. Do not write as if taking notes for yourself.
