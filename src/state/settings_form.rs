@@ -277,6 +277,7 @@ pub(in crate::state) enum FooterButtons {
     Page,
     OpenConfig,
     ShowAllControllers,
+    ShowAllSettings,
 }
 
 pub(in crate::state) struct FooterHint {
@@ -289,6 +290,7 @@ pub(in crate::state) struct SettingsForm {
     focus: usize,
     dirty: Vec<(RowId, ControllerKind)>,
     show_all_controllers: bool,
+    show_all_settings: bool,
 }
 
 impl SettingsForm {
@@ -298,12 +300,44 @@ impl SettingsForm {
             focus: 0,
             dirty: Vec::new(),
             show_all_controllers: false,
+            show_all_settings: false,
         }
     }
 
     pub(in crate::state) fn toggle_show_all(&mut self, kind: ControllerKind) {
         self.show_all_controllers = !self.show_all_controllers;
         self.ensure_focus(kind);
+    }
+
+    pub(in crate::state) fn toggle_show_all_settings(&mut self, kind: ControllerKind) {
+        self.show_all_settings = !self.show_all_settings;
+        self.ensure_focus(kind);
+    }
+
+    fn page_rows(&self, page: Page) -> &'static [RowId] {
+        if self.show_all_settings {
+            page.rows()
+        } else {
+            page.common_rows()
+        }
+    }
+
+    fn device_rows(&self, target: ControllerKind, device_page: DevicePage) -> &'static [RowId] {
+        if self.show_all_settings {
+            device_page.rows(target)
+        } else {
+            device_page.common_rows(target)
+        }
+    }
+
+    fn has_hidden_rows(&self) -> bool {
+        match self.view {
+            View::Page(page) => page.rows().len() != page.common_rows().len(),
+            View::DevicePage(target, device_page) => {
+                device_page.rows(target).len() != device_page.common_rows(target).len()
+            }
+            _ => false,
+        }
     }
 
     pub(in crate::state) fn focus(&self) -> usize {
@@ -563,6 +597,16 @@ impl SettingsForm {
                     buttons: FooterButtons::Back,
                     label: "back",
                 });
+                if self.has_hidden_rows() {
+                    hints.push(FooterHint {
+                        buttons: FooterButtons::ShowAllSettings,
+                        label: if self.show_all_settings {
+                            "hide extra settings"
+                        } else {
+                            "show all settings"
+                        },
+                    });
+                }
                 hints
             }
         }
@@ -593,8 +637,8 @@ impl SettingsForm {
                     value: None,
                 })
                 .collect(),
-            View::Page(page) => page
-                .rows()
+            View::Page(page) => self
+                .page_rows(page)
                 .iter()
                 .copied()
                 .map(|id| {
@@ -606,8 +650,8 @@ impl SettingsForm {
                     }
                 })
                 .collect(),
-            View::DevicePage(target, device_page) => device_page
-                .rows(target)
+            View::DevicePage(target, device_page) => self
+                .device_rows(target, device_page)
                 .iter()
                 .copied()
                 .map(|id| {
@@ -627,16 +671,20 @@ impl SettingsForm {
             View::Hub => HUB_LEN,
             View::Index => options_entries(kind, self.show_all_controllers).len(),
             View::DeviceIndex(target) => device_pages(target).len(),
-            View::Page(page) => page.rows().len(),
-            View::DevicePage(target, device_page) => device_page.rows(target).len(),
+            View::Page(page) => self.page_rows(page).len(),
+            View::DevicePage(target, device_page) => self.device_rows(target, device_page).len(),
         }
     }
 
     fn focused_edit(&self, kind: ControllerKind) -> Option<(RowId, ControllerKind)> {
         match self.view {
-            View::Page(page) => page.rows().get(self.focus).copied().map(|id| (id, kind)),
-            View::DevicePage(target, device_page) => device_page
-                .rows(target)
+            View::Page(page) => self
+                .page_rows(page)
+                .get(self.focus)
+                .copied()
+                .map(|id| (id, kind)),
+            View::DevicePage(target, device_page) => self
+                .device_rows(target, device_page)
                 .get(self.focus)
                 .copied()
                 .map(|id| (id, target)),
@@ -760,6 +808,22 @@ impl Page {
             ],
         }
     }
+
+    fn common_rows(self) -> &'static [RowId] {
+        match self {
+            Page::Suggestions => &[
+                RowId::Suggestions,
+                RowId::OnKeyboard,
+                RowId::InTextField,
+                RowId::Typos,
+                RowId::NextWord,
+                RowId::HighlightAtRest,
+                RowId::Columns,
+                RowId::Rows,
+            ],
+            _ => self.rows(),
+        }
+    }
 }
 
 impl OptionEntry {
@@ -805,6 +869,22 @@ impl DevicePage {
                 &[RowId::Ps4TriggerLeft, RowId::Ps4TriggerRight]
             }
             (DevicePage::Triggers, _) => &[RowId::Sc2TriggerLeft, RowId::Sc2TriggerRight],
+        }
+    }
+
+    fn common_rows(self, target: ControllerKind) -> &'static [RowId] {
+        match (self, target) {
+            (DevicePage::Pads, _) => &[
+                RowId::PadHorizontalRange,
+                RowId::PadVerticalRange,
+                RowId::PadSquare,
+                RowId::PadStickiness,
+                RowId::PadHoldAfterKey,
+                RowId::ThumbRest,
+                RowId::StretchShortSide,
+                RowId::PadClick,
+            ],
+            _ => self.rows(target),
         }
     }
 }
@@ -2611,6 +2691,8 @@ mod tests {
     fn pads_page_holds_pad_feel() {
         let mut form = SettingsForm::new();
         form.view = View::DevicePage(ControllerKind::Sc2, DevicePage::Pads);
+        assert_eq!(form.len(ControllerKind::Sc2), 8);
+        form.toggle_show_all_settings(ControllerKind::Sc2);
         assert_eq!(form.len(ControllerKind::Sc2), 10);
         let rows = form.drawn(&sample(), ControllerKind::Sc2);
         let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
@@ -2621,8 +2703,38 @@ mod tests {
     }
 
     #[test]
+    fn curated_rows_show_by_default() {
+        let mut form = SettingsForm::new();
+        form.view = View::Page(Page::Suggestions);
+        assert_eq!(form.len(ControllerKind::Sc2), 8);
+        assert_eq!(form.scroll_counts(ControllerKind::Sc2), (0, 0));
+        assert!(form.has_hidden_rows());
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::ShowAllSettings
+                && hint.label == "show all settings"));
+
+        form.toggle_show_all_settings(ControllerKind::Sc2);
+        assert!(form.len(ControllerKind::Sc2) > 8);
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .any(|hint| hint.buttons == FooterButtons::ShowAllSettings
+                && hint.label == "hide extra settings"));
+
+        form.view = View::Page(Page::Typing);
+        assert!(!form.has_hidden_rows());
+        assert!(form
+            .footer(ControllerKind::Sc2)
+            .iter()
+            .all(|hint| hint.buttons != FooterButtons::ShowAllSettings));
+    }
+
+    #[test]
     fn long_lists_scroll_eight_at_a_time() {
         let mut form = SettingsForm::new();
+        form.show_all_settings = true;
         form.view = View::Page(Page::Suggestions);
         let total = form.len(ControllerKind::Sc2);
         assert!(total > 8);
@@ -2654,6 +2766,7 @@ mod tests {
     #[test]
     fn new_rows_round_trip() {
         let mut form = SettingsForm::new();
+        form.show_all_settings = true;
         let mut cfg = sample();
 
         form.view = View::Page(Page::Suggestions);

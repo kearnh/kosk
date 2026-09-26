@@ -208,6 +208,9 @@ impl MenuState {
             ToggleShowAllControllers => {
                 self.form.toggle_show_all(self.kind);
             }
+            ToggleShowAllSettings => {
+                self.form.toggle_show_all_settings(self.kind);
+            }
             SwitchState(state) => {
                 self.write_settings();
                 let _ = events.push(Event::ChangeState(*state), source);
@@ -251,9 +254,12 @@ fn draw_footer(
     hints: &[FooterHint],
     family: GlyphFamily,
 ) {
-    let (primary, secondary): (Vec<_>, Vec<_>) = hints
-        .iter()
-        .partition(|hint| hint.buttons != FooterButtons::ShowAllControllers);
+    let (primary, secondary): (Vec<_>, Vec<_>) = hints.iter().partition(|hint| {
+        !matches!(
+            hint.buttons,
+            FooterButtons::ShowAllControllers | FooterButtons::ShowAllSettings
+        )
+    });
 
     draw_hint_line(ui, bindings, &primary, family);
     draw_hint_line(ui, bindings, &secondary, family);
@@ -331,6 +337,9 @@ fn buttons_for(
         }
         FooterButtons::ShowAllControllers => bindings
             .buttons_matching(|action| matches!(action, MenuAction::ToggleShowAllControllers)),
+        FooterButtons::ShowAllSettings => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::ToggleShowAllSettings))
+        }
     }
 }
 
