@@ -403,7 +403,7 @@ impl SettingsForm {
                 },
                 FooterHint {
                     buttons: FooterButtons::ShowAllControllers,
-                    label: "all controllers",
+                    label: "show/hide other controllers",
                 },
                 FooterHint {
                     buttons: FooterButtons::OpenConfig,
@@ -1381,7 +1381,7 @@ mod tests {
             .footer(ControllerKind::Sc2)
             .iter()
             .any(|hint| hint.buttons == FooterButtons::ShowAllControllers
-                && hint.label == "all controllers"));
+                && hint.label == "show/hide other controllers"));
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);

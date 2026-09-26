@@ -230,6 +230,27 @@ fn draw_footer(
     hints: &[FooterHint],
     family: GlyphFamily,
 ) {
+    let (primary, secondary): (Vec<_>, Vec<_>) = hints
+        .iter()
+        .partition(|hint| hint.buttons != FooterButtons::ShowAllControllers);
+
+    draw_hint_line(ui, bindings, &primary, family);
+    draw_hint_line(ui, bindings, &secondary, family);
+}
+
+fn draw_hint_line(
+    ui: &mut Ui,
+    bindings: &BindingEngine<MenuAction>,
+    hints: &[&FooterHint],
+    family: GlyphFamily,
+) {
+    if hints
+        .iter()
+        .all(|hint| buttons_for(bindings, hint.buttons).is_empty())
+    {
+        return;
+    }
+
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         let mut started = false;

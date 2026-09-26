@@ -16,7 +16,7 @@ Labels name the thing being set (`Thumb rest`, `Delay before repeat`). The TOML 
 
 Each value page edits one device profile. Stick rows write that device's stick profile (`sc2.stick` or `ps4.stick`), even when the other family is connected. A DualShock 4 Device page is the two trigger cutoffs. A Steam Controller Device page has thumb rest, short-side stretch, pad click, and both triggers. Pad click writes both pads. Replay edits the Steam Controller profiles, matching the tape-family fallback in `config::resolved_controller`.
 
-By default Options lists only the connected family's device entry. The Options footer has an `all controllers` hint bound to `toggleShowAllControllers`; activating it shows both Steam Controller and DualShock 4 for the rest of the session. The flag is not written to `config.toml`.
+By default Options lists only the connected family's device entry. The Options footer has a `show/hide other controllers` hint on its own line, bound to `toggleShowAllControllers`; activating it shows both Steam Controller and DualShock 4 for the rest of the session. The flag is not written to `config.toml`.
 
 Debug rows insert a `[debug]` table if one was missing. The table’s presence is what turns debug drawing on.
 
