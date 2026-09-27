@@ -14,15 +14,10 @@ pub(crate) fn newer_version_message(file_version: i64) -> String {
     )
 }
 
-const BUILTIN_CONFIG: &str = include_str!("../config.toml");
 const BUILTIN_MAPPINGS: &str = include_str!("../mappings.toml");
 const BUILTIN_LAYOUT_MAIN: &str = include_str!("../old_sc.toml");
 const BUILTIN_LAYOUT_SYMBOLS: &str = include_str!("../old_sc_symbols.toml");
 const BUILTIN_UNIGRAMS: &str = include_str!("../data/completion/en/unigrams.tsv");
-
-pub(crate) fn builtin_config_toml() -> &'static str {
-    BUILTIN_CONFIG
-}
 
 pub(crate) fn builtin_mappings_toml() -> &'static str {
     BUILTIN_MAPPINGS

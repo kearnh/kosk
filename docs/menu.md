@@ -18,13 +18,13 @@ Labels name the thing being set (`Thumb rest`, `Delay before repeat`). The TOML 
 
 Each value page edits one device profile. Stick rows write that device's stick profile (`sc2.stick` or `ps4.stick`), even when the other family is connected. A Triggers page is the two trigger cutoffs for that family. The Steam Controller Pads page holds pad aim plus pad feel: thumb rest, short-side stretch, pad click, a stretch limit, and touch settle time. Pad click writes both pads. Replay edits the Steam Controller profiles, matching the tape-family fallback in `config::resolved_controller`.
 
-The Suggestions page holds every word-suggestion setting that can be flipped or stepped with a controller: on/off switches, word counts, wait times, word sources, suggestion look and layout, personal word memory, and smart-ranking weights. To keep the list short, it opens with the eight most-used rows; a `show all settings` hint on its own footer line reveals the rest, and the hint becomes `hide extra settings` while they are shown. The choice lasts for the session and is never written to the file. File paths, colors, and exact word lists stay in `config.toml`, since those need a keyboard to edit. The Overlay page adds text size and the battery readout style alongside the existing transparency and key-size rows. The Pads page likewise opens with its eight most-used rows and hides stretch limit and touch settle time behind the same toggle.
+The Suggestions page holds every word-suggestion setting that can be flipped or stepped with a controller: on/off switches, word counts, wait times, word sources, suggestion look and layout, personal word memory, and smart-ranking weights. To keep the list short, it opens with the eight most-used rows; a `show all settings` hint on its own footer line reveals the rest, and the hint becomes `hide extra settings` while they are shown. The choice lasts for the session and is never written to the file. File paths, colors, and exact word lists stay in the config file, since those need a keyboard to edit. The Overlay page adds text size and the battery readout style alongside the existing transparency and key-size rows. The Pads page likewise opens with its eight most-used rows and hides stretch limit and touch settle time behind the same toggle.
 
-By default Options lists only the connected family's device entry. The Options footer has a `show other controllers` hint on its own line, bound to `toggleShowMore`; activating it shows both Steam Controller and DualShock 4 and the hint becomes `hide other controllers` for the rest of the session. The flag is not written to `config.toml`.
+By default Options lists only the connected family's device entry. The Options footer has a `show other controllers` hint on its own line, bound to `toggleShowMore`; activating it shows both Steam Controller and DualShock 4 and the hint becomes `hide other controllers` for the rest of the session. The flag is not written to the config file.
 
-Debug rows insert a `[debug]` table if one was missing. The table’s presence is what turns debug drawing on.
+Debug rows edit the `[debug]` table, where each flag turns one overlay drawing on or off.
 
-Paths, model weights, colors, and word lists are not on this screen. They stay in `config.toml`.
+Paths, model weights, colors, and word lists are not on this screen. They stay in the config file.
 
 ## Mouse
 

@@ -409,14 +409,14 @@ impl ControllerInput for Sc2State {
         scale_trigger(
             self.trigger_left,
             self.bit(BTN_LTRIG_CLICK),
-            crate::config::sc2().trigger_left_threshold,
+            crate::config::sc2().triggers.trigger_left_threshold,
         )
     }
     fn trigger_right(&self) -> Option<u8> {
         scale_trigger(
             self.trigger_right,
             self.bit(BTN_RTRIG_CLICK),
-            crate::config::sc2().trigger_right_threshold,
+            crate::config::sc2().triggers.trigger_right_threshold,
         )
     }
     fn query(&self, button: ControllerButton) -> bool {

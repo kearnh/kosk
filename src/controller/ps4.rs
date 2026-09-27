@@ -306,11 +306,11 @@ impl ControllerInput for Ps4InputData {
         (self.right.0 as f32 / 128.0, self.right.1 as f32 / 128.0)
     }
     fn trigger_left(&self) -> Option<u8> {
-        let threshold = crate::config::ps4().trigger_left_threshold;
+        let threshold = crate::config::ps4().triggers.trigger_left_threshold;
         self.l2.filter(|&t| t >= threshold)
     }
     fn trigger_right(&self) -> Option<u8> {
-        let threshold = crate::config::ps4().trigger_right_threshold;
+        let threshold = crate::config::ps4().triggers.trigger_right_threshold;
         self.r2.filter(|&t| t >= threshold)
     }
     fn query(&self, button: ControllerButton) -> bool {

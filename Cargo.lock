@@ -2002,6 +2002,7 @@ dependencies = [
  "egui_phosphor_icons",
  "enigo",
  "hidapi",
+ "kosk-config-derive",
  "memmap2",
  "notify",
  "postcard",
@@ -2016,6 +2017,15 @@ dependencies = [
  "unicode-normalization",
  "unicode-segmentation",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "kosk-config-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

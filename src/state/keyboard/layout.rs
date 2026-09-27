@@ -847,7 +847,7 @@ impl KeyboardLayout {
 
     fn build_reach_cache(&self) -> Option<ReachCache> {
         let cfg = config::try_get()?;
-        let overlay = cfg.debug.as_ref()?.reach_overlay;
+        let overlay = cfg.debug.reach_overlay;
         let stick = cfg.aim(self.aim_kind, config::AimSurface::Stick);
         let pad = cfg.aim(ControllerKind::Sc2, config::AimSurface::Pad);
 
@@ -1135,7 +1135,8 @@ impl KeyboardLayout {
     }
 
     pub fn draw_debug(&self, ctx: &Context, _: &mut Ui) {
-        if let Some(debug) = config::get().debug {
+        {
+            let debug = config::get().debug;
             let painter = ctx.debug_painter();
 
             if debug.show_stick_cursors {

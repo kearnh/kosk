@@ -1,6 +1,6 @@
 # Configuration (`config.rs`)
 
-This document describes how KOSK loads, watches, and writes its TOML configuration. The types and functions live in `src/config.rs`. The checked-in example is `config.toml` at the repository root, with controller mappings in `mappings.toml`. Layout geometry is a separate file (see [keyboard-layout.md](keyboard-layout.md)).
+This document describes how KOSK loads, watches, and writes its TOML configuration. The types and functions live in `src/config.rs`. The defaults are declared on the config structs in `src/config.rs` and `src/completion/settings.rs`, one annotated field per setting via the `ConfigSection` derive, with controller mappings in `mappings.toml`. Layout geometry is a separate file (see [keyboard-layout.md](keyboard-layout.md)).
 
 ## What problem does this solve?
 
@@ -28,9 +28,9 @@ The deserialized struct is the source of truth after a successful load. Fields t
 
 - **`layouts`** maps layout names to file paths. A layout named `main` is required. `start_layout` must name an entry in that map.
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `0.3`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `0.92`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `1.0`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `1.0`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
-- **`controller_map`** is either an inline table or a string path to another TOML file. The checked-in config uses `controller_map = "mappings.toml"`.
+- **`controller_map`** is either an inline table or a string path to another TOML file. When no path is given, the default file name is `mappings.toml`.
 - **`[sc2]`** and **`[ps4]`** describe device feel, not bindings: trigger thresholds, pad-origin mapping, and haptics. Button-to-action mapping is `controller_map`; these tables only change how the hardware feels under your thumbs.
 
 - Aim profiles live nested under those tables: **`[sc2.pad]`**, **`[sc2.stick]`**, and **`[ps4.stick]`**. There is no `ps4.pad`, because the DualShock 4 has no pads. A touched Steam Controller pad uses the pad profile, while a physical stick uses that controller's stick profile. Replay replays already-mapped coordinates, so it uses the aim family stored on the tape (or Steam Controller 2 when the tape names none) without mapping twice.
@@ -48,11 +48,11 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
-- **`[debug]`**, when present at all, enables debug overlays. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
+- **`[debug]`** holds the debug-overlay flags. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
 - **`[text_input]`** styles the single-line field in text-input mode.
 - **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../README.md#completion-next-word-setup).
 
-The checked-in `config.toml`, `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
+The built-in defaults come from `Config::default()`, and `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
 
 Saving writes a changed value into the user file and deletes a key whose value again matches the default. Bindings work the same way in the user `mappings.toml`: a changed binding is written, a removed default binding is `"none"`, and a binding that matches the default is removed. `"none"` is not an action.
 

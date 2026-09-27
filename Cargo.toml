@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/kosk-mcp", "crates/wordlist-convert"]
+members = [".", "crates/kosk-mcp", "crates/wordlist-convert", "crates/kosk-config-derive"]
 resolver = "2"
 
 [package]
@@ -15,6 +15,7 @@ path = "src/bin/sc2_test.rs"
 [dependencies]
 anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
+kosk-config-derive = { path = "crates/kosk-config-derive" }
 memmap2 = "0.9"
 postcard = { version = "1.1", default-features = false, features = ["use-std", "alloc"] }
 rayon = "1.10"

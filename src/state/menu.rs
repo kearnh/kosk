@@ -7,7 +7,7 @@ use crate::{
         actions::load_bindings,
         event::{Event, EventQueue, EventSource},
         menu_action::MenuAction,
-        settings_form::{copy_row, Effect, FooterButtons, FooterHint, SettingsForm},
+        settings_form::{Effect, FooterButtons, FooterHint, SettingsForm},
         StateId,
     },
     ui::controller_glyph::{self, GlyphFamily},
@@ -159,8 +159,8 @@ impl MenuState {
         }
         let live = config::get();
         if let Err(e) = config::persist_settings(&live, |disk| {
-            for (row, target) in &rows {
-                copy_row(disk, &live, *row, *target);
+            for setting in &rows {
+                setting.copy(disk, &live);
             }
         }) {
             eprintln!("settings save: {e:#}");

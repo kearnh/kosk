@@ -17,6 +17,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
+use kosk_config_derive::{Choice, ConfigSection};
+
+#[path = "config/schema.rs"]
+pub(crate) mod schema;
+pub(crate) use schema::{device_name, DevicePage, Page, Setting};
+use schema::{save_decimals, DEFAULT_MAPPINGS_FILE};
+
 #[derive(Parser, Debug)]
 #[command(name = "kosk")]
 pub struct Args {
@@ -45,134 +52,208 @@ pub struct Args {
     pub at_mouse: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Choice)]
 #[serde(rename_all = "lowercase")]
 pub enum ReachOverlay {
-    Stick,
-    Pad,
     #[default]
     None,
+    Stick,
+    Pad,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct Debug {
-    #[serde(default)]
+    #[config(default = true)]
+    #[serde(default = "Debug::__sdef_show_stick_cursors")]
+    #[setting(
+        label = "Stick cursors",
+        explain = "Draw where the sticks are pointing."
+    )]
     pub show_stick_cursors: bool,
 
     #[serde(default)]
+    #[setting(label = "Hitboxes", explain = "Draw the region each key occupies.")]
     pub show_hitboxes: bool,
 
     #[serde(default)]
+    #[setting(
+        label = "Stick bounds",
+        explain = "Draw the rectangle the sticks can reach."
+    )]
     pub show_stick_bounds: bool,
 
     #[serde(default)]
+    #[setting(
+        label = "Reach overlay",
+        explain = "Draw which keys a stick or a pad can reach. None leaves the keyboard as it is."
+    )]
     pub reach_overlay: ReachOverlay,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct TextInputStyle {
     /// RGBA background color for the text field as `[r, g, b, a]`.
-    #[serde(default = "default_text_input_background_color")]
+    #[config(default = [255, 255, 255, 255])]
+    #[serde(default = "TextInputStyle::__sdef_background_color")]
     pub background_color: [u8; 4],
 
     /// RGBA text color for the text field as `[r, g, b, a]`.
-    #[serde(default = "default_text_input_text_color")]
+    #[config(default = [0, 0, 0, 255])]
+    #[serde(default = "TextInputStyle::__sdef_text_color")]
     pub text_color: [u8; 4],
 
     /// RGBA color for the synthetic caret when the field is not focused.
-    #[serde(default = "default_text_input_cursor_color")]
+    #[config(default = [0, 0, 0, 255])]
+    #[serde(default = "TextInputStyle::__sdef_cursor_color")]
     pub cursor_color: [u8; 4],
 
-    #[serde(default = "default_text_input_font_size")]
+    #[config(default = 22.0)]
+    #[serde(default = "TextInputStyle::__sdef_font_size")]
+    #[setting(
+        label = "Text field size",
+        explain = "How big the text is on the text-input screen.",
+        range = 10.0..=32.0,
+        step = 1.0,
+        decimals = 0
+    )]
     pub font_size: f32,
 }
 
-fn default_text_input_background_color() -> [u8; 4] {
-    [255, 255, 255, 255]
-}
-
-fn default_text_input_text_color() -> [u8; 4] {
-    [0, 0, 0, 255]
-}
-
-fn default_text_input_cursor_color() -> [u8; 4] {
-    [0, 0, 0, 255]
-}
-
-fn default_text_input_font_size() -> f32 {
-    22.0
-}
-
-impl Default for TextInputStyle {
-    fn default() -> Self {
-        Self {
-            background_color: default_text_input_background_color(),
-            text_color: default_text_input_text_color(),
-            cursor_color: default_text_input_cursor_color(),
-            font_size: default_text_input_font_size(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct Config {
     /// Schema version of the user file. Missing counts as 0.
+    ///
+    /// The serde default stays 0 (unknown version); `Default` uses the current
+    /// version for the built-in base layer.
+    #[config(default = crate::config_overlay::CONFIG_VERSION)]
     #[serde(default)]
     pub config_version: i64,
 
     /// Named layouts: map from layout name to file path
     /// Must contain at least "main" layout
+    #[config(default = {
+        let mut layouts = std::collections::HashMap::new();
+        layouts.insert("main".to_owned(), "old_sc.toml".to_owned());
+        layouts.insert("symbols".to_owned(), "old_sc_symbols.toml".to_owned());
+        layouts
+    })]
     pub layouts: std::collections::HashMap<String, String>,
 
     /// Which layout to start with (must exist in layouts)
-    #[serde(default = "default_start_layout")]
+    #[config(default = "main".to_owned())]
+    #[serde(default = "Config::__sdef_start_layout")]
     pub start_layout: String,
 
     /// Try these controller families first. Omitted families are appended in
     /// built-in default order (`sc2`, then `ps4`). Empty / omitted → that default.
-    #[serde(default)]
+    #[config(default = vec![crate::controller::ControllerKind::Sc2])]
+    #[serde(default = "Config::__sdef_preferred_controller")]
     pub preferred_controller: Vec<crate::controller::ControllerKind>,
 
     /// Whether the window should be transparent
-    #[serde(default = "default_transparent")]
+    #[config(default = true)]
+    #[serde(default = "Config::__sdef_transparent")]
+    #[setting(
+        page = Overlay,
+        label = "See-through window",
+        explain = "Draws the overlay as a layered window. Keyboard opacity and menu opacity apply only while this is on."
+    )]
     pub transparent: bool,
 
     /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput.
     /// MoveWindow uses a see-through ghost and ignores this value.
-    #[serde(default = "default_keyboard_opacity")]
+    #[config(default = 1.0)]
+    #[serde(default = "Config::__sdef_keyboard_opacity")]
+    #[setting(
+        page = Overlay,
+        label = "Keyboard opacity",
+        explain = "How solid the keyboard and the text field are. 1 is opaque.",
+        range = 0.2..=1.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub keyboard_opacity: f32,
 
     /// Overlay clear/panel alpha while `transparent` is true, on Settings / Mappings / SelectKey / SelectLayout.
-    #[serde(default = "default_ui_opacity")]
+    #[config(default = 1.0)]
+    #[serde(default = "Config::__sdef_ui_opacity")]
+    #[setting(
+        page = Overlay,
+        label = "Menu opacity",
+        explain = "How solid settings, mappings, and the layout picker are.",
+        range = 0.4..=1.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub ui_opacity: f32,
 
     #[serde(default)]
-    pub debug: Option<Debug>,
+    #[setting(section, page = Debug)]
+    pub debug: Debug,
 
-    #[serde(default = "default_window_pos")]
+    #[config(default = crate::state::window_pos::WindowPos::MousePointer)]
+    #[serde(default = "Config::__sdef_window_pos")]
     pub window_pos: WindowPos,
 
-    #[serde(default = "default_scale_x")]
+    #[config(default = 30.0)]
+    #[serde(default = "Config::__sdef_scale_x")]
+    #[setting(
+        page = Overlay,
+        label = "Key width",
+        explain = "Horizontal size of a key. This is layout scale, not how far the stick moves.",
+        range = 16.0..=48.0,
+        step = 1.0,
+        decimals = 0
+    )]
     pub scale_x: f32,
-    #[serde(default = "default_scale_y")]
+    #[config(default = 32.0)]
+    #[serde(default = "Config::__sdef_scale_y")]
+    #[setting(
+        page = Overlay,
+        label = "Key height",
+        explain = "Vertical size of a key.",
+        range = 16.0..=48.0,
+        step = 1.0,
+        decimals = 0
+    )]
     pub scale_y: f32,
 
     /// Milliseconds before the first repeat of the same outgoing event unit (a
     /// single [`Event`](crate::state::event::Event) or a completed batch). Use
     /// `0` to disable debouncing entirely.
-    #[serde(default = "default_event_debounce_ms")]
+    #[config(default = 240)]
+    #[serde(default = "Config::__sdef_event_debounce_ms")]
+    #[setting(
+        page = Typing,
+        label = "Delay before repeat",
+        explain = "How long a key must be held before it starts repeating. 0 sends a repeat on every poll.",
+        range = 0..=500,
+        step = 10,
+        unit = "ms"
+    )]
     pub event_debounce_ms: u64,
 
     /// Milliseconds between further repeats of the same unit after the first
     /// repeat has fired (key-repeat style). Ignored when `event_debounce_ms` is
     /// `0`. Use `0` here to use `event_debounce_ms` for every repeat step.
-    #[serde(default = "default_event_debounce_repeat_ms")]
+    #[config(default = 55)]
+    #[serde(default = "Config::__sdef_event_debounce_repeat_ms")]
+    #[setting(
+        page = Typing,
+        label = "Repeat interval",
+        explain = "Time between repeats after the first one. 0 uses the delay before repeat for every step.",
+        range = 0..=200,
+        step = 5,
+        unit = "ms"
+    )]
     pub event_debounce_repeat_ms: u64,
 
     #[serde(default)]
+    #[setting(section, page = Overlay)]
     pub text_input: TextInputStyle,
 
     #[serde(default)]
+    #[setting(section, page = Suggestions)]
     pub completion: crate::completion::CompletionConfig,
 
     /// Per-app-state mapping from controller buttons to action names (interpreted by each state).
@@ -184,18 +265,22 @@ pub struct Config {
 
     /// Steam Controller 2 pad mapping and feel. Omitted → defaults.
     #[serde(default)]
+    #[setting(section, page = Device(Sc2, Pads))]
     pub sc2: Sc2Config,
 
     /// DualShock 4 feel. Omitted → defaults.
     #[serde(default)]
+    #[setting(section)]
     pub ps4: Ps4Config,
 
     /// Battery indicator appearance.
     #[serde(default)]
+    #[setting(section, page = Overlay)]
     pub battery: BatteryConfig,
 
     /// Template for `toggleRecord` captures. Must contain exactly one `%` (3-digit index).
-    #[serde(default)]
+    #[config(default = Some("captures/kosk-%.krec".to_owned()))]
+    #[serde(default = "Config::__sdef_record_file")]
     pub record_file: Option<String>,
 
     /// Replay device. `[replay].file` is required when `preferred_controller` starts with `replay`.
@@ -219,189 +304,227 @@ pub enum AimSurface {
 }
 
 /// Range, circle-to-square warp, and selection hold for one analog surface.
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, ConfigSection)]
 pub struct AimProfile {
-    #[serde(default = "default_aim_scale_x")]
+    #[config(default = 3.8)]
+    #[serde(default = "AimProfile::__sdef_scale_x")]
+    #[setting(
+        label = "Horizontal range",
+        explain = "A full movement left or right covers this much of the keyboard. Raise it when the outer columns stay out of reach.",
+        range = 1.0..=8.0,
+        step = 0.1,
+        decimals = 1
+    )]
     pub scale_x: f32,
 
-    #[serde(default = "default_aim_scale_y")]
+    #[config(default = 2.8)]
+    #[serde(default = "AimProfile::__sdef_scale_y")]
+    #[setting(
+        label = "Vertical range",
+        explain = "A full movement up or down covers this much of the keyboard.",
+        range = 1.0..=8.0,
+        step = 0.1,
+        decimals = 1
+    )]
     pub scale_y: f32,
 
-    /// `0` keeps the circle. `1` fills the square corners.
-    #[serde(default = "default_aim_warp")]
+    /// `0` keeps the raw direction. `1` fills the square corners.
+    #[config(default = 1.0)]
+    #[serde(default = "AimProfile::__sdef_warp")]
+    #[setting(
+        label = "Square the corners",
+        explain = "A diagonal falls short of the corner keys. 0 keeps the raw direction. 1 stretches a full diagonal out to the corner keys. A value in between is a partial stretch.",
+        range = 0.0..=1.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub warp: f32,
 
     /// Extra hit-test margin for the current key (`1` = off).
-    #[serde(default = "default_aim_select_sticky")]
+    #[config(default = 1.25)]
+    #[serde(default = "AimProfile::__sdef_select_sticky")]
+    #[setting(
+        label = "Stickiness",
+        explain = "The key you are already on keeps the highlight until another key is this many times closer to your thumb. At 1.25 a neighbor has to be noticeably closer before the highlight moves. 1 turns that off, and the nearest key wins immediately.",
+        range = 1.0..=2.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub select_sticky: f32,
 
     /// Milliseconds the highlight stays on a key after it is sent.
-    #[serde(default = "default_aim_select_lock_ms")]
+    #[config(default = 100)]
+    #[serde(default = "AimProfile::__sdef_select_lock_ms")]
+    #[setting(
+        label = "Hold after a key",
+        explain = "After a letter is sent, the highlight stays on that key for this long. 0 releases it immediately.",
+        range = 0..=300,
+        step = 10,
+        unit = "ms"
+    )]
     pub select_lock_ms: u64,
 }
 
-impl Default for AimProfile {
-    fn default() -> Self {
-        Self {
-            scale_x: default_aim_scale_x(),
-            scale_y: default_aim_scale_y(),
-            warp: default_aim_warp(),
-            select_sticky: default_aim_select_sticky(),
-            select_lock_ms: default_aim_select_lock_ms(),
-        }
-    }
+/// Press distance for the left and right triggers. Shared by both controller
+/// families; each family inherits its own settings page.
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, ConfigSection)]
+pub struct TriggerThresholds {
+    #[config(default = 40)]
+    #[serde(default = "TriggerThresholds::__sdef_trigger_left_threshold")]
+    #[setting(
+        label = "Left trigger",
+        explain = "How far the trigger must travel before it counts as pressed. Raise it if a resting finger sends keys.",
+        range = 0..=255,
+        step = 5
+    )]
+    pub trigger_left_threshold: u8,
+
+    #[config(default = 40)]
+    #[serde(default = "TriggerThresholds::__sdef_trigger_right_threshold")]
+    #[setting(
+        label = "Right trigger",
+        explain = "The same cutoff, on the right trigger.",
+        range = 0..=255,
+        step = 5
+    )]
+    pub trigger_right_threshold: u8,
 }
 
 /// SC2-only pad mapping and feel. Does not affect DualShock 4.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct Sc2Config {
     #[serde(default)]
+    #[setting(section)]
     pub pad: AimProfile,
 
     #[serde(default)]
+    #[setting(section, page = Device(Sc2, Stick))]
     pub stick: AimProfile,
 
+    #[serde(flatten, default)]
+    #[setting(section, page = Device(Sc2, Triggers))]
+    pub triggers: TriggerThresholds,
+
     /// Where pad zero sits: `0` = pad center, `1` = first settled touch.
-    #[serde(default = "default_pad_origin_relative")]
+    ///
+    /// What "rest" means when a thumb lands: 0 treats the pad location as the
+    /// key, 1 treats the first contact as rest and only tracks slides away
+    /// from it. Values in between start part-way between those two.
+    #[config(default = 0.6)]
+    #[serde(default = "Sc2Config::__sdef_pad_origin_relative")]
+    #[setting(
+        label = "Thumb rest",
+        explain = "0 treats the place you touch as the key. A thumb on the upper right of the pad highlights an upper-right key. 1 treats the first contact as rest: the highlight starts on that pad's home-row key and only moves as you slide away from where you landed. A value in between starts part-way between those two.",
+        range = 0.0..=1.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub pad_origin_relative: f32,
 
     /// Short-edge leftover stretch from the blended origin. `0` = 1:1 delta.
-    #[serde(default = "default_pad_origin_stretch")]
+    ///
+    /// When rest is not the pad center, one slide direction has less pad left.
+    /// 1 speeds up only that short leftover direction so the far keys stay
+    /// reachable; the long side is left as it is.
+    #[config(default = 1.0)]
+    #[serde(default = "Sc2Config::__sdef_pad_origin_stretch")]
+    #[setting(
+        label = "Stretch the short side",
+        explain = "If rest is not the center of the pad, one direction has less pad left. 0 follows your thumb one-to-one, so you can run out of pad before the far keys. 1 speeds up only that short direction, so those keys stay reachable. The long direction is left as it is.",
+        range = 0.0..=1.0,
+        step = 0.05,
+        decimals = 2
+    )]
     pub pad_origin_stretch: f32,
 
     /// Cap on per-axis short-edge gain (`1` = no extra gain).
-    #[serde(default = "default_pad_origin_stretch_max_gain")]
+    #[config(default = 1.5)]
+    #[serde(default = "Sc2Config::__sdef_pad_origin_stretch_max_gain")]
+    #[setting(
+        label = "Stretch limit",
+        explain = "Caps how much the short direction of the pad can speed up. 1 turns that extra speed-up off.",
+        range = 1.0..=3.0,
+        step = 0.05,
+        decimals = 2,
+        advanced
+    )]
     pub pad_origin_stretch_max_gain: f32,
 
     /// Wait this long after touch-down before capturing origin (skip contact spike).
-    #[serde(default = "default_pad_origin_settle_ms")]
+    #[config(default = 20)]
+    #[serde(default = "Sc2Config::__sdef_pad_origin_settle_ms")]
+    #[setting(
+        label = "Touch settle time",
+        explain = "How long to wait after your thumb lands before reading the touch. Raise it if the first key picked is jumpy.",
+        range = 0..=100,
+        step = 5,
+        unit = "ms",
+        advanced
+    )]
     pub pad_origin_settle_ms: u64,
 
-    #[serde(default = "default_trigger_threshold")]
-    pub trigger_left_threshold: u8,
-
-    #[serde(default = "default_trigger_threshold")]
-    pub trigger_right_threshold: u8,
-
-    #[serde(default)]
+    #[config(default = HapticIntensity::Low)]
+    #[serde(default = "Sc2Config::__sdef_touchpad_left_haptic")]
+    #[setting(
+        label = "Pad click",
+        explain = "How hard the pads click when you press them. Off is silent. Both pads use this level.",
+        mirror = touchpad_right_haptic
+    )]
     pub touchpad_left_haptic: HapticIntensity,
 
-    #[serde(default)]
+    #[config(default = HapticIntensity::Low)]
+    #[serde(default = "Sc2Config::__sdef_touchpad_right_haptic")]
     pub touchpad_right_haptic: HapticIntensity,
 }
 
-impl Default for Sc2Config {
-    fn default() -> Self {
-        Self {
-            pad: AimProfile::default(),
-            stick: AimProfile::default(),
-            pad_origin_relative: default_pad_origin_relative(),
-            pad_origin_stretch: default_pad_origin_stretch(),
-            pad_origin_stretch_max_gain: default_pad_origin_stretch_max_gain(),
-            pad_origin_settle_ms: default_pad_origin_settle_ms(),
-            trigger_left_threshold: default_trigger_threshold(),
-            trigger_right_threshold: default_trigger_threshold(),
-            touchpad_left_haptic: HapticIntensity::default(),
-            touchpad_right_haptic: HapticIntensity::default(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct Ps4Config {
     #[serde(default)]
+    #[setting(section, page = Device(Ps4, Stick))]
     pub stick: AimProfile,
 
-    #[serde(default = "default_trigger_threshold")]
-    pub trigger_left_threshold: u8,
-
-    #[serde(default = "default_trigger_threshold")]
-    pub trigger_right_threshold: u8,
+    #[serde(flatten, default)]
+    #[setting(section, page = Device(Ps4, Triggers))]
+    pub triggers: TriggerThresholds,
 }
 
-impl Default for Ps4Config {
-    fn default() -> Self {
-        Self {
-            stick: AimProfile::default(),
-            trigger_left_threshold: default_trigger_threshold(),
-            trigger_right_threshold: default_trigger_threshold(),
-        }
-    }
-}
-
-const BATTERY_COLOR_EMPTY: [u8; 4] = [220, 50, 50, 255];
-const BATTERY_COLOR_LOW: [u8; 4] = [230, 140, 40, 255];
-const BATTERY_COLOR_MEDIUM: [u8; 4] = [230, 200, 60, 255];
-const BATTERY_COLOR_HIGH: [u8; 4] = [120, 190, 80, 255];
-const BATTERY_COLOR_FULL: [u8; 4] = [50, 200, 90, 255];
-const BATTERY_COLOR_CHARGING: [u8; 4] = [70, 180, 220, 255];
-const BATTERY_COLOR_UNKNOWN: [u8; 4] = [180, 180, 180, 255];
-
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, ConfigSection)]
 pub struct BatteryConfig {
     /// Draw the battery slot with the same filled key background.
-    #[serde(default = "default_battery_draw_button")]
+    #[serde(default)]
+    #[setting(
+        label = "Battery as key",
+        explain = "Draw the battery readout with the same background as the keys around it."
+    )]
     pub draw_button: bool,
-    #[serde(default = "default_battery_color_empty")]
+    #[config(default = [220, 50, 50, 255])]
+    #[serde(default = "BatteryConfig::__sdef_empty")]
     pub empty: [u8; 4],
-    #[serde(default = "default_battery_color_low")]
+    #[config(default = [230, 140, 40, 255])]
+    #[serde(default = "BatteryConfig::__sdef_low")]
     pub low: [u8; 4],
-    #[serde(default = "default_battery_color_medium")]
+    #[config(default = [230, 200, 60, 255])]
+    #[serde(default = "BatteryConfig::__sdef_medium")]
     pub medium: [u8; 4],
-    #[serde(default = "default_battery_color_high")]
+    #[config(default = [120, 190, 80, 255])]
+    #[serde(default = "BatteryConfig::__sdef_high")]
     pub high: [u8; 4],
-    #[serde(default = "default_battery_color_full")]
+    #[config(default = [50, 200, 90, 255])]
+    #[serde(default = "BatteryConfig::__sdef_full")]
     pub full: [u8; 4],
-    #[serde(default = "default_battery_color_charging")]
+    #[config(default = [70, 180, 220, 255])]
+    #[serde(default = "BatteryConfig::__sdef_charging")]
     pub charging: [u8; 4],
-    #[serde(default = "default_battery_color_unknown")]
+    #[config(default = [180, 180, 180, 255])]
+    #[serde(default = "BatteryConfig::__sdef_unknown")]
     pub unknown: [u8; 4],
 }
 
-fn default_battery_draw_button() -> bool {
-    false
-}
-fn default_battery_color_empty() -> [u8; 4] {
-    BATTERY_COLOR_EMPTY
-}
-fn default_battery_color_low() -> [u8; 4] {
-    BATTERY_COLOR_LOW
-}
-fn default_battery_color_medium() -> [u8; 4] {
-    BATTERY_COLOR_MEDIUM
-}
-fn default_battery_color_high() -> [u8; 4] {
-    BATTERY_COLOR_HIGH
-}
-fn default_battery_color_full() -> [u8; 4] {
-    BATTERY_COLOR_FULL
-}
-fn default_battery_color_charging() -> [u8; 4] {
-    BATTERY_COLOR_CHARGING
-}
-fn default_battery_color_unknown() -> [u8; 4] {
-    BATTERY_COLOR_UNKNOWN
-}
-
-impl Default for BatteryConfig {
-    fn default() -> Self {
-        Self {
-            draw_button: default_battery_draw_button(),
-            empty: default_battery_color_empty(),
-            low: default_battery_color_low(),
-            medium: default_battery_color_medium(),
-            high: default_battery_color_high(),
-            full: default_battery_color_full(),
-            charging: default_battery_color_charging(),
-            unknown: default_battery_color_unknown(),
-        }
-    }
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, ConfigSection)]
 pub struct ReplayConfig {
     /// Path to a `.krec` tape. Relative paths are against the config file directory.
-    #[serde(default)]
+    #[config(default = Some("captures/kosk-000.krec".to_owned()))]
+    #[serde(default = "ReplayConfig::__sdef_file")]
     pub file: Option<String>,
 }
 
@@ -417,17 +540,18 @@ pub enum KeySinkConfig {
 }
 
 /// One-time tutorial cards. kosk marks each shown after acknowledgement.
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, ConfigSection)]
 pub struct TipsConfig {
     #[serde(default)]
     pub completion_next_word_setup_shown: bool,
 }
 
 /// Pad haptic tick strength. `none` skips the HID pulse.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Choice)]
 #[serde(rename_all = "lowercase")]
 pub enum HapticIntensity {
     #[default]
+    #[choice(label = "Off")]
     None,
     Low,
     Medium,
@@ -479,79 +603,6 @@ where
             })
         }
     }
-}
-
-fn default_aim_scale_x() -> f32 {
-    3.0
-}
-fn default_aim_scale_y() -> f32 {
-    2.5
-}
-fn default_aim_warp() -> f32 {
-    1.0
-}
-fn default_transparent() -> bool {
-    true
-}
-
-fn default_keyboard_opacity() -> f32 {
-    0.3
-}
-
-fn default_ui_opacity() -> f32 {
-    0.92
-}
-
-fn default_window_pos() -> WindowPos {
-    WindowPos::BottomRight
-}
-
-fn default_scale_x() -> f32 {
-    40.0
-}
-
-fn default_scale_y() -> f32 {
-    40.0
-}
-
-fn default_event_debounce_ms() -> u64 {
-    400
-}
-
-fn default_event_debounce_repeat_ms() -> u64 {
-    55
-}
-
-fn default_start_layout() -> String {
-    "main".to_string()
-}
-
-fn default_aim_select_lock_ms() -> u64 {
-    100
-}
-
-fn default_aim_select_sticky() -> f32 {
-    1.25
-}
-
-fn default_pad_origin_relative() -> f32 {
-    0.0
-}
-
-fn default_pad_origin_stretch() -> f32 {
-    0.0
-}
-
-fn default_pad_origin_stretch_max_gain() -> f32 {
-    1.5
-}
-
-fn default_pad_origin_settle_ms() -> u64 {
-    20
-}
-
-fn default_trigger_threshold() -> u8 {
-    40
 }
 
 static REPLAY_AIM_FAMILY: OnceLock<Mutex<Option<crate::controller::ControllerKind>>> =
@@ -831,49 +882,8 @@ fn controller_map_file() -> Option<String> {
 }
 
 /// Decimal places when writing a config float. `None` keeps the shortest `f32` text.
-fn config_float_digits(path: &str) -> Option<usize> {
-    match path {
-        "keyboard_opacity"
-        | "ui_opacity"
-        | "sc2.pad.warp"
-        | "sc2.pad.select_sticky"
-        | "sc2.stick.warp"
-        | "sc2.stick.select_sticky"
-        | "ps4.stick.warp"
-        | "ps4.stick.select_sticky"
-        | "sc2.pad_origin_relative"
-        | "sc2.pad_origin_stretch" => Some(2),
-        "sc2.pad.scale_x"
-        | "sc2.pad.scale_y"
-        | "sc2.stick.scale_x"
-        | "sc2.stick.scale_y"
-        | "ps4.stick.scale_x"
-        | "ps4.stick.scale_y"
-        | "scale_x"
-        | "scale_y"
-        | "sc2.pad_origin_stretch_max_gain"
-        | "text_input.font_size"
-        | "completion.ui.max_chip_width"
-        | "completion.ui.min_chip_width"
-        | "completion.ui.font_size"
-        | "completion.ui.corner_radius"
-        | "completion.ui.selected_outline_width"
-        | "completion.ui.padding_x"
-        | "completion.ui.padding_y"
-        | "completion.ui.gap"
-        | "completion.ui.armed_dot_radius"
-        | "completion.ngram.backoff_alpha"
-        | "completion.ngram.lambda_trigram"
-        | "completion.ngram.lambda_bigram"
-        | "completion.ngram.lambda_unigram"
-        | "completion.ngram.lambda_exact"
-        | "completion.ngram.lambda_typo" => Some(1),
-        _ => None,
-    }
-}
-
 fn format_config_float(path: &str, value: f64) -> String {
-    if let Some(digits) = config_float_digits(path) {
+    if let Some(digits) = save_decimals(path) {
         return format!("{:.*}", digits, value);
     }
 
@@ -1052,10 +1062,9 @@ fn read_merged_config(
         .to_string()
         .parse()
         .context("Could not parse config TOML")?;
-    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
-        .parse()
-        .context("built-in config")?;
-    let map_rel = controller_map_rel(&user_value, &merged);
+    let mut merged: toml::Value =
+        toml::Value::try_from(Config::default()).context("built-in config")?;
+    let map_rel = controller_map_rel(&user_value);
     crate::config_overlay::merge_toml(&mut merged, &user_value);
 
     let mut mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
@@ -1079,14 +1088,11 @@ fn read_merged_config(
     Ok((config, map_rel))
 }
 
-fn controller_map_rel(user: &toml::Value, builtin: &toml::Value) -> Option<String> {
+fn controller_map_rel(user: &toml::Value) -> Option<String> {
     match user.get(CONTROLLER_MAP_KEY) {
         Some(toml::Value::String(path)) => Some(path.clone()),
         Some(_) => None,
-        None => builtin
-            .get(CONTROLLER_MAP_KEY)
-            .and_then(|v| v.as_str())
-            .map(str::to_owned),
+        None => Some(DEFAULT_MAPPINGS_FILE.to_owned()),
     }
 }
 
@@ -1234,14 +1240,7 @@ fn load_initial(config_path: &Path, source: ConfigSource) -> (Config, Option<Str
 
 /// The built-in `controller_map` file name, as a fallback watch target.
 fn builtin_controller_map_rel() -> Option<String> {
-    crate::config_overlay::builtin_config_toml()
-        .parse::<toml::Value>()
-        .ok()
-        .and_then(|v| {
-            v.get(CONTROLLER_MAP_KEY)
-                .and_then(|s| s.as_str())
-                .map(str::to_owned)
-        })
+    Some(DEFAULT_MAPPINGS_FILE.to_owned())
 }
 
 /// Load config from `config_path` without parsing process args (for auxiliary binaries).
@@ -1370,18 +1369,14 @@ pub(crate) fn replace_live(cfg: Config) {
 }
 
 fn builtin_merged_config() -> Result<Config> {
-    let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
-        .parse()
-        .context("built-in config")?;
+    let mut cfg = Config::default();
     let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
         .parse()
         .context("built-in mappings")?;
-    if let Some(table) = merged.as_table_mut() {
-        table.insert(CONTROLLER_MAP_KEY.to_owned(), mappings);
-    }
-    merged
+    cfg.controller_map = mappings
         .try_into()
-        .map_err(|e| anyhow::anyhow!("built-in config: {e}"))
+        .map_err(|e| anyhow::anyhow!("built-in mappings: {e}"))?;
+    Ok(cfg)
 }
 
 /// Write `new` into the user file as values that differ from the built-in default.
@@ -1969,10 +1964,10 @@ show_stick_cursors = false\n\
         )
         .unwrap();
         let mut cfg = builtin_merged_config().unwrap();
-        cfg.debug = Some(Debug {
+        cfg.debug = Debug {
             show_stick_cursors: false,
             ..Debug::default()
-        });
+        };
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("config_version = 9"), "{text}");
@@ -2160,9 +2155,7 @@ show_stick_cursors = false\n\
 
     #[test]
     fn user_can_turn_default_stick_cursors_off() {
-        let mut merged: toml::Value = crate::config_overlay::builtin_config_toml()
-            .parse()
-            .unwrap();
+        let mut merged: toml::Value = toml::Value::try_from(Config::default()).unwrap();
         let over: toml::Value = toml::from_str("[debug]\nshow_stick_cursors = false\n").unwrap();
         crate::config_overlay::merge_toml(&mut merged, &over);
         let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
@@ -2173,6 +2166,45 @@ show_stick_cursors = false\n\
             .unwrap()
             .insert(CONTROLLER_MAP_KEY.into(), mappings);
         let cfg: Config = merged.try_into().unwrap();
-        assert!(!cfg.debug.unwrap().show_stick_cursors);
+        assert!(!cfg.debug.show_stick_cursors);
+    }
+
+    #[test]
+    fn stepped_float_keeps_two_decimals_through_save() {
+        let dir = temp_dir("float-precision");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 1\n").unwrap();
+
+        let mut cfg = builtin_merged_config().unwrap();
+        cfg.completion.ngram.lambda_trigram = 0.35;
+        cfg.completion.ngram.backoff_alpha = 0.35;
+        cfg.sc2.pad_origin_stretch_max_gain = 1.35;
+        write_user_overlay(&config_path, &cfg, None).unwrap();
+
+        let text = fs::read_to_string(&config_path).unwrap();
+        assert!(text.contains("lambda_trigram = 0.35"), "{text}");
+        assert!(text.contains("backoff_alpha = 0.35"), "{text}");
+        assert!(
+            text.contains("pad_origin_stretch_max_gain = 1.35"),
+            "{text}"
+        );
+    }
+
+    /// The derived `Default` is the built-in base layer: it must round-trip
+    /// through TOML exactly (`f32` values included). Formerly this compared
+    /// against the deleted `config.toml`; the defaults now live on the fields.
+    #[test]
+    fn struct_defaults_match_builtin_toml() {
+        let value = toml::Value::try_from(Config::default()).unwrap();
+        let back: Config = value.try_into().unwrap();
+        let again = toml::Value::try_from(&back).unwrap();
+        let first = toml::Value::try_from(Config::default()).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(back.completion.max_suggestions, 6);
+        assert!((back.keyboard_opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(
+            back.layouts.get("main").map(String::as_str),
+            Some("old_sc.toml")
+        );
     }
 }
