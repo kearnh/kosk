@@ -1,7 +1,7 @@
 //! Single-definition settings schema.
 //!
 //! Every settings-screen row is declared once, on the config field it edits
-//! (see `kosk_config_derive::ConfigSection`). This module holds the runtime
+//! (see `kosk_config_derive::config_section`). This module holds the runtime
 //! side: pages, value lenses, control behavior, and the settings registry.
 
 use std::sync::{Arc, OnceLock};

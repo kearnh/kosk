@@ -1,6 +1,6 @@
 # Configuration (`config.rs`)
 
-This document describes how KOSK loads, watches, and writes its TOML configuration. The types and functions live in `src/config.rs`. The defaults are declared on the config structs in `src/config.rs` and `src/completion/settings.rs`, one annotated field per setting via the `ConfigSection` derive, with controller mappings in `mappings.toml`. Layout geometry is a separate file (see [keyboard-layout.md](keyboard-layout.md)).
+This document describes how KOSK loads, watches, and writes its TOML configuration. The types and functions live in `src/config.rs`. The defaults are declared on the config structs in `src/config.rs` and `src/completion/settings.rs`, one annotated field per setting via the `config_section` attribute, with controller mappings in `mappings.toml`. Layout geometry is a separate file (see [keyboard-layout.md](keyboard-layout.md)).
 
 ## What problem does this solve?
 

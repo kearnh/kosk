@@ -1,9 +1,10 @@
-//! Derives for single-definition config settings.
+//! Macros for single-definition config settings.
 //!
-//! `ConfigSection` reads `#[config(default = ...)]` and `#[setting(...)]`
-//! attributes on struct fields and generates the `Default` impl, serde
-//! default helpers, and settings-descriptor collection. `Choice` generates
-//! the [`crate::config::schema::Choice`] impl for unit-only enums.
+//! `#[config_section]` reads `#[config(default = ...)]` and `#[setting(...)]`
+//! on struct fields. It generates the `Default` impl and the settings
+//! descriptors, and it writes the `#[serde(default)]` attributes so a field
+//! is declared once. `Choice` generates the
+//! [`crate::config::schema::Choice`] impl for unit-only enums.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -447,10 +448,12 @@ fn leaf_collector(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::quote;
 
     fn expand(body: &str) -> syn::Result<TokenStream2> {
-        let input: DeriveInput = syn::parse_str(&format!("struct Tiny {{ {body} }}"))?;
-        config_section_impl(input)
+        let mut input: DeriveInput = syn::parse_str(&format!("struct Tiny {{ {body} }}"))?;
+        let impls = config_section_impl(&mut input)?;
+        Ok(quote!(#input #impls))
     }
 
     #[test]
@@ -469,6 +472,23 @@ mod tests {
         .to_string();
         assert!(tokens.contains("__sdef_opacity"));
         assert!(tokens.contains("__kosk_collect"));
+        assert!(tokens.contains("serde"));
+        assert!(!tokens.contains("setting"));
+    }
+
+    #[test]
+    fn explicit_serde_default_is_kept() {
+        let tokens = expand(
+            r#"
+            #[config(default = 2)]
+            #[serde(default)]
+            version: i64,
+            "#,
+        )
+        .unwrap()
+        .to_string();
+        assert!(!tokens.contains("__sdef_version"));
+        assert!(tokens.contains("serde"));
     }
 
     #[test]
@@ -485,31 +505,72 @@ mod tests {
     }
 }
 
-#[proc_macro_derive(ConfigSection, attributes(config, setting))]
-pub fn derive_config_section(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as DeriveInput);
-    match config_section_impl(input) {
-        Ok(tokens) => tokens.into(),
+#[proc_macro_attribute]
+pub fn config_section(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut input = syn::parse_macro_input!(item as DeriveInput);
+    match config_section_impl(&mut input) {
+        Ok(impls) => quote!(#input #impls).into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
-fn config_section_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
-    let name = &input.ident;
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
+fn serde_specifies_default(attr: &syn::Attribute) -> bool {
+    if !attr.path().is_ident("serde") {
+        return false;
+    }
+    let mut found = false;
+    let Ok(()) = attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("default") {
+            found = true;
+        }
+        if meta.input.peek(Token![=]) {
+            let _value: Expr = meta.value()?.parse()?;
+        }
+        Ok(())
+    }) else {
+        return false;
+    };
+    found
+}
+
+fn is_bare_serde_default(attr: &syn::Attribute) -> bool {
+    if !attr.path().is_ident("serde") {
+        return false;
+    }
+    let mut metas = Vec::new();
+    let Ok(()) = attr.parse_nested_meta(|meta| {
+        let bare = meta.path.is_ident("default") && !meta.input.peek(Token![=]);
+        if meta.input.peek(Token![=]) {
+            let _value: Expr = meta.value()?.parse()?;
+        }
+        metas.push(bare);
+        Ok(())
+    }) else {
+        return false;
+    };
+    metas == [true]
+}
+
+fn config_section_impl(input: &mut DeriveInput) -> syn::Result<TokenStream2> {
+    if !input.attrs.iter().any(serde_specifies_default) {
+        input.attrs.push(syn::parse_quote!(#[serde(default)]));
+    }
+
+    let name = input.ident.clone();
+    let fields = match &mut input.data {
+        Data::Struct(data) => match &mut data.fields {
             Fields::Named(fields) => fields,
             _ => {
                 return Err(syn::Error::new_spanned(
-                    &input.ident,
-                    "ConfigSection needs named fields",
+                    name,
+                    "config_section needs named fields",
                 ));
             }
         },
         _ => {
             return Err(syn::Error::new_spanned(
-                &input.ident,
-                "ConfigSection can only be derived for structs",
+                name,
+                "config_section can only be applied to structs",
             ));
         }
     };
@@ -527,33 +588,43 @@ fn config_section_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
     let mut sdef_fns = Vec::new();
     let mut collectors = Vec::new();
 
-    for field in &fields.named {
-        let ident = field.ident.as_ref().unwrap();
-        let ty = &field.ty;
+    for field in &mut fields.named {
+        let ident = field.ident.clone().unwrap();
+        let ty = field.ty.clone();
         let default = config_default(field)?;
+        let attr = parse_setting_attr(field)?;
         let default_expr: TokenStream2 = match &default {
             Some(expr) => expr.clone(),
             None => quote!(Default::default()),
         };
         default_inits.push(quote!(#ident: #default_expr));
-        if default.is_some() {
+        let serde_owns_default = field.attrs.iter().any(serde_specifies_default);
+        if default.is_some() && !serde_owns_default {
             let sdef = format_ident!("__sdef_{}", ident);
+            let fn_path = format!("{name}::{sdef}");
+            field
+                .attrs
+                .push(syn::parse_quote!(#[serde(default = #fn_path)]));
             sdef_fns.push(quote! {
-                #[allow(dead_code)]
                 fn #sdef() -> #ty {
                     #default_expr
                 }
             });
         }
+        if default.is_none() {
+            field.attrs.retain(|attr| !is_bare_serde_default(attr));
+        }
+        field
+            .attrs
+            .retain(|attr| !attr.path().is_ident("config") && !attr.path().is_ident("setting"));
 
-        let attr = parse_setting_attr(field)?;
         let SettingAttr::Section { page } = attr else {
             let leaf = match attr {
                 SettingAttr::Leaf(leaf) => *leaf,
                 _ => continue,
             };
             collectors.push(leaf_collector(
-                name,
+                &name,
                 field,
                 leaf,
                 &setting_ty,

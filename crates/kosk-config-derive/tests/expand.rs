@@ -1,7 +1,7 @@
 //! Expansion test for the derives against a stub schema mirroring
 //! `crate::config::schema`.
 
-use kosk_config_derive::{Choice, ConfigSection};
+use kosk_config_derive::{config_section, Choice};
 
 use crate::config::schema::{Choice as _, Lens, Page, Setting};
 use crate::controller::ControllerKind;
@@ -127,7 +127,7 @@ mod config {
     }
 }
 
-#[derive(Choice, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Choice, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 enum Flavor {
     #[choice(label = "Smart")]
     Ngram,
@@ -135,7 +135,8 @@ enum Flavor {
     AboveField,
 }
 
-#[derive(ConfigSection, Debug, PartialEq)]
+#[config_section]
+#[derive(serde::Deserialize, Debug, PartialEq)]
 struct Inner {
     #[config(default = 3.8)]
     #[setting(
@@ -154,7 +155,8 @@ struct Inner {
     flavor: Flavor,
 }
 
-#[derive(ConfigSection, Debug, PartialEq)]
+#[config_section]
+#[derive(serde::Deserialize, Debug, PartialEq)]
 struct Root {
     #[setting(section, page = Suggestions)]
     inner: Inner,
