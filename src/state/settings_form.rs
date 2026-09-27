@@ -5,6 +5,8 @@ use crate::controller::ControllerKind;
 use crate::state::StateId;
 
 const MAX_VISIBLE_ROWS: usize = 8;
+/// Rows kept on screen past the highlight, so the next row is visible while scrolling.
+const SCROLL_OFFSET: usize = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HubEntry {
@@ -501,11 +503,8 @@ impl SettingsForm {
             return (0, total);
         }
         let max_start = total - MAX_VISIBLE_ROWS;
-        let start = if self.focus < MAX_VISIBLE_ROWS {
-            0
-        } else {
-            (self.focus + 1 - MAX_VISIBLE_ROWS).min(max_start)
-        };
+        let anchor = MAX_VISIBLE_ROWS - 1 - SCROLL_OFFSET.min(MAX_VISIBLE_ROWS - 1);
+        let start = self.focus.saturating_sub(anchor).min(max_start);
         (start, start + MAX_VISIBLE_ROWS)
     }
 
@@ -950,6 +949,7 @@ mod tests {
         let (start, end) = form.visible_range(ControllerKind::Sc2);
         assert!(start <= 9 && 9 < end);
         assert_eq!(end - start, 8);
+        assert!(end - 1 - 9 >= SCROLL_OFFSET);
     }
 
     #[test]
