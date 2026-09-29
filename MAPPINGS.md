@@ -10,7 +10,7 @@ One button can do different things in different situations. Write a list; the fi
 
 The shipped file is the built-in default. A user `mappings.toml` next to the user config lists only bindings that differ. Set a binding to `"none"` to drop a default binding.
 
-You do not have to edit that file by hand: the in-app editor on the settings screen remaps buttons with these same names and checks the chord and fallback rules as you go. See [mappings-editor.md](docs/mappings-editor.md).
+You do not have to edit that file by hand: the in-app editor on the settings screen remaps buttons with these same names and checks the chord and fallback rules as you go. See [mappings-editor.md](docs/developer/mappings-editor.md).
 
 ## Buttons
 

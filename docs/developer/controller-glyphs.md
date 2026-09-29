@@ -24,7 +24,7 @@ Discovery order uses the same config list, but that walk is separate. Glyph sele
 
 Face buttons follow the semantic names, not a shared Xbox sheet for both devices. `FaceBottom` is `shared_color_button_a.svg` for `Sc2` and `ps_color_button_x.svg` for `Ps4`. `FaceRight`, `FaceLeft`, and `FaceTop` follow the same split: B/X/Y on the Steam Controller, Circle/Square/Triangle on the DualShock 4.
 
-Shoulders, triggers, the d-pad, Options, Share, System, and the pad clicks also differ by family. On `Sc2`, Share is `sd_button_view.svg` and Options is `sd_button_menu.svg` (the Steam Deck view and menu icons). On `Ps4`, those are `ps4_button_share.svg` and `ps4_button_options.svg`. System is the Steam logo on `Sc2` and the DualShock logo on `Ps4`.
+Shoulders, triggers, the d-pad, Options, Share, System, and the pad clicks also differ by family. On `Sc2`, Share is `sd_button_view.svg` and Options is `sd_button_menu.svg` (the Steam Deck view and menu icons). On `Ps4`, those are `ps4_button_share.svg` and `ps4_button_options.svg`. System uses a controller symbol on `Sc2` and a home symbol on `Ps4`.
 
 Stick clicks, the rear paddles, and Quick Access use the same file for both families: `shared_l3.svg`, `shared_r3.svg`, `sc_l4.svg`, `sc_l5.svg`, `sc_r4.svg`, `sc_r5.svg`, and `qam_icon.svg`. DualShock 4 does not have paddles or Quick Access. The mapping still has art for those buttons so a prompt can draw them if a binding names them.
 

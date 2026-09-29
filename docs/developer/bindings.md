@@ -18,7 +18,7 @@ Each mode is still a table (`[Keyboard]`, `[Settings]`, …). A value is one of:
 
 TOML forbids the same key twice, so two meanings for one button live in that array.
 
-The user-facing list of button names, action names, and flags is [MAPPINGS.md](../MAPPINGS.md).
+The user-facing list of button names, action names, and flags is [MAPPINGS.md](../../MAPPINGS.md).
 
 `when` strings parse in `src/when.rs` (same language as layout display). Canonical flags:
 

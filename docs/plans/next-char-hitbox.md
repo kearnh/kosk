@@ -4,7 +4,7 @@ Stick hit-testing today uses one precomputed hitbox per selectable key (`Keyboar
 
 This plan: predict the next character from what kosk has already typed (keyboard mode is enough; text-input mode is optional extra context), and for that next press only, hit-test predicted keys with a **precomputed larger hitbox** and **prefer** them when they contain the cursor.
 
-Word completion (`src/completion/`, [../completion.md](../completion.md)) is a different feature (suggestion chips). It does not produce `P(next char)`. Do not overload `CompletionBackend::suggest` for this.
+Word completion (`src/completion/`, [completion.md](../developer/completion.md)) is a different feature (suggestion chips). It does not produce `P(next char)`. Do not overload `CompletionBackend::suggest` for this.
 
 ## Why
 

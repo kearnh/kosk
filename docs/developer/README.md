@@ -1,6 +1,6 @@
-# Code explanations
+# Developer guide
 
-These pages describe how KOSK works as it is written today. Each document covers one subsystem: why that code exists, which types carry the work, and how a request travels through the process. They are meant to be read in full sentences, without assuming you were present for earlier design discussions.
+These pages explain KOSK’s code to developers. Each document covers one subsystem: why that code exists, which types carry the work, and how a request travels through the process. They are meant to be read in full sentences, without assuming you were present for earlier design discussions.
 
 Start with [overview.md](overview.md) if you are new to the repository. After that, follow the links from each page, or use the list below.
 
@@ -28,6 +28,6 @@ Start with [overview.md](overview.md) if you are new to the repository. After th
 
 ## Plans
 
-Working notes that describe intended work, not shipped behavior, live under [plans/](plans/). They may be terse. Do not treat them as a description of the running program.
+Working notes that describe intended work, not shipped behavior, live under [plans/](../plans/). They may be terse. Do not treat them as a description of the running program.
 
 The code-explanation series does not include `todo.md` at the repository root. That file is a personal checklist.

@@ -50,7 +50,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`[key_sink]`** chooses Enigo injection or a log file.
 - **`[debug]`** holds the debug-overlay flags. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
 - **`[text_input]`** styles the single-line field in text-input mode.
-- **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../README.md#completion-next-word-setup).
+- **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../../README.md#next-word-after-a-space).
 
 The built-in defaults come from `Config::default()`, and `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
 

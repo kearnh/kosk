@@ -68,7 +68,7 @@ Application types (`app_type.rs`) let different programs get different vocabular
 
 Neighbor keys for typo substitution are precomputed from letter-key centers whenever keyboard geometry updates, filtered to keys reachable from the same stick bounds. When the current board has fewer than ten letters (the symbols layout, for example), the last letter-layout map is kept instead. Backends only ever see a plain map from each character to its neighbors on the context object; they never call layout code. Completion never calls Win32 directly; the operating-system layer is `platform::ForegroundExe`, which text-input and the session use through `app_type.rs`.
 
-The English unigrams themselves live at `data/completion/en/unigrams.tsv` and are the source wordlist for prefix completion, not a build output. `completion_build` writes only the generated `vocab.txt` and `*.bin` tables, which stay out of the repo. Pair counts are required for contextual next-word prediction; a unigrams-only pack is not enough, so packing without `--bigrams` writes an empty `bigrams.bin` and still succeeds. The full next-word setup, including where to download the bigram counts, is in the [README](../README.md#next-word-after-a-space).
+The English unigrams themselves live at `data/completion/en/unigrams.tsv` and are the source wordlist for prefix completion, not a build output. `completion_build` writes only the generated `vocab.txt` and `*.bin` tables, which stay out of the repo. Pair counts are required for contextual next-word prediction; a unigrams-only pack is not enough, so packing without `--bigrams` writes an empty `bigrams.bin` and still succeeds. The full next-word setup, including where to download the bigram counts, is in the [README](../../README.md#next-word-after-a-space).
 
 ## Domain wordlists and headless tools
 
@@ -78,7 +78,7 @@ Without opening the overlay, `completion_dev` pretends a string was typed and pr
 
 ## What this does not cover
 
-This page does not cover how chips are highlighted or accepted at the binding level; that is the `when` machinery in [bindings.md](bindings.md), and the keyboard's send path in [keyboard.md](keyboard.md). It does not cover tape recording of chip lists; that is [record-replay.md](record-replay.md). Planned improvements such as neural reranking and next-character hitbox bias are not described here as if they existed; the completion scratch pad is at [plans/completion.md](plans/completion.md), and neural or network backends do not exist in this tree.
+This page does not cover how chips are highlighted or accepted at the binding level; that is the `when` machinery in [bindings.md](bindings.md), and the keyboard's send path in [keyboard.md](keyboard.md). It does not cover tape recording of chip lists; that is [record-replay.md](record-replay.md). Planned improvements such as neural reranking and next-character hitbox bias are not described here as if they existed; the completion scratch pad is at [plans/completion.md](../plans/completion.md), and neural or network backends do not exist in this tree.
 
 ## Summary
 

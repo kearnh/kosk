@@ -1,6 +1,6 @@
 # Mappings editor (`mappings.rs`, `select_key.rs`, `mapping.rs`)
 
-This document describes the in-app bindings editor: the Mappings screen where you remap buttons without hand-editing TOML, and the key picker it opens on top. The editor lives in `src/state/mappings.rs`, the picker in `src/state/select_key.rs`, and the shared pill and rule types in `src/controller/mapping.rs` (`MappingPill`, `MappingRule`, `MappingValue`, `validate_rule_order`). Which strings are legal buttons and actions is the vocabulary in [MAPPINGS.md](../MAPPINGS.md); how those bindings fire at runtime is the engine in [bindings.md](bindings.md). The call-stack machinery the two screens use is in [app-state.md](app-state.md).
+This document describes the in-app bindings editor: the Mappings screen where you remap buttons without hand-editing TOML, and the key picker it opens on top. The editor lives in `src/state/mappings.rs`, the picker in `src/state/select_key.rs`, and the shared pill and rule types in `src/controller/mapping.rs` (`MappingPill`, `MappingRule`, `MappingValue`, `validate_rule_order`). Which strings are legal buttons and actions is the vocabulary in [MAPPINGS.md](../../MAPPINGS.md); how those bindings fire at runtime is the engine in [bindings.md](bindings.md). The call-stack machinery the two screens use is in [app-state.md](app-state.md).
 
 ## Why an editor exists
 

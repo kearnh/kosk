@@ -14,7 +14,7 @@ cargo run
 
 That uses `%LOCALAPPDATA%\kosk\config.toml` (created on first launch) on top of the built-in defaults. Pass a path to load a different user file: `cargo run -- path\to\config.toml`.
 
-Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them. `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`.
+Useful flags are documented in [docs/developer/config.md](docs/developer/config.md). `--replay FILE` plays a `.krec` tape instead of opening HID. `--keys-log FILE` (or `-` for stdout) writes outgoing keystrokes instead of injecting them. `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`.
 
 ## Controller mappings
 
@@ -56,8 +56,8 @@ cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --m
 
 You should see words that follow `going` (for example `to`). If the guesses are still `you` / `i` / `the`, the two-word table did not load. The same problem shows up on stderr as `ngram model at … not loaded; unigram-only` or `no bigrams`.
 
-See [docs/completion.md](docs/completion.md) (app types, current-word chip, `cargo run -p wordlist-convert` recipes).
+See [docs/developer/completion.md](docs/developer/completion.md) (app types, current-word chip, `cargo run -p wordlist-convert` recipes).
 
 ## Reading the code
 
-Start with [docs/README.md](docs/README.md). That page lists one explanation document per subsystem, written so each file can be read on its own.
+Start with [docs/developer/README.md](docs/developer/README.md). That page lists one explanation document per subsystem, written so each file can be read on its own.
