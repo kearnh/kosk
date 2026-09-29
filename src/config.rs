@@ -2061,7 +2061,7 @@ show_stick_cursors = false\n\
         assert_eq!(cfg.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(
             cfg.window_visuals(StateId::Keyboard).panel_fill,
-            crate::theme::color([1, 2, 3, 255])
+            crate::theme::color([1, 2, 3, 179])
         );
         let mut watched = Vec::new();
         crate::config_overlay::append_theme_paths(&mut watched, &config_path, &cfg.themes);
@@ -2125,6 +2125,14 @@ show_stick_cursors = false\n\
         }
         cfg.transparent = true;
         cfg.active_theme = "default".into();
+        for state in [StateId::Keyboard, StateId::TextInput] {
+            assert_eq!(
+                cfg.window_visuals(state).panel_fill,
+                crate::theme::color([20, 20, 20, 179])
+            );
+        }
+        assert_eq!(cfg.window_visuals(StateId::Settings).panel_fill.a(), 255);
+        cfg.transparent = false;
         assert_eq!(cfg.window_visuals(StateId::Keyboard).panel_fill.a(), 255);
         let serialized = toml::to_string(&cfg).unwrap();
         assert!(!serialized.contains("keyboard_opacity"));
@@ -2491,7 +2499,7 @@ show_stick_cursors = false\n\
         let first = toml::Value::try_from(Config::default()).unwrap();
         assert_eq!(again, first);
         assert_eq!(back.completion.max_suggestions, 6);
-        assert_eq!(back.theme().keyboard_opacity, 1.0);
+        assert_eq!(back.theme().keyboard_opacity, 0.7);
         assert_eq!(
             back.layouts.get("main").map(String::as_str),
             Some("old_sc.toml")

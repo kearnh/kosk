@@ -102,10 +102,11 @@ points. Unknown sections or fields are errors.
 - `[battery]`: `empty`, `low`, `medium`, `high`, `full`, `charging`, `unknown`.
 
 Theme `keyboard_opacity` applies to Keyboard and TextInput; `ui_opacity` applies
-to Settings, Mappings, and both pickers. Both default to `1.0` and accept finite
-values from `0.0` to `1.0`. They multiply `background_color` alpha while the
-window is transparent. An opaque window uses an opaque background. Move mode
-keeps its transparent window and themed ghost outline.
+to Settings, Mappings, and both pickers. Their defaults are `0.7` and `1.0`,
+respectively; both accept finite values from `0.0` to `1.0`. They multiply
+`background_color` alpha while the window is transparent. An opaque window
+uses an opaque background. Move mode keeps its transparent window and themed
+ghost outline.
 
 Opacity belongs in the theme file. The former `config.toml` opacity keys are
 ignored, and the opacity rows have been removed from Settings. Old Steam

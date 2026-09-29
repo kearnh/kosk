@@ -77,7 +77,7 @@ impl WidgetTheme {
 
 section!(Theme {
     background_color: [u8; 4] = [20, 20, 20, 255],
-    keyboard_opacity: f32 = 1.0,
+    keyboard_opacity: f32 = 0.7,
     ui_opacity: f32 = 1.0,
     text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
     muted_text_color: [u8; 4] = Visuals::default().weak_text_color().to_srgba_unmultiplied(),
@@ -530,6 +530,8 @@ mod tests {
     #[test]
     fn old_steam_controller_palette_matches_reference() {
         let theme = Theme::parse(include_str!("../themes/old-steam-controller.toml")).unwrap();
+        assert_eq!(theme.keyboard_opacity, 1.0);
+        assert_eq!(theme.ui_opacity, 1.0);
         assert_eq!(theme.background_color, [15, 40, 61, 255]);
         assert_eq!(theme.keyboard.inactive.background_color, [25, 62, 87, 255]);
         assert_eq!(
