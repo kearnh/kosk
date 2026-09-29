@@ -227,8 +227,13 @@ section!(BatteryTheme {
 });
 
 impl Theme {
+    #[cfg(test)]
     pub(crate) fn parse(text: &str) -> Result<Self> {
-        let overlay: toml::Value = toml::from_str(text).context("parse theme")?;
+        let overlay = toml::from_str(text).context("parse theme")?;
+        Self::parse_overlay(overlay)
+    }
+
+    fn parse_overlay(overlay: toml::Value) -> Result<Self> {
         let mut base = toml::Value::try_from(Self::default()).context("theme defaults")?;
         if let Some(text_color) = overlay.get("text_color") {
             for state in ["noninteractive", "inactive", "hovered", "active", "open"] {
@@ -374,22 +379,34 @@ impl Default for ThemeCatalog {
 }
 
 impl ThemeCatalog {
-    pub(crate) fn load(
-        config_path: &Path,
-        files: &BTreeMap<String, String>,
-        active: &str,
-    ) -> Result<Self> {
+    pub(crate) fn load(config_path: &Path, files: &[String], active: &str) -> Result<Self> {
         let mut catalog = Self::default();
-        for (name, file) in files {
+        for path in expand_theme_files(config_path, files)? {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("read theme {}", path.display()))?;
+            let mut overlay: toml::Value =
+                toml::from_str(&text).with_context(|| format!("parse theme {}", path.display()))?;
+            let embedded_name = match overlay
+                .as_table_mut()
+                .and_then(|table| table.remove("name"))
+            {
+                Some(value) => Some(
+                    value
+                        .as_str()
+                        .context("theme name must be a string")?
+                        .to_owned(),
+                ),
+                None => None,
+            };
+            let name = embedded_name.unwrap_or_else(|| theme_name_from_path(&path));
             if name.trim().is_empty() || name == DEFAULT_THEME_NAME {
                 bail!("theme name {name:?} is empty or reserved");
             }
-            let path = config_path.parent().unwrap_or(Path::new("")).join(file);
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("read theme {}", path.display()))?;
-            let theme = Theme::parse(&text)
+            let theme = Theme::parse_overlay(overlay)
                 .with_context(|| format!("theme {name:?} ({})", path.display()))?;
-            catalog.0.insert(name.clone(), theme);
+            if catalog.0.insert(name.clone(), theme).is_some() {
+                bail!("duplicate theme name {name:?}");
+            }
         }
         if !catalog.0.contains_key(active) {
             bail!("unknown active_theme {active:?}");
@@ -400,6 +417,63 @@ impl ThemeCatalog {
     pub(crate) fn get(&self, name: &str) -> &Theme {
         self.0.get(name).unwrap_or(&self.0[DEFAULT_THEME_NAME])
     }
+
+    pub(crate) fn names(&self) -> Vec<&str> {
+        std::iter::once(DEFAULT_THEME_NAME)
+            .chain(
+                self.0
+                    .keys()
+                    .filter(|name| name.as_str() != DEFAULT_THEME_NAME)
+                    .map(String::as_str),
+            )
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_names(names: &[&str]) -> Self {
+        let mut catalog = Self::default();
+        for name in names {
+            catalog.0.insert((*name).to_owned(), Theme::default());
+        }
+        catalog
+    }
+}
+
+pub(crate) fn expand_theme_files(
+    config_path: &Path,
+    files: &[String],
+) -> Result<Vec<std::path::PathBuf>> {
+    let config_dir = config_path.parent().unwrap_or(Path::new(""));
+    let mut paths = Vec::new();
+    for file in files {
+        let pattern_path = if Path::new(file).is_absolute() {
+            file.clone()
+        } else {
+            config_dir.join(file).to_string_lossy().into_owned()
+        };
+        let pattern =
+            glob::glob(&pattern_path).with_context(|| format!("invalid theme glob {file:?}"))?;
+        let mut matches = pattern
+            .map(|entry| entry.with_context(|| format!("expand theme glob {file:?}")))
+            .collect::<Result<Vec<_>>>()?;
+        matches.sort();
+        if matches.is_empty() && !file.contains(['*', '?', '[']) {
+            bail!("theme file not found: {file}");
+        }
+        for path in matches {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    Ok(paths)
+}
+
+fn theme_name_from_path(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("Theme")
+        .replace(['-', '_'], " ")
 }
 
 #[cfg(test)]

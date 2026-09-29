@@ -273,16 +273,42 @@ pub(crate) fn config_file_paths(
     out
 }
 
-pub(crate) fn append_theme_paths(
-    files: &mut Vec<PathBuf>,
-    config_path: &Path,
-    themes: &std::collections::BTreeMap<String, String>,
-) {
+pub(crate) fn append_theme_paths(files: &mut Vec<PathBuf>, config_path: &Path, themes: &[String]) {
     let dir = config_path.parent().unwrap_or(Path::new(""));
-    for file in themes.values() {
-        let path = watch_key(&dir.join(file));
-        if !files.contains(&path) {
-            files.push(path);
+    for file in themes {
+        let has_glob = file.contains(['*', '?', '[']);
+        let pattern = if Path::new(file).is_absolute() {
+            PathBuf::from(file)
+        } else {
+            dir.join(file)
+        };
+        if has_glob {
+            let path = pattern.clone();
+            if !files.contains(&path) {
+                files.push(path);
+            }
+            let mut base = PathBuf::new();
+            for component in pattern.components() {
+                if component
+                    .as_os_str()
+                    .to_string_lossy()
+                    .contains(['*', '?', '['])
+                {
+                    break;
+                }
+                base.push(component);
+            }
+            if !base.as_os_str().is_empty() && !files.contains(&base) {
+                files.push(base);
+            }
+        }
+        let paths = crate::theme::expand_theme_files(config_path, std::slice::from_ref(file))
+            .unwrap_or_default();
+        for path in paths {
+            let path = watch_key(&path);
+            if !files.contains(&path) {
+                files.push(path);
+            }
         }
     }
 }

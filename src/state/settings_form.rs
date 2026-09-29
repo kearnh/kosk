@@ -884,9 +884,8 @@ mod tests {
     fn theme_list_opens_from_hub_and_selects_default_or_custom_theme() {
         let kind = ControllerKind::Sc2;
         let mut cfg = sample();
-        cfg.themes
-            .insert("Steam Controller".into(), "steam.toml".into());
-        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        cfg.themes = vec!["steam.toml".into(), "amber.toml".into()];
+        cfg.set_theme_names_for_test(&["Steam Controller", "Amber"]);
         cfg.active_theme = "Steam Controller".into();
         let mut form = SettingsForm::new();
         let themes_index = form
@@ -953,10 +952,9 @@ mod tests {
     fn theme_list_scrolls_and_tracks_catalog_changes_without_selecting() {
         let kind = ControllerKind::Sc2;
         let mut cfg = sample();
-        for index in 0..10 {
-            cfg.themes
-                .insert(format!("Theme{index:02}"), "theme.toml".into());
-        }
+        let names: Vec<String> = (0..10).map(|index| format!("Theme{index:02}")).collect();
+        cfg.themes = names.iter().map(|name| format!("{name}.toml")).collect();
+        cfg.set_theme_names_for_test(&names.iter().map(String::as_str).collect::<Vec<_>>());
         cfg.active_theme = "Theme09".into();
         let mut form = SettingsForm::new();
         form.focus = HubEntry::Themes.index();
@@ -967,12 +965,20 @@ mod tests {
         assert_eq!(form.focus(), 0);
         form.move_focus(-1, kind);
         assert_eq!(form.focus(), 10);
-        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        cfg.themes.push("amber.toml".into());
+        cfg.set_theme_names_for_test(&[
+            "Theme00", "Theme01", "Theme02", "Theme03", "Theme04", "Theme05", "Theme06", "Theme07",
+            "Theme08", "Theme09", "Amber",
+        ]);
         form.sync_themes(&cfg);
         assert_eq!(form.focus(), 11);
         assert_eq!(form.drawn(&cfg, kind)[form.focus()].label, "Theme09");
-        cfg.themes.remove("Theme09");
+        cfg.themes.retain(|path| path != "Theme09.toml");
         cfg.active_theme = "default".into();
+        cfg.set_theme_names_for_test(&[
+            "Theme00", "Theme01", "Theme02", "Theme03", "Theme04", "Theme05", "Theme06", "Theme07",
+            "Theme08", "Amber",
+        ]);
         form.sync_themes(&cfg);
         assert_eq!(form.focus(), 0);
         assert_eq!(form.drawn(&cfg, kind)[0].label, "Default");

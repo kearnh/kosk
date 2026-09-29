@@ -11,7 +11,7 @@ use notify::event::ModifyKind;
 use notify::{Event, EventKind, Watcher};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -125,8 +125,8 @@ pub struct Config {
     #[config(default = crate::theme::DEFAULT_THEME_NAME.to_owned())]
     pub active_theme: String,
 
-    /// Named theme files, resolved beside the active configuration file.
-    pub themes: BTreeMap<String, String>,
+    /// Theme files or glob patterns, resolved beside the active configuration file.
+    pub themes: Vec<String>,
 
     #[serde(skip)]
     theme_catalog: Arc<crate::theme::ThemeCatalog>,
@@ -588,9 +588,12 @@ impl Config {
     }
 
     pub(crate) fn theme_names(&self) -> Vec<&str> {
-        std::iter::once(crate::theme::DEFAULT_THEME_NAME)
-            .chain(self.themes.keys().map(String::as_str))
-            .collect()
+        self.theme_catalog.names()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_theme_names_for_test(&mut self, names: &[&str]) {
+        self.theme_catalog = Arc::new(crate::theme::ThemeCatalog::with_names(names));
     }
 
     pub(crate) fn battery_style(&self) -> crate::theme::BatteryTheme {
@@ -1064,10 +1067,11 @@ fn read_merged_config(
         | crate::config_overlay::MigrateOutcome::Unchanged => {}
     }
 
-    let user_value: toml::Value = user_doc
+    let mut user_value: toml::Value = user_doc
         .to_string()
         .parse()
         .context("Could not parse config TOML")?;
+    normalize_legacy_theme_config(&mut user_value, config_path)?;
     let mut merged: toml::Value =
         toml::Value::try_from(Config::default()).context("built-in config")?;
     let map_rel = controller_map_rel(&user_value);
@@ -1099,6 +1103,54 @@ fn read_merged_config(
     Ok((config, map_rel))
 }
 
+fn normalize_legacy_theme_config(user: &mut toml::Value, config_path: &Path) -> Result<()> {
+    let Some(themes) = user.get("themes").and_then(toml::Value::as_table) else {
+        return Ok(());
+    };
+    let mut files = Vec::with_capacity(themes.len());
+    for (name, path) in themes {
+        let path = path
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("theme path for {name:?} must be a string"))?;
+        files.push((name.clone(), path.to_owned()));
+    }
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+
+    if let Some(active) = user.get("active_theme").and_then(toml::Value::as_str) {
+        if let Some((_, file)) = files.iter().find(|(name, _)| name == active) {
+            let path = Path::new(file);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                config_path.parent().unwrap_or(Path::new("")).join(path)
+            };
+            let text = fs::read_to_string(&path)
+                .with_context(|| format!("read theme {}", path.display()))?;
+            let mut theme: toml::Value =
+                toml::from_str(&text).with_context(|| format!("parse theme {}", path.display()))?;
+            let name = theme
+                .as_table_mut()
+                .and_then(|table| table.remove("name"))
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or("Theme")
+                        .replace(['-', '_'], " ")
+                });
+            user["active_theme"] = toml::Value::String(name);
+        }
+    }
+
+    user["themes"] = toml::Value::Array(
+        files
+            .into_iter()
+            .map(|(_, path)| toml::Value::String(path))
+            .collect(),
+    );
+    Ok(())
+}
+
 fn controller_map_rel(user: &toml::Value) -> Option<String> {
     match user.get(CONTROLLER_MAP_KEY) {
         Some(toml::Value::String(path)) => Some(path.clone()),
@@ -1114,7 +1166,15 @@ pub(crate) fn read_layout_source(rel: &str) -> Result<String> {
 
 /// `config_files` are [`crate::config_overlay::watch_key`]s; event paths from the OS may not be.
 fn is_watched_path(path: &Path, config_files: &[PathBuf]) -> bool {
-    config_files.contains(&crate::config_overlay::watch_key(path))
+    let path = crate::config_overlay::watch_key(path);
+    config_files.iter().any(|watched| {
+        if watched.to_string_lossy().contains(['*', '?', '[']) {
+            glob::Pattern::new(&watched.to_string_lossy())
+                .is_ok_and(|pattern| pattern.matches_path(&path))
+        } else {
+            watched == &path
+        }
+    })
 }
 
 const CONFIG_RELOAD_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(150);
@@ -1136,16 +1196,40 @@ fn watch_config_directories(
     let mut watcher = notify::recommended_watcher(tx)?;
     watcher.watch(config_dir, notify::RecursiveMode::NonRecursive)?;
     let mut directories = vec![config_dir.to_path_buf()];
-    for parent in config_files.iter().filter_map(|path| path.parent()) {
-        if directories.iter().any(|dir| dir == parent) || !parent.is_dir() {
+    for path in config_files {
+        let Some(parent) = watched_parent(path) else {
+            continue;
+        };
+        if directories.iter().any(|dir| dir == &parent) || !parent.is_dir() {
             continue;
         }
+        let mode = if path.to_string_lossy().contains("**") {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        };
         watcher
-            .watch(parent, notify::RecursiveMode::NonRecursive)
+            .watch(&parent, mode)
             .with_context(|| format!("watch {}", parent.display()))?;
-        directories.push(parent.to_path_buf());
+        directories.push(parent);
     }
     Ok(watcher)
+}
+
+fn watched_parent(path: &Path) -> Option<PathBuf> {
+    if !path.to_string_lossy().contains(['*', '?', '[']) {
+        return path.parent().map(Path::to_path_buf);
+    }
+
+    let mut parent = PathBuf::new();
+    for component in path.components() {
+        let component_path = Path::new(component.as_os_str());
+        if component_path.to_string_lossy().contains(['*', '?', '[']) {
+            break;
+        }
+        parent.push(component);
+    }
+    (!parent.as_os_str().is_empty()).then_some(parent)
 }
 
 fn wait_for_reload_quiet(rx: &mpsc::Receiver<notify::Result<Event>>, files: &[PathBuf]) {
@@ -2047,16 +2131,16 @@ show_stick_cursors = false\n\
         let external = external_dir.join("theme.toml");
         fs::write(
             dir.join("amber.toml"),
-            "background_color = [1, 2, 3, 255]\n",
+            "name = 'Amber'\nbackground_color = [1, 2, 3, 255]\n",
         )
         .unwrap();
         fs::write(
             &external,
-            "[keyboard]\nleft_selection_color = [4, 5, 6, 255]\n",
+            "name = 'Zinc'\n[keyboard]\nleft_selection_color = [4, 5, 6, 255]\n",
         )
         .unwrap();
         let external_path = toml::Value::String(external.to_string_lossy().into_owned());
-        fs::write(&config_path, format!("config_version = 2\nactive_theme = 'Amber'\n[themes]\nAmber = 'amber.toml'\nZinc = {external_path}\n")).unwrap();
+        fs::write(&config_path, format!("config_version = 2\nactive_theme = 'Amber'\nthemes = ['amber.toml', {external_path}]\n")).unwrap();
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(cfg.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(
@@ -2088,10 +2172,10 @@ show_stick_cursors = false\n\
     fn window_opacity_comes_from_the_selected_theme_for_each_mode() {
         let dir = temp_dir("theme-opacity");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 2\nactive_theme = 'Custom'\nkeyboard_opacity = 0.1\nui_opacity = 0.1\n[themes]\nCustom = 'theme.toml'\n").unwrap();
+        fs::write(&config_path, "config_version = 2\nactive_theme = 'Custom'\nkeyboard_opacity = 0.1\nui_opacity = 0.1\nthemes = ['theme.toml']\n").unwrap();
         fs::write(
             dir.join("theme.toml"),
-            "background_color = [20, 40, 60, 128]\nkeyboard_opacity = 0.5\nui_opacity = 0.25",
+            "name = 'Custom'\nbackground_color = [20, 40, 60, 128]\nkeyboard_opacity = 0.5\nui_opacity = 0.25",
         )
         .unwrap();
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
@@ -2144,8 +2228,8 @@ show_stick_cursors = false\n\
         let mut cfg: Config = toml::from_str("[text_input]\ntext_color = [0, 0, 0, 255]\n[battery]\nempty = [220, 50, 50, 255]\n[completion.ui]\nbackground_color = [64, 68, 76, 175]\ncorner_radius = 10.0\nselected_outline_width = 1.0\n").unwrap();
         let dir = temp_dir("theme-overrides");
         let config_path = dir.join("config.toml");
-        fs::write(dir.join("custom.toml"), "[text_input]\ntext_color = [8, 9, 10, 255]\n[battery]\nempty = [8, 9, 10, 255]\n[ suggestions ]\nbackground_color = [8, 9, 10, 255]\ncorner_radius = 0.0\nselected_outline_width = 4.0\n").unwrap();
-        cfg.themes.insert("Custom".into(), "custom.toml".into());
+        fs::write(dir.join("custom.toml"), "name = 'Custom'\n[text_input]\ntext_color = [8, 9, 10, 255]\n[battery]\nempty = [8, 9, 10, 255]\n[ suggestions ]\nbackground_color = [8, 9, 10, 255]\ncorner_radius = 0.0\nselected_outline_width = 4.0\n").unwrap();
+        cfg.themes.push("custom.toml".into());
         cfg.active_theme = "Custom".into();
         cfg.theme_catalog = Arc::new(
             crate::theme::ThemeCatalog::load(&config_path, &cfg.themes, &cfg.active_theme).unwrap(),
@@ -2176,13 +2260,21 @@ show_stick_cursors = false\n\
         let theme_path = dir.join("theme.toml");
         fs::write(
             &config_path,
-            "config_version = 2\nactive_theme = 'Custom'\n[themes]\nCustom = 'theme.toml'\n",
+            "config_version = 2\nactive_theme = 'Custom'\nthemes = ['theme.toml']\n",
         )
         .unwrap();
-        fs::write(&theme_path, "background_color = [1, 2, 3, 255]\n").unwrap();
+        fs::write(
+            &theme_path,
+            "name = 'Custom'\nbackground_color = [1, 2, 3, 255]\n",
+        )
+        .unwrap();
         let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let replacement = dir.join("replacement.toml");
-        fs::write(&replacement, "background_color = [4, 5, 6, 255]\n").unwrap();
+        fs::write(
+            &replacement,
+            "name = 'Custom'\nbackground_color = [4, 5, 6, 255]\n",
+        )
+        .unwrap();
         fs::remove_file(&theme_path).unwrap();
         fs::rename(replacement, &theme_path).unwrap();
         let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
@@ -2196,7 +2288,7 @@ show_stick_cursors = false\n\
         assert!(!tape.contains("[themes]"));
         let replay = overlay_tape_config(
             &after,
-            "active_theme = 'default'\n[themes]\nOther = 'missing.toml'\n",
+            "active_theme = 'default'\nthemes = ['missing.toml']\n",
         )
         .unwrap();
         assert_eq!(replay.active_theme, "Custom");
@@ -2207,12 +2299,11 @@ show_stick_cursors = false\n\
     fn invalid_theme_catalog_falls_back_at_startup() {
         let dir = temp_dir("invalid-theme");
         let config_path = dir.join("config.toml");
-        fs::write(dir.join("theme.toml"), "").unwrap();
+        fs::write(dir.join("theme.toml"), "name = 'default'\n").unwrap();
         for body in [
             "active_theme = 'missing'",
-            "[themes]\ndefault = 'theme.toml'",
-            "[themes]\n'' = 'theme.toml'",
-            "[themes]\nCustom = 'missing.toml'",
+            "themes = ['theme.toml']",
+            "active_theme = 'missing'\nthemes = ['missing.toml']",
         ] {
             fs::write(&config_path, format!("config_version = 2\n{body}\n")).unwrap();
             assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
@@ -2231,12 +2322,14 @@ show_stick_cursors = false\n\
         let encoded_path = toml::Value::String(theme_path.to_string_lossy().into_owned());
         fs::write(
             &config_path,
-            format!(
-                "config_version = 2\nactive_theme = 'Custom'\n[themes]\nCustom = {encoded_path}\n"
-            ),
+            format!("config_version = 2\nactive_theme = 'Custom'\nthemes = [{encoded_path}]\n"),
         )
         .unwrap();
-        fs::write(&theme_path, "background_color = [1, 2, 3, 255]").unwrap();
+        fs::write(
+            &theme_path,
+            "name = 'Custom'\nbackground_color = [1, 2, 3, 255]",
+        )
+        .unwrap();
         let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let mut files = vec![crate::config_overlay::watch_key(&config_path)];
         crate::config_overlay::append_theme_paths(&mut files, &config_path, &before.themes);

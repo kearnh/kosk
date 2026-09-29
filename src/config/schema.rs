@@ -587,8 +587,8 @@ mod tests {
     #[test]
     fn themes_cycle_in_sorted_order_and_copy_only_selection() {
         let mut cfg = sample();
-        cfg.themes.insert("Zinc".into(), "zinc.toml".into());
-        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        cfg.themes = vec!["zinc.toml".into(), "amber.toml".into()];
+        cfg.set_theme_names_for_test(&["Zinc", "Amber"]);
         let setting = setting_for_key("active_theme").unwrap();
         assert_eq!(setting.page, Page::Themes);
         assert!(setting.nudge(&mut cfg, 1));

@@ -1,17 +1,17 @@
 # Themes
 
-Add named theme files to `config.toml`:
+List theme files or glob patterns in `config.toml`:
 
 ```toml
 active_theme = "Amber"
-
-[themes]
-Amber = "themes/amber.toml"
+themes = ["themes/*.toml", "../shared-themes/*.toml"]
 ```
 
-Relative paths start beside the active config file. Absolute paths also work.
-`default` is reserved for the built-in appearance. Custom names must be nonempty.
-Every listed file must be readable and valid, including inactive themes.
+Relative paths start beside the active config file. Absolute paths and `*`, `?`,
+and bracket patterns are supported. Each theme file sets its display name with
+`name = "Amber"`; files without a name use their filename. `default` is
+reserved for the built-in appearance. Names must be unique and nonempty. Every
+matched file must be readable and valid, including inactive themes.
 
 Open **Settings → Themes**. **Default** comes first; custom names follow in
 sorted order. Use up/down to highlight a theme, then confirm to apply and save
@@ -26,8 +26,8 @@ the built-in defaults. Recordings use the current local theme.
 ## Included themes
 
 The repository includes an [Old Steam Controller theme](../themes/old-steam-controller.toml)
-and a [Portal 2 theme](../themes/portal.toml). Register a theme path under
-`[themes]` to make it available in Settings.
+and a [Portal 2 theme](../themes/portal.toml). Add `themes/*.toml` to the
+`themes` list to discover both.
 
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 
@@ -36,6 +36,7 @@ The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 Save this as `themes/amber.toml` beside the config file:
 
 ```toml
+name = "Amber"
 background_color = [24, 20, 16, 255]
 keyboard_opacity = 0.8
 ui_opacity = 1.0
