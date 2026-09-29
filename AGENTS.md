@@ -1,6 +1,7 @@
  # Version control — mandatory
 
 - Use Jujutsu (`jj`) exclusively.
+- `jj` is installed globally with WinGet; invoke it directly as `jj`.
 - NEVER invoke `git`, including read-only commands such as `git status`, `git diff`, and `git log`.
 - The presence of `.git` does not permit raw Git commands.
 - `jj git ...` is allowed because the invoked program is `jj`.
