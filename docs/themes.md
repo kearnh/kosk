@@ -27,12 +27,11 @@ the built-in defaults. Recordings use the current local theme.
 Save this as `themes/amber.toml` beside the config file:
 
 ```toml
-[shared]
 background_color = [24, 20, 16, 255]
 text_color = [245, 230, 210, 255]
 selection_background_color = [125, 80, 30, 255]
 
-[shared.inactive]
+[inactive]
 corner_radius = 8.0
 
 [keyboard.inactive]
@@ -65,15 +64,14 @@ points. Unknown sections or fields are errors.
 
 ## Fields
 
-- `[shared]`: `background_color`, `text_color`, `muted_text_color`,
+- Top level: `background_color`, `text_color`, `muted_text_color`,
   `selection_background_color`, `selection_border_color`,
   `selection_border_width`, `window_border_color`, `window_border_width`,
   `window_corner_radius`.
-- `[shared.noninteractive]`, `[shared.inactive]`, `[shared.hovered]`,
-  `[shared.active]`, `[shared.open]`: `background_color`,
+- `[noninteractive]`, `[inactive]`, `[hovered]`, `[active]`, `[open]`: `background_color`,
   `weak_background_color`, `text_color`, `border_color`, `border_width`,
   `corner_radius`. These style standard controls, including both pickers.
-  `shared.text_color` supplies their text color unless a control state overrides it.
+  Top-level `text_color` supplies their text color unless a control state overrides it.
 - `[keyboard.inactive]`, `[keyboard.hovered]`, `[keyboard.active]`: the same
   control fields, applied to keyboard keys.
 - `[keyboard]`: `selection_background_color`, `selection_text_color`,

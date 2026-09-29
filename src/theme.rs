@@ -75,7 +75,7 @@ impl WidgetTheme {
     }
 }
 
-section!(SharedTheme {
+section!(Theme {
     background_color: [u8; 4] = [20, 20, 20, 255],
     text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
     muted_text_color: [u8; 4] = Visuals::default().weak_text_color().to_srgba_unmultiplied(),
@@ -99,6 +99,14 @@ section!(SharedTheme {
     hovered: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.hovered),
     active: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.active),
     open: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.open),
+    keyboard: KeyboardTheme = KeyboardTheme::default(),
+    suggestions: SuggestionsTheme = SuggestionsTheme::default(),
+    text_input: TextInputTheme = TextInputTheme::default(),
+    menus: MenusTheme = MenusTheme::default(),
+    mappings: MappingsTheme = MappingsTheme::default(),
+    move_window: MoveWindowTheme = MoveWindowTheme::default(),
+    notifications: NotificationsTheme = NotificationsTheme::default(),
+    battery: BatteryTheme = BatteryTheme::default(),
 });
 
 section!(KeyboardTheme {
@@ -193,28 +201,13 @@ section!(BatteryTheme {
     unknown: [u8; 4] = [180, 180, 180, 255],
 });
 
-section!(Theme {
-    shared: SharedTheme = SharedTheme::default(),
-    keyboard: KeyboardTheme = KeyboardTheme::default(),
-    suggestions: SuggestionsTheme = SuggestionsTheme::default(),
-    text_input: TextInputTheme = TextInputTheme::default(),
-    menus: MenusTheme = MenusTheme::default(),
-    mappings: MappingsTheme = MappingsTheme::default(),
-    move_window: MoveWindowTheme = MoveWindowTheme::default(),
-    notifications: NotificationsTheme = NotificationsTheme::default(),
-    battery: BatteryTheme = BatteryTheme::default(),
-});
-
 impl Theme {
     pub(crate) fn parse(text: &str) -> Result<Self> {
         let overlay: toml::Value = toml::from_str(text).context("parse theme")?;
         let mut base = toml::Value::try_from(Self::default()).context("theme defaults")?;
-        if let Some(text_color) = overlay
-            .get("shared")
-            .and_then(|shared| shared.get("text_color"))
-        {
+        if let Some(text_color) = overlay.get("text_color") {
             for state in ["noninteractive", "inactive", "hovered", "active", "open"] {
-                base["shared"][state]["text_color"] = text_color.clone();
+                base[state]["text_color"] = text_color.clone();
             }
         }
         crate::config_overlay::merge_toml(&mut base, &overlay);
@@ -224,13 +217,12 @@ impl Theme {
     }
 
     fn validate(&self) -> Result<()> {
-        let shared = &self.shared;
         for widget in [
-            &shared.noninteractive,
-            &shared.inactive,
-            &shared.hovered,
-            &shared.active,
-            &shared.open,
+            &self.noninteractive,
+            &self.inactive,
+            &self.hovered,
+            &self.active,
+            &self.open,
             &self.keyboard.inactive,
             &self.keyboard.hovered,
             &self.keyboard.active,
@@ -238,11 +230,8 @@ impl Theme {
             widget.validate()?;
         }
         for (name, value) in [
-            (
-                "shared.selection_border_width",
-                shared.selection_border_width,
-            ),
-            ("shared.window_border_width", shared.window_border_width),
+            ("selection_border_width", self.selection_border_width),
+            ("window_border_width", self.window_border_width),
             (
                 "suggestions.selected_outline_width",
                 self.suggestions.selected_outline_width,
@@ -264,7 +253,7 @@ impl Theme {
             validate_size(name, value)?;
         }
         for radius in [
-            shared.window_corner_radius,
+            self.window_corner_radius,
             self.suggestions.corner_radius,
             self.mappings.editor_corner_radius,
             self.move_window.corner_radius,
@@ -276,36 +265,32 @@ impl Theme {
     }
 
     pub(crate) fn visuals(&self) -> Visuals {
-        let shared = &self.shared;
         let mut visuals = Visuals {
-            panel_fill: color(shared.background_color),
-            window_fill: color(shared.background_color),
-            weak_text_color: Some(color(shared.muted_text_color)),
+            panel_fill: color(self.background_color),
+            window_fill: color(self.background_color),
+            weak_text_color: Some(color(self.muted_text_color)),
             ..Visuals::default()
         };
-        visuals.selection.bg_fill = color(shared.selection_background_color);
+        visuals.selection.bg_fill = color(self.selection_background_color);
         visuals.selection.stroke = Stroke::new(
-            shared.selection_border_width,
-            color(shared.selection_border_color),
+            self.selection_border_width,
+            color(self.selection_border_color),
         );
-        visuals.window_stroke = Stroke::new(
-            shared.window_border_width,
-            color(shared.window_border_color),
-        );
-        visuals.window_corner_radius = shared.window_corner_radius.into();
-        shared
-            .noninteractive
+        visuals.window_stroke =
+            Stroke::new(self.window_border_width, color(self.window_border_color));
+        visuals.window_corner_radius = self.window_corner_radius.into();
+        self.noninteractive
             .apply(&mut visuals.widgets.noninteractive);
-        shared.inactive.apply(&mut visuals.widgets.inactive);
-        shared.hovered.apply(&mut visuals.widgets.hovered);
-        shared.active.apply(&mut visuals.widgets.active);
-        shared.open.apply(&mut visuals.widgets.open);
+        self.inactive.apply(&mut visuals.widgets.inactive);
+        self.hovered.apply(&mut visuals.widgets.hovered);
+        self.active.apply(&mut visuals.widgets.active);
+        self.open.apply(&mut visuals.widgets.open);
         visuals
     }
 
     pub(crate) fn window_visuals(&self, transparent: bool, opacity: f32) -> Visuals {
         let mut visuals = self.visuals();
-        let [r, g, b, a] = self.shared.background_color;
+        let [r, g, b, a] = self.background_color;
         visuals.panel_fill = color([
             r,
             g,
@@ -386,16 +371,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn theme_root_is_the_shared_scope() {
+        let theme = Theme::parse("background_color = [1, 2, 3, 255]\ntext_color = [4, 5, 6, 255]\n[hovered]\ntext_color = [7, 8, 9, 255]\n[suggestions]\ntext_color = [10, 11, 12, 255]").unwrap();
+        let visuals = theme.visuals();
+        assert_eq!(visuals.panel_fill, color([1, 2, 3, 255]));
+        assert_eq!(visuals.text_color(), color([4, 5, 6, 255]));
+        assert_eq!(visuals.widgets.hovered.text_color(), color([7, 8, 9, 255]));
+        assert_eq!(theme.suggestions.text_color, [10, 11, 12, 255]);
+        let serialized = toml::Value::try_from(theme).unwrap();
+        assert!(serialized.get("background_color").is_some());
+        assert!(serialized.get("shared").is_none());
+        assert!(Theme::parse("[shared]\nbackground_color = [1, 2, 3, 255]").is_err());
+    }
+
+    #[test]
     fn sparse_theme_inherits_defaults() {
         let theme = Theme::parse("[suggestions]\nbackground_color = [1, 2, 3, 4]\n").unwrap();
         assert_eq!(theme.suggestions.background_color, [1, 2, 3, 4]);
         assert_eq!(theme.keyboard, Theme::default().keyboard);
         assert_eq!(theme.suggestions.corner_radius, 10.0);
-        let partial_widget =
-            Theme::parse("[shared.hovered]\nbackground_color = [1, 2, 3, 255]").unwrap();
+        let partial_widget = Theme::parse("[hovered]\nbackground_color = [1, 2, 3, 255]").unwrap();
         assert_eq!(
-            partial_widget.shared.hovered.border_width,
-            Theme::default().shared.hovered.border_width
+            partial_widget.hovered.border_width,
+            Theme::default().hovered.border_width
         );
     }
 
@@ -420,10 +418,9 @@ mod tests {
         let builtin = Theme::default().visuals();
         assert_eq!(builtin.override_text_color, defaults.override_text_color);
         assert_eq!(builtin.widgets.hovered, defaults.widgets.hovered);
-        let theme = Theme::parse(
-            "[shared]\ntext_color = [1, 2, 3, 255]\n[shared.hovered]\ntext_color = [4, 5, 6, 255]",
-        )
-        .unwrap();
+        let theme =
+            Theme::parse("text_color = [1, 2, 3, 255]\n[hovered]\ntext_color = [4, 5, 6, 255]")
+                .unwrap();
         let visuals = theme.visuals();
         assert_eq!(visuals.text_color(), color([1, 2, 3, 255]));
         assert_eq!(visuals.widgets.inactive.text_color(), color([1, 2, 3, 255]));
@@ -432,7 +429,7 @@ mod tests {
 
     #[test]
     fn window_background_preserves_rgb_and_applies_opacity() {
-        let theme = Theme::parse("[shared]\nbackground_color = [20, 40, 60, 0]").unwrap();
+        let theme = Theme::parse("background_color = [20, 40, 60, 0]").unwrap();
         let opaque = theme.window_visuals(false, 0.0);
         assert_eq!(opaque.panel_fill, Color32::from_rgb(20, 40, 60));
         assert_eq!(opaque.window_fill, opaque.panel_fill);
@@ -440,7 +437,7 @@ mod tests {
             theme.window_visuals(true, 1.0).panel_fill,
             Color32::TRANSPARENT
         );
-        let theme = Theme::parse("[shared]\nbackground_color = [20, 40, 60, 128]").unwrap();
+        let theme = Theme::parse("background_color = [20, 40, 60, 128]").unwrap();
         let transparent = theme.window_visuals(true, 0.5);
         assert_eq!(transparent.panel_fill, color([20, 40, 60, 64]));
         assert_eq!(transparent.window_fill, Color32::TRANSPARENT);

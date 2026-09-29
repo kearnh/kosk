@@ -2064,7 +2064,7 @@ show_stick_cursors = false\n\
         let external = external_dir.join("theme.toml");
         fs::write(
             dir.join("amber.toml"),
-            "[shared]\nbackground_color = [1, 2, 3, 255]\n",
+            "background_color = [1, 2, 3, 255]\n",
         )
         .unwrap();
         fs::write(
@@ -2135,26 +2135,18 @@ show_stick_cursors = false\n\
             "config_version = 2\nactive_theme = 'Custom'\n[themes]\nCustom = 'theme.toml'\n",
         )
         .unwrap();
-        fs::write(&theme_path, "[shared]\nbackground_color = [1, 2, 3, 255]\n").unwrap();
+        fs::write(&theme_path, "background_color = [1, 2, 3, 255]\n").unwrap();
         let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let replacement = dir.join("replacement.toml");
-        fs::write(
-            &replacement,
-            "[shared]\nbackground_color = [4, 5, 6, 255]\n",
-        )
-        .unwrap();
+        fs::write(&replacement, "background_color = [4, 5, 6, 255]\n").unwrap();
         fs::remove_file(&theme_path).unwrap();
         fs::rename(replacement, &theme_path).unwrap();
         let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(after.theme().shared.background_color, [4, 5, 6, 255]);
-        assert_eq!(before.theme().shared.background_color, [1, 2, 3, 255]);
-        fs::write(
-            &theme_path,
-            "[shared]\nbackground_color = [999, 2, 3, 255]\n",
-        )
-        .unwrap();
+        assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
+        assert_eq!(before.theme().background_color, [1, 2, 3, 255]);
+        fs::write(&theme_path, "background_color = [999, 2, 3, 255]\n").unwrap();
         assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
-        assert_eq!(after.theme().shared.background_color, [4, 5, 6, 255]);
+        assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
         let tape = tape_config_toml(&after).unwrap();
         assert!(!tape.contains("active_theme"));
         assert!(!tape.contains("[themes]"));
@@ -2164,7 +2156,7 @@ show_stick_cursors = false\n\
         )
         .unwrap();
         assert_eq!(replay.active_theme, "Custom");
-        assert_eq!(replay.theme().shared.background_color, [4, 5, 6, 255]);
+        assert_eq!(replay.theme().background_color, [4, 5, 6, 255]);
     }
 
     #[test]
@@ -2200,7 +2192,7 @@ show_stick_cursors = false\n\
             ),
         )
         .unwrap();
-        fs::write(&theme_path, "[shared]\nbackground_color = [1, 2, 3, 255]").unwrap();
+        fs::write(&theme_path, "background_color = [1, 2, 3, 255]").unwrap();
         let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let mut files = vec![crate::config_overlay::watch_key(&config_path)];
         crate::config_overlay::append_theme_paths(&mut files, &config_path, &before.themes);
@@ -2211,7 +2203,7 @@ show_stick_cursors = false\n\
             let replacement = external.join("replacement.toml");
             fs::write(
                 &replacement,
-                format!("[shared]\nbackground_color = [{value}, 2, 3, 255]"),
+                format!("background_color = [{value}, 2, 3, 255]"),
             )
             .unwrap();
             fs::remove_file(&theme_path).unwrap();
@@ -2227,9 +2219,9 @@ show_stick_cursors = false\n\
             }
             wait_for_reload_quiet(&rx, &files);
             let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-            assert_eq!(after.theme().shared.background_color, [value, 2, 3, 255]);
+            assert_eq!(after.theme().background_color, [value, 2, 3, 255]);
         }
-        assert_eq!(before.theme().shared.background_color, [1, 2, 3, 255]);
+        assert_eq!(before.theme().background_color, [1, 2, 3, 255]);
     }
 
     #[test]
