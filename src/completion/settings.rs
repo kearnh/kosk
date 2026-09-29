@@ -404,7 +404,7 @@ pub struct CompletionUiConfig {
     )]
     pub font_size: f32,
 
-    #[config(default = 6.0)]
+    #[config(default = 10.0)]
     #[setting(
         label = "Suggestion roundness",
         explain = "How rounded the corners of each suggestion look. 0 is a sharp rectangle.",
@@ -416,19 +416,19 @@ pub struct CompletionUiConfig {
     pub corner_radius: f32,
 
     /// RGBA 0–255.
-    #[config(default = [40, 40, 40, 255])]
+    #[config(default = [64, 68, 76, 175])]
     pub background_color: [u8; 4],
 
     #[config(default = [230, 230, 230, 255])]
     pub text_color: [u8; 4],
 
-    #[config(default = [50, 100, 180, 255])]
+    #[config(default = [74, 114, 164, 215])]
     pub selected_background_color: [u8; 4],
 
     #[config(default = [255, 255, 255, 255])]
     pub selected_text_color: [u8; 4],
 
-    #[config(default = 2.0)]
+    #[config(default = 1.0)]
     #[setting(
         label = "Highlight outline",
         explain = "How thick the outline around the highlighted suggestion is. 0 hides it.",
@@ -490,7 +490,7 @@ pub struct CompletionUiConfig {
     pub dim_typed_prefix: bool,
 
     /// Color of unused reserved slots.
-    #[config(default = [30, 30, 30, 255])]
+    #[config(default = [50, 54, 62, 90])]
     pub empty_slot_background: [u8; 4],
 
     /// Paint the ranking score on each suggestion.
