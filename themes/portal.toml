@@ -1,0 +1,153 @@
+# Portal 2: clean test chambers with blue and orange portal accents.
+background_color = [232, 236, 239, 255]
+keyboard_opacity = 0.92
+ui_opacity = 1.0
+text_color = [35, 43, 49, 255]
+muted_text_color = [105, 117, 125, 255]
+selection_background_color = [0, 158, 218, 255]
+selection_border_color = [0, 118, 178, 255]
+selection_border_width = 2.0
+window_border_color = [179, 188, 194, 255]
+window_border_width = 1.0
+window_corner_radius = 4.0
+
+[noninteractive]
+background_color = [232, 236, 239, 255]
+weak_background_color = [224, 229, 233, 255]
+text_color = [35, 43, 49, 255]
+border_color = [197, 204, 209, 255]
+border_width = 1.0
+corner_radius = 4.0
+
+[inactive]
+background_color = [248, 249, 250, 255]
+weak_background_color = [239, 242, 244, 255]
+text_color = [35, 43, 49, 255]
+border_color = [205, 212, 217, 255]
+border_width = 1.0
+corner_radius = 4.0
+
+[hovered]
+background_color = [222, 240, 247, 255]
+weak_background_color = [222, 240, 247, 255]
+text_color = [20, 57, 73, 255]
+border_color = [0, 158, 218, 255]
+border_width = 1.5
+corner_radius = 4.0
+
+[active]
+background_color = [0, 158, 218, 255]
+weak_background_color = [0, 158, 218, 255]
+text_color = [255, 255, 255, 255]
+border_color = [0, 118, 178, 255]
+border_width = 1.5
+corner_radius = 4.0
+
+[open]
+background_color = [222, 240, 247, 255]
+weak_background_color = [222, 240, 247, 255]
+text_color = [20, 57, 73, 255]
+border_color = [0, 158, 218, 255]
+border_width = 1.5
+corner_radius = 4.0
+
+[keyboard]
+selection_background_color = [0, 158, 218, 235]
+selection_text_color = [255, 255, 255, 255]
+left_selection_color = [0, 158, 218, 255]
+right_selection_color = [244, 129, 32, 255]
+dual_selection_color = [119, 96, 177, 255]
+modifier_text_color = [79, 93, 101, 255]
+key_press_color = [255, 255, 255, 190]
+
+[[keyboard.key_groups]]
+keys = ["Return", "exit"]
+background_color = [244, 129, 32, 255]
+text_color = [255, 255, 255, 255]
+
+[keyboard.inactive]
+background_color = [248, 249, 250, 230]
+weak_background_color = [248, 249, 250, 230]
+text_color = [35, 43, 49, 255]
+border_color = [205, 212, 217, 255]
+border_width = 1.0
+corner_radius = 4.0
+
+[keyboard.hovered]
+background_color = [222, 240, 247, 245]
+weak_background_color = [222, 240, 247, 245]
+text_color = [20, 57, 73, 255]
+border_color = [0, 158, 218, 255]
+border_width = 1.5
+corner_radius = 4.0
+
+[keyboard.active]
+background_color = [0, 158, 218, 245]
+weak_background_color = [0, 158, 218, 245]
+text_color = [255, 255, 255, 255]
+border_color = [0, 118, 178, 255]
+border_width = 1.5
+corner_radius = 4.0
+
+[suggestions]
+background_color = [248, 249, 250, 245]
+text_color = [35, 43, 49, 255]
+selected_background_color = [0, 158, 218, 235]
+selected_text_color = [255, 255, 255, 255]
+empty_slot_background = [218, 224, 228, 180]
+armed_color = [0, 158, 218, 255]
+disarmed_color = [137, 147, 153, 255]
+new_word_mark_color = [244, 129, 32, 255]
+corner_radius = 4.0
+selected_outline_width = 1.5
+
+[text_input]
+background_color = [255, 255, 255, 255]
+text_color = [35, 43, 49, 255]
+cursor_color = [244, 129, 32, 255]
+
+[menus]
+heading_color = [35, 43, 49, 255]
+muted_text_color = [105, 117, 125, 255]
+
+[mappings]
+row_focus_color = [0, 158, 218, 65]
+table_focus_color = [0, 158, 218, 30]
+focus_border_color = [0, 158, 218, 255]
+focus_border_width = 2.0
+text_color = [35, 43, 49, 255]
+warning_color = [184, 99, 12, 255]
+error_color = [190, 54, 48, 255]
+success_color = [25, 125, 90, 255]
+unsaved_color = [201, 99, 10, 255]
+editor_background_color = [248, 249, 250, 255]
+editor_border_color = [197, 204, 209, 255]
+editor_border_width = 1.0
+editor_corner_radius = 4.0
+
+[move_window]
+background_color = [232, 236, 239, 100]
+border_color = [0, 158, 218, 230]
+border_width = 2.0
+corner_radius = 4.0
+text_color = [35, 43, 49, 255]
+text_shadow_color = [255, 255, 255, 230]
+
+[notifications]
+background_color = [248, 249, 250, 250]
+border_color = [197, 204, 209, 255]
+border_width = 1.0
+corner_radius = 4.0
+muted_text_color = [105, 117, 125, 255]
+info_color = [0, 132, 184, 255]
+warning_color = [201, 99, 10, 255]
+error_color = [190, 54, 48, 255]
+
+[battery]
+empty = [190, 54, 48, 255]
+low = [201, 99, 10, 255]
+medium = [214, 165, 30, 255]
+high = [59, 143, 97, 255]
+full = [25, 125, 90, 255]
+charging = [0, 158, 218, 255]
+unknown = [137, 147, 153, 255]

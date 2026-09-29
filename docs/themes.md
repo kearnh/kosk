@@ -23,11 +23,15 @@ Theme files reload after edits or replacement. An invalid reload keeps the
 previous appearance and displays a notice. Invalid startup configuration uses
 the built-in defaults. Recordings use the current local theme.
 
-## Example
+## Included themes
 
-The repository includes an [Old Steam Controller theme](../themes/old-steam-controller.toml):
-navy surfaces, square blue keys, green Return/Done keys, and green selection accents. Register its path
-under `[themes]` to make it available in Settings.
+The repository includes an [Old Steam Controller theme](../themes/old-steam-controller.toml)
+and a [Portal 2 theme](../themes/portal.toml). Register a theme path under
+`[themes]` to make it available in Settings.
+
+The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
+
+## Example
 
 Save this as `themes/amber.toml` beside the config file:
 
