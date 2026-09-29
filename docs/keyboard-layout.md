@@ -23,6 +23,8 @@ Each button has a `key` field that deserializes as `Key<RawKey>`: a `normal` val
 
 Widths default to 1 unit. `selectable = false` draws the key but excludes it from stick hit-testing. `display_modifiers` is the hook keyboard mode uses to paint `ctrl+alt` on Space.
 
+Rows can also contain non-key items with `type = "battery"` or `type = "connectedController"`. The latter reserves its configured `width` for a small spinner while searching for a physical controller, then shows `SC2` or `DS4`. It stays blank during replay and virtual-controller sessions. Set `align = "right"` to place it in a row's right cluster. Right-cluster items render in reverse TOML order, so place the battery item before `connectedController` to show the controller indicator to its left.
+
 ## Display and `when` clauses
 
 What is printed on a key is independent of what it sends. `display` may be:

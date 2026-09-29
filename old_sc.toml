@@ -257,3 +257,9 @@ type = "battery"
 align = "right"
 width = 2.0
 font_size = 16.0
+
+[[rows.items]]
+type = "connectedController"
+align = "right"
+width = 2.0
+font_size = 16.0

@@ -209,10 +209,21 @@ pub struct BatteryItem {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ConnectedControllerItem {
+    #[serde(default = "default_key_width_unit")]
+    pub width: UnscaledPixelUnitX,
+    pub font_size: Option<f32>,
+    #[serde(default)]
+    pub align: ItemAlign,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum TypedRowItem {
     Key(KeyButton),
     Battery(BatteryItem),
+    #[serde(rename = "connectedController")]
+    ConnectedController(ConnectedControllerItem),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -226,6 +237,7 @@ enum RowItemDe {
 pub enum RowItem {
     Key(KeyButton),
     Battery(BatteryItem),
+    ConnectedController(ConnectedControllerItem),
 }
 
 impl<'de> Deserialize<'de> for RowItem {
@@ -233,6 +245,7 @@ impl<'de> Deserialize<'de> for RowItem {
         Ok(match RowItemDe::deserialize(deserializer)? {
             RowItemDe::Typed(TypedRowItem::Key(k)) | RowItemDe::Key(k) => Self::Key(k),
             RowItemDe::Typed(TypedRowItem::Battery(b)) => Self::Battery(b),
+            RowItemDe::Typed(TypedRowItem::ConnectedController(c)) => Self::ConnectedController(c),
         })
     }
 }
@@ -241,7 +254,7 @@ impl RowItem {
     pub fn as_key(&self) -> Option<&KeyButton> {
         match self {
             Self::Key(k) => Some(k),
-            Self::Battery(_) => None,
+            Self::Battery(_) | Self::ConnectedController(_) => None,
         }
     }
 
@@ -249,6 +262,7 @@ impl RowItem {
         match self {
             Self::Key(k) => k.width,
             Self::Battery(b) => b.width,
+            Self::ConnectedController(c) => c.width,
         }
     }
 
@@ -256,6 +270,7 @@ impl RowItem {
         match self {
             Self::Key(k) => k.align,
             Self::Battery(b) => b.align,
+            Self::ConnectedController(c) => c.align,
         }
     }
 }
@@ -1824,6 +1839,27 @@ align = "right"
         .unwrap();
         assert_eq!(file.rows[0].items[0].align(), ItemAlign::Left);
         assert_eq!(file.rows[0].items[1].align(), ItemAlign::Right);
+    }
+
+    #[test]
+    fn connected_controller_item_reserves_width_without_becoming_a_key() {
+        let file: KeyboardLayoutFile = toml::from_str(
+            r#"
+[[rows]]
+indent = 0.0
+items = [
+  { type = "battery", align = "right", width = 2.0 },
+  { type = "connectedController", align = "right", width = 2.0 },
+]
+"#,
+        )
+        .unwrap();
+
+        let item = &file.rows[0].items[1];
+        assert!(matches!(item, RowItem::ConnectedController(_)));
+        assert!(item.as_key().is_none());
+        assert_eq!(item.align(), ItemAlign::Right);
+        assert_eq!(item.width().0, file.rows[0].items[0].width().0);
     }
 
     #[test]

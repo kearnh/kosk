@@ -11,6 +11,7 @@ use crate::controller::ControllerKind;
 use crate::controller::StickSide;
 use crate::state::actions::load_bindings;
 use crate::state::keyboard::layout::KeyboardLayout;
+use crate::state::ControllerConnection;
 use crate::when::WhenContext;
 use crate::{
     controller::ControllerInput,
@@ -124,6 +125,46 @@ fn draw_battery(
     );
 }
 
+const SPINNER_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+const SPINNER_SIZE_RATIO: f32 = 0.7;
+
+fn draw_connected_controller(
+    ui: &mut Ui,
+    layout: &KeyboardLayout,
+    item: &layout::ConnectedControllerItem,
+    row_height: f32,
+    connection: ControllerConnection,
+) {
+    let size = egui::Vec2::new(layout.scale_x(item.width), row_height);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+
+    let (label, description) = match connection {
+        ControllerConnection::Searching => {
+            let spinner_size = row_height * SPINNER_SIZE_RATIO;
+            let spinner_rect =
+                egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(spinner_size));
+            ui.put(spinner_rect, egui::Spinner::new().size(spinner_size));
+            response.on_hover_text("Waiting for a controller");
+            ui.ctx().request_repaint_after(SPINNER_REPAINT_INTERVAL);
+            return;
+        }
+        ControllerConnection::Sc2 => ("SC2", "Steam Controller 2 connected"),
+        ControllerConnection::Ds4 => ("DS4", "DualShock 4 connected"),
+        ControllerConnection::Hidden => return,
+    };
+
+    let font_size = item.font_size.unwrap_or(layout.font_size);
+    let color = ui.style().visuals.widgets.inactive.fg_stroke.color;
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::proportional(font_size),
+        color,
+    );
+    response.on_hover_text(description);
+}
+
 fn stick_side_sources(left: bool) -> [EventSource; 2] {
     if left {
         [
@@ -177,6 +218,7 @@ pub struct KeyboardState {
     label_cache: display_icon::LabelCache,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
+    controller_connection: ControllerConnection,
     feed_completion_log: bool,
     /// After `switchLayout`, ignore further sends from that source until it is released.
     suppress_send_until_release: HashSet<EventSource>,
@@ -1056,6 +1098,15 @@ impl KeyboardState {
         }
     }
 
+    pub(in crate::state) fn set_controller_connection(&mut self, connection: ControllerConnection) {
+        if self.controller_connection == connection {
+            return;
+        }
+
+        self.controller_connection = connection;
+        self.last_battery = None;
+    }
+
     pub(crate) fn draw_keyboard_ui(
         &mut self,
         ctx: &Context,
@@ -1082,6 +1133,7 @@ impl KeyboardState {
             ctrl_mod,
             alt_mod,
             last_battery,
+            controller_connection,
             pending_reselect_px,
             ..
         } = self;
@@ -1248,6 +1300,15 @@ impl KeyboardState {
                                     *last_battery,
                                     &batt_cfg,
                                     label_cache,
+                                );
+                            }
+                            layout::RowItem::ConnectedController(item) => {
+                                draw_connected_controller(
+                                    ui,
+                                    current_layout,
+                                    item,
+                                    row_height,
+                                    *controller_connection,
                                 );
                             }
                         }
@@ -1520,6 +1581,30 @@ mod send_key_tests {
         assert_eq!(icon, "battery-medium");
         kb.note_battery(None);
         assert_eq!(battery_percent_text(kb.last_battery), "42%");
+    }
+
+    #[test]
+    fn connection_transition_clears_stale_battery() {
+        let mut kb = KeyboardState::default();
+        kb.set_controller_connection(ControllerConnection::Sc2);
+        kb.note_battery(Some(BatteryStatus {
+            percent: 42,
+            charging: false,
+        }));
+
+        kb.set_controller_connection(ControllerConnection::Sc2);
+        assert_eq!(battery_percent_text(kb.last_battery), "42%");
+
+        kb.set_controller_connection(ControllerConnection::Searching);
+        assert_eq!(battery_percent_text(kb.last_battery), "--");
+
+        kb.set_controller_connection(ControllerConnection::Ds4);
+        kb.note_battery(Some(BatteryStatus {
+            percent: 80,
+            charging: false,
+        }));
+        kb.set_controller_connection(ControllerConnection::Hidden);
+        assert_eq!(battery_percent_text(kb.last_battery), "--");
     }
 
     #[test]

@@ -34,6 +34,15 @@ mod text_input_action;
 pub mod toasts;
 pub mod window_pos;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ControllerConnection {
+    #[default]
+    Searching,
+    Sc2,
+    Ds4,
+    Hidden,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash, strum::VariantNames)]
 pub enum StateId {
     Settings,
@@ -74,6 +83,9 @@ impl AppState {
         let cfg = config::get();
 
         keyboard::init()?;
+        if config::mcp_controller_mode() || config::preferred_is_replay() {
+            keyboard::with_mut(|kb| kb.set_controller_connection(ControllerConnection::Hidden));
+        }
         move_window::init()?;
         menu::init()?;
         select_layout::init()?;
@@ -502,6 +514,10 @@ impl AppState {
     pub fn note_battery(&mut self, input: &dyn ControllerInput) {
         self.controller_kind = input.family();
         keyboard::with_mut(|kb| kb.note_battery(input.battery()));
+    }
+
+    pub fn set_controller_connection(&mut self, connection: ControllerConnection) {
+        keyboard::with_mut(|kb| kb.set_controller_connection(connection));
     }
 
     /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.

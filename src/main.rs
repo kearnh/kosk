@@ -8,7 +8,7 @@ use kosk::controller;
 use kosk::debug;
 use kosk::state::{
     os_focus::{text_entry_focus_wanted, OsFocusGuard},
-    AppState, StateId,
+    AppState, ControllerConnection, StateId,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
@@ -453,6 +453,24 @@ fn main() -> Result<()> {
                 loop {
                     match controller::find_device() {
                         Some(device) => {
+                            let connection = match &device {
+                                controller::ConnectedController::Sc2 { .. } => {
+                                    ControllerConnection::Sc2
+                                }
+                                controller::ConnectedController::Ps4(_) => {
+                                    ControllerConnection::Ds4
+                                }
+                                controller::ConnectedController::Replay(_)
+                                | controller::ConnectedController::Virtual => {
+                                    ControllerConnection::Hidden
+                                }
+                            };
+                            state_clone
+                                .lock()
+                                .unwrap()
+                                .set_controller_connection(connection);
+                            ctx.request_repaint();
+
                             let is_replay = device.is_replay();
                             if let Some(header) = device.replay_header() {
                                 let header = header.clone();
@@ -488,6 +506,15 @@ fn main() -> Result<()> {
                             if is_replay {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                                 break;
+                            }
+
+                            if connection != ControllerConnection::Hidden {
+                                let mut s = state_clone.lock().unwrap();
+                                s.set_controller_connection(ControllerConnection::Searching);
+                                if let Err(e) = s.reset_controller_input(&ctx) {
+                                    eprintln!("warn: failed to reset controller input: {e}");
+                                }
+                                ctx.request_repaint();
                             }
                         }
                         None => {
