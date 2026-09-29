@@ -445,66 +445,6 @@ fn leaf_collector(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use quote::quote;
-
-    fn expand(body: &str) -> syn::Result<TokenStream2> {
-        let mut input: DeriveInput = syn::parse_str(&format!("struct Tiny {{ {body} }}"))?;
-        let impls = config_section_impl(&mut input)?;
-        Ok(quote!(#input #impls))
-    }
-
-    #[test]
-    fn leaf_and_section_attributes_parse() {
-        let tokens = expand(
-            r#"
-            #[config(default = 1.0)]
-            #[setting(page = Overlay, label = "L", explain = "E", range = 0.0..=1.0, step = 0.05, decimals = 2)]
-            opacity: f32,
-            #[setting(section, page = Device(Sc2, Pads))]
-            sub: Sub,
-            plain: u64
-            "#,
-        )
-        .unwrap()
-        .to_string();
-        assert!(tokens.contains("__sdef_opacity"));
-        assert!(tokens.contains("__kosk_collect"));
-        assert!(tokens.contains("serde"));
-        assert!(!tokens.contains("setting"));
-    }
-
-    #[test]
-    fn explicit_serde_default_is_kept() {
-        let tokens = expand(
-            r#"
-            #[config(default = 2)]
-            #[serde(default)]
-            version: i64,
-            "#,
-        )
-        .unwrap()
-        .to_string();
-        assert!(!tokens.contains("__sdef_version"));
-        assert!(tokens.contains("serde"));
-    }
-
-    #[test]
-    fn section_rejects_leaf_keys() {
-        let err =
-            expand(r#"#[setting(section, label = "L", explain = "E")] sub: Sub"#).unwrap_err();
-        assert!(err.to_string().contains("section fields take no"));
-    }
-
-    #[test]
-    fn leaf_needs_label_and_explain() {
-        let err = expand(r#"#[setting(page = Overlay)] flag: bool"#).unwrap_err();
-        assert!(err.to_string().contains("both label and explain"));
-    }
-}
-
 #[proc_macro_attribute]
 pub fn config_section(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut input = syn::parse_macro_input!(item as DeriveInput);
@@ -687,4 +627,64 @@ fn config_section_impl(input: &mut DeriveInput) -> syn::Result<TokenStream2> {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    fn expand(body: &str) -> syn::Result<TokenStream2> {
+        let mut input: DeriveInput = syn::parse_str(&format!("struct Tiny {{ {body} }}"))?;
+        let impls = config_section_impl(&mut input)?;
+        Ok(quote!(#input #impls))
+    }
+
+    #[test]
+    fn leaf_and_section_attributes_parse() {
+        let tokens = expand(
+            r#"
+            #[config(default = 1.0)]
+            #[setting(page = Overlay, label = "L", explain = "E", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+            opacity: f32,
+            #[setting(section, page = Device(Sc2, Pads))]
+            sub: Sub,
+            plain: u64
+            "#,
+        )
+        .unwrap()
+        .to_string();
+        assert!(tokens.contains("__sdef_opacity"));
+        assert!(tokens.contains("__kosk_collect"));
+        assert!(tokens.contains("serde"));
+        assert!(!tokens.contains("setting"));
+    }
+
+    #[test]
+    fn explicit_serde_default_is_kept() {
+        let tokens = expand(
+            r#"
+            #[config(default = 2)]
+            #[serde(default)]
+            version: i64,
+            "#,
+        )
+        .unwrap()
+        .to_string();
+        assert!(!tokens.contains("__sdef_version"));
+        assert!(tokens.contains("serde"));
+    }
+
+    #[test]
+    fn section_rejects_leaf_keys() {
+        let err =
+            expand(r#"#[setting(section, label = "L", explain = "E")] sub: Sub"#).unwrap_err();
+        assert!(err.to_string().contains("section fields take no"));
+    }
+
+    #[test]
+    fn leaf_needs_label_and_explain() {
+        let err = expand(r#"#[setting(page = Overlay)] flag: bool"#).unwrap_err();
+        assert!(err.to_string().contains("both label and explain"));
+    }
 }
