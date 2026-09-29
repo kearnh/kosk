@@ -131,6 +131,8 @@ section!(KeyboardTheme {
     right_selection_color: [u8; 4] = [50, 150, 80, 255],
     dual_selection_color: [u8; 4] = [120, 60, 180, 255],
     modifier_text_color: [u8; 4] = [255, 255, 255, 255],
+    key_press_color: [u8; 4] = [255, 255, 255, 180],
+    key_press_duration_ms: u16 = 180,
     key_groups: Vec<KeyColorGroup> = Vec::new(),
 });
 

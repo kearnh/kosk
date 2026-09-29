@@ -83,7 +83,7 @@ points. Unknown sections or fields are errors.
   control fields, applied to keyboard keys.
 - `[keyboard]`: `selection_background_color`, `selection_text_color`,
   `left_selection_color`, `right_selection_color`, `dual_selection_color`,
-  `modifier_text_color`.
+  `modifier_text_color`, `key_press_color`, `key_press_duration_ms`.
 - `[[keyboard.key_groups]]`: `keys`, `background_color`, `text_color`.
 - `[suggestions]`: `background_color`, `text_color`,
   `selected_background_color`, `selected_text_color`, `empty_slot_background`,
@@ -100,6 +100,11 @@ points. Unknown sections or fields are errors.
 - `[notifications]`: `background_color`, `border_color`, `border_width`,
   `corner_radius`, `muted_text_color`, `info_color`, `warning_color`, `error_color`.
 - `[battery]`: `empty`, `low`, `medium`, `high`, `full`, `charging`, `unknown`.
+
+Key presses flash `key_press_color` over the key's background and fade out.
+Defaults are `[255, 255, 255, 180]` and `key_press_duration_ms = 180`.
+Set the duration to `0` to disable animation; allowed durations are `0`–`65535` ms.
+Repeated presses restart the pulse. Mouse and controller presses use the same animation.
 
 Theme `keyboard_opacity` applies to Keyboard and TextInput; `ui_opacity` applies
 to Settings, Mappings, and both pickers. Their defaults are `0.7` and `1.0`,

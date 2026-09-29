@@ -214,6 +214,7 @@ pub struct KeyboardState {
     last_right_stick_action: Option<Instant>,
     label_cache: display_icon::LabelCache,
     key_colors: key_colors::KeyColorGroups,
+    key_presses: HashMap<(String, usize, usize), Instant>,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
     controller_connection: ControllerConnection,
@@ -258,6 +259,7 @@ impl KeyboardState {
         events: &mut EventQueue,
         source: &EventSource,
     ) -> Result<()> {
+        self.animate_key_press(key);
         match key {
             RawKey::Key(c) => {
                 let eat_out = if !self.ctrl_mod && !self.alt_mod {
@@ -406,6 +408,25 @@ impl KeyboardState {
         }
 
         Ok(())
+    }
+
+    fn animate_key_press(&mut self, key: &RawKey) {
+        let Some(layout) = self.layouts.get(&self.current_layout) else {
+            return;
+        };
+
+        let now = Instant::now();
+        for (row, (items, _, _)) in layout.into_iter().enumerate() {
+            for (column, item) in items.iter().enumerate() {
+                let layout::RowItem::Key(button) = item else {
+                    continue;
+                };
+                if !button.is_skip() && button.is_key(self.shift_state, key) {
+                    self.key_presses
+                        .insert((self.current_layout.clone(), row, column), now);
+                }
+            }
+        }
     }
 
     pub fn set_feed_completion_log(&mut self, feed: bool) {
@@ -1121,6 +1142,13 @@ impl KeyboardState {
         let visual_cfg = self.cfg();
         let keyboard_theme = &visual_cfg.theme().keyboard;
         self.key_colors.sync(&keyboard_theme.key_groups);
+        let frame_time = Instant::now();
+        let pulse_duration = Duration::from_millis(keyboard_theme.key_press_duration_ms.into());
+        self.key_presses
+            .retain(|_, pressed| frame_time.duration_since(*pressed) < pulse_duration);
+        if !self.key_presses.is_empty() {
+            ctx.request_repaint();
+        }
 
         // Split field borrows so caches and layouts can be used together.
         let KeyboardState {
@@ -1128,6 +1156,7 @@ impl KeyboardState {
             current_layout: current_layout_name,
             label_cache,
             key_colors,
+            key_presses,
             selected,
             shift_state,
             shift_mod,
@@ -1243,6 +1272,23 @@ impl KeyboardState {
                                 }
                                 if let Some(fill) = key_style.background {
                                     button = button.fill(fill);
+                                }
+                                if let Some(pressed) = key_presses.get(&(
+                                    current_layout_name.clone(),
+                                    row_idx,
+                                    col_idx,
+                                )) {
+                                    let remaining = 1.0
+                                        - frame_time.duration_since(*pressed).as_secs_f32()
+                                            / pulse_duration.as_secs_f32();
+                                    let base = key_style.background.unwrap_or_else(|| {
+                                        crate::theme::color(
+                                            keyboard_theme.inactive.background_color,
+                                        )
+                                    });
+                                    let pulse = crate::theme::color(keyboard_theme.key_press_color)
+                                        .gamma_multiply(remaining * remaining);
+                                    button = button.fill(base.blend(pulse));
                                 }
 
                                 let size =
@@ -1703,6 +1749,25 @@ items = [{ key = "a" }]
         kb.layouts.insert("symbols".into(), stub_layout());
         kb.current_layout = "main".into();
         kb
+    }
+
+    #[test]
+    fn key_press_tracks_cell_before_shift_resets_and_restarts_on_repeat() {
+        let mut kb = stub_kb();
+        kb.shift_state = true;
+        let mut events = EventQueue::passthrough();
+        kb.send_key(&RawKey::Key('A'), &mut events, &EventSource::MouseClick)
+            .unwrap();
+
+        let cell = ("main".to_owned(), 0, 0);
+        let first = kb.key_presses[&cell];
+        assert!(!kb.shift_state);
+        assert!(!kb.key_presses.contains_key(&("symbols".to_owned(), 0, 0)));
+
+        kb.send_key(&RawKey::Key('a'), &mut events, &EventSource::MouseClick)
+            .unwrap();
+        assert!(kb.key_presses[&cell] >= first);
+        assert_eq!(kb.key_presses.len(), 1);
     }
 
     fn pad_right() -> EventSource {
