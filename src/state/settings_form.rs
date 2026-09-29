@@ -13,15 +13,17 @@ enum HubEntry {
     Move,
     Mappings,
     Layouts,
+    Themes,
     Options,
     Back,
 }
 
 impl HubEntry {
-    const ALL: [HubEntry; 5] = [
+    const ALL: [HubEntry; 6] = [
         HubEntry::Move,
         HubEntry::Mappings,
         HubEntry::Layouts,
+        HubEntry::Themes,
         HubEntry::Options,
         HubEntry::Back,
     ];
@@ -31,6 +33,7 @@ impl HubEntry {
             HubEntry::Move => "Move window",
             HubEntry::Mappings => "Mappings",
             HubEntry::Layouts => "Layouts",
+            HubEntry::Themes => "Themes",
             HubEntry::Options => "Options",
             HubEntry::Back => "Back",
         }
@@ -47,6 +50,7 @@ impl HubEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::state) enum View {
     Hub,
+    Themes,
     Index,
     DeviceIndex(ControllerKind),
     Page(Page),
@@ -91,7 +95,7 @@ impl Effect {
 }
 
 pub(in crate::state) struct DrawnRow {
-    pub label: &'static str,
+    pub label: String,
     pub explain: Option<&'static str>,
     pub value: Option<String>,
 }
@@ -118,6 +122,7 @@ pub(in crate::state) struct SettingsForm {
     dirty: Vec<&'static Setting>,
     show_all_controllers: bool,
     show_all_settings: bool,
+    theme_names: Vec<String>,
 }
 
 impl SettingsForm {
@@ -128,7 +133,33 @@ impl SettingsForm {
             dirty: Vec::new(),
             show_all_controllers: false,
             show_all_settings: false,
+            theme_names: Vec::new(),
         }
+    }
+
+    pub(in crate::state) fn sync_themes(&mut self, cfg: &Config) {
+        if self.view != View::Themes {
+            return;
+        }
+        let names: Vec<String> = cfg.theme_names().into_iter().map(str::to_owned).collect();
+        if names == self.theme_names {
+            return;
+        }
+        let focused = self.theme_names.get(self.focus).cloned();
+        self.theme_names = names;
+        self.focus = focused
+            .as_ref()
+            .and_then(|name| {
+                self.theme_names
+                    .iter()
+                    .position(|candidate| candidate == name)
+            })
+            .or_else(|| {
+                self.theme_names
+                    .iter()
+                    .position(|name| name == &cfg.active_theme)
+            })
+            .unwrap_or(0);
     }
 
     pub(in crate::state) fn toggle_show_all(&mut self, kind: ControllerKind) {
@@ -214,6 +245,11 @@ impl SettingsForm {
         let persist = !self.dirty.is_empty();
         let open = match self.view {
             View::Hub => Some(StateId::Keyboard),
+            View::Themes => {
+                self.view = View::Hub;
+                self.focus = HubEntry::Themes.index();
+                None
+            }
             View::Index => {
                 self.view = View::Hub;
                 self.focus = HubEntry::Options.index();
@@ -249,6 +285,12 @@ impl SettingsForm {
                 HubEntry::Move => Effect::open(StateId::MoveWindow),
                 HubEntry::Mappings => Effect::open(StateId::Mappings),
                 HubEntry::Layouts => Effect::open(StateId::SelectLayout),
+                HubEntry::Themes => {
+                    self.view = View::Themes;
+                    self.theme_names.clear();
+                    self.sync_themes(cfg);
+                    Effect::none()
+                }
                 HubEntry::Options => {
                     self.view = View::Index;
                     self.focus = 0;
@@ -256,6 +298,26 @@ impl SettingsForm {
                 }
                 HubEntry::Back => Effect::open(StateId::Keyboard),
             },
+            View::Themes => {
+                let Some(name) = self.theme_names.get(self.focus) else {
+                    return Effect::none();
+                };
+                if name == &cfg.active_theme {
+                    return Effect::none();
+                }
+                cfg.active_theme.clone_from(name);
+                if !self.dirty.iter().any(|row| row.key == "active_theme") {
+                    self.dirty.push(
+                        crate::config::schema::setting_for_key("active_theme")
+                            .expect("theme setting"),
+                    );
+                }
+                Effect {
+                    open: None,
+                    persist: true,
+                    changed: true,
+                }
+            }
             View::Index => {
                 let entry = options_entries(kind, self.show_all_controllers)[self.focus];
                 match entry {
@@ -337,6 +399,7 @@ impl SettingsForm {
     pub(in crate::state) fn title(&self) -> String {
         match self.view {
             View::Hub => "Settings".to_owned(),
+            View::Themes => "Themes".to_owned(),
             View::Index => "Options".to_owned(),
             View::DeviceIndex(target) => device_name(target).to_owned(),
             View::Page(page) => page.title(),
@@ -354,6 +417,16 @@ impl SettingsForm {
                 FooterHint {
                     buttons: FooterButtons::Back,
                     label: "keyboard",
+                },
+            ],
+            View::Themes => vec![
+                FooterHint {
+                    buttons: FooterButtons::Activate,
+                    label: "select",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "back",
                 },
             ],
             View::Index => vec![
@@ -431,15 +504,28 @@ impl SettingsForm {
             View::Hub => HubEntry::ALL
                 .iter()
                 .map(|entry| DrawnRow {
-                    label: entry.label(),
+                    label: entry.label().to_owned(),
                     explain: None,
                     value: None,
+                })
+                .collect(),
+            View::Themes => self
+                .theme_names
+                .iter()
+                .map(|name| DrawnRow {
+                    label: if name == crate::theme::DEFAULT_THEME_NAME {
+                        "Default".to_owned()
+                    } else {
+                        name.clone()
+                    },
+                    explain: None,
+                    value: (name == &cfg.active_theme).then(|| "Current".to_owned()),
                 })
                 .collect(),
             View::Index => options_entries(kind, self.show_all_controllers)
                 .iter()
                 .map(|entry| DrawnRow {
-                    label: entry.title(),
+                    label: entry.title().to_owned(),
                     explain: None,
                     value: None,
                 })
@@ -447,7 +533,7 @@ impl SettingsForm {
             View::DeviceIndex(target) => device_pages(target)
                 .iter()
                 .map(|sheet| DrawnRow {
-                    label: sheet.title_suffix(),
+                    label: sheet.title_suffix().to_owned(),
                     explain: None,
                     value: None,
                 })
@@ -456,7 +542,7 @@ impl SettingsForm {
                 .page_rows(page)
                 .into_iter()
                 .map(|setting| DrawnRow {
-                    label: setting.label,
+                    label: setting.label.to_owned(),
                     explain: Some(setting.explain),
                     value: Some(setting.format(cfg)),
                 })
@@ -465,7 +551,7 @@ impl SettingsForm {
                 .page_rows(Page::Device(target, sheet))
                 .into_iter()
                 .map(|setting| DrawnRow {
-                    label: setting.label,
+                    label: setting.label.to_owned(),
                     explain: Some(setting.explain),
                     value: Some(setting.format(cfg)),
                 })
@@ -476,6 +562,7 @@ impl SettingsForm {
     fn len(&self, kind: ControllerKind) -> usize {
         match self.view {
             View::Hub => HubEntry::ALL.len(),
+            View::Themes => self.theme_names.len(),
             View::Index => options_entries(kind, self.show_all_controllers).len(),
             View::DeviceIndex(target) => device_pages(target).len(),
             View::Page(page) => self.page_rows(page).len(),
@@ -518,7 +605,7 @@ impl OptionEntry {
     fn title(self) -> &'static str {
         match self {
             OptionEntry::Page(page) => match page {
-                Page::Appearance => "Appearance",
+                Page::Themes => "Themes",
                 Page::Suggestions => "Suggestions",
                 Page::Overlay => "Overlay",
                 Page::Typing => "Typing",
@@ -559,7 +646,6 @@ fn device_pages(target: ControllerKind) -> Vec<DevicePage> {
 
 fn options_entries(kind: ControllerKind, show_all: bool) -> Vec<OptionEntry> {
     let mut entries = vec![
-        OptionEntry::Page(Page::Appearance),
         OptionEntry::Page(Page::Suggestions),
         OptionEntry::Page(Page::Overlay),
         OptionEntry::Page(Page::Typing),
@@ -729,7 +815,7 @@ mod tests {
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);
-        assert_eq!(form.view, View::Page(Page::Appearance));
+        assert_eq!(form.view, View::Page(Page::Suggestions));
 
         form.dirty
             .push(setting_for_key("completion.enabled").unwrap());
@@ -757,7 +843,7 @@ mod tests {
             .push(setting_for_key("debug.show_hitboxes").unwrap());
         let wrapped = form.shift_page(1, ControllerKind::Sc2);
         assert!(wrapped.persist);
-        assert_eq!(form.view, View::Page(Page::Appearance));
+        assert_eq!(form.view, View::Page(Page::Suggestions));
         assert_eq!(form.focus, 0);
 
         form.clear_dirty();
@@ -772,22 +858,121 @@ mod tests {
         form.view = View::Index;
 
         let connected = form.drawn(&sample(), ControllerKind::Sc2);
-        let labels: Vec<&str> = connected.iter().map(|row| row.label).collect();
+        let labels: Vec<&str> = connected.iter().map(|row| row.label.as_str()).collect();
         assert!(labels.contains(&"Steam Controller"));
         assert!(!labels.contains(&"DualShock 4"));
 
         form.toggle_show_all(ControllerKind::Sc2);
         let both = form.drawn(&sample(), ControllerKind::Sc2);
-        let labels: Vec<&str> = both.iter().map(|row| row.label).collect();
+        let labels: Vec<&str> = both.iter().map(|row| row.label.as_str()).collect();
         assert!(labels.contains(&"Steam Controller"));
         assert!(labels.contains(&"DualShock 4"));
 
         let mut ps4_only = SettingsForm::new();
         ps4_only.view = View::Index;
         let rows = ps4_only.drawn(&sample(), ControllerKind::Ps4);
-        let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
+        let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
         assert!(labels.contains(&"DualShock 4"));
         assert!(!labels.contains(&"Steam Controller"));
+    }
+
+    #[test]
+    fn theme_list_opens_from_hub_and_selects_default_or_custom_theme() {
+        let kind = ControllerKind::Sc2;
+        let mut cfg = sample();
+        cfg.themes
+            .insert("Steam Controller".into(), "steam.toml".into());
+        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        cfg.active_theme = "Steam Controller".into();
+        let mut form = SettingsForm::new();
+        let themes_index = form
+            .drawn(&cfg, kind)
+            .iter()
+            .position(|row| row.label == "Themes")
+            .expect("Themes belongs in the Settings hub");
+        form.set_focus(themes_index, kind);
+        let opened = form.activate(&mut cfg, kind);
+        assert!(!opened.changed);
+        assert_eq!(form.title(), "Themes");
+        let rows = form.drawn(&cfg, kind);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.label.as_ref())
+                .collect::<Vec<&str>>(),
+            ["Default", "Amber", "Steam Controller"]
+        );
+        assert_eq!(form.focus(), 2);
+        assert_eq!(rows[2].value.as_deref(), Some("Current"));
+        form.move_focus(-1, kind);
+        assert_eq!(cfg.active_theme, "Steam Controller");
+        assert!(!form.nudge(&mut cfg, -1, kind));
+        let selected = form.activate(&mut cfg, kind);
+        assert!(selected.changed && selected.persist);
+        assert_eq!(cfg.active_theme, "Amber");
+        assert_eq!(form.dirty_rows().len(), 1);
+        let mut disk = sample();
+        form.dirty_rows()[0].copy(&mut disk, &cfg);
+        assert_eq!(disk.active_theme, "Amber");
+        form.clear_dirty();
+        form.move_focus(-1, kind);
+        let selected = form.activate(&mut cfg, kind);
+        assert!(selected.changed && selected.persist);
+        assert_eq!(cfg.active_theme, "default");
+        form.clear_dirty();
+        let back = form.back(kind);
+        assert!(!back.persist);
+        assert_eq!(form.title(), "Settings");
+        assert_eq!(form.focus(), themes_index);
+    }
+
+    #[test]
+    fn default_theme_is_visible_without_custom_themes_and_options_omit_themes() {
+        let kind = ControllerKind::Sc2;
+        let mut cfg = sample();
+        let mut form = SettingsForm::new();
+        form.focus = HubEntry::Themes.index();
+        form.activate(&mut cfg, kind);
+        let rows = form.drawn(&cfg, kind);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "Default");
+        assert_eq!(rows[0].value.as_deref(), Some("Current"));
+        form.move_focus(1, kind);
+        assert_eq!(form.focus(), 0);
+        let selected = form.activate(&mut cfg, kind);
+        assert!(!selected.changed && !selected.persist);
+        assert!(form.dirty_rows().is_empty());
+        assert!(!options_entries(kind, false).contains(&OptionEntry::Page(Page::Themes)));
+        assert!(form.footer(kind).iter().any(|hint| hint.label == "select"));
+    }
+
+    #[test]
+    fn theme_list_scrolls_and_tracks_catalog_changes_without_selecting() {
+        let kind = ControllerKind::Sc2;
+        let mut cfg = sample();
+        for index in 0..10 {
+            cfg.themes
+                .insert(format!("Theme{index:02}"), "theme.toml".into());
+        }
+        cfg.active_theme = "Theme09".into();
+        let mut form = SettingsForm::new();
+        form.focus = HubEntry::Themes.index();
+        form.activate(&mut cfg, kind);
+        assert_eq!(form.focus(), 10);
+        assert_eq!(form.visible_range(kind), (3, 11));
+        form.move_focus(1, kind);
+        assert_eq!(form.focus(), 0);
+        form.move_focus(-1, kind);
+        assert_eq!(form.focus(), 10);
+        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        form.sync_themes(&cfg);
+        assert_eq!(form.focus(), 11);
+        assert_eq!(form.drawn(&cfg, kind)[form.focus()].label, "Theme09");
+        cfg.themes.remove("Theme09");
+        cfg.active_theme = "default".into();
+        form.sync_themes(&cfg);
+        assert_eq!(form.focus(), 0);
+        assert_eq!(form.drawn(&cfg, kind)[0].label, "Default");
+        assert!(form.dirty_rows().is_empty());
     }
 
     #[test]
@@ -869,7 +1054,7 @@ mod tests {
         form.toggle_show_all_settings(ControllerKind::Sc2);
         assert_eq!(form.len(ControllerKind::Sc2), 10);
         let rows = form.drawn(&sample(), ControllerKind::Sc2);
-        let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
+        let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
         assert!(labels.contains(&"Thumb rest"));
         assert!(labels.contains(&"Pad click"));
         assert!(labels.contains(&"Stretch limit"));

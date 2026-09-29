@@ -13,10 +13,11 @@ Relative paths start beside the active config file. Absolute paths also work.
 `default` is reserved for the built-in appearance. Custom names must be nonempty.
 Every listed file must be readable and valid, including inactive themes.
 
-Open **Settings → Options → Appearance → Theme** and use left/right to change
-themes. The built-in theme comes first; custom names follow in sorted order.
-Changes preview immediately and save when leaving the page. A config supplied
-on the command line keeps the existing live-only settings behavior.
+Open **Settings → Themes**. **Default** comes first; custom names follow in
+sorted order. Use up/down to highlight a theme, then confirm to apply and save
+it. Clicking a theme also selects it. The active theme is marked **Current**.
+A config supplied on the command line keeps the existing live-only settings
+behavior. The built-in theme's config name remains `default`.
 
 Theme files reload after edits or replacement. An invalid reload keeps the
 previous appearance and displays a notice. Invalid startup configuration uses

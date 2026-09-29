@@ -2093,6 +2093,12 @@ show_stick_cursors = false\n\
         assert_eq!(saved.active_theme, "Zinc");
         assert_eq!(saved.themes, cfg.themes);
         assert_eq!(saved.theme().keyboard.left_selection_color, [4, 5, 6, 255]);
+        cfg.active_theme = "default".into();
+        write_user_overlay(&config_path, &cfg, None).unwrap();
+        let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(saved.active_theme, "default");
+        assert_eq!(saved.theme_names(), ["default", "Amber", "Zinc"]);
+        assert_eq!(saved.theme(), &crate::theme::Theme::default());
     }
 
     #[test]

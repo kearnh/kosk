@@ -53,8 +53,9 @@ impl MenuState {
         kind: ControllerKind,
     ) {
         self.kind = kind;
-        self.form.ensure_focus(kind);
         let cfg = config::get();
+        self.form.sync_themes(&cfg);
+        self.form.ensure_focus(kind);
         let appearance = &cfg.theme().menus;
         let rows = self.form.drawn(&cfg, kind);
         let focus = self.form.focus();
@@ -93,7 +94,7 @@ impl MenuState {
                             .skip(view_start)
                             .take(view_end - view_start)
                         {
-                            if draw_row(ui, row.label, row.value.as_deref(), index == focus)
+                            if draw_row(ui, &row.label, row.value.as_deref(), index == focus)
                                 .clicked()
                             {
                                 let already = index == focus;
@@ -124,7 +125,7 @@ impl MenuState {
                                 ui.set_min_width(PANEL_WIDTH);
                                 ui.set_max_width(PANEL_WIDTH);
                                 ui.label(
-                                    RichText::new(row.label)
+                                    RichText::new(&row.label)
                                         .strong()
                                         .color(crate::theme::color(appearance.heading_color)),
                                 );
@@ -145,6 +146,7 @@ impl MenuState {
     ) {
         let kind = self.kind;
         let mut cfg = config::get();
+        self.form.sync_themes(&cfg);
         let effect = run(&mut self.form, &mut cfg, kind);
         if effect.changed {
             config::replace_live(cfg);
@@ -246,6 +248,7 @@ impl MenuState {
 
     fn reload_from_config(&mut self) -> Result<()> {
         self.bindings = load_bindings(StateId::Settings)?.with_left_stick_dpad();
+        self.form.sync_themes(&config::get());
         Ok(())
     }
 }

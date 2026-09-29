@@ -16,7 +16,7 @@ pub(crate) const DEFAULT_MAPPINGS_FILE: &str = "mappings.toml";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
-    Appearance,
+    Themes,
     Suggestions,
     Overlay,
     Typing,
@@ -51,7 +51,7 @@ impl DevicePage {
 impl Page {
     pub(crate) fn title(&self) -> String {
         match self {
-            Page::Appearance => "Appearance".to_owned(),
+            Page::Themes => "Themes".to_owned(),
             Page::Suggestions => "Suggestions".to_owned(),
             Page::Overlay => "Overlay".to_owned(),
             Page::Typing => "Typing".to_owned(),
@@ -471,7 +471,7 @@ pub(crate) fn settings() -> &'static [Setting] {
         Config::__kosk_collect(&Lens::root(), None, String::new(), &mut out);
         out.push(Setting {
             key: "active_theme",
-            page: Page::Appearance,
+            page: Page::Themes,
             label: "Theme",
             explain: "Choose the built-in appearance or a named theme file from your configuration.",
             advanced: false,
@@ -592,7 +592,7 @@ mod tests {
         cfg.themes.insert("Zinc".into(), "zinc.toml".into());
         cfg.themes.insert("Amber".into(), "amber.toml".into());
         let setting = setting_for_key("active_theme").unwrap();
-        assert_eq!(setting.page, Page::Appearance);
+        assert_eq!(setting.page, Page::Themes);
         assert!(setting.nudge(&mut cfg, 1));
         assert_eq!(cfg.active_theme, "Amber");
         assert!(setting.nudge(&mut cfg, 1));

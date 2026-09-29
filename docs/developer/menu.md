@@ -1,12 +1,12 @@
 # Settings (`menu.rs`, `menu_action.rs`, `settings_form.rs`)
 
-This document describes the settings screen. `StateId::Settings` is still one mode. The view stack lives in `settings_form.rs`: a hub, an Options list of shared pages plus per-device entries, a device index, and the value page itself. `menu.rs` draws that stack and applies controller input. `menu_action.rs` is the action enum those bindings name.
+This document describes the settings screen. `StateId::Settings` is still one mode. The view stack lives in `settings_form.rs`: a hub, a theme list, an Options list of shared pages plus per-device entries, a device index, and the value page itself. `menu.rs` draws that stack and applies controller input. `menu_action.rs` is the action enum those bindings name.
 
 ## What the screen shows
 
 The keyboard opens settings with a chord. In the checked-in mappings, `share + faceTop` is `switchState.settings`.
 
-The hub lists **Move window**, **Mappings**, **Layouts**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Options opens a second list: Suggestions, Overlay, Typing, one device entry per visible controller family, and Debug. Each device entry opens a device index, and each device index row opens a value page whose title names the device (`Steam Controller Stick`, `DualShock 4 Triggers`). A Steam Controller index has Pads, Stick, and Triggers; a DualShock 4 index has Stick and Triggers. Back, and the `back` action, return to the keyboard from the hub.
+The hub lists **Move window**, **Mappings**, **Layouts**, **Themes**, **Options**, and **Back**. Move window, mappings, and layouts switch to those modes. Themes lists Default followed by sorted custom names, with Current beside the active theme. Options opens a second list: Suggestions, Overlay, Typing, one device entry per visible controller family, and Debug. Each device entry opens a device index, and each device index row opens a value page whose title names the device (`Steam Controller Stick`, `DualShock 4 Triggers`). A Steam Controller index has Pads, Stick, and Triggers; a DualShock 4 index has Stick and Triggers. Back, and the `back` action, return to the keyboard from the hub.
 
 The list sits 16px in from the top and both sides. The screen title is white. The hub and the Options list are one column: the title, the rows, and a footer. The highlighted row is a full-width bar. On a value page the current value sits on the right of that row (`On`, `240 ms`, `1.25`), and a panel appears beside it. The panel title is white. The body is the explainer for that value, written in plain words. Hub and category rows have no panel. Nothing is drawn under the list.
 
@@ -30,6 +30,8 @@ Paths, model weights, colors, and word lists are not on this screen. They stay i
 
 A click on the hub or the category list opens that row. On a value page, the first click on a row only moves the highlight, so the panel follows it. A second click on an already highlighted toggle flips it. Steppers do not change on click; left and right do.
 
+Clicking a theme applies it. Controller up/down moves the highlight without changing the theme; Activate applies the highlighted theme. Back returns to the hub with Themes highlighted. The form refreshes the names after config reload, preserving the focused name when it remains available.
+
 ## Controller
 
 `MenuAction` is entirely `TriggerMode::Edge`: `selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `toggleShowMore`, and `switchState.*`.
@@ -41,6 +43,8 @@ The checked-in map binds `faceRight` to `back`, `faceTop` to `toggleShowMore`, a
 Idle `None` input resets the binding engine so edges do not fire on the next reconnect.
 
 ## Saving
+
+Theme selection updates the live config and saves immediately through the same dirty-setting copy path as value pages. An explicit command-line config keeps the selection live only.
 
 Left and right write the in-memory config only. Opacity, warp, debounce, and the debug flags are read from that config on later frames, so they move before the file does. The file is written when you leave a page that changed, including when L1 or R1 changes page, and when `switchState` leaves settings with unsaved edits. That write then notifies listeners once. Notifying on every step would re-read every layout file and respawn word suggestions. Key width and stick range are stored in the loaded layouts, so they show up when that reload runs, which is when you leave the page.
 
