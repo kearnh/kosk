@@ -1,152 +1,191 @@
 # Old Steam Controller OSK palette, extended to all kosk screens.
 name = "Old Steam Controller"
-background_color = [15, 40, 61, 255]
+background_color = "navy"
 keyboard_opacity = 1.0
 ui_opacity = 1.0
-text_color = [163, 163, 163, 255]
-muted_text_color = [109, 109, 109, 255]
-selection_background_color = [54, 101, 129, 255]
-selection_border_color = [110, 170, 202, 255]
+text_color = "text_grey"
+muted_text_color = "muted_grey"
+selection_background_color = "selection_blue"
+selection_border_color = "highlight_blue"
 selection_border_width = 1.0
-window_border_color = [25, 62, 87, 255]
+window_border_color = "key_blue"
 window_border_width = 1.0
 window_corner_radius = 8.0
 
+[colours]
+navy = [15, 40, 61]
+text_grey = [163, 163, 163]
+muted_grey = [109, 109, 109]
+selection_blue = [54, 101, 129]
+highlight_blue = [110, 170, 202]
+key_blue = [25, 62, 87]
+border_blue = [45, 75, 96]
+hover_blue = [39, 81, 108]
+light_grey = [190, 190, 190]
+hover_border_blue = [82, 136, 167]
+bright_grey = [210, 210, 210]
+right_selection_green = [82, 116, 76]
+dual_selection_teal = [52, 100, 94]
+modifier_blue = [144, 172, 190]
+confirm_green = [63, 100, 58]
+empty_slot_blue = [20, 49, 71, 180]
+armed_green = [128, 178, 111]
+disarmed_grey = [111, 129, 141]
+new_word_green = [147, 181, 135]
+input_blue = [20, 49, 71]
+cursor_blue = [110, 180, 213]
+row_focus_blue = [48, 100, 132, 135]
+table_focus_blue = [48, 100, 132, 45]
+focus_border_blue = [86, 143, 175]
+warning_amber = [207, 165, 90]
+error_red = [201, 113, 105]
+success_green = [145, 189, 123]
+editor_border_blue = [45, 81, 104]
+move_window_navy = [15, 40, 61, 80]
+move_border_blue = [122, 163, 188, 230]
+move_text_white = [220, 229, 234]
+text_shadow_navy = [8, 22, 34]
+notification_navy = [15, 40, 61, 245]
+notification_grey = [132, 153, 167]
+info_blue = [90, 160, 200]
+battery_yellow = [196, 183, 110]
+battery_green = [126, 166, 110]
+
 [noninteractive]
-background_color = [15, 40, 61, 255]
-weak_background_color = [15, 40, 61, 255]
-text_color = [163, 163, 163, 255]
-border_color = [45, 75, 96, 255]
+background_color = "navy"
+weak_background_color = "navy"
+text_color = "text_grey"
+border_color = "border_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [inactive]
-background_color = [25, 62, 87, 255]
-weak_background_color = [25, 62, 87, 255]
-text_color = [163, 163, 163, 255]
-border_color = [25, 62, 87, 255]
+background_color = "key_blue"
+weak_background_color = "key_blue"
+text_color = "text_grey"
+border_color = "key_blue"
 border_width = 0.0
 corner_radius = 0.0
 
 [hovered]
-background_color = [39, 81, 108, 255]
-weak_background_color = [39, 81, 108, 255]
-text_color = [190, 190, 190, 255]
-border_color = [82, 136, 167, 255]
+background_color = "hover_blue"
+weak_background_color = "hover_blue"
+text_color = "light_grey"
+border_color = "hover_border_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [active]
-background_color = [54, 101, 129, 255]
-weak_background_color = [54, 101, 129, 255]
-text_color = [210, 210, 210, 255]
-border_color = [110, 170, 202, 255]
+background_color = "selection_blue"
+weak_background_color = "selection_blue"
+text_color = "bright_grey"
+border_color = "highlight_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [open]
-background_color = [39, 81, 108, 255]
-weak_background_color = [39, 81, 108, 255]
-text_color = [190, 190, 190, 255]
-border_color = [82, 136, 167, 255]
+background_color = "hover_blue"
+weak_background_color = "hover_blue"
+text_color = "light_grey"
+border_color = "hover_border_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [keyboard]
-selection_background_color = [54, 101, 129, 255]
-selection_text_color = [210, 210, 210, 255]
-left_selection_color = [54, 101, 129, 255]
-right_selection_color = [82, 116, 76, 255]
-dual_selection_color = [52, 100, 94, 255]
-modifier_text_color = [144, 172, 190, 255]
+selection_background_color = "selection_blue"
+selection_text_color = "bright_grey"
+left_selection_color = "selection_blue"
+right_selection_color = "right_selection_green"
+dual_selection_color = "dual_selection_teal"
+modifier_text_color = "modifier_blue"
 
 [[keyboard.key_groups]]
 keys = ["Return", "exit"]
-background_color = [63, 100, 58, 255]
+background_color = "confirm_green"
 
 [keyboard.inactive]
-background_color = [25, 62, 87, 255]
-weak_background_color = [25, 62, 87, 255]
-text_color = [163, 163, 163, 255]
-border_color = [25, 62, 87, 255]
+background_color = "key_blue"
+weak_background_color = "key_blue"
+text_color = "text_grey"
+border_color = "key_blue"
 border_width = 0.0
 corner_radius = 0.0
 
 [keyboard.hovered]
-background_color = [39, 81, 108, 255]
-weak_background_color = [39, 81, 108, 255]
-text_color = [190, 190, 190, 255]
-border_color = [82, 136, 167, 255]
+background_color = "hover_blue"
+weak_background_color = "hover_blue"
+text_color = "light_grey"
+border_color = "hover_border_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [keyboard.active]
-background_color = [54, 101, 129, 255]
-weak_background_color = [54, 101, 129, 255]
-text_color = [210, 210, 210, 255]
-border_color = [110, 170, 202, 255]
+background_color = "selection_blue"
+weak_background_color = "selection_blue"
+text_color = "bright_grey"
+border_color = "highlight_blue"
 border_width = 1.0
 corner_radius = 0.0
 
 [suggestions]
-background_color = [25, 62, 87, 255]
-text_color = [163, 163, 163, 255]
-selected_background_color = [54, 101, 129, 255]
-selected_text_color = [190, 190, 190, 255]
-empty_slot_background = [20, 49, 71, 180]
-armed_color = [128, 178, 111, 255]
-disarmed_color = [111, 129, 141, 255]
-new_word_mark_color = [147, 181, 135, 255]
+background_color = "key_blue"
+text_color = "text_grey"
+selected_background_color = "selection_blue"
+selected_text_color = "light_grey"
+empty_slot_background = "empty_slot_blue"
+armed_color = "armed_green"
+disarmed_color = "disarmed_grey"
+new_word_mark_color = "new_word_green"
 corner_radius = 0.0
 selected_outline_width = 1.0
 
 [text_input]
-background_color = [20, 49, 71, 255]
-text_color = [190, 190, 190, 255]
-cursor_color = [110, 180, 213, 255]
+background_color = "input_blue"
+text_color = "light_grey"
+cursor_color = "cursor_blue"
 
 [menus]
-heading_color = [190, 190, 190, 255]
-muted_text_color = [109, 109, 109, 255]
+heading_color = "light_grey"
+muted_text_color = "muted_grey"
 
 [mappings]
-row_focus_color = [48, 100, 132, 135]
-table_focus_color = [48, 100, 132, 45]
-focus_border_color = [86, 143, 175, 255]
+row_focus_color = "row_focus_blue"
+table_focus_color = "table_focus_blue"
+focus_border_color = "focus_border_blue"
 focus_border_width = 1.0
-text_color = [163, 163, 163, 255]
-warning_color = [207, 165, 90, 255]
-error_color = [201, 113, 105, 255]
-success_color = [145, 189, 123, 255]
-unsaved_color = [207, 165, 90, 255]
-editor_background_color = [15, 40, 61, 255]
-editor_border_color = [45, 81, 104, 255]
+text_color = "text_grey"
+warning_color = "warning_amber"
+error_color = "error_red"
+success_color = "success_green"
+unsaved_color = "warning_amber"
+editor_background_color = "navy"
+editor_border_color = "editor_border_blue"
 editor_border_width = 1.0
 editor_corner_radius = 8.0
 
 [move_window]
-background_color = [15, 40, 61, 80]
-border_color = [122, 163, 188, 230]
+background_color = "move_window_navy"
+border_color = "move_border_blue"
 border_width = 1.0
 corner_radius = 8.0
-text_color = [220, 229, 234, 255]
-text_shadow_color = [8, 22, 34, 255]
+text_color = "move_text_white"
+text_shadow_color = "text_shadow_navy"
 
 [notifications]
-background_color = [15, 40, 61, 245]
-border_color = [45, 81, 104, 255]
+background_color = "notification_navy"
+border_color = "editor_border_blue"
 border_width = 1.0
 corner_radius = 8.0
-muted_text_color = [132, 153, 167, 255]
-info_color = [90, 160, 200, 255]
-warning_color = [207, 165, 90, 255]
-error_color = [201, 113, 105, 255]
+muted_text_color = "notification_grey"
+info_color = "info_blue"
+warning_color = "warning_amber"
+error_color = "error_red"
 
 [battery]
-empty = [201, 113, 105, 255]
-low = [207, 165, 90, 255]
-medium = [196, 183, 110, 255]
-high = [126, 166, 110, 255]
-full = [145, 189, 123, 255]
-charging = [90, 160, 200, 255]
-unknown = [132, 153, 167, 255]
+empty = "error_red"
+low = "warning_amber"
+medium = "battery_yellow"
+high = "battery_green"
+full = "success_green"
+charging = "info_blue"
+unknown = "notification_grey"

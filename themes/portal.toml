@@ -1,154 +1,194 @@
 # Portal 2: clean test chambers with blue and orange portal accents.
 name = "Portal 2"
-background_color = [232, 236, 239, 255]
+background_color = "chamber_grey"
 keyboard_opacity = 0.92
 ui_opacity = 1.0
-text_color = [35, 43, 49, 255]
-muted_text_color = [105, 117, 125, 255]
-selection_background_color = [0, 158, 218, 255]
-selection_border_color = [0, 118, 178, 255]
+text_color = "charcoal"
+muted_text_color = "muted_grey"
+selection_background_color = "portal_blue"
+selection_border_color = "deep_blue"
 selection_border_width = 2.0
-window_border_color = [179, 188, 194, 255]
+window_border_color = "window_grey"
 window_border_width = 1.0
 window_corner_radius = 4.0
 
+[colours]
+chamber_grey = [232, 236, 239]
+charcoal = [35, 43, 49]
+muted_grey = [105, 117, 125]
+portal_blue = [0, 158, 218]
+deep_blue = [0, 118, 178]
+window_grey = [179, 188, 194]
+soft_grey = [224, 229, 233]
+border_grey = [197, 204, 209]
+chalk_white = [248, 249, 250]
+pale_grey = [239, 242, 244]
+key_border_grey = [205, 212, 217]
+ice_blue = [222, 240, 247]
+ink_blue = [20, 57, 73]
+white = [255, 255, 255]
+selection_blue = [0, 158, 218, 235]
+portal_orange = [244, 129, 32]
+portal_purple = [119, 96, 177]
+modifier_grey = [79, 93, 101]
+key_press_white = [255, 255, 255, 190]
+key_white = [248, 249, 250, 230]
+key_hover_blue = [222, 240, 247, 245]
+key_active_blue = [0, 158, 218, 245]
+suggestion_white = [248, 249, 250, 245]
+empty_slot_grey = [218, 224, 228, 180]
+disarmed_grey = [137, 147, 153]
+row_focus_blue = [0, 158, 218, 65]
+table_focus_blue = [0, 158, 218, 30]
+warning_amber = [184, 99, 12]
+error_red = [190, 54, 48]
+success_green = [25, 125, 90]
+notification_orange = [201, 99, 10]
+move_window_grey = [232, 236, 239, 100]
+move_border_blue = [0, 158, 218, 230]
+text_shadow_white = [255, 255, 255, 230]
+notification_white = [248, 249, 250, 250]
+info_blue = [0, 132, 184]
+battery_yellow = [214, 165, 30]
+battery_green = [59, 143, 97]
+
 [noninteractive]
-background_color = [232, 236, 239, 255]
-weak_background_color = [224, 229, 233, 255]
-text_color = [35, 43, 49, 255]
-border_color = [197, 204, 209, 255]
+background_color = "chamber_grey"
+weak_background_color = "soft_grey"
+text_color = "charcoal"
+border_color = "border_grey"
 border_width = 1.0
 corner_radius = 4.0
 
 [inactive]
-background_color = [248, 249, 250, 255]
-weak_background_color = [239, 242, 244, 255]
-text_color = [35, 43, 49, 255]
-border_color = [205, 212, 217, 255]
+background_color = "chalk_white"
+weak_background_color = "pale_grey"
+text_color = "charcoal"
+border_color = "key_border_grey"
 border_width = 1.0
 corner_radius = 4.0
 
 [hovered]
-background_color = [222, 240, 247, 255]
-weak_background_color = [222, 240, 247, 255]
-text_color = [20, 57, 73, 255]
-border_color = [0, 158, 218, 255]
+background_color = "ice_blue"
+weak_background_color = "ice_blue"
+text_color = "ink_blue"
+border_color = "portal_blue"
 border_width = 1.5
 corner_radius = 4.0
 
 [active]
-background_color = [0, 158, 218, 255]
-weak_background_color = [0, 158, 218, 255]
-text_color = [255, 255, 255, 255]
-border_color = [0, 118, 178, 255]
+background_color = "portal_blue"
+weak_background_color = "portal_blue"
+text_color = "white"
+border_color = "deep_blue"
 border_width = 1.5
 corner_radius = 4.0
 
 [open]
-background_color = [222, 240, 247, 255]
-weak_background_color = [222, 240, 247, 255]
-text_color = [20, 57, 73, 255]
-border_color = [0, 158, 218, 255]
+background_color = "ice_blue"
+weak_background_color = "ice_blue"
+text_color = "ink_blue"
+border_color = "portal_blue"
 border_width = 1.5
 corner_radius = 4.0
 
 [keyboard]
-selection_background_color = [0, 158, 218, 235]
-selection_text_color = [255, 255, 255, 255]
-left_selection_color = [0, 158, 218, 255]
-right_selection_color = [244, 129, 32, 255]
-dual_selection_color = [119, 96, 177, 255]
-modifier_text_color = [79, 93, 101, 255]
-key_press_color = [255, 255, 255, 190]
+selection_background_color = "selection_blue"
+selection_text_color = "white"
+left_selection_color = "portal_blue"
+right_selection_color = "portal_orange"
+dual_selection_color = "portal_purple"
+modifier_text_color = "modifier_grey"
+key_press_color = "key_press_white"
 
 [[keyboard.key_groups]]
 keys = ["Return", "exit"]
-background_color = [244, 129, 32, 255]
-text_color = [255, 255, 255, 255]
+background_color = "portal_orange"
+text_color = "white"
 
 [keyboard.inactive]
-background_color = [248, 249, 250, 230]
-weak_background_color = [248, 249, 250, 230]
-text_color = [35, 43, 49, 255]
-border_color = [205, 212, 217, 255]
+background_color = "key_white"
+weak_background_color = "key_white"
+text_color = "charcoal"
+border_color = "key_border_grey"
 border_width = 1.0
 corner_radius = 4.0
 
 [keyboard.hovered]
-background_color = [222, 240, 247, 245]
-weak_background_color = [222, 240, 247, 245]
-text_color = [20, 57, 73, 255]
-border_color = [0, 158, 218, 255]
+background_color = "key_hover_blue"
+weak_background_color = "key_hover_blue"
+text_color = "ink_blue"
+border_color = "portal_blue"
 border_width = 1.5
 corner_radius = 4.0
 
 [keyboard.active]
-background_color = [0, 158, 218, 245]
-weak_background_color = [0, 158, 218, 245]
-text_color = [255, 255, 255, 255]
-border_color = [0, 118, 178, 255]
+background_color = "key_active_blue"
+weak_background_color = "key_active_blue"
+text_color = "white"
+border_color = "deep_blue"
 border_width = 1.5
 corner_radius = 4.0
 
 [suggestions]
-background_color = [248, 249, 250, 245]
-text_color = [35, 43, 49, 255]
-selected_background_color = [0, 158, 218, 235]
-selected_text_color = [255, 255, 255, 255]
-empty_slot_background = [218, 224, 228, 180]
-armed_color = [0, 158, 218, 255]
-disarmed_color = [137, 147, 153, 255]
-new_word_mark_color = [244, 129, 32, 255]
+background_color = "suggestion_white"
+text_color = "charcoal"
+selected_background_color = "selection_blue"
+selected_text_color = "white"
+empty_slot_background = "empty_slot_grey"
+armed_color = "portal_blue"
+disarmed_color = "disarmed_grey"
+new_word_mark_color = "portal_orange"
 corner_radius = 4.0
 selected_outline_width = 1.5
 
 [text_input]
-background_color = [255, 255, 255, 255]
-text_color = [35, 43, 49, 255]
-cursor_color = [244, 129, 32, 255]
+background_color = "white"
+text_color = "charcoal"
+cursor_color = "portal_orange"
 
 [menus]
-heading_color = [35, 43, 49, 255]
-muted_text_color = [105, 117, 125, 255]
+heading_color = "charcoal"
+muted_text_color = "muted_grey"
 
 [mappings]
-row_focus_color = [0, 158, 218, 65]
-table_focus_color = [0, 158, 218, 30]
-focus_border_color = [0, 158, 218, 255]
+row_focus_color = "row_focus_blue"
+table_focus_color = "table_focus_blue"
+focus_border_color = "portal_blue"
 focus_border_width = 2.0
-text_color = [35, 43, 49, 255]
-warning_color = [184, 99, 12, 255]
-error_color = [190, 54, 48, 255]
-success_color = [25, 125, 90, 255]
-unsaved_color = [201, 99, 10, 255]
-editor_background_color = [248, 249, 250, 255]
-editor_border_color = [197, 204, 209, 255]
+text_color = "charcoal"
+warning_color = "warning_amber"
+error_color = "error_red"
+success_color = "success_green"
+unsaved_color = "notification_orange"
+editor_background_color = "chalk_white"
+editor_border_color = "border_grey"
 editor_border_width = 1.0
 editor_corner_radius = 4.0
 
 [move_window]
-background_color = [232, 236, 239, 100]
-border_color = [0, 158, 218, 230]
+background_color = "move_window_grey"
+border_color = "move_border_blue"
 border_width = 2.0
 corner_radius = 4.0
-text_color = [35, 43, 49, 255]
-text_shadow_color = [255, 255, 255, 230]
+text_color = "charcoal"
+text_shadow_color = "text_shadow_white"
 
 [notifications]
-background_color = [248, 249, 250, 250]
-border_color = [197, 204, 209, 255]
+background_color = "notification_white"
+border_color = "border_grey"
 border_width = 1.0
 corner_radius = 4.0
-muted_text_color = [105, 117, 125, 255]
-info_color = [0, 132, 184, 255]
-warning_color = [201, 99, 10, 255]
-error_color = [190, 54, 48, 255]
+muted_text_color = "muted_grey"
+info_color = "info_blue"
+warning_color = "notification_orange"
+error_color = "error_red"
 
 [battery]
-empty = [190, 54, 48, 255]
-low = [201, 99, 10, 255]
-medium = [214, 165, 30, 255]
-high = [59, 143, 97, 255]
-full = [25, 125, 90, 255]
-charging = [0, 158, 218, 255]
-unknown = [137, 147, 153, 255]
+empty = "error_red"
+low = "notification_orange"
+medium = "battery_yellow"
+high = "battery_green"
+full = "success_green"
+charging = "portal_blue"
+unknown = "disarmed_grey"
