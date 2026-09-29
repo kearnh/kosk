@@ -1,4 +1,5 @@
 # Old Steam Controller OSK palette, extended to all kosk screens.
+name = "Old Steam Controller"
 background_color = [15, 40, 61, 255]
 keyboard_opacity = 1.0
 ui_opacity = 1.0

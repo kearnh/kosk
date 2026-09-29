@@ -229,7 +229,10 @@ section!(BatteryTheme {
 impl Theme {
     #[cfg(test)]
     pub(crate) fn parse(text: &str) -> Result<Self> {
-        let overlay = toml::from_str(text).context("parse theme")?;
+        let mut overlay: toml::Value = toml::from_str(text).context("parse theme")?;
+        if let Some(table) = overlay.as_table_mut() {
+            table.remove("name");
+        }
         Self::parse_overlay(overlay)
     }
 
@@ -379,39 +382,43 @@ impl Default for ThemeCatalog {
 }
 
 impl ThemeCatalog {
-    pub(crate) fn load(config_path: &Path, files: &[String], active: &str) -> Result<Self> {
+    pub(crate) fn load(
+        config_path: &Path,
+        files: &[String],
+    ) -> Result<(Self, Vec<std::path::PathBuf>)> {
         let mut catalog = Self::default();
+        let mut skipped = Vec::new();
         for path in expand_theme_files(config_path, files)? {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("read theme {}", path.display()))?;
-            let mut overlay: toml::Value =
-                toml::from_str(&text).with_context(|| format!("parse theme {}", path.display()))?;
-            let embedded_name = match overlay
-                .as_table_mut()
-                .and_then(|table| table.remove("name"))
-            {
-                Some(value) => Some(
-                    value
-                        .as_str()
-                        .context("theme name must be a string")?
-                        .to_owned(),
-                ),
-                None => None,
-            };
-            let name = embedded_name.unwrap_or_else(|| theme_name_from_path(&path));
-            if name.trim().is_empty() || name == DEFAULT_THEME_NAME {
-                bail!("theme name {name:?} is empty or reserved");
-            }
-            let theme = Theme::parse_overlay(overlay)
-                .with_context(|| format!("theme {name:?} ({})", path.display()))?;
-            if catalog.0.insert(name.clone(), theme).is_some() {
-                bail!("duplicate theme name {name:?}");
+            let loaded = (|| {
+                let text = std::fs::read_to_string(&path)
+                    .with_context(|| format!("read theme {}", path.display()))?;
+                let mut overlay: toml::Value = toml::from_str(&text)
+                    .with_context(|| format!("parse theme {}", path.display()))?;
+                let name = overlay
+                    .as_table_mut()
+                    .and_then(|table| table.remove("name"))
+                    .ok_or_else(|| anyhow::anyhow!("theme file is missing required name"))?
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("theme name must be a string"))?
+                    .to_owned();
+                if name.trim().is_empty() || name == DEFAULT_THEME_NAME {
+                    bail!("theme name {name:?} is empty or reserved");
+                }
+                let theme = Theme::parse_overlay(overlay)
+                    .with_context(|| format!("theme {name:?} ({})", path.display()))?;
+                Ok::<_, anyhow::Error>((name, theme))
+            })();
+
+            match loaded {
+                Ok((name, theme)) if !catalog.0.contains_key(&name) => {
+                    catalog.0.insert(name, theme);
+                }
+                Ok(_) | Err(_) => {
+                    skipped.push(path);
+                }
             }
         }
-        if !catalog.0.contains_key(active) {
-            bail!("unknown active_theme {active:?}");
-        }
-        Ok(catalog)
+        Ok((catalog, skipped))
     }
 
     pub(crate) fn get(&self, name: &str) -> &Theme {
@@ -427,6 +434,10 @@ impl ThemeCatalog {
                     .map(String::as_str),
             )
             .collect()
+    }
+
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
     }
 
     #[cfg(test)]
@@ -458,7 +469,7 @@ pub(crate) fn expand_theme_files(
             .collect::<Result<Vec<_>>>()?;
         matches.sort();
         if matches.is_empty() && !file.contains(['*', '?', '[']) {
-            bail!("theme file not found: {file}");
+            matches.push(Path::new(&pattern_path).to_path_buf());
         }
         for path in matches {
             if !paths.contains(&path) {
@@ -467,13 +478,6 @@ pub(crate) fn expand_theme_files(
         }
     }
     Ok(paths)
-}
-
-fn theme_name_from_path(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("Theme")
-        .replace(['-', '_'], " ")
 }
 
 #[cfg(test)]

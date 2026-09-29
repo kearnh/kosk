@@ -8,6 +8,7 @@
 //! Every notice needs acknowledgement. Minor events stay in stderr.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,9 @@ const RECURRING_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// Waiting notices beyond the visible one. Overflow folds into a counter.
 const QUEUE_CAP: usize = 4;
+
+/// Maximum invalid theme paths shown in one notice.
+const THEME_FILE_NOTICE_LIMIT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -66,6 +70,7 @@ pub enum NoticeKey {
     OpenConfigFailed,
     SettingsSaveFailed,
     GuideFailed,
+    ThemeFiles(String),
 }
 
 #[derive(Debug, Clone)]
@@ -269,6 +274,53 @@ impl Notice {
         }
     }
 
+    pub fn theme_files_skipped(paths: &[PathBuf], missing_active: Option<&str>) -> Self {
+        let mut identity = paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Some(name) = missing_active {
+            identity.push_str("\nactive:");
+            identity.push_str(name);
+        }
+
+        let mut body = String::new();
+        if let Some(name) = missing_active {
+            body.push_str(&format!(
+                "Theme '{name}' is unavailable; using Default instead.\n"
+            ));
+        }
+        if !paths.is_empty() {
+            body.push_str(&format!(
+                "{} theme file{} skipped:\n",
+                paths.len(),
+                if paths.len() == 1 { "" } else { "s" }
+            ));
+            for path in paths.iter().take(THEME_FILE_NOTICE_LIMIT) {
+                body.push_str("• ");
+                body.push_str(&path.display().to_string());
+                body.push('\n');
+            }
+            if paths.len() > THEME_FILE_NOTICE_LIMIT {
+                body.push_str(&format!(
+                    "... and {} more",
+                    paths.len() - THEME_FILE_NOTICE_LIMIT
+                ));
+            }
+        }
+
+        Self {
+            key: NoticeKey::ThemeFiles(identity),
+            severity: Severity::Warning,
+            title: "Some themes were skipped",
+            body,
+            action: None,
+            wide: true,
+            immediate: true,
+        }
+    }
+
     fn session_once(&self) -> bool {
         matches!(
             self.key,
@@ -277,6 +329,7 @@ impl Notice {
                 | NoticeKey::Wordlist(_)
                 | NoticeKey::UnsupportedButtons(_)
                 | NoticeKey::NextWordSetup
+                | NoticeKey::ThemeFiles(_)
         )
     }
 

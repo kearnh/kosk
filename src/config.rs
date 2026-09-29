@@ -1095,11 +1095,19 @@ fn read_merged_config(
     let mut config: Config = merged
         .try_into()
         .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
-    config.theme_catalog = Arc::new(crate::theme::ThemeCatalog::load(
-        config_path,
-        &config.themes,
-        &config.active_theme,
-    )?);
+    let selected_theme = config.active_theme.clone();
+    let (catalog, skipped_themes) = crate::theme::ThemeCatalog::load(config_path, &config.themes)?;
+    let missing_active = (!catalog.contains(&selected_theme)).then_some(selected_theme);
+    if missing_active.is_some() {
+        config.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+    }
+    if !skipped_themes.is_empty() || missing_active.is_some() {
+        crate::user_notify::notify(crate::user_notify::Notice::theme_files_skipped(
+            &skipped_themes,
+            missing_active.as_deref(),
+        ));
+    }
+    config.theme_catalog = Arc::new(catalog);
     Ok((config, map_rel))
 }
 
@@ -1124,20 +1132,33 @@ fn normalize_legacy_theme_config(user: &mut toml::Value, config_path: &Path) -> 
             } else {
                 config_path.parent().unwrap_or(Path::new("")).join(path)
             };
-            let text = fs::read_to_string(&path)
-                .with_context(|| format!("read theme {}", path.display()))?;
-            let mut theme: toml::Value =
-                toml::from_str(&text).with_context(|| format!("parse theme {}", path.display()))?;
-            let name = theme
-                .as_table_mut()
-                .and_then(|table| table.remove("name"))
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .unwrap_or("Theme")
-                        .replace(['-', '_'], " ")
-                });
+            let fallback_name = || {
+                let stem = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("Theme")
+                    .replace(['-', '_'], " ");
+                stem.split_whitespace()
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        chars
+                            .next()
+                            .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            let name = fs::read_to_string(&path)
+                .ok()
+                .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+                .and_then(|mut theme| {
+                    theme
+                        .as_table_mut()
+                        .and_then(|table| table.remove("name"))
+                        .and_then(|value| value.as_str().map(str::to_owned))
+                })
+                .unwrap_or_else(fallback_name);
             user["active_theme"] = toml::Value::String(name);
         }
     }
@@ -2232,7 +2253,9 @@ show_stick_cursors = false\n\
         cfg.themes.push("custom.toml".into());
         cfg.active_theme = "Custom".into();
         cfg.theme_catalog = Arc::new(
-            crate::theme::ThemeCatalog::load(&config_path, &cfg.themes, &cfg.active_theme).unwrap(),
+            crate::theme::ThemeCatalog::load(&config_path, &cfg.themes)
+                .unwrap()
+                .0,
         );
         assert_eq!(cfg.text_input_style().text_color, [0, 0, 0, 255]);
         assert_eq!(cfg.battery_style().empty, [220, 50, 50, 255]);
