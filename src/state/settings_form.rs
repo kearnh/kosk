@@ -702,8 +702,6 @@ mod tests {
         toml::from_str(
             r#"
             layouts = { main = "kb.toml" }
-            keyboard_opacity = 1.0
-            ui_opacity = 0.4
             "#,
         )
         .unwrap()
@@ -721,27 +719,33 @@ mod tests {
     }
 
     #[test]
-    fn opacity_clamps_at_both_ends() {
+    fn key_width_clamps_at_both_ends() {
         let mut form = SettingsForm::new();
         form.view = View::Page(Page::Overlay);
-        form.focus = row_position("keyboard_opacity");
+        form.focus = row_position("scale_x");
         let mut cfg = sample();
 
         for _ in 0..30 {
             form.nudge(&mut cfg, 1, ControllerKind::Sc2);
         }
-        assert!((cfg.keyboard_opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(cfg.scale_x, 48.0);
         assert!(!form.nudge(&mut cfg, 1, ControllerKind::Sc2));
 
-        for _ in 0..30 {
+        for _ in 0..40 {
             form.nudge(&mut cfg, -1, ControllerKind::Sc2);
         }
-        assert!((cfg.keyboard_opacity - 0.2).abs() < 0.001);
+        assert_eq!(cfg.scale_x, 16.0);
         assert!(!form.nudge(&mut cfg, -1, ControllerKind::Sc2));
 
-        cfg.keyboard_opacity = 0.3;
+        cfg.scale_x = 30.0;
         assert!(form.nudge(&mut cfg, 1, ControllerKind::Sc2));
-        assert!((cfg.keyboard_opacity - 0.35).abs() < 0.001);
+        assert_eq!(cfg.scale_x, 31.0);
+    }
+
+    #[test]
+    fn opacity_is_not_a_config_setting() {
+        assert!(setting_for_key("keyboard_opacity").is_none());
+        assert!(setting_for_key("ui_opacity").is_none());
     }
 
     #[test]

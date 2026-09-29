@@ -21,8 +21,6 @@ struct App {
     /// Last DWM behind-mode: `true` = empty blur region (see-through).
     dwm_see_through: bool,
     last_outer: Option<egui::Pos2>,
-    /// Resolved overlay alpha for the current mode (updated each frame).
-    current_opacity: f32,
     /// Held while a text-entry mode has OS foreground focus.
     os_focus_guard: Option<OsFocusGuard>,
 }
@@ -72,7 +70,6 @@ impl App {
             size: Vec2::ZERO,
             min_size: Vec2::ZERO,
             last_outer: None,
-            current_opacity: 1.0,
             os_focus_guard: None,
             dwm_see_through: false,
         }
@@ -89,22 +86,7 @@ impl eframe::App for App {
         let cfg = config::get();
         let is_transparent = cfg.transparent;
         let state = self.state.lock().unwrap().current_state();
-        {
-            self.current_opacity = if !is_transparent {
-                1.0
-            } else {
-                let raw = match state {
-                    StateId::MoveWindow => 0.0,
-                    StateId::Keyboard | StateId::TextInput => cfg.keyboard_opacity,
-                    StateId::Settings
-                    | StateId::Mappings
-                    | StateId::SelectKey
-                    | StateId::SelectLayout => cfg.ui_opacity,
-                };
-                raw.clamp(0.0, 1.0)
-            };
-        }
-        ctx.set_visuals(cfg.window_visuals(self.current_opacity));
+        ctx.set_visuals(cfg.window_visuals(state));
 
         // Setup window styles (non-transparent parts)
         if let Ok(h) = frame.window_handle() {

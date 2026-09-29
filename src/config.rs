@@ -155,34 +155,9 @@ pub struct Config {
     #[setting(
         page = Overlay,
         label = "See-through window",
-        explain = "Draws the overlay as a layered window. Keyboard opacity and menu opacity apply only while this is on."
+        explain = "Draws the overlay as a layered window. Theme opacity applies only while this is on."
     )]
     pub transparent: bool,
-
-    /// Overlay clear/panel alpha while `transparent` is true, on Keyboard / TextInput.
-    /// MoveWindow uses a see-through ghost and ignores this value.
-    #[config(default = 1.0)]
-    #[setting(
-        page = Overlay,
-        label = "Keyboard opacity",
-        explain = "How solid the keyboard and the text field are. 1 is opaque.",
-        range = 0.2..=1.0,
-        step = 0.05,
-        decimals = 2
-    )]
-    pub keyboard_opacity: f32,
-
-    /// Overlay clear/panel alpha while `transparent` is true, on Settings / Mappings / SelectKey / SelectLayout.
-    #[config(default = 1.0)]
-    #[setting(
-        page = Overlay,
-        label = "Menu opacity",
-        explain = "How solid settings, mappings, and the layout picker are.",
-        range = 0.4..=1.0,
-        step = 0.05,
-        decimals = 2
-    )]
-    pub ui_opacity: f32,
 
     #[setting(section, page = Debug)]
     pub debug: Debug,
@@ -596,8 +571,16 @@ pub fn resolved_controller(
 
 impl Config {
     /// Base appearance for the application viewport.
-    pub fn window_visuals(&self, opacity: f32) -> egui::Visuals {
-        self.theme().window_visuals(self.transparent, opacity)
+    pub fn window_visuals(&self, state: StateId) -> egui::Visuals {
+        let theme = self.theme();
+        let opacity = match state {
+            StateId::MoveWindow => 0.0,
+            StateId::Keyboard | StateId::TextInput => theme.keyboard_opacity,
+            StateId::Settings | StateId::Mappings | StateId::SelectKey | StateId::SelectLayout => {
+                theme.ui_opacity
+            }
+        };
+        theme.window_visuals(self.transparent, opacity)
     }
 
     pub(crate) fn theme(&self) -> &crate::theme::Theme {
@@ -1924,21 +1907,21 @@ mod tests {
         fs::write(&config_path, "config_version = 1\n").unwrap();
 
         let mut cfg = builtin_merged_config().unwrap();
-        cfg.keyboard_opacity = 0.7;
+        cfg.sc2.pad.warp = 0.7;
         cfg.completion.ui.columns = 4;
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
 
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("config_version = 2"), "{text}");
-        assert!(text.contains("keyboard_opacity = 0.70"), "{text}");
+        assert!(text.contains("warp = 0.70"), "{text}");
         assert!(text.contains("columns = 4"), "{text}");
         assert!(!text.contains("scale_x"), "{text}");
         assert!(!dir.join("mappings.toml").exists());
 
-        cfg.keyboard_opacity = builtin_merged_config().unwrap().keyboard_opacity;
+        cfg.sc2.pad.warp = builtin_merged_config().unwrap().sc2.pad.warp;
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
-        assert!(!text.contains("keyboard_opacity"), "{text}");
+        assert!(!text.contains("warp"), "{text}");
         assert!(text.contains("columns = 4"), "{text}");
     }
 
@@ -1987,15 +1970,15 @@ future_key = true\n\
         )
         .unwrap();
         let mut cfg = builtin_merged_config().unwrap();
-        cfg.keyboard_opacity = 0.7;
-        cfg.ui_opacity = 0.95;
+        cfg.sc2.pad.warp = 0.7;
+        cfg.ps4.stick.warp = 0.95;
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("# keep-me"), "{text}");
         assert!(text.contains("controller_map = \"custom.toml\""), "{text}");
         assert!(text.contains("future_key = true"), "{text}");
-        assert!(text.contains("keyboard_opacity = 0.70"), "{text}");
-        assert!(text.contains("ui_opacity = 0.95"), "{text}");
+        assert!(text.contains("warp = 0.70"), "{text}");
+        assert!(text.contains("warp = 0.95"), "{text}");
         assert!(!text.contains("699999"), "{text}");
     }
 
@@ -2031,7 +2014,7 @@ show_stick_cursors = false\n\
 
         let dir = temp_dir("unreadable-save");
         let config_path = dir.join("config.toml");
-        let original = "keyboard_opacity = \"abc\"\n";
+        let original = "scale_x = \"abc\"\n";
         fs::write(&config_path, original).unwrap();
         let cfg = builtin_merged_config().unwrap();
         write_user_file(ConfigSource::User, true, &config_path, &cfg, None).unwrap();
@@ -2077,7 +2060,7 @@ show_stick_cursors = false\n\
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(cfg.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(
-            cfg.window_visuals(1.0).panel_fill,
+            cfg.window_visuals(StateId::Keyboard).panel_fill,
             crate::theme::color([1, 2, 3, 255])
         );
         let mut watched = Vec::new();
@@ -2099,6 +2082,53 @@ show_stick_cursors = false\n\
         assert_eq!(saved.active_theme, "default");
         assert_eq!(saved.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(saved.theme(), &crate::theme::Theme::default());
+    }
+
+    #[test]
+    fn window_opacity_comes_from_the_selected_theme_for_each_mode() {
+        let dir = temp_dir("theme-opacity");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "config_version = 2\nactive_theme = 'Custom'\nkeyboard_opacity = 0.1\nui_opacity = 0.1\n[themes]\nCustom = 'theme.toml'\n").unwrap();
+        fs::write(
+            dir.join("theme.toml"),
+            "background_color = [20, 40, 60, 128]\nkeyboard_opacity = 0.5\nui_opacity = 0.25",
+        )
+        .unwrap();
+        let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        for state in [StateId::Keyboard, StateId::TextInput] {
+            assert_eq!(
+                cfg.window_visuals(state).panel_fill,
+                crate::theme::color([20, 40, 60, 64])
+            );
+        }
+        for state in [
+            StateId::Settings,
+            StateId::Mappings,
+            StateId::SelectKey,
+            StateId::SelectLayout,
+        ] {
+            assert_eq!(
+                cfg.window_visuals(state).panel_fill,
+                crate::theme::color([20, 40, 60, 32])
+            );
+        }
+        assert_eq!(
+            cfg.window_visuals(StateId::MoveWindow).panel_fill,
+            egui::Color32::TRANSPARENT
+        );
+        cfg.transparent = false;
+        for state in [StateId::Keyboard, StateId::Settings, StateId::MoveWindow] {
+            assert_eq!(
+                cfg.window_visuals(state).panel_fill,
+                egui::Color32::from_rgb(20, 40, 60)
+            );
+        }
+        cfg.transparent = true;
+        cfg.active_theme = "default".into();
+        assert_eq!(cfg.window_visuals(StateId::Keyboard).panel_fill.a(), 255);
+        let serialized = toml::to_string(&cfg).unwrap();
+        assert!(!serialized.contains("keyboard_opacity"));
+        assert!(!serialized.contains("ui_opacity"));
     }
 
     #[test]
@@ -2206,10 +2236,11 @@ show_stick_cursors = false\n\
         let _watcher = watch_config_directories(&dir, &files, tx).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         for value in [4, 7] {
+            let opacity = value as f32 / 10.0;
             let replacement = external.join("replacement.toml");
             fs::write(
                 &replacement,
-                format!("background_color = [{value}, 2, 3, 255]\n[[keyboard.key_groups]]\nkeys = ['Return']\nbackground_color = [{value}, 5, 6, 255]"),
+                format!("background_color = [{value}, 2, 3, 255]\nkeyboard_opacity = {opacity}\n[[keyboard.key_groups]]\nkeys = ['Return']\nbackground_color = [{value}, 5, 6, 255]"),
             )
             .unwrap();
             fs::remove_file(&theme_path).unwrap();
@@ -2226,6 +2257,11 @@ show_stick_cursors = false\n\
             wait_for_reload_quiet(&rx, &files);
             let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
             assert_eq!(after.theme().background_color, [value, 2, 3, 255]);
+            assert_eq!(after.theme().keyboard_opacity, opacity);
+            assert_eq!(
+                after.window_visuals(StateId::Keyboard).panel_fill.a(),
+                (255.0 * opacity).round() as u8
+            );
             assert_eq!(after.theme().keyboard.key_groups[0].keys, ["Return"]);
             assert_eq!(
                 after.theme().keyboard.key_groups[0].background_color,
@@ -2335,13 +2371,10 @@ show_stick_cursors = false\n\
     fn invalid_config_falls_back_to_defaults() {
         let dir = temp_dir("invalid-fallback");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "keyboard_opacity = \"abc\"\n").unwrap();
+        fs::write(&config_path, "scale_x = \"abc\"\n").unwrap();
         let (cfg, _, used_defaults) = super::load_initial(&config_path, ConfigSource::Explicit);
         assert!(used_defaults);
-        assert_eq!(
-            cfg.keyboard_opacity,
-            super::builtin_merged_config().unwrap().keyboard_opacity
-        );
+        assert_eq!(cfg.scale_x, super::builtin_merged_config().unwrap().scale_x);
     }
 
     #[test]
@@ -2458,7 +2491,7 @@ show_stick_cursors = false\n\
         let first = toml::Value::try_from(Config::default()).unwrap();
         assert_eq!(again, first);
         assert_eq!(back.completion.max_suggestions, 6);
-        assert!((back.keyboard_opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(back.theme().keyboard_opacity, 1.0);
         assert_eq!(
             back.layouts.get("main").map(String::as_str),
             Some("old_sc.toml")

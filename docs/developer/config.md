@@ -28,7 +28,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 
 - **`layouts`** maps layout names to file paths. A layout named `main` is required. `start_layout` must name an entry in that map.
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). When `transparent` is true, **`keyboard_opacity`** (default `1.0`) sets clear/panel alpha on Keyboard and TextInput, and **`ui_opacity`** (default `1.0`) on Settings/Mappings/SelectKey/SelectLayout; both are ignored when `transparent = false`. Move Window is a see-through ghost and does not use `keyboard_opacity`.
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). Theme `keyboard_opacity` sets clear/panel alpha on Keyboard and TextInput; theme `ui_opacity` applies to Settings/Mappings/SelectKey/SelectLayout. Both multiply the theme background alpha when `transparent = true` and default to `1.0`. `Config::window_visuals` resolves the current mode's appearance for the binary. Move Window is a see-through ghost. Former opacity keys in config are ignored. See [themes](../themes.md).
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`controller_map`** is either an inline table or a string path to another TOML file. When no path is given, the default file name is `mappings.toml`.
 - **`[sc2]`** and **`[ps4]`** describe device feel, not bindings: trigger thresholds, pad-origin mapping, and haptics. Button-to-action mapping is `controller_map`; these tables only change how the hardware feels under your thumbs.
@@ -84,7 +84,7 @@ When a recording’s config overlay is active, `save` copies `window_pos` onto t
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `keyboard_opacity`, `ui_opacity`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, again ignoring those keys if they appear in the blob. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, ignoring those keys and legacy opacity keys if they appear in the blob. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

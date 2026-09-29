@@ -77,6 +77,8 @@ impl WidgetTheme {
 
 section!(Theme {
     background_color: [u8; 4] = [20, 20, 20, 255],
+    keyboard_opacity: f32 = 1.0,
+    ui_opacity: f32 = 1.0,
     text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
     muted_text_color: [u8; 4] = Visuals::default().weak_text_color().to_srgba_unmultiplied(),
     selection_background_color: [u8; 4] =
@@ -240,6 +242,14 @@ impl Theme {
     fn validate(&self) -> Result<()> {
         for group in &self.keyboard.key_groups {
             group.validate()?;
+        }
+        for (name, opacity) in [
+            ("keyboard_opacity", self.keyboard_opacity),
+            ("ui_opacity", self.ui_opacity),
+        ] {
+            if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+                bail!("{name} must be finite and between 0 and 1");
+            }
         }
         for widget in [
             &self.noninteractive,
@@ -431,6 +441,10 @@ mod tests {
             "[suggestions]\ncorner_radius = -1.0",
             "[notifications]\nborder_width = nan",
             "[move_window]\ncorner_radius = 256.0",
+            "keyboard_opacity = -0.1",
+            "keyboard_opacity = 1.1",
+            "ui_opacity = nan",
+            "ui_opacity = inf",
         ] {
             assert!(Theme::parse(text).is_err(), "{text}");
         }
@@ -511,5 +525,29 @@ mod tests {
             color(keyboard.selection_background_color),
             Color32::from_rgba_premultiplied(50, 100, 180, 220)
         );
+    }
+
+    #[test]
+    fn old_steam_controller_palette_matches_reference() {
+        let theme = Theme::parse(include_str!("../themes/old-steam-controller.toml")).unwrap();
+        assert_eq!(theme.background_color, [15, 40, 61, 255]);
+        assert_eq!(theme.keyboard.inactive.background_color, [25, 62, 87, 255]);
+        assert_eq!(
+            theme.keyboard.inactive.weak_background_color,
+            [25, 62, 87, 255]
+        );
+        assert_eq!(theme.keyboard.inactive.text_color, [163, 163, 163, 255]);
+        assert_eq!(theme.keyboard.hovered.background_color, [39, 81, 108, 255]);
+    }
+
+    #[test]
+    fn themes_own_keyboard_and_menu_opacity() {
+        let theme = Theme::parse("keyboard_opacity = 0.7\nui_opacity = 0.4").unwrap();
+        let serialized = toml::Value::try_from(theme).unwrap();
+        assert_eq!(
+            serialized["keyboard_opacity"].as_float(),
+            Some(0.7_f32 as f64)
+        );
+        assert_eq!(serialized["ui_opacity"].as_float(), Some(0.4_f32 as f64));
     }
 }

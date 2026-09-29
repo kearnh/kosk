@@ -543,8 +543,6 @@ mod tests {
         toml::from_str(
             r#"
             layouts = { main = "kb.toml" }
-            keyboard_opacity = 1.0
-            ui_opacity = 0.4
             "#,
         )
         .unwrap()
@@ -629,8 +627,6 @@ mod tests {
     #[test]
     fn settings_cover_every_saved_float_key() {
         for key in [
-            "keyboard_opacity",
-            "ui_opacity",
             "scale_x",
             "sc2.pad.scale_x",
             "sc2.pad.select_sticky",

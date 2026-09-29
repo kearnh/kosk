@@ -72,7 +72,7 @@ Every frame, `App::update` uses the raw Win32 handle from eframe:
 - If transparency is on, it also sets `WS_EX_LAYERED` and `SetLayeredWindowAttributes`.
 - It enables DWM blur behind so semi-transparent backgrounds composite. Move Window uses an empty blur region instead so the ghost is see-through.
 
-`clear_color` and the egui visuals follow the same config flag: opaque dark panels when `transparent` is false, a dim see-through fill when it is true. Move Window ignores `keyboard_opacity` and clears to fully transparent.
+`clear_color` and the egui visuals follow the same config flag: an opaque theme background when `transparent` is false, theme background alpha multiplied by theme opacity when it is true. Move Window ignores theme opacity and clears to fully transparent while the window is transparent.
 
 Fonts are configured only on Windows. Segoe UI Symbol and Segoe UI Emoji are added as proportional fallbacks so layout labels that use symbols still render.
 

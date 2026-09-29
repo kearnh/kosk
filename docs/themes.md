@@ -33,6 +33,8 @@ Save this as `themes/amber.toml` beside the config file:
 
 ```toml
 background_color = [24, 20, 16, 255]
+keyboard_opacity = 0.8
+ui_opacity = 1.0
 text_color = [245, 230, 210, 255]
 selection_background_color = [125, 80, 30, 255]
 
@@ -69,7 +71,7 @@ points. Unknown sections or fields are errors.
 
 ## Fields
 
-- Top level: `background_color`, `text_color`, `muted_text_color`,
+- Top level: `background_color`, `keyboard_opacity`, `ui_opacity`, `text_color`, `muted_text_color`,
   `selection_background_color`, `selection_border_color`,
   `selection_border_width`, `window_border_color`, `window_border_width`,
   `window_corner_radius`.
@@ -99,9 +101,15 @@ points. Unknown sections or fields are errors.
   `corner_radius`, `muted_text_color`, `info_color`, `warning_color`, `error_color`.
 - `[battery]`: `empty`, `low`, `medium`, `high`, `full`, `charging`, `unknown`.
 
-The existing keyboard/menu opacity settings multiply the theme background
-alpha while the window is transparent. An opaque window uses an opaque
-background. Move mode keeps its transparent window and themed ghost outline.
+Theme `keyboard_opacity` applies to Keyboard and TextInput; `ui_opacity` applies
+to Settings, Mappings, and both pickers. Both default to `1.0` and accept finite
+values from `0.0` to `1.0`. They multiply `background_color` alpha while the
+window is transparent. An opaque window uses an opaque background. Move mode
+keeps its transparent window and themed ghost outline.
+
+Opacity belongs in the theme file. The former `config.toml` opacity keys are
+ignored, and the opacity rows have been removed from Settings. Old Steam
+Controller uses full opacity so its dark gaps retain the screenshot's contrast.
 
 ## Key groups
 

@@ -1,8 +1,10 @@
 # Old Steam Controller OSK palette, extended to all kosk screens.
 background_color = [15, 40, 61, 255]
-text_color = [196, 207, 215, 255]
-muted_text_color = [132, 153, 167, 255]
-selection_background_color = [48, 100, 132, 255]
+keyboard_opacity = 1.0
+ui_opacity = 1.0
+text_color = [163, 163, 163, 255]
+muted_text_color = [109, 109, 109, 255]
+selection_background_color = [54, 101, 129, 255]
 selection_border_color = [110, 170, 202, 255]
 selection_border_width = 1.0
 window_border_color = [25, 62, 87, 255]
@@ -12,7 +14,7 @@ window_corner_radius = 8.0
 [noninteractive]
 background_color = [15, 40, 61, 255]
 weak_background_color = [15, 40, 61, 255]
-text_color = [196, 207, 215, 255]
+text_color = [163, 163, 163, 255]
 border_color = [45, 75, 96, 255]
 border_width = 1.0
 corner_radius = 0.0
@@ -20,40 +22,40 @@ corner_radius = 0.0
 [inactive]
 background_color = [25, 62, 87, 255]
 weak_background_color = [25, 62, 87, 255]
-text_color = [185, 194, 198, 255]
+text_color = [163, 163, 163, 255]
 border_color = [25, 62, 87, 255]
 border_width = 0.0
 corner_radius = 0.0
 
 [hovered]
-background_color = [34, 79, 107, 255]
-weak_background_color = [34, 79, 107, 255]
-text_color = [220, 229, 234, 255]
+background_color = [39, 81, 108, 255]
+weak_background_color = [39, 81, 108, 255]
+text_color = [190, 190, 190, 255]
 border_color = [82, 136, 167, 255]
 border_width = 1.0
 corner_radius = 0.0
 
 [active]
-background_color = [43, 96, 128, 255]
-weak_background_color = [43, 96, 128, 255]
-text_color = [232, 240, 244, 255]
+background_color = [54, 101, 129, 255]
+weak_background_color = [54, 101, 129, 255]
+text_color = [210, 210, 210, 255]
 border_color = [110, 170, 202, 255]
 border_width = 1.0
 corner_radius = 0.0
 
 [open]
-background_color = [34, 79, 107, 255]
-weak_background_color = [34, 79, 107, 255]
-text_color = [220, 229, 234, 255]
+background_color = [39, 81, 108, 255]
+weak_background_color = [39, 81, 108, 255]
+text_color = [190, 190, 190, 255]
 border_color = [82, 136, 167, 255]
 border_width = 1.0
 corner_radius = 0.0
 
 [keyboard]
-selection_background_color = [48, 100, 132, 255]
-selection_text_color = [232, 240, 244, 255]
-left_selection_color = [48, 100, 132, 255]
-right_selection_color = [63, 100, 58, 255]
+selection_background_color = [54, 101, 129, 255]
+selection_text_color = [210, 210, 210, 255]
+left_selection_color = [54, 101, 129, 255]
+right_selection_color = [82, 116, 76, 255]
 dual_selection_color = [52, 100, 94, 255]
 modifier_text_color = [144, 172, 190, 255]
 
@@ -64,32 +66,32 @@ background_color = [63, 100, 58, 255]
 [keyboard.inactive]
 background_color = [25, 62, 87, 255]
 weak_background_color = [25, 62, 87, 255]
-text_color = [185, 194, 198, 255]
+text_color = [163, 163, 163, 255]
 border_color = [25, 62, 87, 255]
 border_width = 0.0
 corner_radius = 0.0
 
 [keyboard.hovered]
-background_color = [34, 79, 107, 255]
-weak_background_color = [34, 79, 107, 255]
-text_color = [220, 229, 234, 255]
+background_color = [39, 81, 108, 255]
+weak_background_color = [39, 81, 108, 255]
+text_color = [190, 190, 190, 255]
 border_color = [82, 136, 167, 255]
 border_width = 1.0
 corner_radius = 0.0
 
 [keyboard.active]
-background_color = [43, 96, 128, 255]
-weak_background_color = [43, 96, 128, 255]
-text_color = [232, 240, 244, 255]
+background_color = [54, 101, 129, 255]
+weak_background_color = [54, 101, 129, 255]
+text_color = [210, 210, 210, 255]
 border_color = [110, 170, 202, 255]
 border_width = 1.0
 corner_radius = 0.0
 
 [suggestions]
 background_color = [25, 62, 87, 255]
-text_color = [185, 194, 198, 255]
-selected_background_color = [48, 100, 132, 255]
-selected_text_color = [220, 229, 234, 255]
+text_color = [163, 163, 163, 255]
+selected_background_color = [54, 101, 129, 255]
+selected_text_color = [190, 190, 190, 255]
 empty_slot_background = [20, 49, 71, 180]
 armed_color = [128, 178, 111, 255]
 disarmed_color = [111, 129, 141, 255]
@@ -99,19 +101,19 @@ selected_outline_width = 1.0
 
 [text_input]
 background_color = [20, 49, 71, 255]
-text_color = [211, 219, 225, 255]
+text_color = [190, 190, 190, 255]
 cursor_color = [110, 180, 213, 255]
 
 [menus]
-heading_color = [204, 216, 225, 255]
-muted_text_color = [132, 153, 167, 255]
+heading_color = [190, 190, 190, 255]
+muted_text_color = [109, 109, 109, 255]
 
 [mappings]
 row_focus_color = [48, 100, 132, 135]
 table_focus_color = [48, 100, 132, 45]
 focus_border_color = [86, 143, 175, 255]
 focus_border_width = 1.0
-text_color = [196, 207, 215, 255]
+text_color = [163, 163, 163, 255]
 warning_color = [207, 165, 90, 255]
 error_color = [201, 113, 105, 255]
 success_color = [145, 189, 123, 255]
