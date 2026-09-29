@@ -236,8 +236,18 @@ impl Theme {
         Self::parse_overlay(overlay)
     }
 
-    fn parse_overlay(overlay: toml::Value) -> Result<Self> {
+    fn parse_overlay(mut overlay: toml::Value) -> Result<Self> {
         let mut base = toml::Value::try_from(Self::default()).context("theme defaults")?;
+        let mut schema = base.clone();
+        schema["keyboard"]["key_groups"] =
+            toml::Value::Array(vec![toml::Value::try_from(KeyColorGroup {
+                keys: Vec::new(),
+                background_color: Some([0; 4]),
+                text_color: Some([0; 4]),
+            })?]);
+        let palette = take_palette(&mut overlay)?;
+        resolve_theme_colors(&mut overlay, &schema, &palette)?;
+
         if let Some(text_color) = overlay.get("text_color") {
             for state in ["noninteractive", "inactive", "hovered", "active", "open"] {
                 base[state]["text_color"] = text_color.clone();
@@ -352,6 +362,84 @@ impl Theme {
         };
         visuals
     }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ThemeColor {
+    Rgb([u8; 3]),
+    Rgba([u8; 4]),
+}
+
+impl ThemeColor {
+    fn rgba(self) -> [u8; 4] {
+        match self {
+            Self::Rgb([r, g, b]) => [r, g, b, u8::MAX],
+            Self::Rgba(rgba) => rgba,
+        }
+    }
+}
+
+fn take_palette(overlay: &mut toml::Value) -> Result<BTreeMap<String, [u8; 4]>> {
+    let table = overlay.as_table_mut().context("theme must be a table")?;
+    let colours = table.remove("colours");
+    let colors = table.remove("colors");
+    if colours.is_some() && colors.is_some() {
+        bail!("use either colours or colors, not both");
+    }
+    let Some(palette) = colours.or(colors) else {
+        return Ok(BTreeMap::new());
+    };
+    let palette: BTreeMap<String, ThemeColor> = palette.try_into().context("parse colours")?;
+    if palette.keys().any(|name| name.trim().is_empty()) {
+        bail!("colour names must be nonempty");
+    }
+    Ok(palette
+        .into_iter()
+        .map(|(name, value)| (name, value.rgba()))
+        .collect())
+}
+
+fn resolve_theme_colors(
+    value: &mut toml::Value,
+    schema: &toml::Value,
+    palette: &BTreeMap<String, [u8; 4]>,
+) -> Result<()> {
+    match (value, schema) {
+        (toml::Value::Table(table), toml::Value::Table(fields)) => {
+            for (name, value) in table {
+                if let Some(schema) = fields.get(name) {
+                    resolve_theme_colors(value, schema, palette)
+                        .with_context(|| format!("theme field {name}"))?;
+                }
+            }
+        }
+        (value, toml::Value::Array(schema))
+            if schema.len() == 4 && schema.iter().all(toml::Value::is_integer) =>
+        {
+            let rgba = if let Some(name) = value.as_str() {
+                *palette
+                    .get(name)
+                    .with_context(|| format!("unknown colour {name:?}"))?
+            } else {
+                value
+                    .clone()
+                    .try_into::<ThemeColor>()
+                    .context("expected a colour name or RGB/RGBA tuple")?
+                    .rgba()
+            };
+            *value = toml::Value::try_from(rgba)?;
+        }
+        (toml::Value::Array(values), toml::Value::Array(schema)) => {
+            if let Some(schema) = schema.first() {
+                for value in values {
+                    resolve_theme_colors(value, schema, palette)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn validate_size(name: &str, value: f32) -> Result<()> {
@@ -485,6 +573,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn named_colors_resolve_in_nested_sections_and_key_groups() {
+        for spelling in ["colours", "colors"] {
+            let theme = Theme::parse(&format!(
+                "text_color = 'white'\n\
+                 [{spelling}]\nwhite = [255, 255, 255]\nblue = [10, 20, 30, 128]\n\
+                 [keyboard.hovered]\nborder_color = 'blue'\n\
+                 [[keyboard.key_groups]]\nkeys = ['q', 'w', 'e', 'r']\nbackground_color = 'blue'\ntext_color = [1, 2, 3]\n\
+                 [battery]\nfull = 'white'"
+            ))
+            .unwrap();
+            assert_eq!(theme.inactive.text_color, [255; 4]);
+            assert_eq!(theme.keyboard.hovered.border_color, [10, 20, 30, 128]);
+            assert_eq!(
+                theme.keyboard.key_groups[0].background_color,
+                Some([10, 20, 30, 128])
+            );
+            assert_eq!(
+                theme.keyboard.key_groups[0].text_color,
+                Some([1, 2, 3, 255])
+            );
+            assert_eq!(theme.keyboard.key_groups[0].keys, ["q", "w", "e", "r"]);
+            assert_eq!(theme.battery.full, [255; 4]);
+        }
+    }
+
+    #[test]
+    fn rgb_triples_are_opaque_and_rgba_preserves_alpha() {
+        let theme =
+            Theme::parse("background_color = [1, 2, 3]\n[active]\ntext_color = [4, 5, 6, 7]")
+                .unwrap();
+        assert_eq!(theme.background_color, [1, 2, 3, 255]);
+        assert_eq!(theme.active.text_color, [4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn invalid_palettes_and_references_are_rejected() {
+        for text in [
+            "text_color = 'missing'",
+            "[battery]\nfull = 'missing'",
+            "[colours]\nbad = [256, 0, 0]",
+            "[colors]\nbad = [1, 2, 3, 4, 5]",
+            "[colours]\nbad = 'other'",
+            "colours = []",
+            "[colours]\n'' = [1, 2, 3]",
+            "[colours]\n[colors]",
+            "corner_radius = 'blue'\n[colours]\nblue = [1, 2, 3]",
+        ] {
+            assert!(Theme::parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
     fn theme_root_is_the_shared_scope() {
         let theme = Theme::parse("background_color = [1, 2, 3, 255]\ntext_color = [4, 5, 6, 255]\n[hovered]\ntext_color = [7, 8, 9, 255]\n[suggestions]\ntext_color = [10, 11, 12, 255]").unwrap();
         let visuals = theme.visuals();
@@ -516,7 +656,7 @@ mod tests {
         for text in [
             "unknown = 1",
             "[keyboard]\nunknown = 1",
-            "[suggestions]\nbackground_color = [1, 2, 3]",
+            "[suggestions]\nbackground_color = [1, 2]",
             "[suggestions]\nbackground_color = [256, 0, 0, 255]",
             "[suggestions]\ncorner_radius = -1.0",
             "[notifications]\nborder_width = nan",
@@ -549,7 +689,7 @@ mod tests {
             "keys = ['q']",
             "background_color = [1, 2, 3, 4]",
             "keys = ['q']\nunknown = 1\ntext_color = [1, 2, 3, 4]",
-            "keys = ['q']\nbackground_color = [1, 2, 3]",
+            "keys = ['q']\nbackground_color = [1, 2]",
             "keys = ['q']\ntext_color = [256, 2, 3, 4]",
         ] {
             assert!(

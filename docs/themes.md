@@ -9,9 +9,9 @@ themes = ["themes/*.toml", "../shared-themes/*.toml"]
 
 Relative paths start beside the active config file. Absolute paths and `*`, `?`,
 and bracket patterns are supported. Each theme file sets its display name with
-`name = "Amber"`; files without a name use their filename. `default` is
-reserved for the built-in appearance. Names must be unique and nonempty. Every
-matched file must be readable and valid, including inactive themes.
+`name = "Amber"`. Names are mandatory, unique and nonempty; `default` is
+reserved for the built-in appearance. Invalid files are skipped and reported
+in one notification with a limited file list.
 
 Open **Settings → Themes**. **Default** comes first; custom names follow in
 sorted order. Use up/down to highlight a theme, then confirm to apply and save
@@ -40,15 +40,19 @@ name = "Amber"
 background_color = [24, 20, 16, 255]
 keyboard_opacity = 0.8
 ui_opacity = 1.0
-text_color = [245, 230, 210, 255]
+text_color = "cream"
 selection_background_color = [125, 80, 30, 255]
+
+[colours]
+cream = [245, 230, 210]
+key_background = [70, 52, 32, 180]
 
 [inactive]
 corner_radius = 8.0
 
 [keyboard.inactive]
-background_color = [70, 52, 32, 180]
-weak_background_color = [70, 52, 32, 180]
+background_color = "key_background"
+weak_background_color = "key_background"
 text_color = [255, 240, 215, 255]
 corner_radius = 8.0
 
@@ -69,10 +73,35 @@ text_color = [255, 240, 215, 255]
 cursor_color = [255, 200, 100, 255]
 ```
 
-Omitted fields inherit the built-in theme. Colors are `[red, green, blue, alpha]`,
-with four integers from 0 to 255; alpha 0 is transparent. Border widths are
+Omitted fields inherit the built-in theme. Every colour field accepts
+`[red, green, blue]`, `[red, green, blue, alpha]`, or a quoted name from
+`[colours]` (`[colors]` is an alias). Channels are integers from 0 to 255;
+omitted alpha is 255, and alpha 0 is transparent. Palette entries use RGB or
+RGBA tuples. Use only one spelling of the palette table per file. Undefined
+names and invalid tuples make the theme invalid. Border widths are
 finite, nonnegative numbers. Corner radii range from 0 to 255 and round to whole
 points. Unknown sections or fields are errors.
+
+## Control states
+
+These states describe individual controls, independently of window focus:
+
+- `inactive`: resting buttons and controls.
+- `hovered`: controls under the mouse pointer.
+- `active`: controls being pressed or dragged; egui also uses this for widget focus.
+- `open`: expanded controls, such as an open dropdown.
+- `noninteractive`: labels and other display-only elements.
+
+Keyboard keys use `keyboard.inactive`, `keyboard.hovered`, and `keyboard.active`
+for ordinary mouse interaction. Controller selection uses the separate
+`left_selection_color`, `right_selection_color`, and `dual_selection_color`.
+Key press pulses use `key_press_color`. Explicit key fills, including selection,
+key groups and pulses, override the state background.
+
+`open` has no current caller in kosk. Keyboard labels use explicit colours,
+so `keyboard.hovered.text_color` and `keyboard.active.text_color` have no effect.
+Their backgrounds and borders still apply. All state sections are optional;
+keep only the overrides your theme needs.
 
 ## Fields
 
@@ -143,7 +172,7 @@ when Shift changes its output. Labels and icons do not affect matching.
 Keys absent from the layout have no effect.
 
 Each group needs a nonempty key list, nonempty key strings, and at least one
-RGBA color. Space (`" "`) is valid. Later groups override earlier groups per
+colour. Space (`" "`) is valid. Later groups override earlier groups per
 color; omitted colors preserve earlier values. Unmatched keys keep the ordinary
 keyboard theme. Selection fills override group backgrounds; layout display-rule
 colors retain highest priority.
