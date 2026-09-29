@@ -67,11 +67,7 @@ fn battery_percent_text(status: Option<BatteryStatus>) -> String {
     }
 }
 
-fn rgba(c: [u8; 4]) -> egui::Color32 {
-    egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-}
-
-fn battery_color(status: Option<BatteryStatus>, cfg: &config::BatteryConfig) -> egui::Color32 {
+fn battery_color(status: Option<BatteryStatus>, cfg: &crate::theme::BatteryTheme) -> egui::Color32 {
     let c = match status {
         None => cfg.unknown,
         Some(s) if s.charging => cfg.charging,
@@ -83,7 +79,7 @@ fn battery_color(status: Option<BatteryStatus>, cfg: &config::BatteryConfig) -> 
             _ => cfg.full,
         },
     };
-    rgba(c)
+    crate::theme::color(c)
 }
 
 fn draw_battery(
@@ -92,18 +88,18 @@ fn draw_battery(
     batt: &layout::BatteryItem,
     row_height: f32,
     status: Option<BatteryStatus>,
-    cfg: &config::BatteryConfig,
+    cfg: &config::Config,
     label_cache: &mut display_icon::LabelCache,
 ) {
     let font_size = batt.font_size.unwrap_or(layout.font_size);
-    let color = battery_color(status, cfg);
+    let color = battery_color(status, &cfg.battery_style());
     let icon_name = battery_icon_name(status);
     let icon = format!("{{icon:{icon_name}:fill}}");
     let icon_label = label_cache.get(&icon, row_height * 0.9, color);
     let size = egui::Vec2::new(layout.scale_x(batt.width), row_height);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
 
-    if cfg.draw_button {
+    if cfg.battery.draw_button {
         ui.painter().rect_filled(
             rect,
             ui.visuals().widgets.inactive.corner_radius,
@@ -1120,7 +1116,8 @@ impl KeyboardState {
                 || (self.cfg().completion.enabled && self.cfg().completion.show_in_keyboard));
 
         let publish_geometry = self.config.is_none();
-        let batt_cfg = self.cfg().battery;
+        let visual_cfg = self.cfg();
+        let keyboard_theme = &visual_cfg.theme().keyboard;
 
         // Split field borrows so label_cache and layouts can be used together.
         let KeyboardState {
@@ -1142,25 +1139,20 @@ impl KeyboardState {
 
         let mut pressed_key: Option<RawKey> = None;
 
-        // Set semi-transparent button styling
         let style = ui.style_mut();
-        style.visuals.widgets.inactive.weak_bg_fill =
-            egui::Color32::from_rgba_premultiplied(60, 60, 60, 128);
-        style.visuals.widgets.inactive.bg_fill =
-            egui::Color32::from_rgba_premultiplied(60, 60, 60, 128);
-        style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
-        style.visuals.widgets.hovered.weak_bg_fill =
-            egui::Color32::from_rgba_premultiplied(80, 80, 80, 180);
-        style.visuals.widgets.hovered.bg_fill =
-            egui::Color32::from_rgba_premultiplied(80, 80, 80, 180);
-        style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
-        style.visuals.widgets.active.weak_bg_fill =
-            egui::Color32::from_rgba_premultiplied(100, 100, 100, 200);
-        style.visuals.widgets.active.bg_fill =
-            egui::Color32::from_rgba_premultiplied(100, 100, 100, 200);
-        style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
-        style.visuals.selection.bg_fill = egui::Color32::from_rgba_premultiplied(50, 100, 180, 220);
-        style.visuals.selection.stroke.color = egui::Color32::WHITE;
+        keyboard_theme
+            .inactive
+            .apply(&mut style.visuals.widgets.inactive);
+        keyboard_theme
+            .hovered
+            .apply(&mut style.visuals.widgets.hovered);
+        keyboard_theme
+            .active
+            .apply(&mut style.visuals.widgets.active);
+        style.visuals.selection.bg_fill =
+            crate::theme::color(keyboard_theme.selection_background_color);
+        style.visuals.selection.stroke.color =
+            crate::theme::color(keyboard_theme.selection_text_color);
         // Keep key slots at TOML widths: padding + icon glyphs must not expand the row.
         style.spacing.button_padding = egui::Vec2::ZERO;
 
@@ -1235,23 +1227,26 @@ impl KeyboardState {
                                     let sel1 = selected.right == Some(cell);
 
                                     if sel0 && sel1 {
-                                        // Purple for both
                                         button = button
-                                            .fill(egui::Color32::from_rgb(120, 60, 180))
+                                            .fill(crate::theme::color(
+                                                keyboard_theme.dual_selection_color,
+                                            ))
                                             .selected(true);
                                     } else if sel0
                                         || (selected.left.is_none() && left_rest == Some(cell))
                                     {
-                                        // Blue for left stick
                                         button = button
-                                            .fill(egui::Color32::from_rgb(50, 100, 180))
+                                            .fill(crate::theme::color(
+                                                keyboard_theme.left_selection_color,
+                                            ))
                                             .selected(true);
                                     } else if sel1
                                         || (selected.right.is_none() && right_rest == Some(cell))
                                     {
-                                        // Green for right stick
                                         button = button
-                                            .fill(egui::Color32::from_rgb(50, 150, 80))
+                                            .fill(crate::theme::color(
+                                                keyboard_theme.right_selection_color,
+                                            ))
                                             .selected(true);
                                     }
                                 }
@@ -1283,7 +1278,7 @@ impl KeyboardState {
                                         egui::Align2::LEFT_BOTTOM,
                                         mod_string,
                                         egui::FontId::proportional(font_size),
-                                        egui::Color32::WHITE,
+                                        crate::theme::color(keyboard_theme.modifier_text_color),
                                     );
                                 }
 
@@ -1298,7 +1293,7 @@ impl KeyboardState {
                                     batt,
                                     row_height,
                                     *last_battery,
-                                    &batt_cfg,
+                                    &visual_cfg,
                                     label_cache,
                                 );
                             }
@@ -1609,8 +1604,10 @@ mod send_key_tests {
 
     #[test]
     fn battery_color_uses_config_levels() {
-        let cfg = config::BatteryConfig::default();
-        assert_eq!(battery_color(None, &cfg), rgba(cfg.unknown));
+        let mut config = config::Config::default();
+        config.battery.empty = Some([1, 2, 3, 255]);
+        let cfg = config.battery_style();
+        assert_eq!(battery_color(None, &cfg), crate::theme::color(cfg.unknown));
         assert_eq!(
             battery_color(
                 Some(BatteryStatus {
@@ -1619,7 +1616,7 @@ mod send_key_tests {
                 }),
                 &cfg
             ),
-            rgba(cfg.empty)
+            crate::theme::color(cfg.empty)
         );
         assert_eq!(
             battery_color(
@@ -1629,7 +1626,7 @@ mod send_key_tests {
                 }),
                 &cfg
             ),
-            rgba(cfg.charging)
+            crate::theme::color(cfg.charging)
         );
         assert_eq!(
             battery_color(
@@ -1639,7 +1636,7 @@ mod send_key_tests {
                 }),
                 &cfg
             ),
-            rgba(cfg.full)
+            crate::theme::color(cfg.full)
         );
     }
 

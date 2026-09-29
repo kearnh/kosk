@@ -11,7 +11,7 @@ use crate::{
 use anyhow::Result;
 use egui::text::{ByteIndex, CCursor};
 use egui::text_selection::text_cursor_state::{char_index_from_byte_index, cursor_rect};
-use egui::{Color32, Context, FontId, TextEdit, Ui};
+use egui::{Context, FontId, TextEdit, Ui};
 use std::sync::{Mutex, OnceLock};
 
 use crate::controller::bindings::BindingEngine;
@@ -349,24 +349,10 @@ impl TextInputState {
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         let cfg = config::get();
         let ti = &cfg.text_input;
-        let bg = Color32::from_rgba_unmultiplied(
-            ti.background_color[0],
-            ti.background_color[1],
-            ti.background_color[2],
-            ti.background_color[3],
-        );
-        let fg = Color32::from_rgba_unmultiplied(
-            ti.text_color[0],
-            ti.text_color[1],
-            ti.text_color[2],
-            ti.text_color[3],
-        );
-        let cursor_color = Color32::from_rgba_unmultiplied(
-            ti.cursor_color[0],
-            ti.cursor_color[1],
-            ti.cursor_color[2],
-            ti.cursor_color[3],
-        );
+        let appearance = cfg.text_input_style();
+        let bg = crate::theme::color(appearance.background_color);
+        let fg = crate::theme::color(appearance.text_color);
+        let cursor_color = crate::theme::color(appearance.cursor_color);
         let font_size = ti.font_size.max(1.0);
         let font_id = FontId::proportional(font_size);
         let show_chips = crate::completion::showing_recorded()

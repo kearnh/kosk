@@ -11,10 +11,10 @@ use notify::event::ModifyKind;
 use notify::{Event, EventKind, Watcher};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use kosk_config_derive::{config_section, Choice};
@@ -91,16 +91,13 @@ pub struct Debug {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TextInputStyle {
     /// RGBA background color for the text field as `[r, g, b, a]`.
-    #[config(default = [255, 255, 255, 255])]
-    pub background_color: [u8; 4],
+    pub background_color: Option<[u8; 4]>,
 
     /// RGBA text color for the text field as `[r, g, b, a]`.
-    #[config(default = [0, 0, 0, 255])]
-    pub text_color: [u8; 4],
+    pub text_color: Option<[u8; 4]>,
 
     /// RGBA color for the synthetic caret when the field is not focused.
-    #[config(default = [0, 0, 0, 255])]
-    pub cursor_color: [u8; 4],
+    pub cursor_color: Option<[u8; 4]>,
 
     #[config(default = 22.0)]
     #[setting(
@@ -123,6 +120,16 @@ pub struct Config {
     #[config(default = crate::config_overlay::CONFIG_VERSION)]
     #[serde(default)]
     pub config_version: i64,
+
+    /// Selected theme name. `default` uses the built-in appearance.
+    #[config(default = crate::theme::DEFAULT_THEME_NAME.to_owned())]
+    pub active_theme: String,
+
+    /// Named theme files, resolved beside the active configuration file.
+    pub themes: BTreeMap<String, String>,
+
+    #[serde(skip)]
+    theme_catalog: Arc<crate::theme::ThemeCatalog>,
 
     /// Named layouts: map from layout name to file path
     /// Must contain at least "main" layout
@@ -460,20 +467,13 @@ pub struct BatteryConfig {
         explain = "Draw the battery readout with the same background as the keys around it."
     )]
     pub draw_button: bool,
-    #[config(default = [220, 50, 50, 255])]
-    pub empty: [u8; 4],
-    #[config(default = [230, 140, 40, 255])]
-    pub low: [u8; 4],
-    #[config(default = [230, 200, 60, 255])]
-    pub medium: [u8; 4],
-    #[config(default = [120, 190, 80, 255])]
-    pub high: [u8; 4],
-    #[config(default = [50, 200, 90, 255])]
-    pub full: [u8; 4],
-    #[config(default = [70, 180, 220, 255])]
-    pub charging: [u8; 4],
-    #[config(default = [180, 180, 180, 255])]
-    pub unknown: [u8; 4],
+    pub empty: Option<[u8; 4]>,
+    pub low: Option<[u8; 4]>,
+    pub medium: Option<[u8; 4]>,
+    pub high: Option<[u8; 4]>,
+    pub full: Option<[u8; 4]>,
+    pub charging: Option<[u8; 4]>,
+    pub unknown: Option<[u8; 4]>,
 }
 
 #[config_section]
@@ -595,6 +595,67 @@ pub fn resolved_controller(
 }
 
 impl Config {
+    /// Base appearance for the application viewport.
+    pub fn window_visuals(&self, opacity: f32) -> egui::Visuals {
+        self.theme().window_visuals(self.transparent, opacity)
+    }
+
+    pub(crate) fn theme(&self) -> &crate::theme::Theme {
+        self.theme_catalog.get(&self.active_theme)
+    }
+
+    pub(crate) fn theme_names(&self) -> Vec<&str> {
+        std::iter::once(crate::theme::DEFAULT_THEME_NAME)
+            .chain(self.themes.keys().map(String::as_str))
+            .collect()
+    }
+
+    pub(crate) fn battery_style(&self) -> crate::theme::BatteryTheme {
+        let mut style = self.theme().battery.clone();
+        macro_rules! override_colors {
+            ($($field:ident),*) => { $(if let Some(value) = self.battery.$field { style.$field = value; })* };
+        }
+        override_colors!(empty, low, medium, high, full, charging, unknown);
+        style
+    }
+
+    pub(crate) fn text_input_style(&self) -> crate::theme::TextInputTheme {
+        let mut style = self.theme().text_input.clone();
+        if let Some(value) = self.text_input.background_color {
+            style.background_color = value;
+        }
+        if let Some(value) = self.text_input.text_color {
+            style.text_color = value;
+        }
+        if let Some(value) = self.text_input.cursor_color {
+            style.cursor_color = value;
+        }
+        style
+    }
+
+    pub(crate) fn suggestion_style(
+        &self,
+        cfg: &crate::completion::settings::CompletionUiConfig,
+    ) -> crate::theme::SuggestionsTheme {
+        let mut style = self.theme().suggestions.clone();
+        macro_rules! override_fields {
+            ($($field:ident),*) => { $(if let Some(value) = cfg.$field { style.$field = value; })* };
+        }
+        override_fields!(
+            background_color,
+            text_color,
+            selected_background_color,
+            selected_text_color,
+            empty_slot_background,
+            armed_color,
+            disarmed_color,
+            new_word_mark_color,
+            corner_radius,
+            selected_outline_width
+        );
+        style
+    }
+
     pub fn aim(&self, kind: crate::controller::ControllerKind, surface: AimSurface) -> &AimProfile {
         use crate::controller::ControllerKind;
         match resolved_controller(kind) {
@@ -634,8 +695,6 @@ pub fn battery() -> BatteryConfig {
 // Static variables for config management
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-/// Unix seconds of the last published load. Debounces watcher bursts.
-static LAST_LOAD: AtomicU32 = AtomicU32::new(0);
 static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 /// Relative path string from `controller_map = "…"` on the last successful load, or `None` if inline/absent.
 static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
@@ -718,6 +777,9 @@ fn open_user_config_for_source(source: ConfigSource) -> bool {
 }
 
 const TAPE_CONFIG_SKIP: &[&str] = &[
+    "active_theme",
+    "themes",
+    "battery",
     "layouts",
     "record_file",
     "replay",
@@ -769,9 +831,11 @@ pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
     for (k, v) in overlay_table {
         live_table.insert(k.clone(), v.clone());
     }
-    live_val
+    let mut config: Config = live_val
         .try_into()
-        .map_err(|e| anyhow::anyhow!("apply recorded config: {e}"))
+        .map_err(|e| anyhow::anyhow!("apply recorded config: {e}"))?;
+    config.theme_catalog = Arc::clone(&live.theme_catalog);
+    Ok(config)
 }
 
 /// Install recorded config into the process (no-op for v0 / `--ignore-recorded-config`).
@@ -890,6 +954,20 @@ fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
 /// Checks a freshly read config. Fails hard: the watcher keeps the previous
 /// config, startup falls back to the built-in defaults.
 fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()> {
+    for (name, value) in [
+        (
+            "completion.ui.corner_radius",
+            new_config.completion.ui.corner_radius,
+        ),
+        (
+            "completion.ui.selected_outline_width",
+            new_config.completion.ui.selected_outline_width,
+        ),
+    ] {
+        if value.is_some_and(|value| !value.is_finite() || value < 0.0) {
+            bail!("{name} must be finite and nonnegative");
+        }
+    }
     // Validate that layouts contains "main"
     if !new_config.layouts.contains_key("main") {
         bail!("Layouts must contain at least a 'main' layout");
@@ -940,13 +1018,6 @@ fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()>
     Ok(())
 }
 
-fn now_secs() -> u32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as u32
-}
-
 /// Publish a loaded config and return its watched files.
 fn publish_loaded_config(
     new_config: Config,
@@ -962,10 +1033,12 @@ fn publish_loaded_config(
             .expect("Config was already initialized");
     }
     store_disk_config(new_config.clone());
-    LAST_LOAD.store(now_secs(), Ordering::Relaxed);
 
     let layouts: Vec<(String, String)> = new_config.layouts.into_iter().collect();
-    crate::config_overlay::config_file_paths(config_path, map_rel.as_deref(), &layouts)
+    let mut files =
+        crate::config_overlay::config_file_paths(config_path, map_rel.as_deref(), &layouts);
+    crate::config_overlay::append_theme_paths(&mut files, config_path, &new_config.themes);
+    files
 }
 
 /// Load the built-in defaults, then the active config file on top.
@@ -974,12 +1047,6 @@ fn load_config() -> Result<Vec<PathBuf>> {
     let config_path = CONFIG_PATH
         .get()
         .ok_or(anyhow::anyhow!("Config path not set"))?;
-
-    let now = now_secs();
-    let last = LAST_LOAD.load(Ordering::Relaxed);
-    if last > 0 && now.wrapping_sub(last) < 1 {
-        return Err(anyhow::anyhow!("Reload debounced"));
-    }
 
     let (new_config, map_rel) = read_merged_config(config_path, config_source())?;
     validate_loaded_config(&new_config, config_path)?;
@@ -1038,9 +1105,14 @@ fn read_merged_config(
         table.insert(CONTROLLER_MAP_KEY.to_owned(), mappings);
     }
 
-    let config: Config = merged
+    let mut config: Config = merged
         .try_into()
         .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
+    config.theme_catalog = Arc::new(crate::theme::ThemeCatalog::load(
+        config_path,
+        &config.themes,
+        &config.active_theme,
+    )?);
     Ok((config, map_rel))
 }
 
@@ -1062,46 +1134,72 @@ fn is_watched_path(path: &Path, config_files: &[PathBuf]) -> bool {
     config_files.contains(&crate::config_overlay::watch_key(path))
 }
 
-/// Watch the config directory, and config files outside it. Reload only for `config_files`.
+const CONFIG_RELOAD_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(150);
+
+fn is_reload_event(event: &Event, files: &[PathBuf]) -> bool {
+    matches!(
+        event.kind,
+        EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_) | ModifyKind::Name(_))
+            | EventKind::Create(_)
+            | EventKind::Remove(_)
+    ) && event.paths.iter().any(|path| is_watched_path(path, files))
+}
+
+fn watch_config_directories(
+    config_dir: &Path,
+    config_files: &[PathBuf],
+    tx: mpsc::Sender<notify::Result<Event>>,
+) -> Result<notify::RecommendedWatcher> {
+    let mut watcher = notify::recommended_watcher(tx)?;
+    watcher.watch(config_dir, notify::RecursiveMode::NonRecursive)?;
+    let mut directories = vec![config_dir.to_path_buf()];
+    for parent in config_files.iter().filter_map(|path| path.parent()) {
+        if directories.iter().any(|dir| dir == parent) || !parent.is_dir() {
+            continue;
+        }
+        watcher
+            .watch(parent, notify::RecursiveMode::NonRecursive)
+            .with_context(|| format!("watch {}", parent.display()))?;
+        directories.push(parent.to_path_buf());
+    }
+    Ok(watcher)
+}
+
+fn wait_for_reload_quiet(rx: &mpsc::Receiver<notify::Result<Event>>, files: &[PathBuf]) {
+    let mut deadline = std::time::Instant::now() + CONFIG_RELOAD_QUIET_PERIOD;
+    while let Ok(pending) =
+        rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        match pending {
+            Ok(event) if is_reload_event(&event, files) => {
+                deadline = std::time::Instant::now() + CONFIG_RELOAD_QUIET_PERIOD;
+            }
+            Err(e) => eprintln!("watch error: {e:?}"),
+            _ => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+    }
+}
+
+/// Watch the config directory and parents of external config files.
 fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Result<()> {
     let config_dir = config_path
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?
-        .to_path_buf();
-    let config_dir = std::fs::canonicalize(&config_dir)
+        .ok_or_else(|| anyhow::anyhow!("config file has no parent directory"))?;
+    let config_dir = std::fs::canonicalize(config_dir)
         .with_context(|| format!("watch {}", config_dir.display()))?;
+    let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+    let watcher = watch_config_directories(&config_dir, &config_files, tx)?;
 
     std::thread::spawn(move || -> Result<()> {
-        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
-        let mut watcher = notify::recommended_watcher(tx)?;
-        if let Err(e) = watcher.watch(&config_dir, notify::RecursiveMode::NonRecursive) {
-            eprintln!("Failed to watch config directory: {e}");
-        }
-        for path in &config_files {
-            if path.parent() == Some(config_dir.as_path()) || !path.is_file() {
-                continue;
-            }
-            if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
-                eprintln!("Failed to watch config file {}: {e}", path.display());
-            }
-        }
+        let _watcher = watcher;
 
-        for res in rx {
+        while let Ok(res) = rx.recv() {
             match res {
-                Ok(event)
-                    if matches!(
-                        event.kind,
-                        EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_))
-                            | EventKind::Create(_)
-                    ) =>
-                {
-                    let relevant = event
-                        .paths
-                        .iter()
-                        .any(|p| is_watched_path(p, &config_files));
-                    if !relevant {
-                        continue;
-                    }
+                Ok(event) if is_reload_event(&event, &config_files) => {
+                    wait_for_reload_quiet(&rx, &config_files);
                     match load_config() {
                         Ok(new_files) => {
                             notify_config_changed();
@@ -1114,12 +1212,8 @@ fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Res
                             }
                         }
                         Err(e) => {
-                            if e.to_string() != "Reload debounced" {
-                                eprintln!("Failed to reload config: {e}");
-                                crate::user_notify::notify(
-                                    crate::user_notify::Notice::reload_failed(),
-                                );
-                            }
+                            eprintln!("Failed to reload config: {e}");
+                            crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
                         }
                     }
                 }
@@ -1960,6 +2054,199 @@ show_stick_cursors = false\n\
         .unwrap();
         assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
         assert!(!dir.join("mappings.toml").exists());
+    }
+
+    #[test]
+    fn theme_catalog_loads_relative_and_absolute_files_and_stays_off_disk() {
+        let dir = temp_dir("theme-catalog");
+        let config_path = dir.join("config.toml");
+        let external_dir = temp_dir("absolute-theme");
+        let external = external_dir.join("theme.toml");
+        fs::write(
+            dir.join("amber.toml"),
+            "[shared]\nbackground_color = [1, 2, 3, 255]\n",
+        )
+        .unwrap();
+        fs::write(
+            &external,
+            "[keyboard]\nleft_selection_color = [4, 5, 6, 255]\n",
+        )
+        .unwrap();
+        let external_path = toml::Value::String(external.to_string_lossy().into_owned());
+        fs::write(&config_path, format!("config_version = 2\nactive_theme = 'Amber'\n[themes]\nAmber = 'amber.toml'\nZinc = {external_path}\n")).unwrap();
+        let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(cfg.theme_names(), ["default", "Amber", "Zinc"]);
+        assert_eq!(
+            cfg.window_visuals(1.0).panel_fill,
+            crate::theme::color([1, 2, 3, 255])
+        );
+        let mut watched = Vec::new();
+        crate::config_overlay::append_theme_paths(&mut watched, &config_path, &cfg.themes);
+        assert_eq!(watched.len(), 2);
+        assert!(is_watched_path(&external, &watched));
+        cfg.active_theme = "Zinc".into();
+        assert_eq!(cfg.theme().keyboard.left_selection_color, [4, 5, 6, 255]);
+        let serialized = toml::to_string(&cfg).unwrap();
+        assert!(!serialized.contains("theme_catalog"));
+        write_user_overlay(&config_path, &cfg, None).unwrap();
+        let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(saved.active_theme, "Zinc");
+        assert_eq!(saved.themes, cfg.themes);
+        assert_eq!(saved.theme().keyboard.left_selection_color, [4, 5, 6, 255]);
+    }
+
+    #[test]
+    fn component_overrides_beat_theme_including_builtin_values() {
+        let mut cfg: Config = toml::from_str("[text_input]\ntext_color = [0, 0, 0, 255]\n[battery]\nempty = [220, 50, 50, 255]\n[completion.ui]\nbackground_color = [64, 68, 76, 175]\ncorner_radius = 10.0\nselected_outline_width = 1.0\n").unwrap();
+        let dir = temp_dir("theme-overrides");
+        let config_path = dir.join("config.toml");
+        fs::write(dir.join("custom.toml"), "[text_input]\ntext_color = [8, 9, 10, 255]\n[battery]\nempty = [8, 9, 10, 255]\n[ suggestions ]\nbackground_color = [8, 9, 10, 255]\ncorner_radius = 0.0\nselected_outline_width = 4.0\n").unwrap();
+        cfg.themes.insert("Custom".into(), "custom.toml".into());
+        cfg.active_theme = "Custom".into();
+        cfg.theme_catalog = Arc::new(
+            crate::theme::ThemeCatalog::load(&config_path, &cfg.themes, &cfg.active_theme).unwrap(),
+        );
+        assert_eq!(cfg.text_input_style().text_color, [0, 0, 0, 255]);
+        assert_eq!(cfg.battery_style().empty, [220, 50, 50, 255]);
+        let style = cfg.suggestion_style(&cfg.completion.ui);
+        assert_eq!(style.background_color, [64, 68, 76, 175]);
+        assert_eq!(style.corner_radius, 10.0);
+        assert_eq!(style.selected_outline_width, 1.0);
+        cfg.text_input.text_color = None;
+        cfg.completion.ui.corner_radius = None;
+        assert_eq!(cfg.text_input_style().text_color, [8, 9, 10, 255]);
+        assert_eq!(cfg.suggestion_style(&cfg.completion.ui).corner_radius, 0.0);
+        write_user_overlay(&config_path, &cfg, None).unwrap();
+        let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(
+            saved.completion.ui.background_color,
+            Some([64, 68, 76, 175])
+        );
+        assert_eq!(saved.completion.ui.selected_outline_width, Some(1.0));
+    }
+
+    #[test]
+    fn theme_file_replacement_reloads_and_bad_files_leave_snapshot_valid() {
+        let dir = temp_dir("theme-replacement");
+        let config_path = dir.join("config.toml");
+        let theme_path = dir.join("theme.toml");
+        fs::write(
+            &config_path,
+            "config_version = 2\nactive_theme = 'Custom'\n[themes]\nCustom = 'theme.toml'\n",
+        )
+        .unwrap();
+        fs::write(&theme_path, "[shared]\nbackground_color = [1, 2, 3, 255]\n").unwrap();
+        let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        let replacement = dir.join("replacement.toml");
+        fs::write(
+            &replacement,
+            "[shared]\nbackground_color = [4, 5, 6, 255]\n",
+        )
+        .unwrap();
+        fs::remove_file(&theme_path).unwrap();
+        fs::rename(replacement, &theme_path).unwrap();
+        let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(after.theme().shared.background_color, [4, 5, 6, 255]);
+        assert_eq!(before.theme().shared.background_color, [1, 2, 3, 255]);
+        fs::write(
+            &theme_path,
+            "[shared]\nbackground_color = [999, 2, 3, 255]\n",
+        )
+        .unwrap();
+        assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+        assert_eq!(after.theme().shared.background_color, [4, 5, 6, 255]);
+        let tape = tape_config_toml(&after).unwrap();
+        assert!(!tape.contains("active_theme"));
+        assert!(!tape.contains("[themes]"));
+        let replay = overlay_tape_config(
+            &after,
+            "active_theme = 'default'\n[themes]\nOther = 'missing.toml'\n",
+        )
+        .unwrap();
+        assert_eq!(replay.active_theme, "Custom");
+        assert_eq!(replay.theme().shared.background_color, [4, 5, 6, 255]);
+    }
+
+    #[test]
+    fn invalid_theme_catalog_falls_back_at_startup() {
+        let dir = temp_dir("invalid-theme");
+        let config_path = dir.join("config.toml");
+        fs::write(dir.join("theme.toml"), "").unwrap();
+        for body in [
+            "active_theme = 'missing'",
+            "[themes]\ndefault = 'theme.toml'",
+            "[themes]\n'' = 'theme.toml'",
+            "[themes]\nCustom = 'missing.toml'",
+        ] {
+            fs::write(&config_path, format!("config_version = 2\n{body}\n")).unwrap();
+            assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+            let (cfg, _, used_defaults) = load_initial(&config_path, ConfigSource::Explicit);
+            assert!(used_defaults);
+            assert_eq!(cfg.active_theme, "default");
+        }
+    }
+
+    #[test]
+    fn directory_watcher_reloads_replaced_external_theme_files() {
+        let dir = temp_dir("theme-directory-watcher");
+        let external = temp_dir("theme-directory-external");
+        let config_path = dir.join("config.toml");
+        let theme_path = external.join("theme.toml");
+        let encoded_path = toml::Value::String(theme_path.to_string_lossy().into_owned());
+        fs::write(
+            &config_path,
+            format!(
+                "config_version = 2\nactive_theme = 'Custom'\n[themes]\nCustom = {encoded_path}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(&theme_path, "[shared]\nbackground_color = [1, 2, 3, 255]").unwrap();
+        let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        let mut files = vec![crate::config_overlay::watch_key(&config_path)];
+        crate::config_overlay::append_theme_paths(&mut files, &config_path, &before.themes);
+        let (tx, rx) = mpsc::channel();
+        let _watcher = watch_config_directories(&dir, &files, tx).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        for value in [4, 7] {
+            let replacement = external.join("replacement.toml");
+            fs::write(
+                &replacement,
+                format!("[shared]\nbackground_color = [{value}, 2, 3, 255]"),
+            )
+            .unwrap();
+            fs::remove_file(&theme_path).unwrap();
+            fs::rename(replacement, &theme_path).unwrap();
+            loop {
+                let event = rx
+                    .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .unwrap()
+                    .unwrap();
+                if is_reload_event(&event, &files) {
+                    break;
+                }
+            }
+            wait_for_reload_quiet(&rx, &files);
+            let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+            assert_eq!(after.theme().shared.background_color, [value, 2, 3, 255]);
+        }
+        assert_eq!(before.theme().shared.background_color, [1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn replacement_and_removal_events_reload_only_watched_files() {
+        use notify::event::{RemoveKind, RenameMode};
+        let dir = temp_dir("theme-events");
+        let path = dir.join("theme.toml");
+        let files = vec![crate::config_overlay::watch_key(&path)];
+        let renamed = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(dir.join("temporary.toml"))
+            .add_path(path.clone());
+        assert!(is_reload_event(&renamed, &files));
+        let removed = Event::new(EventKind::Remove(RemoveKind::File)).add_path(path);
+        assert!(is_reload_event(&removed, &files));
+        let unrelated = Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(dir.join("other.toml"));
+        assert!(!is_reload_event(&unrelated, &files));
     }
 
     #[test]

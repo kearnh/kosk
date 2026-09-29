@@ -16,6 +16,7 @@ pub(crate) const DEFAULT_MAPPINGS_FILE: &str = "mappings.toml";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
+    Appearance,
     Suggestions,
     Overlay,
     Typing,
@@ -50,6 +51,7 @@ impl DevicePage {
 impl Page {
     pub(crate) fn title(&self) -> String {
         match self {
+            Page::Appearance => "Appearance".to_owned(),
             Page::Suggestions => "Suggestions".to_owned(),
             Page::Overlay => "Overlay".to_owned(),
             Page::Typing => "Typing".to_owned(),
@@ -254,6 +256,88 @@ pub(crate) struct MirrorChoiceControl<V> {
     pub mirror: Lens<V>,
 }
 
+struct ThemeControl;
+
+impl Control for ThemeControl {
+    fn format(&self, cfg: &Config) -> String {
+        cfg.active_theme.clone()
+    }
+
+    fn nudge(&self, cfg: &mut Config, dir: i32) -> bool {
+        let names = cfg.theme_names();
+        let index = names
+            .iter()
+            .position(|name| *name == cfg.active_theme)
+            .unwrap_or(0);
+        let next = names[step_index(index, names.len(), dir)].to_owned();
+        if next == cfg.active_theme {
+            return false;
+        }
+        cfg.active_theme = next;
+        true
+    }
+
+    fn copy(&self, dst: &mut Config, src: &Config) {
+        dst.active_theme.clone_from(&src.active_theme);
+    }
+
+    fn is_toggle(&self) -> bool {
+        false
+    }
+
+    fn decimals(&self) -> Option<usize> {
+        None
+    }
+}
+
+struct OptionalNumberControl {
+    lens: Lens<Option<f32>>,
+    inherited: fn(&Config) -> f32,
+    max: f32,
+    step: f32,
+    digits: u32,
+}
+
+impl Control for OptionalNumberControl {
+    fn format(&self, cfg: &Config) -> String {
+        let value = self.lens.read(cfg).unwrap_or_else(|| (self.inherited)(cfg));
+        let text = f32::format_value(&value, self.digits, None);
+        if self.lens.read(cfg).is_none() {
+            return format!("{text} (theme)");
+        }
+        text
+    }
+
+    fn nudge(&self, cfg: &mut Config, dir: i32) -> bool {
+        let current = self.lens.read(cfg).unwrap_or_else(|| (self.inherited)(cfg));
+        let next = Some(f32::step_value(
+            current,
+            dir,
+            0.0,
+            self.max,
+            self.step,
+            self.digits,
+        ));
+        if next == *self.lens.read(cfg) {
+            return false;
+        }
+        *self.lens.write(cfg) = next;
+        true
+    }
+
+    fn copy(&self, dst: &mut Config, src: &Config) {
+        *self.lens.write(dst) = *self.lens.read(src);
+    }
+
+    fn is_toggle(&self) -> bool {
+        false
+    }
+
+    fn decimals(&self) -> Option<usize> {
+        Some(self.digits as usize)
+    }
+}
+
 impl Control for BoolControl {
     fn format(&self, cfg: &Config) -> String {
         on_off(*self.lens.read(cfg))
@@ -385,6 +469,42 @@ pub(crate) fn settings() -> &'static [Setting] {
     ALL.get_or_init(|| {
         let mut out = Vec::new();
         Config::__kosk_collect(&Lens::root(), None, String::new(), &mut out);
+        out.push(Setting {
+            key: "active_theme",
+            page: Page::Appearance,
+            label: "Theme",
+            explain: "Choose the built-in appearance or a named theme file from your configuration.",
+            advanced: false,
+            control: Box::new(ThemeControl),
+        });
+        out.push(Setting {
+            key: "completion.ui.corner_radius",
+            page: Page::Suggestions,
+            label: "Suggestion roundness",
+            explain: "How rounded the suggestion corners are. 0 is square. Remove the config value to inherit the theme.",
+            advanced: true,
+            control: Box::new(OptionalNumberControl {
+                lens: Lens::root().field(|cfg| &cfg.completion.ui.corner_radius, |cfg| &mut cfg.completion.ui.corner_radius),
+                inherited: |cfg| cfg.theme().suggestions.corner_radius,
+                max: 16.0,
+                step: 1.0,
+                digits: 0,
+            }),
+        });
+        out.push(Setting {
+            key: "completion.ui.selected_outline_width",
+            page: Page::Suggestions,
+            label: "Suggestion highlight outline",
+            explain: "Outline thickness around the selected suggestion. 0 hides it. Remove the config value to inherit the theme.",
+            advanced: true,
+            control: Box::new(OptionalNumberControl {
+                lens: Lens::root().field(|cfg| &cfg.completion.ui.selected_outline_width, |cfg| &mut cfg.completion.ui.selected_outline_width),
+                inherited: |cfg| cfg.theme().suggestions.selected_outline_width,
+                max: 6.0,
+                step: 0.5,
+                digits: 1,
+            }),
+        });
         out
     })
 }
@@ -464,6 +584,46 @@ mod tests {
         assert_eq!(u64::format_value(&240, 0, Some("ms")), "240 ms");
         assert_eq!(usize::format_value(&6, 0, None), "6");
         assert_eq!(u8::format_value(&40, 0, None), "40");
+    }
+
+    #[test]
+    fn themes_cycle_in_sorted_order_and_copy_only_selection() {
+        let mut cfg = sample();
+        cfg.themes.insert("Zinc".into(), "zinc.toml".into());
+        cfg.themes.insert("Amber".into(), "amber.toml".into());
+        let setting = setting_for_key("active_theme").unwrap();
+        assert_eq!(setting.page, Page::Appearance);
+        assert!(setting.nudge(&mut cfg, 1));
+        assert_eq!(cfg.active_theme, "Amber");
+        assert!(setting.nudge(&mut cfg, 1));
+        assert_eq!(cfg.active_theme, "Zinc");
+        assert!(setting.nudge(&mut cfg, 1));
+        assert_eq!(cfg.active_theme, "default");
+        assert!(setting.nudge(&mut cfg, -1));
+        assert_eq!(cfg.active_theme, "Zinc");
+        let mut disk = sample();
+        setting.copy(&mut disk, &cfg);
+        assert_eq!(disk.active_theme, "Zinc");
+        assert!(disk.themes.is_empty());
+        assert!(!setting.nudge(&mut sample(), 1));
+    }
+
+    #[test]
+    fn suggestion_shape_controls_inherit_then_set_explicit_values() {
+        let mut cfg = sample();
+        let roundness = setting_for_key("completion.ui.corner_radius").unwrap();
+        assert_eq!(roundness.format(&cfg), "10 (theme)");
+        assert!(roundness.nudge(&mut cfg, 1));
+        assert_eq!(cfg.completion.ui.corner_radius, Some(11.0));
+        let outline = setting_for_key("completion.ui.selected_outline_width").unwrap();
+        assert_eq!(outline.format(&cfg), "1.0 (theme)");
+        assert!(outline.nudge(&mut cfg, -1));
+        assert_eq!(cfg.completion.ui.selected_outline_width, Some(0.5));
+        let mut disk = sample();
+        roundness.copy(&mut disk, &cfg);
+        outline.copy(&mut disk, &cfg);
+        assert_eq!(disk.completion.ui.corner_radius, Some(11.0));
+        assert_eq!(disk.completion.ui.selected_outline_width, Some(0.5));
     }
 
     #[test]

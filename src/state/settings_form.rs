@@ -518,6 +518,7 @@ impl OptionEntry {
     fn title(self) -> &'static str {
         match self {
             OptionEntry::Page(page) => match page {
+                Page::Appearance => "Appearance",
                 Page::Suggestions => "Suggestions",
                 Page::Overlay => "Overlay",
                 Page::Typing => "Typing",
@@ -558,6 +559,7 @@ fn device_pages(target: ControllerKind) -> Vec<DevicePage> {
 
 fn options_entries(kind: ControllerKind, show_all: bool) -> Vec<OptionEntry> {
     let mut entries = vec![
+        OptionEntry::Page(Page::Appearance),
         OptionEntry::Page(Page::Suggestions),
         OptionEntry::Page(Page::Overlay),
         OptionEntry::Page(Page::Typing),
@@ -727,7 +729,7 @@ mod tests {
 
         let page = form.activate(&mut sample(), ControllerKind::Sc2);
         assert!(!page.persist);
-        assert_eq!(form.view, View::Page(Page::Suggestions));
+        assert_eq!(form.view, View::Page(Page::Appearance));
 
         form.dirty
             .push(setting_for_key("completion.enabled").unwrap());
@@ -755,7 +757,7 @@ mod tests {
             .push(setting_for_key("debug.show_hitboxes").unwrap());
         let wrapped = form.shift_page(1, ControllerKind::Sc2);
         assert!(wrapped.persist);
-        assert_eq!(form.view, View::Page(Page::Suggestions));
+        assert_eq!(form.view, View::Page(Page::Appearance));
         assert_eq!(form.focus, 0);
 
         form.clear_dirty();

@@ -14,7 +14,7 @@ use crate::{
 };
 
 use anyhow::Result;
-use egui::{Align2, Color32, Context, FontId, Frame, Margin, RichText, Sense, Ui, Vec2};
+use egui::{Align2, Context, FontId, Frame, Margin, RichText, Sense, Ui, Vec2};
 use std::sync::{Mutex, OnceLock};
 
 use crate::controller::bindings::BindingEngine;
@@ -55,6 +55,7 @@ impl MenuState {
         self.kind = kind;
         self.form.ensure_focus(kind);
         let cfg = config::get();
+        let appearance = &cfg.theme().menus;
         let rows = self.form.drawn(&cfg, kind);
         let focus = self.form.focus();
         let focused = rows.get(focus);
@@ -76,14 +77,14 @@ impl MenuState {
                         ui.label(
                             RichText::new(self.form.title())
                                 .heading()
-                                .color(Color32::WHITE),
+                                .color(crate::theme::color(appearance.heading_color)),
                         );
                         ui.separator();
                         if above > 0 {
                             ui.label(
                                 RichText::new(format!("▲ {above} more above"))
                                     .small()
-                                    .color(Color32::GRAY),
+                                    .color(crate::theme::color(appearance.muted_text_color)),
                             );
                         }
                         for (index, row) in rows
@@ -110,7 +111,7 @@ impl MenuState {
                             ui.label(
                                 RichText::new(format!("▼ {below} more below"))
                                     .small()
-                                    .color(Color32::GRAY),
+                                    .color(crate::theme::color(appearance.muted_text_color)),
                             );
                         }
                         ui.separator();
@@ -122,7 +123,11 @@ impl MenuState {
                             ui.vertical(|ui| {
                                 ui.set_min_width(PANEL_WIDTH);
                                 ui.set_max_width(PANEL_WIDTH);
-                                ui.label(RichText::new(row.label).strong().color(Color32::WHITE));
+                                ui.label(
+                                    RichText::new(row.label)
+                                        .strong()
+                                        .color(crate::theme::color(appearance.heading_color)),
+                                );
                                 ui.add_space(6.0);
                                 ui.label(explain);
                             });

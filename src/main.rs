@@ -80,8 +80,8 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.08, 0.08, 0.08, self.current_opacity]
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -104,30 +104,7 @@ impl eframe::App for App {
                 raw.clamp(0.0, 1.0)
             };
         }
-        let opacity = self.current_opacity;
-
-        ctx.set_visuals(egui::Visuals {
-            window_fill: if is_transparent {
-                egui::Color32::TRANSPARENT
-            } else {
-                egui::Color32::from_rgb(20, 20, 20)
-            },
-            panel_fill: if is_transparent {
-                if state == StateId::MoveWindow {
-                    egui::Color32::TRANSPARENT
-                } else {
-                    egui::Color32::from_rgba_unmultiplied(
-                        20,
-                        20,
-                        20,
-                        (opacity * 255.0).round() as u8,
-                    )
-                }
-            } else {
-                egui::Color32::from_rgb(20, 20, 20)
-            },
-            ..Default::default()
-        });
+        ctx.set_visuals(cfg.window_visuals(self.current_opacity));
 
         // Setup window styles (non-transparent parts)
         if let Ok(h) = frame.window_handle() {

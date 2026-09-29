@@ -7,6 +7,7 @@ pub mod controller;
 pub mod debug;
 pub mod platform;
 pub mod state;
+mod theme;
 pub(crate) mod ui;
 pub use ui::controller_glyph;
 pub mod user_notify;

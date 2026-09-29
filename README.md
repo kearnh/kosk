@@ -18,6 +18,8 @@ Useful flags are documented in [docs/config.md](docs/config.md). `--replay FILE`
 
 ## Controller mappings
 
+Custom colors, borders, and corner rounding are documented in [docs/themes.md](docs/themes.md).
+
 What each button does is in `mappings.toml`. Button names, action names, and `when` conditions are listed in [MAPPINGS.md](MAPPINGS.md).
 
 ## Word suggestions

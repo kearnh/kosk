@@ -30,8 +30,6 @@ pub const FADE_IN_MS: f32 = 150.0;
 pub const FADE_OUT_MS: f32 = 120.0;
 pub const SLIDE_PX: f32 = 6.0;
 
-const TEXT_DIM: Color32 = Color32::from_rgb(170, 170, 175);
-
 /// Window title for the satellite viewport. The Win32 styler finds it by this.
 pub const SATELLITE_TITLE: &str = "kosk notice";
 
@@ -128,14 +126,15 @@ pub fn viewport_builder(pos: Pos2, size: Vec2) -> egui::ViewportBuilder {
         .with_position(pos)
 }
 
-fn accent_color(severity: Severity) -> Color32 {
-    let battery = crate::config::battery();
+fn accent_color(severity: Severity, cfg: &crate::config::Config) -> Color32 {
+    let battery = &cfg.battery;
+    let appearance = &cfg.theme().notifications;
     let rgba = match severity {
-        Severity::Info => battery.charging,
-        Severity::Warning => battery.low,
-        Severity::Error => battery.empty,
+        Severity::Info => battery.charging.unwrap_or(appearance.info_color),
+        Severity::Warning => battery.low.unwrap_or(appearance.warning_color),
+        Severity::Error => battery.empty.unwrap_or(appearance.error_color),
     };
-    Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3])
+    crate::theme::color(rgba)
 }
 
 fn icon_name(severity: Severity, is_tip: bool) -> &'static str {
@@ -156,13 +155,17 @@ fn icon_glyph(name: &str) -> &str {
 
 /// Draw the card into the satellite viewport. Fixed size; content is capped.
 pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
+    let cfg = crate::config::try_get().unwrap_or_default();
+    let appearance = &cfg.theme().notifications;
+    *ui.visuals_mut() = cfg.theme().visuals();
+    let muted_text = crate::theme::color(appearance.muted_text_color);
     let ctx = ui.ctx().clone();
     let size = card_size(view);
-    let accent = accent_color(view.severity);
+    let accent = accent_color(view.severity, &cfg);
     let appear = view.appear.clamp(0.0, 1.0);
     let slide = (1.0 - appear) * SLIDE_PX;
-    let fill_alpha = (245.0 * appear) as u8;
-    let fill = Color32::from_rgba_unmultiplied(28, 28, 30, fill_alpha);
+    let [r, g, b, a] = appearance.background_color;
+    let fill = Color32::from_rgba_unmultiplied(r, g, b, (a as f32 * appear) as u8);
 
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(Color32::TRANSPARENT))
@@ -173,10 +176,10 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
             let card = egui::Frame::NONE
                 .fill(fill)
                 .stroke(egui::Stroke::new(
-                    1.0,
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 26),
+                    appearance.border_width,
+                    crate::theme::color(appearance.border_color),
                 ))
-                .corner_radius(CARD_RADIUS)
+                .corner_radius(appearance.corner_radius)
                 .inner_margin(CARD_MARGIN)
                 .show(ui, |ui| {
                     // Fill the window. A shorter card leaves a transparent band
@@ -202,7 +205,9 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         ui.label(
-                                            RichText::new(counter).size(HINT_SIZE).color(TEXT_DIM),
+                                            RichText::new(counter)
+                                                .size(HINT_SIZE)
+                                                .color(muted_text),
                                         );
                                     },
                                 );
@@ -214,13 +219,13 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
 
                         if view.is_tip {
                             ui.add_space(8.0);
-                            tip_footer(ui, view);
+                            tip_footer(ui, view, muted_text);
                         } else {
                             ui.add_space(6.0);
                             let hint = RichText::new("Press any button to dismiss")
                                 .size(HINT_SIZE)
                                 .color(if view.hint_visible {
-                                    TEXT_DIM
+                                    muted_text
                                 } else {
                                     Color32::TRANSPARENT
                                 });
@@ -231,7 +236,7 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
                             ui.label(
                                 RichText::new(format!("And {} more", view.more))
                                     .size(HINT_SIZE)
-                                    .color(TEXT_DIM),
+                                    .color(muted_text),
                             );
                         }
                     });
@@ -240,8 +245,15 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
             let rect = card.response.rect;
             ui.painter().rect_filled(
                 egui::Rect::from_min_size(
-                    rect.min + Vec2::new(CARD_MARGIN / 2.0, CARD_RADIUS),
-                    Vec2::new(ACCENT_WIDTH, rect.height() - CARD_RADIUS * 2.0),
+                    rect.min
+                        + Vec2::new(
+                            CARD_MARGIN / 2.0,
+                            appearance.corner_radius.min(rect.height() / 2.0),
+                        ),
+                    Vec2::new(
+                        ACCENT_WIDTH,
+                        (rect.height() - appearance.corner_radius * 2.0).max(0.0),
+                    ),
                 ),
                 ACCENT_WIDTH / 2.0,
                 accent,
@@ -251,16 +263,16 @@ pub fn draw_satellite(ui: &mut egui::Ui, view: &ToastView) {
     ctx.request_repaint();
 }
 
-fn tip_footer(ui: &mut egui::Ui, view: &ToastView) {
+fn tip_footer(ui: &mut egui::Ui, view: &ToastView, muted_text: Color32) {
     ui.horizontal(|ui| {
         controller_glyph::show(ui, view.family, ControllerButton::FaceBottom, GLYPH_SIZE);
         ui.label(RichText::new("Open setup guide").size(HINT_SIZE).strong());
-        ui.label(RichText::new("·").size(HINT_SIZE).color(TEXT_DIM));
+        ui.label(RichText::new("·").size(HINT_SIZE).color(muted_text));
         ui.label(
             RichText::new("Any other button: dismiss")
                 .size(HINT_SIZE)
                 .color(if view.hint_visible {
-                    TEXT_DIM
+                    muted_text
                 } else {
                     Color32::TRANSPARENT
                 }),

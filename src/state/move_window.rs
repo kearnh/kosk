@@ -82,15 +82,17 @@ impl MoveWindowState {
         events: &mut EventQueue,
     ) {
         let family = GlyphFamily::from_kind(controller_kind);
-        let fill = Color32::from_rgba_unmultiplied(16, 16, 16, 48);
-        let border = Color32::from_rgba_unmultiplied(255, 255, 255, 210);
+        let cfg = crate::config::get();
+        let appearance = &cfg.theme().move_window;
+        let fill = crate::theme::color(appearance.background_color);
+        let border = crate::theme::color(appearance.border_color);
         let size = ui.available_size();
         let (resp, painter) = ui.allocate_painter(size, Sense::hover());
-        painter.rect_filled(resp.rect, 4.0, fill);
+        painter.rect_filled(resp.rect, appearance.corner_radius, fill);
         painter.rect_stroke(
             resp.rect,
-            4.0,
-            Stroke::new(2.0, border),
+            appearance.corner_radius,
+            Stroke::new(appearance.border_width, border),
             egui::StrokeKind::Inside,
         );
 
@@ -366,6 +368,8 @@ fn prompt_row(
 }
 
 fn outlined_label(ui: &mut Ui, text: &str) -> bool {
+    let cfg = crate::config::get();
+    let appearance = &cfg.theme().move_window;
     let font = FontId::proportional(PROMPT_LABEL_SIZE);
     let galley = ui
         .painter()
@@ -387,10 +391,10 @@ fn outlined_label(ui: &mut Ui, text: &str) -> bool {
         painter.galley(
             origin + vec2(dx * LABEL_HALO_PX, dy * LABEL_HALO_PX),
             galley.clone(),
-            Color32::BLACK,
+            crate::theme::color(appearance.text_shadow_color),
         );
     }
-    painter.galley(origin, galley, Color32::WHITE);
+    painter.galley(origin, galley, crate::theme::color(appearance.text_color));
     resp.clicked()
 }
 

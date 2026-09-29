@@ -1,0 +1,465 @@
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use anyhow::{bail, Context, Result};
+use egui::{Color32, Stroke, Visuals};
+use serde::{Deserialize, Serialize};
+
+pub(crate) const DEFAULT_THEME_NAME: &str = "default";
+
+pub(crate) fn color(rgba: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3])
+}
+
+macro_rules! section {
+    ($name:ident { $($field:ident: $ty:ty = $default:expr),* $(,)? }) => {
+        #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+        #[serde(default, deny_unknown_fields)]
+        pub(crate) struct $name { $(pub(crate) $field: $ty),* }
+
+        impl Default for $name {
+            fn default() -> Self { Self { $($field: $default),* } }
+        }
+    };
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub(crate) struct WidgetTheme {
+    pub(crate) background_color: [u8; 4],
+    pub(crate) weak_background_color: [u8; 4],
+    pub(crate) text_color: [u8; 4],
+    pub(crate) border_color: [u8; 4],
+    pub(crate) border_width: f32,
+    pub(crate) corner_radius: f32,
+}
+
+impl Default for WidgetTheme {
+    fn default() -> Self {
+        Self::from_visuals(&Visuals::default().widgets.inactive)
+    }
+}
+
+impl WidgetTheme {
+    fn from_visuals(visuals: &egui::style::WidgetVisuals) -> Self {
+        Self {
+            background_color: visuals.bg_fill.to_srgba_unmultiplied(),
+            weak_background_color: visuals.weak_bg_fill.to_srgba_unmultiplied(),
+            text_color: visuals.fg_stroke.color.to_srgba_unmultiplied(),
+            border_color: visuals.bg_stroke.color.to_srgba_unmultiplied(),
+            border_width: visuals.bg_stroke.width,
+            corner_radius: visuals.corner_radius.nw as f32,
+        }
+    }
+
+    fn keyboard(visuals: &egui::style::WidgetVisuals, fill: Color32) -> Self {
+        Self {
+            background_color: fill.to_srgba_unmultiplied(),
+            weak_background_color: fill.to_srgba_unmultiplied(),
+            text_color: Color32::WHITE.to_srgba_unmultiplied(),
+            ..Self::from_visuals(visuals)
+        }
+    }
+
+    pub(crate) fn apply(&self, visuals: &mut egui::style::WidgetVisuals) {
+        visuals.bg_fill = color(self.background_color);
+        visuals.weak_bg_fill = color(self.weak_background_color);
+        visuals.fg_stroke.color = color(self.text_color);
+        visuals.bg_stroke = Stroke::new(self.border_width, color(self.border_color));
+        visuals.corner_radius = self.corner_radius.into();
+    }
+
+    fn validate(&self) -> Result<()> {
+        validate_size("border_width", self.border_width)?;
+        validate_radius(self.corner_radius)
+    }
+}
+
+section!(SharedTheme {
+    background_color: [u8; 4] = [20, 20, 20, 255],
+    text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
+    muted_text_color: [u8; 4] = Visuals::default().weak_text_color().to_srgba_unmultiplied(),
+    selection_background_color: [u8; 4] =
+        Visuals::default().selection.bg_fill.to_srgba_unmultiplied(),
+    selection_border_color: [u8; 4] = Visuals::default()
+        .selection
+        .stroke
+        .color
+        .to_srgba_unmultiplied(),
+    selection_border_width: f32 = Visuals::default().selection.stroke.width,
+    window_border_color: [u8; 4] = Visuals::default()
+        .window_stroke
+        .color
+        .to_srgba_unmultiplied(),
+    window_border_width: f32 = Visuals::default().window_stroke.width,
+    window_corner_radius: f32 = Visuals::default().window_corner_radius.nw as f32,
+    noninteractive: WidgetTheme =
+        WidgetTheme::from_visuals(&Visuals::default().widgets.noninteractive),
+    inactive: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.inactive),
+    hovered: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.hovered),
+    active: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.active),
+    open: WidgetTheme = WidgetTheme::from_visuals(&Visuals::default().widgets.open),
+});
+
+section!(KeyboardTheme {
+    inactive: WidgetTheme = WidgetTheme::keyboard(
+        &Visuals::default().widgets.inactive,
+        Color32::from_rgba_premultiplied(60, 60, 60, 128)
+    ),
+    hovered: WidgetTheme = WidgetTheme::keyboard(
+        &Visuals::default().widgets.hovered,
+        Color32::from_rgba_premultiplied(80, 80, 80, 180)
+    ),
+    active: WidgetTheme = WidgetTheme::keyboard(
+        &Visuals::default().widgets.active,
+        Color32::from_rgba_premultiplied(100, 100, 100, 200)
+    ),
+    selection_background_color: [u8; 4] =
+        Color32::from_rgba_premultiplied(50, 100, 180, 220).to_srgba_unmultiplied(),
+    selection_text_color: [u8; 4] = [255, 255, 255, 255],
+    left_selection_color: [u8; 4] = [50, 100, 180, 255],
+    right_selection_color: [u8; 4] = [50, 150, 80, 255],
+    dual_selection_color: [u8; 4] = [120, 60, 180, 255],
+    modifier_text_color: [u8; 4] = [255, 255, 255, 255],
+});
+
+section!(SuggestionsTheme {
+    background_color: [u8; 4] = [64, 68, 76, 175],
+    text_color: [u8; 4] = [230, 230, 230, 255],
+    selected_background_color: [u8; 4] = [74, 114, 164, 215],
+    selected_text_color: [u8; 4] = [255, 255, 255, 255],
+    empty_slot_background: [u8; 4] = [50, 54, 62, 90],
+    armed_color: [u8; 4] = [50, 200, 90, 255],
+    disarmed_color: [u8; 4] = [128, 128, 128, 255],
+    new_word_mark_color: [u8; 4] = [50, 200, 90, 255],
+    corner_radius: f32 = 10.0,
+    selected_outline_width: f32 = 1.0,
+});
+
+section!(TextInputTheme {
+    background_color: [u8; 4] = [255, 255, 255, 255],
+    text_color: [u8; 4] = [0, 0, 0, 255],
+    cursor_color: [u8; 4] = [0, 0, 0, 255],
+});
+
+section!(MenusTheme {
+    heading_color: [u8; 4] = [255, 255, 255, 255],
+    muted_text_color: [u8; 4] = [128, 128, 128, 255],
+});
+
+section!(MappingsTheme {
+    row_focus_color: [u8; 4] = [40, 90, 160, 80],
+    table_focus_color: [u8; 4] = [40, 90, 160, 40],
+    focus_border_color: [u8; 4] = [80, 160, 255, 255],
+    focus_border_width: f32 = 2.0,
+    text_color: [u8; 4] = [255, 255, 255, 255],
+    warning_color: [u8; 4] = [255, 255, 0, 255],
+    error_color: [u8; 4] = [255, 120, 120, 255],
+    success_color: [u8; 4] = [140, 220, 140, 255],
+    unsaved_color: [u8; 4] = [255, 180, 60, 255],
+    editor_background_color: [u8; 4] = [28, 28, 32, 255],
+    editor_border_color: [u8; 4] = [140, 140, 150, 255],
+    editor_border_width: f32 = 1.5,
+    editor_corner_radius: f32 = Visuals::default().window_corner_radius.nw as f32,
+});
+
+section!(MoveWindowTheme {
+    background_color: [u8; 4] = [16, 16, 16, 48],
+    border_color: [u8; 4] = [255, 255, 255, 210],
+    border_width: f32 = 2.0,
+    corner_radius: f32 = 4.0,
+    text_color: [u8; 4] = [255, 255, 255, 255],
+    text_shadow_color: [u8; 4] = [0, 0, 0, 255],
+});
+
+section!(NotificationsTheme {
+    background_color: [u8; 4] = [28, 28, 30, 245],
+    border_color: [u8; 4] = [255, 255, 255, 26],
+    border_width: f32 = 1.0,
+    corner_radius: f32 = 8.0,
+    muted_text_color: [u8; 4] = [170, 170, 175, 255],
+    info_color: [u8; 4] = [70, 180, 220, 255],
+    warning_color: [u8; 4] = [230, 140, 40, 255],
+    error_color: [u8; 4] = [220, 50, 50, 255],
+});
+
+section!(BatteryTheme {
+    empty: [u8; 4] = [220, 50, 50, 255],
+    low: [u8; 4] = [230, 140, 40, 255],
+    medium: [u8; 4] = [230, 200, 60, 255],
+    high: [u8; 4] = [120, 190, 80, 255],
+    full: [u8; 4] = [50, 200, 90, 255],
+    charging: [u8; 4] = [70, 180, 220, 255],
+    unknown: [u8; 4] = [180, 180, 180, 255],
+});
+
+section!(Theme {
+    shared: SharedTheme = SharedTheme::default(),
+    keyboard: KeyboardTheme = KeyboardTheme::default(),
+    suggestions: SuggestionsTheme = SuggestionsTheme::default(),
+    text_input: TextInputTheme = TextInputTheme::default(),
+    menus: MenusTheme = MenusTheme::default(),
+    mappings: MappingsTheme = MappingsTheme::default(),
+    move_window: MoveWindowTheme = MoveWindowTheme::default(),
+    notifications: NotificationsTheme = NotificationsTheme::default(),
+    battery: BatteryTheme = BatteryTheme::default(),
+});
+
+impl Theme {
+    pub(crate) fn parse(text: &str) -> Result<Self> {
+        let overlay: toml::Value = toml::from_str(text).context("parse theme")?;
+        let mut base = toml::Value::try_from(Self::default()).context("theme defaults")?;
+        if let Some(text_color) = overlay
+            .get("shared")
+            .and_then(|shared| shared.get("text_color"))
+        {
+            for state in ["noninteractive", "inactive", "hovered", "active", "open"] {
+                base["shared"][state]["text_color"] = text_color.clone();
+            }
+        }
+        crate::config_overlay::merge_toml(&mut base, &overlay);
+        let theme: Self = base.try_into().context("parse theme")?;
+        theme.validate()?;
+        Ok(theme)
+    }
+
+    fn validate(&self) -> Result<()> {
+        let shared = &self.shared;
+        for widget in [
+            &shared.noninteractive,
+            &shared.inactive,
+            &shared.hovered,
+            &shared.active,
+            &shared.open,
+            &self.keyboard.inactive,
+            &self.keyboard.hovered,
+            &self.keyboard.active,
+        ] {
+            widget.validate()?;
+        }
+        for (name, value) in [
+            (
+                "shared.selection_border_width",
+                shared.selection_border_width,
+            ),
+            ("shared.window_border_width", shared.window_border_width),
+            (
+                "suggestions.selected_outline_width",
+                self.suggestions.selected_outline_width,
+            ),
+            (
+                "mappings.focus_border_width",
+                self.mappings.focus_border_width,
+            ),
+            (
+                "mappings.editor_border_width",
+                self.mappings.editor_border_width,
+            ),
+            ("move_window.border_width", self.move_window.border_width),
+            (
+                "notifications.border_width",
+                self.notifications.border_width,
+            ),
+        ] {
+            validate_size(name, value)?;
+        }
+        for radius in [
+            shared.window_corner_radius,
+            self.suggestions.corner_radius,
+            self.mappings.editor_corner_radius,
+            self.move_window.corner_radius,
+            self.notifications.corner_radius,
+        ] {
+            validate_radius(radius)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn visuals(&self) -> Visuals {
+        let shared = &self.shared;
+        let mut visuals = Visuals {
+            panel_fill: color(shared.background_color),
+            window_fill: color(shared.background_color),
+            weak_text_color: Some(color(shared.muted_text_color)),
+            ..Visuals::default()
+        };
+        visuals.selection.bg_fill = color(shared.selection_background_color);
+        visuals.selection.stroke = Stroke::new(
+            shared.selection_border_width,
+            color(shared.selection_border_color),
+        );
+        visuals.window_stroke = Stroke::new(
+            shared.window_border_width,
+            color(shared.window_border_color),
+        );
+        visuals.window_corner_radius = shared.window_corner_radius.into();
+        shared
+            .noninteractive
+            .apply(&mut visuals.widgets.noninteractive);
+        shared.inactive.apply(&mut visuals.widgets.inactive);
+        shared.hovered.apply(&mut visuals.widgets.hovered);
+        shared.active.apply(&mut visuals.widgets.active);
+        shared.open.apply(&mut visuals.widgets.open);
+        visuals
+    }
+
+    pub(crate) fn window_visuals(&self, transparent: bool, opacity: f32) -> Visuals {
+        let mut visuals = self.visuals();
+        let [r, g, b, a] = self.shared.background_color;
+        visuals.panel_fill = color([
+            r,
+            g,
+            b,
+            if transparent {
+                (a as f32 * opacity.clamp(0.0, 1.0)).round() as u8
+            } else {
+                u8::MAX
+            },
+        ]);
+        visuals.window_fill = if transparent {
+            Color32::TRANSPARENT
+        } else {
+            visuals.panel_fill
+        };
+        visuals
+    }
+}
+
+fn validate_size(name: &str, value: f32) -> Result<()> {
+    if !value.is_finite() || value < 0.0 {
+        bail!("{name} must be finite and nonnegative");
+    }
+    Ok(())
+}
+
+fn validate_radius(value: f32) -> Result<()> {
+    validate_size("corner_radius", value)?;
+    if value > u8::MAX as f32 {
+        bail!("corner_radius must be at most 255");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ThemeCatalog(BTreeMap<String, Theme>);
+
+impl Default for ThemeCatalog {
+    fn default() -> Self {
+        Self(BTreeMap::from([(
+            DEFAULT_THEME_NAME.to_owned(),
+            Theme::default(),
+        )]))
+    }
+}
+
+impl ThemeCatalog {
+    pub(crate) fn load(
+        config_path: &Path,
+        files: &BTreeMap<String, String>,
+        active: &str,
+    ) -> Result<Self> {
+        let mut catalog = Self::default();
+        for (name, file) in files {
+            if name.trim().is_empty() || name == DEFAULT_THEME_NAME {
+                bail!("theme name {name:?} is empty or reserved");
+            }
+            let path = config_path.parent().unwrap_or(Path::new("")).join(file);
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("read theme {}", path.display()))?;
+            let theme = Theme::parse(&text)
+                .with_context(|| format!("theme {name:?} ({})", path.display()))?;
+            catalog.0.insert(name.clone(), theme);
+        }
+        if !catalog.0.contains_key(active) {
+            bail!("unknown active_theme {active:?}");
+        }
+        Ok(catalog)
+    }
+
+    pub(crate) fn get(&self, name: &str) -> &Theme {
+        self.0.get(name).unwrap_or(&self.0[DEFAULT_THEME_NAME])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sparse_theme_inherits_defaults() {
+        let theme = Theme::parse("[suggestions]\nbackground_color = [1, 2, 3, 4]\n").unwrap();
+        assert_eq!(theme.suggestions.background_color, [1, 2, 3, 4]);
+        assert_eq!(theme.keyboard, Theme::default().keyboard);
+        assert_eq!(theme.suggestions.corner_radius, 10.0);
+        let partial_widget =
+            Theme::parse("[shared.hovered]\nbackground_color = [1, 2, 3, 255]").unwrap();
+        assert_eq!(
+            partial_widget.shared.hovered.border_width,
+            Theme::default().shared.hovered.border_width
+        );
+    }
+
+    #[test]
+    fn invalid_theme_values_are_rejected() {
+        for text in [
+            "unknown = 1",
+            "[keyboard]\nunknown = 1",
+            "[suggestions]\nbackground_color = [1, 2, 3]",
+            "[suggestions]\nbackground_color = [256, 0, 0, 255]",
+            "[suggestions]\ncorner_radius = -1.0",
+            "[notifications]\nborder_width = nan",
+            "[move_window]\ncorner_radius = 256.0",
+        ] {
+            assert!(Theme::parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn shared_widget_text_colors_retain_state_defaults_and_overrides() {
+        let defaults = Visuals::default();
+        let builtin = Theme::default().visuals();
+        assert_eq!(builtin.override_text_color, defaults.override_text_color);
+        assert_eq!(builtin.widgets.hovered, defaults.widgets.hovered);
+        let theme = Theme::parse(
+            "[shared]\ntext_color = [1, 2, 3, 255]\n[shared.hovered]\ntext_color = [4, 5, 6, 255]",
+        )
+        .unwrap();
+        let visuals = theme.visuals();
+        assert_eq!(visuals.text_color(), color([1, 2, 3, 255]));
+        assert_eq!(visuals.widgets.inactive.text_color(), color([1, 2, 3, 255]));
+        assert_eq!(visuals.widgets.hovered.text_color(), color([4, 5, 6, 255]));
+    }
+
+    #[test]
+    fn window_background_preserves_rgb_and_applies_opacity() {
+        let theme = Theme::parse("[shared]\nbackground_color = [20, 40, 60, 0]").unwrap();
+        let opaque = theme.window_visuals(false, 0.0);
+        assert_eq!(opaque.panel_fill, Color32::from_rgb(20, 40, 60));
+        assert_eq!(opaque.window_fill, opaque.panel_fill);
+        assert_eq!(
+            theme.window_visuals(true, 1.0).panel_fill,
+            Color32::TRANSPARENT
+        );
+        let theme = Theme::parse("[shared]\nbackground_color = [20, 40, 60, 128]").unwrap();
+        let transparent = theme.window_visuals(true, 0.5);
+        assert_eq!(transparent.panel_fill, color([20, 40, 60, 64]));
+        assert_eq!(transparent.window_fill, Color32::TRANSPARENT);
+        assert_eq!(
+            theme.window_visuals(true, 0.0).panel_fill,
+            Color32::TRANSPARENT
+        );
+    }
+
+    #[test]
+    fn keyboard_defaults_preserve_premultiplied_colors() {
+        let keyboard = Theme::default().keyboard;
+        assert_eq!(
+            color(keyboard.inactive.background_color),
+            Color32::from_rgba_premultiplied(60, 60, 60, 128)
+        );
+        assert_eq!(
+            color(keyboard.selection_background_color),
+            Color32::from_rgba_premultiplied(50, 100, 180, 220)
+        );
+    }
+}

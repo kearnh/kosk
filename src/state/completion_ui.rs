@@ -1,13 +1,10 @@
 use crate::completion::settings::{ArmedDotPlacement, ChipLabel, ChipWidth, CompletionUiConfig};
 use crate::completion::{Candidate, Source};
+use crate::theme::{color as rgba, SuggestionsTheme};
 use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 const CHIP_OVERFLOW_MARK: &str = "..";
 const CURRENT_WORD_MARK: &str = "+ ";
-
-fn rgba(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-}
 
 pub struct StripOutcome {
     pub clicked: Option<usize>,
@@ -24,6 +21,8 @@ pub fn draw_strip(
     typed_token: &str,
     slots: usize,
 ) -> StripOutcome {
+    let cfg = crate::config::try_get().unwrap_or_default();
+    let appearance = cfg.suggestion_style(ui_cfg);
     let columns = ui_cfg.columns.max(1);
     let rows = ui_cfg.rows.max(1);
     let slots = slots.min(columns * rows);
@@ -46,7 +45,7 @@ pub fn draw_strip(
                     && row == 0;
 
                 if leading_dot {
-                    draw_dot(ui, armed, ui_cfg, row_h, dot_d);
+                    draw_dot(ui, armed, ui_cfg, &appearance, row_h, dot_d);
                 }
 
                 let dots = if ui_cfg.armed_dot && row == 0 {
@@ -98,7 +97,7 @@ pub fn draw_strip(
 
                 for (slot, width) in slots_on_row.iter().zip(widths) {
                     match slot {
-                        RowSlot::Empty => draw_empty(ui, width, row_h, ui_cfg),
+                        RowSlot::Empty => draw_empty(ui, width, row_h, &appearance),
                         RowSlot::Chip(i) => {
                             let Some(cand) = candidates.get(*i) else {
                                 continue;
@@ -111,6 +110,7 @@ pub fn draw_strip(
                                 width,
                                 row_h,
                                 ui_cfg,
+                                &appearance,
                                 &font,
                                 typed_token,
                             ) {
@@ -121,7 +121,7 @@ pub fn draw_strip(
                 }
 
                 if trailing_dot {
-                    draw_dot(ui, armed, ui_cfg, row_h, dot_d);
+                    draw_dot(ui, armed, ui_cfg, &appearance, row_h, dot_d);
                 }
             });
         }
@@ -156,18 +156,25 @@ pub fn draw_session_strip(ui: &mut Ui, content_width: f32, token: &str) -> Optio
     })
 }
 
-fn draw_dot(ui: &mut Ui, armed: bool, cfg: &CompletionUiConfig, row_h: f32, d: f32) {
+fn draw_dot(
+    ui: &mut Ui,
+    armed: bool,
+    cfg: &CompletionUiConfig,
+    appearance: &SuggestionsTheme,
+    row_h: f32,
+    d: f32,
+) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(d.max(8.0), row_h), Sense::hover());
     let color = if armed {
-        rgba(cfg.armed_color)
+        rgba(appearance.armed_color)
     } else {
-        rgba(cfg.disarmed_color)
+        rgba(appearance.disarmed_color)
     };
     ui.painter()
         .circle_filled(rect.center(), cfg.armed_dot_radius.max(2.0), color);
 }
 
-fn draw_empty(ui: &mut Ui, w: f32, h: f32, cfg: &CompletionUiConfig) {
+fn draw_empty(ui: &mut Ui, w: f32, h: f32, cfg: &SuggestionsTheme) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
     ui.painter()
         .rect_filled(rect, cfg.corner_radius, rgba(cfg.empty_slot_background));
@@ -355,6 +362,7 @@ fn draw_chip(
     w: f32,
     h: f32,
     cfg: &CompletionUiConfig,
+    appearance: &SuggestionsTheme,
     font: &FontId,
     token: &str,
 ) -> bool {
@@ -362,21 +370,21 @@ fn draw_chip(
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
     let resp = ui.interact(rect, id, Sense::click());
     let bg = if selected {
-        rgba(cfg.selected_background_color)
+        rgba(appearance.selected_background_color)
     } else {
-        rgba(cfg.background_color)
+        rgba(appearance.background_color)
     };
     let fg = if selected {
-        rgba(cfg.selected_text_color)
+        rgba(appearance.selected_text_color)
     } else {
-        rgba(cfg.text_color)
+        rgba(appearance.text_color)
     };
-    ui.painter().rect_filled(rect, cfg.corner_radius, bg);
-    if selected && cfg.selected_outline_width > 0.0 {
+    ui.painter().rect_filled(rect, appearance.corner_radius, bg);
+    if selected && appearance.selected_outline_width > 0.0 {
         ui.painter().rect_stroke(
             rect,
-            cfg.corner_radius,
-            Stroke::new(cfg.selected_outline_width, fg),
+            appearance.corner_radius,
+            Stroke::new(appearance.selected_outline_width, fg),
             egui::StrokeKind::Inside,
         );
     }
@@ -393,7 +401,7 @@ fn draw_chip(
             egui::Align2::LEFT_CENTER,
             CURRENT_WORD_MARK,
             font.clone(),
-            rgba(cfg.new_word_mark_color),
+            rgba(appearance.new_word_mark_color),
         );
         w
     } else {

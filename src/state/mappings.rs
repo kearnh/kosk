@@ -137,16 +137,19 @@ type ModeDraft = HashMap<String, Vec<MappingPill>>;
 const ACTION_COL_WIDTH: f32 = 200.0;
 const BINDING_COL_GAP: f32 = 16.0;
 
-fn row_focus_fill() -> Color32 {
-    Color32::from_rgba_unmultiplied(40, 90, 160, 80)
+fn row_focus_fill(theme: &crate::theme::MappingsTheme) -> Color32 {
+    crate::theme::color(theme.row_focus_color)
 }
 
-fn table_focus_fill() -> Color32 {
-    Color32::from_rgba_unmultiplied(40, 90, 160, 40)
+fn table_focus_fill(theme: &crate::theme::MappingsTheme) -> Color32 {
+    crate::theme::color(theme.table_focus_color)
 }
 
-fn table_focus_stroke() -> Stroke {
-    Stroke::new(2.0, Color32::from_rgb(80, 160, 255))
+fn table_focus_stroke(theme: &crate::theme::MappingsTheme) -> Stroke {
+    Stroke::new(
+        theme.focus_border_width,
+        crate::theme::color(theme.focus_border_color),
+    )
 }
 
 const UI_FONT_SIZE: f32 = 14.0;
@@ -167,15 +170,15 @@ fn status_icon_template(status: &str) -> String {
     }
 }
 
-fn status_color(status: &str) -> Color32 {
+fn status_color(status: &str, theme: &crate::theme::MappingsTheme) -> Color32 {
     if status.starts_with("warning:") || status.starts_with("conflict:") {
-        Color32::YELLOW
+        crate::theme::color(theme.warning_color)
     } else if status.starts_with("invalid") || status.starts_with("save failed") {
-        Color32::from_rgb(255, 120, 120)
+        crate::theme::color(theme.error_color)
     } else if status == "saved" {
-        Color32::from_rgb(140, 220, 140)
+        crate::theme::color(theme.success_color)
     } else {
-        Color32::WHITE
+        crate::theme::color(theme.text_color)
     }
 }
 
@@ -1021,13 +1024,16 @@ impl MappingsState {
         events: &mut EventQueue,
         kind: ControllerKind,
     ) {
+        let cfg = config::get();
+        let appearance = &cfg.theme().mappings;
+        let text_color = crate::theme::color(appearance.text_color);
         ui.horizontal(|ui| {
-            ui.heading(RichText::new("Key Mappings").color(Color32::WHITE));
+            ui.heading(RichText::new("Key Mappings").color(text_color));
             if self.dirty {
                 let dirty = self.label_cache.get(
                     "{icon:circle:fill} unsaved",
                     UI_FONT_SIZE,
-                    Color32::from_rgb(255, 180, 60),
+                    crate::theme::color(appearance.unsaved_color),
                 );
                 ui.label(dirty);
             }
@@ -1064,13 +1070,13 @@ impl MappingsState {
         let focus_col = self.focus_col;
         let plus_label = self
             .label_cache
-            .get("{icon:plus}", UI_FONT_SIZE, Color32::WHITE);
+            .get("{icon:plus}", UI_FONT_SIZE, text_color);
         let cancel_label = self
             .label_cache
-            .get("{icon:x} Cancel", UI_FONT_SIZE, Color32::WHITE);
-        let save_label =
-            self.label_cache
-                .get("{icon:floppy-disk} Save", UI_FONT_SIZE, Color32::WHITE);
+            .get("{icon:x} Cancel", UI_FONT_SIZE, text_color);
+        let save_label = self
+            .label_cache
+            .get("{icon:floppy-disk} Save", UI_FONT_SIZE, text_color);
 
         let mut clicked_replace: Option<(String, usize)> = None;
         let mut clicked_add: Option<String> = None;
@@ -1079,12 +1085,12 @@ impl MappingsState {
         ui.add_enabled_ui(self.delete_confirm.is_none(), |ui| {
             // Always reserve stroke width so content does not jump when focus changes.
             let stroke = if focus_zone == FocusZone::Table {
-                table_focus_stroke()
+                table_focus_stroke(appearance)
             } else {
-                Stroke::new(table_focus_stroke().width, Color32::TRANSPARENT)
+                Stroke::new(table_focus_stroke(appearance).width, Color32::TRANSPARENT)
             };
             let fill = if focus_zone == FocusZone::Table && !table_entered {
-                table_focus_fill()
+                table_focus_fill(appearance)
             } else {
                 Color32::TRANSPARENT
             };
@@ -1118,7 +1124,7 @@ impl MappingsState {
                                     && focus_row == row_idx;
                                 let n_pills = pills.len();
                                 let row_fill = if row_focused {
-                                    row_focus_fill()
+                                    row_focus_fill(appearance)
                                 } else {
                                     Color32::TRANSPARENT
                                 };
@@ -1204,7 +1210,7 @@ impl MappingsState {
         let status_label = self.label_cache.get(
             &status_icon_template(&status),
             UI_FONT_SIZE,
-            status_color(&status),
+            status_color(&status, appearance),
         );
         ui.label(status_label);
         ui.horizontal(|ui| {
@@ -1240,8 +1246,12 @@ impl MappingsState {
                 .show(ctx, |ui| {
                     // Overlay visuals force window_fill transparent; override for readability.
                     Frame::window(ui.style())
-                        .fill(Color32::from_rgb(28, 28, 32))
-                        .stroke(Stroke::new(1.5, Color32::from_rgb(140, 140, 150)))
+                        .fill(crate::theme::color(appearance.editor_background_color))
+                        .stroke(Stroke::new(
+                            appearance.editor_border_width,
+                            crate::theme::color(appearance.editor_border_color),
+                        ))
+                        .corner_radius(appearance.editor_corner_radius)
                         .show(ui, |ui| {
                             ui.label(format!("Delete {binding_text} from {action}?"));
                             ui.horizontal(|ui| {

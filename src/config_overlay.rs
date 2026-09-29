@@ -273,6 +273,20 @@ pub(crate) fn config_file_paths(
     out
 }
 
+pub(crate) fn append_theme_paths(
+    files: &mut Vec<PathBuf>,
+    config_path: &Path,
+    themes: &std::collections::BTreeMap<String, String>,
+) {
+    let dir = config_path.parent().unwrap_or(Path::new(""));
+    for file in themes.values() {
+        let path = watch_key(&dir.join(file));
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+}
+
 /// Canonical parent joined with the file name, so a file that does not exist
 /// yet compares equal to the path of a later event.
 pub(crate) fn watch_key(path: &Path) -> PathBuf {
