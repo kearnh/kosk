@@ -29,6 +29,7 @@ pub(crate) mod display_icon;
 mod geom;
 pub(crate) mod geometry_snap;
 mod key;
+mod key_colors;
 mod keyboard_action;
 mod layout;
 mod reach_extent;
@@ -212,6 +213,7 @@ pub struct KeyboardState {
     last_left_stick_action: Option<Instant>,
     last_right_stick_action: Option<Instant>,
     label_cache: display_icon::LabelCache,
+    key_colors: key_colors::KeyColorGroups,
     config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
     controller_connection: ControllerConnection,
@@ -1118,12 +1120,14 @@ impl KeyboardState {
         let publish_geometry = self.config.is_none();
         let visual_cfg = self.cfg();
         let keyboard_theme = &visual_cfg.theme().keyboard;
+        self.key_colors.sync(&keyboard_theme.key_groups);
 
-        // Split field borrows so label_cache and layouts can be used together.
+        // Split field borrows so caches and layouts can be used together.
         let KeyboardState {
             layouts,
             current_layout: current_layout_name,
             label_cache,
+            key_colors,
             selected,
             shift_state,
             shift_mod,
@@ -1207,48 +1211,38 @@ impl KeyboardState {
 
                                 let appearance = key.appearance(&display_ctx);
                                 let font_size = key.font_size.unwrap_or(current_layout.font_size);
-                                let color = appearance
-                                    .text_color
-                                    .unwrap_or(ui.style().visuals.widgets.inactive.fg_stroke.color);
-                                let label = label_cache.get(&appearance.text, font_size, color);
-                                let mut button = egui::Button::new(label);
-
-                                if let Some(fill) = appearance.button_color {
-                                    button = button.fill(fill);
-                                } else if key.is_key(
+                                let cell = (row_idx, col_idx);
+                                let sel0 = selected.left == Some(cell);
+                                let sel1 = selected.right == Some(cell);
+                                let selection = if key.is_key(
                                     *shift_state,
                                     &RawKey::Action(KeyboardAction::ToggleShift),
                                 ) && *shift_state
                                 {
-                                    button = button.selected(true);
+                                    key_colors::KeySelection::Shift
+                                } else if sel0 && sel1 {
+                                    key_colors::KeySelection::Dual
+                                } else if sel0
+                                    || (selected.left.is_none() && left_rest == Some(cell))
+                                {
+                                    key_colors::KeySelection::Left
+                                } else if sel1
+                                    || (selected.right.is_none() && right_rest == Some(cell))
+                                {
+                                    key_colors::KeySelection::Right
                                 } else {
-                                    let cell = (row_idx, col_idx);
-                                    let sel0 = selected.left == Some(cell);
-                                    let sel1 = selected.right == Some(cell);
-
-                                    if sel0 && sel1 {
-                                        button = button
-                                            .fill(crate::theme::color(
-                                                keyboard_theme.dual_selection_color,
-                                            ))
-                                            .selected(true);
-                                    } else if sel0
-                                        || (selected.left.is_none() && left_rest == Some(cell))
-                                    {
-                                        button = button
-                                            .fill(crate::theme::color(
-                                                keyboard_theme.left_selection_color,
-                                            ))
-                                            .selected(true);
-                                    } else if sel1
-                                        || (selected.right.is_none() && right_rest == Some(cell))
-                                    {
-                                        button = button
-                                            .fill(crate::theme::color(
-                                                keyboard_theme.right_selection_color,
-                                            ))
-                                            .selected(true);
-                                    }
+                                    key_colors::KeySelection::None
+                                };
+                                let key_style =
+                                    key_colors.style(key, &appearance, keyboard_theme, selection);
+                                let label =
+                                    label_cache.get(&appearance.text, font_size, key_style.text);
+                                let mut button = egui::Button::new(label);
+                                if key_style.selected {
+                                    button = button.selected(true);
+                                }
+                                if let Some(fill) = key_style.background {
+                                    button = button.fill(fill);
                                 }
 
                                 let size =

@@ -129,7 +129,28 @@ section!(KeyboardTheme {
     right_selection_color: [u8; 4] = [50, 150, 80, 255],
     dual_selection_color: [u8; 4] = [120, 60, 180, 255],
     modifier_text_color: [u8; 4] = [255, 255, 255, 255],
+    key_groups: Vec<KeyColorGroup> = Vec::new(),
 });
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct KeyColorGroup {
+    pub(crate) keys: Vec<String>,
+    pub(crate) background_color: Option<[u8; 4]>,
+    pub(crate) text_color: Option<[u8; 4]>,
+}
+
+impl KeyColorGroup {
+    fn validate(&self) -> Result<()> {
+        if self.keys.is_empty() || self.keys.iter().any(String::is_empty) {
+            bail!("keyboard.key_groups needs nonempty keys");
+        }
+        if self.background_color.is_none() && self.text_color.is_none() {
+            bail!("keyboard.key_groups needs background_color or text_color");
+        }
+        Ok(())
+    }
+}
 
 section!(SuggestionsTheme {
     background_color: [u8; 4] = [64, 68, 76, 175],
@@ -217,6 +238,9 @@ impl Theme {
     }
 
     fn validate(&self) -> Result<()> {
+        for group in &self.keyboard.key_groups {
+            group.validate()?;
+        }
         for widget in [
             &self.noninteractive,
             &self.inactive,
@@ -409,6 +433,35 @@ mod tests {
             "[move_window]\ncorner_radius = 256.0",
         ] {
             assert!(Theme::parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn key_groups_are_sparse_and_strict() {
+        let theme = Theme::parse(
+            "[[keyboard.key_groups]]\nkeys = ['Return', 'exit']\nbackground_color = [1, 2, 3, 4]\n\
+             [[keyboard.key_groups]]\nkeys = [' ']\ntext_color = [5, 6, 7, 8]",
+        )
+        .unwrap();
+        assert_eq!(theme.keyboard.key_groups.len(), 2);
+        assert_eq!(theme.keyboard.key_groups[0].text_color, None);
+        assert_eq!(theme.keyboard.key_groups[1].background_color, None);
+        assert!(Theme::default().keyboard.key_groups.is_empty());
+        assert_eq!(Theme::parse("").unwrap(), Theme::default());
+
+        for body in [
+            "keys = []\nbackground_color = [1, 2, 3, 4]",
+            "keys = ['q', '']\nbackground_color = [1, 2, 3, 4]",
+            "keys = ['q']",
+            "background_color = [1, 2, 3, 4]",
+            "keys = ['q']\nunknown = 1\ntext_color = [1, 2, 3, 4]",
+            "keys = ['q']\nbackground_color = [1, 2, 3]",
+            "keys = ['q']\ntext_color = [256, 2, 3, 4]",
+        ] {
+            assert!(
+                Theme::parse(&format!("[[keyboard.key_groups]]\n{body}")).is_err(),
+                "{body}"
+            );
         }
     }
 

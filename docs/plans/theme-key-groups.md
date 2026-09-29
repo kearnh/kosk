@@ -1,6 +1,6 @@
 # Theme key groups
 
-Proposed schema; not implemented.
+Implemented. User documentation: [themes](../themes.md#key-groups).
 
 ```toml
 [[keyboard.key_groups]]
@@ -34,14 +34,14 @@ no group names, nested styles, or selector language are required.
 
 ## Implementation
 
-Add `key_groups` to the keyboard theme model. Keep serialized key strings in
-that model; compile them with the existing key parser inside the keyboard
-layer. Cache the compiled rules and refresh them when the theme changes.
-Use the existing normal-key accessor; no symbol visibility changes are needed.
+`theme.rs` stores and validates `keyboard.key_groups`. Serialized key strings
+compile through the existing key parser in `keyboard/key_colors.rs`. The
+keyboard caches the compiled rules and refreshes them when the groups change.
+Matching uses the existing normal-key accessor; existing visibility is unchanged.
 
-Resolve group colors before applying layout colors and selection fills.
-Add the green `Return`/`exit` group to Old Steam Controller when support lands.
+The style resolver preserves layout and selection precedence. Old Steam
+Controller includes the green `Return`/`exit` group.
 
-Test multiple groups, overlapping groups, normal/shifted keys, action keys,
-label independence, fallback colors, layout priority, selection visibility,
-invalid groups, and live theme changes.
+Tests cover multiple groups, overlapping groups, normal/shifted keys, action
+keys, label independence, fallback colors, layout priority, selection
+visibility, invalid groups, cache refresh, and file replacement reloads.

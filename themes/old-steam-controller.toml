@@ -57,6 +57,10 @@ right_selection_color = [63, 100, 58, 255]
 dual_selection_color = [52, 100, 94, 255]
 modifier_text_color = [144, 172, 190, 255]
 
+[[keyboard.key_groups]]
+keys = ["Return", "exit"]
+background_color = [63, 100, 58, 255]
+
 [keyboard.inactive]
 background_color = [25, 62, 87, 255]
 weak_background_color = [25, 62, 87, 255]

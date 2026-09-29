@@ -76,7 +76,14 @@ Caps-style layer Shift is what you use to type `A`. Sticky Shift is what you use
 
 ## Drawing
 
-`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt, suggestion). Left highlight is blue, right is green, both sticks on one key is purple. The highlight is the selected **cell**, not every button that happens to show the same glyph. Idle sticks still show the rest cell (home-row `d` / `k` by convention in geometry) as a resting highlight.
+`draw_keyboard_ui` walks the current layout’s rows, applies padding and scale, and builds an egui `Button` per key. Skip keys take up space without a widget. Appearance comes from `KeyButton::appearance` and a `DisplayContext` (shift layer, recording, replay, ctrl, alt, suggestion). The theme supplies selection colors: blue left, green right, and purple dual in the built-in theme. The highlight is the selected **cell**, not every button that happens to show the same glyph. Idle sticks still show the rest cell (home-row `d` / `k` by convention in geometry) as a resting highlight.
+
+`key_colors.rs` compiles theme key groups through `RawKey` deserialization and
+caches them by normal key identity. Each draw refreshes the cache if the groups
+change, including after theme selection or file reload. Later groups merge per
+color. Its style resolver applies layout colors first, selection backgrounds
+second, and group colors third, with ordinary keyboard colors as fallback.
+Theme parsing and validation stay in `theme.rs`; see [themes](../themes.md).
 
 When `[completion].enabled` and `show_in_keyboard`, a reserved chip strip is drawn **above** the keys (not stick-hittable, not in layout TOML) so key centres do not jump. See [completion.md](completion.md).
 

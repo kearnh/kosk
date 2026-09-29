@@ -2209,7 +2209,7 @@ show_stick_cursors = false\n\
             let replacement = external.join("replacement.toml");
             fs::write(
                 &replacement,
-                format!("background_color = [{value}, 2, 3, 255]"),
+                format!("background_color = [{value}, 2, 3, 255]\n[[keyboard.key_groups]]\nkeys = ['Return']\nbackground_color = [{value}, 5, 6, 255]"),
             )
             .unwrap();
             fs::remove_file(&theme_path).unwrap();
@@ -2226,8 +2226,24 @@ show_stick_cursors = false\n\
             wait_for_reload_quiet(&rx, &files);
             let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
             assert_eq!(after.theme().background_color, [value, 2, 3, 255]);
+            assert_eq!(after.theme().keyboard.key_groups[0].keys, ["Return"]);
+            assert_eq!(
+                after.theme().keyboard.key_groups[0].background_color,
+                Some([value, 5, 6, 255])
+            );
+            fs::write(
+                &theme_path,
+                "[[keyboard.key_groups]]\nkeys = []\ntext_color = [1, 2, 3, 255]",
+            )
+            .unwrap();
+            assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+            assert_eq!(
+                after.theme().keyboard.key_groups[0].background_color,
+                Some([value, 5, 6, 255])
+            );
         }
         assert_eq!(before.theme().background_color, [1, 2, 3, 255]);
+        assert!(before.theme().keyboard.key_groups.is_empty());
     }
 
     #[test]
