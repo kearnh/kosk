@@ -1,4 +1,4 @@
-# Steam Controller OSK palette, extended to all kosk screens.
+# Old Steam Controller OSK palette, extended to all kosk screens.
 background_color = [15, 40, 61, 255]
 text_color = [196, 207, 215, 255]
 muted_text_color = [132, 153, 167, 255]

@@ -25,7 +25,7 @@ the built-in defaults. Recordings use the current local theme.
 
 ## Example
 
-The repository includes a [Steam Controller theme](../themes/steam-controller.toml):
+The repository includes an [Old Steam Controller theme](../themes/old-steam-controller.toml):
 navy surfaces, square blue keys, and green selection accents. Register its path
 under `[themes]` to make it available in Settings.
 
