@@ -15,6 +15,7 @@ pub enum Source {
     UserCache,
     Dictionary,
     CurrentWord,
+    OriginalText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

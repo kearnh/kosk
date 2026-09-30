@@ -71,6 +71,13 @@ pub struct ShownSuggestions {
     pub chips: Vec<ShownChip>,
 }
 
+struct OriginalSuggestion {
+    token: String,
+    text: String,
+    cursor: usize,
+    replacement_start: usize,
+}
+
 pub struct Session {
     slot: Arc<(Mutex<Slot>, Condvar)>,
     gen: Arc<AtomicU64>,
@@ -93,6 +100,7 @@ pub struct Session {
     neighbors: HashMap<char, Vec<char>>,
     pending_eat_space: bool,
     suggestion_just_accepted: bool,
+    original_suggestion: Option<OriginalSuggestion>,
     shown_out: Vec<ShownSuggestions>,
 }
 
@@ -188,6 +196,7 @@ impl Session {
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
+            original_suggestion: None,
             shown_out: Vec::new(),
         })
     }
@@ -288,6 +297,7 @@ impl Session {
             neighbors: HashMap::new(),
             pending_eat_space: false,
             suggestion_just_accepted: false,
+            original_suggestion: None,
             shown_out: Vec::new(),
         }
     }
@@ -373,7 +383,76 @@ impl Session {
         self.request_from_buffer(&t, n);
     }
 
+    pub(crate) fn note_accepted_suggestion_backspace(&mut self) {
+        let original = self
+            .suggestion_just_accepted
+            .then(|| {
+                let (inject, restore) = self.snapshot_last_accept()?;
+                let before = format!("{}{}", self.typed_text().strip_suffix(&inject)?, restore);
+                CompletionContext::from_buffer(&before, before.len(), &self.cfg)
+            })
+            .flatten();
+
+        self.note_log(LogEvent::Backspace, "");
+        let text = self.typed_text().to_string();
+        self.request_from_buffer(&text, text.len());
+        if let Some(original) = original {
+            self.offer_original_suggestion(original, &text, text.len());
+        }
+    }
+
+    pub(crate) fn offer_original_suggestion(
+        &mut self,
+        original: CompletionContext,
+        text: &str,
+        cursor: usize,
+    ) {
+        self.pending_eat_space = false;
+        self.suggestion_just_accepted = false;
+        self.typed.drop_last_accept();
+        self.original_suggestion = Some(OriginalSuggestion {
+            token: original.token,
+            text: text.to_owned(),
+            cursor,
+            replacement_start: original.token_range.start,
+        });
+        self.candidates.clear();
+        self.highlight = None;
+        self.request_from_buffer(text, cursor);
+        self.current_gen = self.gen.fetch_add(1, Ordering::Relaxed) + 1;
+        self.last_ctx = self.pending_ctx.clone();
+        self.apply_candidates(Vec::new());
+        self.highlight = None;
+    }
+
+    fn clear_original_suggestion(&mut self) {
+        self.original_suggestion = None;
+        if self
+            .candidates
+            .iter()
+            .any(|c| c.source == Source::OriginalText)
+        {
+            self.candidates.retain(|c| c.source != Source::OriginalText);
+            self.highlight = None;
+        }
+    }
+
+    pub(crate) fn suggestion_replacement_range(
+        &self,
+        candidate: &Candidate,
+        context: &CompletionContext,
+    ) -> std::ops::Range<usize> {
+        if candidate.source != Source::OriginalText {
+            return context.token_range.clone();
+        }
+        if let Some(original) = &self.original_suggestion {
+            return original.replacement_start..original.cursor;
+        }
+        context.token_range.clone()
+    }
+
     pub fn toggle_armed(&mut self) {
+        self.clear_original_suggestion();
         self.pending_eat_space = false;
         self.suggestion_just_accepted = false;
         self.typed.toggle(&self.cfg.keyboard);
@@ -385,6 +464,7 @@ impl Session {
     }
 
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
+        self.clear_original_suggestion();
         self.suggestion_just_accepted = false;
         self.typed.drop_last_accept();
         match event {
@@ -435,6 +515,13 @@ impl Session {
     }
 
     pub fn request_from_buffer(&mut self, text: &str, cursor: usize) {
+        if self
+            .original_suggestion
+            .as_ref()
+            .is_some_and(|original| original.text != text || original.cursor != cursor)
+        {
+            self.clear_original_suggestion();
+        }
         if !self.cfg.enabled || !self.typed.armed() {
             return;
         }
@@ -485,6 +572,20 @@ impl Session {
             .and_then(|i| self.candidates.get(i).map(|c| c.text.clone()));
 
         self.candidates = self.with_current_word_chip(candidates);
+        if let Some(original) = &self.original_suggestion {
+            self.candidates.retain(|c| c.text != original.token);
+            let slots = self.visible_slots().min(self.cfg.max_suggestions.max(1));
+            self.candidates.truncate(slots.saturating_sub(1));
+            self.candidates.insert(
+                0,
+                Candidate {
+                    text: original.token.clone(),
+                    score: 0.0,
+                    source: Source::OriginalText,
+                    kind: super::backend::MatchKind::Correction,
+                },
+            );
+        }
 
         if let Some(text) = prev {
             if let Some(i) = self.candidates.iter().position(|c| c.text == text) {
@@ -642,6 +743,18 @@ impl Session {
             CompletionContext::from_buffer(self.typed_text(), self.typed_text().len(), &self.cfg)?;
         ctx.app_type = self.current_app_type();
         use super::settings::AcceptVia;
+
+        if cand.source == Source::OriginalText {
+            let range = self.suggestion_replacement_range(&cand, &ctx);
+            let token_char_len = self.typed_text().get(range)?.chars().count();
+            self.clear_original_suggestion();
+            self.clear_highlight();
+            return Some(AcceptOutcome {
+                inject: cand.text,
+                via: AcceptVia::BackspaceReplace,
+                token_char_len,
+            });
+        }
 
         if cand.source == Source::CurrentWord {
             let mut inject = String::new();
@@ -1227,6 +1340,150 @@ mod tests {
         s.note_log(LogEvent::Char('o'), "");
         s.note_log(LogEvent::Char('t'), "");
         assert!(s.take_retract().is_none());
+    }
+
+    #[test]
+    fn accepted_suggestion_backspace_offers_original_and_allows_plural() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_hello(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+
+        s.note_accepted_suggestion_backspace();
+        assert_eq!(s.typed_text(), "hello");
+        assert_eq!(s.candidates()[0].text, "hel");
+        assert_eq!(s.highlight(), None);
+        assert!(!s.suggestion_just_accepted());
+
+        apply_token(&mut s, "hello", vec![cand("hello"), cand("help")]);
+        assert_eq!(s.candidates()[0].text, "hel");
+        s.note_log(LogEvent::Char('s'), "");
+        assert_eq!(s.typed_text(), "hellos");
+        assert!(!s.candidates().iter().any(|c| c.text == "hel"));
+    }
+
+    #[test]
+    fn accepted_suggestion_backspace_restores_original_without_space() {
+        let mut s = session_with(CompletionConfig::default());
+        let out = accept_im(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+
+        s.note_accepted_suggestion_backspace();
+        assert_eq!(s.typed_text(), "i'm");
+        let out = s.take_accept(Some(0)).unwrap();
+        assert_eq!(out.inject, "im");
+        assert_eq!(out.via, super::super::settings::AcceptVia::BackspaceReplace);
+        apply_keyboard_accept(&mut s, &out);
+        assert_eq!(s.typed_text(), "im");
+    }
+
+    #[test]
+    fn accepted_suggestion_backspace_without_inserted_space_deletes_letter() {
+        let mut cfg = CompletionConfig::default();
+        cfg.insert_space_on_accept = false;
+        cfg.keyboard.retract_last_accept = false;
+        let mut s = session_with(cfg);
+        let out = accept_hello(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+
+        s.note_accepted_suggestion_backspace();
+        assert_eq!(s.typed_text(), "hell");
+        assert_eq!(s.candidates()[0].text, "hel");
+    }
+
+    #[test]
+    fn accepted_next_word_backspace_can_restore_empty_token() {
+        let mut s = session_with(CompletionConfig::default());
+        type_token(&mut s, "say ");
+        s.candidates = vec![cand("hello")];
+        let out = s.take_accept(Some(0)).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+
+        s.note_accepted_suggestion_backspace();
+        assert_eq!(s.typed_text(), "say hello");
+        let out = s.take_accept(Some(0)).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        assert_eq!(s.typed_text(), "say ");
+    }
+
+    #[test]
+    fn accepted_punctuation_suggestion_backspace_restores_whole_token() {
+        let mut s = session_with(CompletionConfig::default());
+        type_token(&mut s, "eg");
+        s.candidates = vec![cand("e.g.")];
+        let out = s.take_accept(Some(0)).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+
+        s.note_accepted_suggestion_backspace();
+        assert_eq!(s.typed_text(), "e.g.");
+        let out = s.take_accept(Some(0)).unwrap();
+        apply_keyboard_accept(&mut s, &out);
+        assert_eq!(s.typed_text(), "eg");
+    }
+
+    #[test]
+    fn original_suggestion_replaces_punctuation_inside_text_input() {
+        let mut s = session_with(CompletionConfig::default());
+        let before = "say eg later";
+        let original = CompletionContext::from_buffer(before, "say eg".len(), s.cfg()).unwrap();
+        let text = "say e.g. later";
+        let cursor = "say e.g.".len();
+        s.offer_original_suggestion(original, text, cursor);
+
+        let ctx = CompletionContext::from_buffer(text, cursor, s.cfg()).unwrap();
+        let candidate = s.accept_index(0).unwrap();
+        let range = s.suggestion_replacement_range(candidate, &ctx);
+        let (restored, cursor) = crate::completion::splice(text, range, &candidate.text, false);
+        assert_eq!(restored, before);
+        assert_eq!(cursor, "say eg".len());
+
+        s.request_from_buffer(text, cursor);
+        assert!(s.candidates().is_empty());
+    }
+
+    #[test]
+    fn original_suggestion_respects_chip_limit_and_discards_stale_batch() {
+        const PENDING_REQUEST_DEBOUNCE_MS: u64 = 60_000;
+
+        let mut cfg = CompletionConfig::default();
+        cfg.max_suggestions = 1;
+        cfg.debounce_ms = PENDING_REQUEST_DEBOUNCE_MS;
+        let mut s = session_with(cfg);
+        let out = accept_hello(&mut s);
+        apply_keyboard_accept(&mut s, &out);
+        s.arm_suggestion_just_accepted();
+        let stale_gen = s.current_gen;
+        let (tx, rx) = mpsc::channel();
+        s.rx = rx;
+
+        s.note_accepted_suggestion_backspace();
+        let current_gen = s.current_gen;
+        tx.send(Batch {
+            gen: stale_gen,
+            candidates: vec![cand("stale")],
+        })
+        .unwrap();
+        s.poll();
+        assert_eq!(s.candidates().len(), 1);
+        assert_eq!(s.candidates()[0].text, "hel");
+        assert!(s
+            .take_shown()
+            .iter()
+            .all(|shown| !shown.chips.iter().any(|c| c.text == "stale")));
+
+        tx.send(Batch {
+            gen: current_gen,
+            candidates: vec![cand("hel"), cand("hello")],
+        })
+        .unwrap();
+        s.poll();
+        assert_eq!(s.candidates().len(), 1);
+        assert_eq!(s.candidates()[0].text, "hel");
+        assert_eq!(s.candidates()[0].source, Source::OriginalText);
     }
 
     fn accept_im(s: &mut Session) -> AcceptOutcome {

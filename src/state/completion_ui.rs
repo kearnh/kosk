@@ -254,6 +254,7 @@ fn chip_outer_width(
 
 fn dims_typed_prefix(cand: &Candidate, cfg: &CompletionUiConfig, token: &str) -> bool {
     cand.source != Source::CurrentWord
+        && cand.source != Source::OriginalText
         && cfg.dim_typed_prefix
         && cfg.label == ChipLabel::Full
         && !token.is_empty()
@@ -261,6 +262,13 @@ fn dims_typed_prefix(cand: &Candidate, cfg: &CompletionUiConfig, token: &str) ->
 }
 
 fn painted_label(cand: &Candidate, cfg: &CompletionUiConfig, token: &str) -> String {
+    if cand.source == Source::OriginalText {
+        return if cand.text.is_empty() {
+            "Original text".to_owned()
+        } else {
+            cand.text.clone()
+        };
+    }
     if cand.source == Source::CurrentWord {
         return cand.text.clone();
     }
@@ -439,7 +447,7 @@ fn draw_chip(
         );
     }
 
-    if cfg.show_debug_scores && !current_word {
+    if cfg.show_debug_scores && !current_word && cand.source != Source::OriginalText {
         ui.painter().text(
             Pos2::new(rect.right() - 4.0, rect.top() + 2.0),
             egui::Align2::RIGHT_TOP,

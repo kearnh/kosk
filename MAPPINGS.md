@@ -89,6 +89,7 @@ These names are true or false while you hold the button. You can combine them wi
 | `cycleSuggestion` | highlight the next suggestion |
 | `cycleSuggestionPrev` | highlight the previous suggestion |
 | `cancelSuggestion` | clear a highlighted suggestion; undo the last accept only when retract is on and that accept is still the latest edit |
+| `backspaceAcceptedSuggestion` | delete one character and offer the original text as the first chip after accepting a suggestion; selecting it restores the original without adding a space |
 | `toggleCompletion` | turn word suggestions on or off |
 | `acceptSuggestion` | type the highlighted suggestion |
 | `acceptSuggestion.0` | type that suggestion by index, highlighted or not |
@@ -101,7 +102,7 @@ Up and down move the highlight. Left and right change the highlighted value. Act
 
 ## Text input actions
 
-`moveCursorLeft`, `moveCursorRight`, `submit` (accept the line), plus the same suggestion actions as the keyboard (`cycleSuggestion`, `cycleSuggestionPrev`, `cancelSuggestion`, `toggleCompletion`, `acceptSuggestion`, `acceptSuggestion.0`), and `switchState.…`
+`moveCursorLeft`, `moveCursorRight`, `submit` (accept the line), plus the same suggestion actions as the keyboard (`cycleSuggestion`, `cycleSuggestionPrev`, `cancelSuggestion`, `backspaceAcceptedSuggestion`, `toggleCompletion`, `acceptSuggestion`, `acceptSuggestion.0`), and `switchState.…`
 
 ## Move-window actions
 

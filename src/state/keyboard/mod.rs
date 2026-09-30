@@ -602,7 +602,7 @@ impl KeyboardState {
                 }
             }
             AcceptVia::BackspaceReplace => {
-                if !out.inject.is_empty() {
+                if out.token_char_len > 0 || !out.inject.is_empty() {
                     crate::completion::with_mut(|s| {
                         if let Some(s) = s {
                             let saved = s.snapshot_last_accept();
@@ -742,6 +742,19 @@ impl KeyboardState {
             CycleSuggestionPrev => self.completion_cycle(false),
             ToggleCompletion => self.completion_toggle(),
             CancelSuggestion => self.completion_cancel(events, source),
+            BackspaceAcceptedSuggestion => {
+                if events.push(
+                    Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click),
+                    source,
+                ) && self.feed_completion_log
+                {
+                    crate::completion::with_mut(|s| {
+                        if let Some(s) = s {
+                            s.note_accepted_suggestion_backspace();
+                        }
+                    });
+                }
+            }
             AcceptSuggestion(i) => {
                 let _ = Self::completion_accept(events, source, *i);
             }

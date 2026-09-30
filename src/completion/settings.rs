@@ -542,8 +542,8 @@ pub struct CompletionKeyboardConfig {
     /// token). `false`: cancel never undoes an accept.
     #[config(default = true)]
     #[setting(
-        label = "Undo a pick on backspace",
-        explain = "Pressing backspace right after picking a word brings your original letters back.",
+        label = "Allow suggestion cancellation to undo a pick",
+        explain = "The cancel suggestion action can restore your original letters immediately after accepting a suggestion.",
         advanced
     )]
     pub retract_last_accept: bool,

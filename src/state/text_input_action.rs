@@ -13,6 +13,7 @@ pub enum TextInputAction {
     CycleSuggestion,
     CycleSuggestionPrev,
     CancelSuggestion,
+    BackspaceAcceptedSuggestion,
     ToggleCompletion,
     AcceptSuggestion(Option<usize>),
     Submit,

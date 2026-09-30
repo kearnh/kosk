@@ -24,6 +24,7 @@ pub enum KeyboardAction {
     CycleSuggestion,
     CycleSuggestionPrev,
     CancelSuggestion,
+    BackspaceAcceptedSuggestion,
     ToggleCompletion,
     AcceptSuggestion(Option<usize>),
 }
@@ -39,9 +40,22 @@ impl Action for KeyboardAction {
             SendKeyUnderLeftStick | SendKeyUnderRightStick | SendKey(_) | SendEnigoKey(_) => {
                 TriggerMode::WhileHeld
             }
-            ToggleShift | ToggleCtrl | ToggleAlt | Paste | SwitchState(_) | SwitchLayout(_)
-            | FlipWindowLeftRight | FlipWindowAboveBelow | RotateWindow | Exit | ToggleRecord
-            | CycleSuggestion | CycleSuggestionPrev | CancelSuggestion | ToggleCompletion
+            ToggleShift
+            | ToggleCtrl
+            | ToggleAlt
+            | Paste
+            | SwitchState(_)
+            | SwitchLayout(_)
+            | FlipWindowLeftRight
+            | FlipWindowAboveBelow
+            | RotateWindow
+            | Exit
+            | ToggleRecord
+            | CycleSuggestion
+            | CycleSuggestionPrev
+            | CancelSuggestion
+            | BackspaceAcceptedSuggestion
+            | ToggleCompletion
             | AcceptSuggestion(_) => TriggerMode::Edge,
         }
     }
@@ -148,6 +162,7 @@ impl KeyboardAction {
             CycleSuggestion => "cycleSuggestion".into(),
             CycleSuggestionPrev => "cycleSuggestionPrev".into(),
             CancelSuggestion => "cancelSuggestion".into(),
+            BackspaceAcceptedSuggestion => "backspaceAcceptedSuggestion".into(),
             ToggleCompletion => "toggleCompletion".into(),
             AcceptSuggestion(None) => "acceptSuggestion".into(),
             AcceptSuggestion(Some(i)) => format!("acceptSuggestion.{i}"),
@@ -197,6 +212,7 @@ mod tests {
             KeyboardAction::SwitchLayout("main".into()),
             KeyboardAction::SendKeyUnderLeftStick,
             KeyboardAction::CycleSuggestion,
+            KeyboardAction::BackspaceAcceptedSuggestion,
             KeyboardAction::ToggleCompletion,
             KeyboardAction::AcceptSuggestion(Some(2)),
         ];

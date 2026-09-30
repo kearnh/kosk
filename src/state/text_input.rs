@@ -203,6 +203,11 @@ impl TextInputState {
             return false;
         };
         self.undo_accept = Some((self.text.clone(), self.cursor_pos));
+        let original_text = cand.source == crate::completion::Source::OriginalText;
+        let token_range = crate::completion::with_mut(|s| {
+            s.map(|s| s.suggestion_replacement_range(&cand, &ctx))
+                .unwrap_or_else(|| ctx.token_range.clone())
+        });
         if cand.source == crate::completion::Source::CurrentWord {
             if cfg.insert_space_on_accept {
                 let at = ctx.token_range.end;
@@ -212,23 +217,27 @@ impl TextInputState {
         } else {
             let (new_text, new_cursor) = crate::completion::splice(
                 &self.text,
-                ctx.token_range,
+                token_range,
                 &cand.text,
-                cfg.insert_space_on_accept,
+                cfg.insert_space_on_accept && !original_text,
             );
             self.text = new_text;
             self.cursor_pos = new_cursor;
         }
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
-                if s.cfg().learn_on_accept {
+                if original_text {
+                    s.note_log(crate::completion::LogEvent::Text, "");
+                }
+
+                if s.cfg().learn_on_accept && !original_text {
                     let mut words = ctx.prev_words.clone();
                     words.push(cand.text.clone());
                     s.learn(&words);
                 }
                 s.clear_highlight();
 
-                if cfg.insert_space_on_accept {
+                if cfg.insert_space_on_accept && !original_text {
                     s.arm_eat_accept_space();
                 }
 
@@ -274,6 +283,27 @@ impl TextInputState {
                     self.refresh_completion();
                 }
             }
+        }
+    }
+
+    fn completion_backspace_accepted_suggestion(&mut self) {
+        let original = self.undo_accept.as_ref().and_then(|(text, cursor)| {
+            crate::completion::with_mut(|s| {
+                let s = s?;
+                if !s.suggestion_just_accepted() {
+                    return None;
+                }
+                crate::completion::CompletionContext::from_buffer(text, *cursor, s.cfg())
+            })
+        });
+
+        self.backspace();
+        if let Some(original) = original {
+            crate::completion::with_mut(|s| {
+                if let Some(s) = s {
+                    s.offer_original_suggestion(original, &self.text, self.cursor_pos);
+                }
+            });
         }
     }
 
@@ -338,6 +368,7 @@ impl TextInputState {
             CycleSuggestionPrev => self.completion_cycle(false),
             ToggleCompletion => self.completion_toggle(),
             CancelSuggestion => self.completion_cancel(),
+            BackspaceAcceptedSuggestion => self.completion_backspace_accepted_suggestion(),
             AcceptSuggestion(i) => {
                 let _ = self.completion_accept(*i);
             }

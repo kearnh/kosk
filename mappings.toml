@@ -44,7 +44,7 @@
 "faceRight" = { action = "cancelSuggestion", when = "suggestionSelected" }
 "faceLeft" = "sendKey.backspace"
 "l5" = [
-  { action = "cancelSuggestion", when = "suggestionJustAccepted" },
+  { action = "backspaceAcceptedSuggestion", when = "suggestionJustAccepted" },
   { action = "sendKey.backspace" },
 ]
 "r5" = "sendKey.space"
@@ -73,6 +73,7 @@ quickAccess = "switchState.mappings"
 "shoulderRight" = "pageNext"
 
 [TextInput]
+"l5" = { action = "backspaceAcceptedSuggestion", when = "suggestionJustAccepted" }
 "dpadLeft" = "moveCursorLeft"
 "dpadRight" = "moveCursorRight"
 "dpadUp" = "switchState.keyboard"
