@@ -28,11 +28,12 @@ fn cursor_shape(center: Pos2, color: [u8; 4], settings: &StickPadCursors) -> Opt
         CursorAppearance::Solid => Shape::circle_filled(center, radius, color),
         CursorAppearance::Ring => {
             let thickness = settings.ring_thickness.clamp(0.0, radius);
-            Shape::circle_stroke(
+            Shape::Circle(egui::epaint::CircleShape {
                 center,
-                radius - thickness * 0.5,
-                Stroke::new(thickness, color),
-            )
+                radius: radius - thickness * 0.5,
+                fill: color.gamma_multiply(settings.ring_fill_opacity.clamp(0.0, 1.0)),
+                stroke: Stroke::new(thickness, color),
+            })
         }
         CursorAppearance::Fade => {
             let mut mesh = Mesh::default();
@@ -70,7 +71,7 @@ mod tests {
     }
 
     #[test]
-    fn ring_keeps_center_transparent_and_outer_radius() {
+    fn ring_has_translucent_fill_and_keeps_outer_radius() {
         let settings = StickPadCursors {
             appearance: CursorAppearance::Ring,
             radius: 12.0,
@@ -80,9 +81,27 @@ mod tests {
         let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
             panic!("expected circle");
         };
-        assert_eq!(circle.fill, Color32::TRANSPARENT);
+        assert!(circle.fill.a() > 0);
+        assert!(circle.fill.a() < circle.stroke.color.a());
         assert_eq!(circle.stroke.width, 3.0);
         assert_eq!(circle.radius + circle.stroke.width * 0.5, 12.0);
+    }
+
+    #[test]
+    fn ring_fill_opacity_scales_outline_opacity() {
+        for (fill_opacity, expected_alpha) in [(0.0, 0), (0.25, 32), (1.0, 128)] {
+            let settings = StickPadCursors {
+                appearance: CursorAppearance::Ring,
+                opacity: 0.5,
+                ring_fill_opacity: fill_opacity,
+                ..Default::default()
+            };
+            let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
+                panic!("expected circle");
+            };
+            assert_eq!(circle.fill.a(), expected_alpha);
+            assert_eq!(circle.stroke.color.a(), 128);
+        }
     }
 
     #[test]

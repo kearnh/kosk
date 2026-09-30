@@ -117,6 +117,7 @@ section!(StickPadCursorTheme {
     appearance: Option<crate::config::CursorAppearance> = None,
     opacity: Option<f32> = None,
     ring_thickness: Option<f32> = None,
+    ring_fill_opacity: Option<f32> = None,
     left_color: Option<[u8; 4]> = None,
     right_color: Option<[u8; 4]> = None,
 });
@@ -283,9 +284,18 @@ impl Theme {
                 validate_size(name, value)?;
             }
         }
-        if let Some(opacity) = self.stick_pad_cursors.opacity {
+        for (name, opacity) in [
+            ("stick_pad_cursors.opacity", self.stick_pad_cursors.opacity),
+            (
+                "stick_pad_cursors.ring_fill_opacity",
+                self.stick_pad_cursors.ring_fill_opacity,
+            ),
+        ] {
+            let Some(opacity) = opacity else {
+                continue;
+            };
             if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
-                bail!("stick_pad_cursors.opacity must be finite and between 0 and 1");
+                bail!("{name} must be finite and between 0 and 1");
             }
         }
 
@@ -698,6 +708,9 @@ mod tests {
             "[stick_pad_cursors]\nradius = nan",
             "[stick_pad_cursors]\nopacity = 1.1",
             "[stick_pad_cursors]\nopacity = inf",
+            "[stick_pad_cursors]\nring_fill_opacity = -0.1",
+            "[stick_pad_cursors]\nring_fill_opacity = 1.1",
+            "[stick_pad_cursors]\nring_fill_opacity = nan",
             "[stick_pad_cursors]\nring_thickness = -1.0",
             "[stick_pad_cursors]\nappearance = 'unknown'",
             "[stick_pad_cursors]\nenabled = false",

@@ -95,8 +95,8 @@ corner_radius = 0.0
 appearance = "fade"
 radius = 10.0
 opacity = 0.9
-left_color = "cursor_blue"
-right_color = "new_word_green"
+left_color = "new_word_green"
+right_color = "cursor_blue"
 
 [keyboard]
 selection_background_color = "selection_blue"

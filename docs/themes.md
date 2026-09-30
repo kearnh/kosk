@@ -128,8 +128,8 @@ keep only the overrides your theme needs.
   `selected_outline_width`.
 - `[text_input]`: `background_color`, `text_color`, `cursor_color`.
 - `[stick_pad_cursors]`: `radius`, `appearance` (`solid`, `fade`, `ring`),
-  `opacity`, `ring_thickness`, `left_color`, `right_color`. Each supplied value
-  overrides config; omitted values use config defaults. Colors accept palette
+  `opacity`, `ring_thickness`, `ring_fill_opacity`, `left_color`, `right_color`.
+  Supplied values override config; omitted values use config defaults. Colors accept palette
   names or RGB/RGBA arrays. Cursor visibility stays in config.
 - `[menus]`: `heading_color`, `muted_text_color`.
 - `[mappings]`: `row_focus_color`, `table_focus_color`, `focus_border_color`,
@@ -165,14 +165,17 @@ Controller uses full opacity so its dark gaps retain the screenshot's contrast.
 appearance = "ring"
 radius = 10.0
 ring_thickness = 2.0
+ring_fill_opacity = 0.2
 opacity = 0.8
 left_color = [70, 170, 255]
 right_color = [255, 160, 70]
 ```
 
-`solid` fills the disc; `fade` fades toward a transparent edge; `ring` leaves
-the center transparent. Radius and thickness use screen points. Dimensions
-must be finite and nonnegative; opacity must be between 0 and 1. Ring
+`solid` fills the disc; `fade` fades toward a transparent edge; `ring` fills
+the center translucently with the outline color. `ring_fill_opacity` scales
+the outline opacity for the fill; 0 leaves the center clear. Radius and
+thickness use screen points. Dimensions must be finite and nonnegative;
+opacity must be between 0 and 1. Ring
 thickness is capped at the radius. Omit any field to use its config value.
 
 ## Key groups

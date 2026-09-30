@@ -80,9 +80,10 @@ corner_radius = 2.0
 appearance = "ring"
 radius = 10.0
 ring_thickness = 3.0
+ring_fill_opacity = 0.2
 opacity = 1.0
-left_color = "bright_amber"
-right_color = "copper_highlight"
+left_color = "copper"
+right_color = "bright_amber"
 
 [keyboard]
 selection_background_color = "amber"

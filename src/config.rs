@@ -105,7 +105,7 @@ pub struct StickPadCursors {
 
     #[setting(
         label = "Stick/pad cursor appearance",
-        explain = "Default appearance: solid disc, fade to a transparent edge, or ring with a transparent center. Themes can override it."
+        explain = "Default appearance: solid disc, fade to a transparent edge, or ring with a translucent fill. Themes can override it."
     )]
     pub appearance: CursorAppearance,
 
@@ -117,12 +117,16 @@ pub struct StickPadCursors {
     #[setting(label = "Stick/pad cursor ring thickness", explain = "Default ring thickness in screen points. Applies to ring appearance. Themes can override it.", range = 1.0..=8.0, step = 0.5, decimals = 1)]
     pub ring_thickness: f32,
 
+    #[config(default = 0.2)]
+    #[setting(label = "Stick/pad cursor ring fill opacity", explain = "Default ring fill opacity relative to the outline. 0 leaves the center clear. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+    pub ring_fill_opacity: f32,
+
     /// Left cursor RGBA color as `[r, g, b, a]`.
-    #[config(default = [0, 0, 255, 255])]
+    #[config(default = [0, 255, 0, 255])]
     pub left_color: [u8; 4],
 
     /// Right cursor RGBA color as `[r, g, b, a]`.
-    #[config(default = [0, 255, 0, 255])]
+    #[config(default = [0, 0, 255, 255])]
     pub right_color: [u8; 4],
 }
 
@@ -672,6 +676,7 @@ impl Config {
             appearance,
             opacity,
             ring_thickness,
+            ring_fill_opacity,
             left_color,
             right_color
         );
@@ -2034,7 +2039,7 @@ mod tests {
         let dir = temp_dir("cursor-theme");
         let config_path = dir.join("config.toml");
         fs::write(&config_path, "active_theme = 'Custom'\nthemes = ['theme.toml']\n[stick_pad_cursors]\nenabled = false\nradius = 14.0\nopacity = 0.4\nappearance = 'fade'\n").unwrap();
-        fs::write(dir.join("theme.toml"), "name = 'Custom'\n[colours]\naccent = [10, 20, 30]\n[stick_pad_cursors]\nappearance = 'ring'\nring_thickness = 3.0\nleft_color = 'accent'\nright_color = [40, 50, 60, 70]\n").unwrap();
+        fs::write(dir.join("theme.toml"), "name = 'Custom'\n[colours]\naccent = [10, 20, 30]\n[stick_pad_cursors]\nappearance = 'ring'\nring_thickness = 3.0\nring_fill_opacity = 0.35\nleft_color = 'accent'\nright_color = [40, 50, 60, 70]\n").unwrap();
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let style = cfg.stick_pad_cursor_style();
         assert!(!style.enabled);
@@ -2042,12 +2047,14 @@ mod tests {
         assert_eq!(style.opacity, 0.4);
         assert_eq!(style.appearance, CursorAppearance::Ring);
         assert_eq!(style.ring_thickness, 3.0);
+        assert_eq!(style.ring_fill_opacity, 0.35);
         assert_eq!(style.left_color, [10, 20, 30, 255]);
         assert_eq!(style.right_color, [40, 50, 60, 70]);
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let saved = fs::read_to_string(&config_path).unwrap();
         assert!(saved.contains("appearance = \"fade\""), "{saved}");
         assert!(!saved.contains("left_color"), "{saved}");
+        assert!(!saved.contains("ring_fill_opacity"), "{saved}");
 
         let replay =
             overlay_tape_config(&cfg, "[stick_pad_cursors]\nenabled = true\nradius = 2.0\n")
@@ -2055,6 +2062,10 @@ mod tests {
         assert_eq!(replay.stick_pad_cursor_style().radius, 14.0);
         assert!(!replay.stick_pad_cursor_style().enabled);
         cfg.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+        assert_eq!(
+            cfg.stick_pad_cursor_style().ring_fill_opacity,
+            StickPadCursors::default().ring_fill_opacity
+        );
         assert_eq!(
             cfg.stick_pad_cursor_style().appearance,
             CursorAppearance::Fade

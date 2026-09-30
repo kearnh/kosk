@@ -96,9 +96,10 @@ corner_radius = 4.0
 appearance = "ring"
 radius = 11.0
 ring_thickness = 2.0
+ring_fill_opacity = 0.15
 opacity = 1.0
-left_color = "portal_blue"
-right_color = "portal_orange"
+left_color = "portal_orange"
+right_color = "portal_blue"
 
 [keyboard]
 selection_background_color = "selection_blue"
