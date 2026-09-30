@@ -26,11 +26,13 @@ current local theme.
 
 ## Included themes
 
-The repository includes an [Old Steam Controller theme](../themes/old-steam-controller.toml)
-and a [Portal 2 theme](../themes/portal.toml). Add `themes/*.toml` to the
-`themes` list to discover both.
+The repository includes [Old Steam Controller](../themes/old-steam-controller.toml),
+[Portal 2](../themes/portal.toml), and [Factorio](../themes/factorio.toml) themes.
+Add `themes/*.toml` to the `themes` list to discover them.
 
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
+
+The Factorio theme uses charcoal and steel panels with amber and copper accents.
 
 ## Example
 

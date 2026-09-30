@@ -1,0 +1,183 @@
+# Factorio: charcoal machinery, steel panels, amber highlights and copper accents.
+name = "Factorio"
+background_color = "charcoal"
+keyboard_opacity = 1.0
+ui_opacity = 1.0
+text_color = "warm_white"
+muted_text_color = "muted_steel"
+selection_background_color = "amber"
+selection_border_color = "bright_amber"
+selection_border_width = 2.0
+window_border_color = "steel_border"
+window_border_width = 2.0
+window_corner_radius = 2.0
+
+[colours]
+charcoal = [30, 30, 28]
+panel = [48, 48, 44]
+steel = [66, 66, 60]
+hover_steel = [83, 81, 70]
+steel_border = [106, 103, 88]
+warm_white = [235, 230, 210]
+muted_steel = [167, 164, 148]
+amber = [224, 161, 42]
+bright_amber = [255, 199, 78]
+copper = [188, 104, 55]
+copper_highlight = [232, 155, 94]
+olive = [113, 137, 72]
+signal_green = [151, 190, 102]
+signal_red = [231, 111, 88]
+signal_blue = [120, 182, 202]
+dim_steel = [121, 121, 109]
+input_charcoal = [23, 24, 22]
+press_glow = [255, 210, 115, 170]
+row_amber = [224, 161, 42, 65]
+table_amber = [224, 161, 42, 30]
+ghost_charcoal = [30, 30, 28, 100]
+shadow = [0, 0, 0, 230]
+
+[noninteractive]
+background_color = "panel"
+weak_background_color = "charcoal"
+text_color = "warm_white"
+border_color = "steel_border"
+border_width = 1.0
+corner_radius = 2.0
+
+[inactive]
+background_color = "steel"
+weak_background_color = "panel"
+text_color = "warm_white"
+border_color = "steel_border"
+border_width = 1.0
+corner_radius = 2.0
+
+[hovered]
+background_color = "hover_steel"
+weak_background_color = "hover_steel"
+text_color = "bright_amber"
+border_color = "amber"
+border_width = 2.0
+corner_radius = 2.0
+
+[active]
+background_color = "amber"
+weak_background_color = "amber"
+text_color = "charcoal"
+border_color = "bright_amber"
+border_width = 2.0
+corner_radius = 2.0
+
+[open]
+background_color = "hover_steel"
+weak_background_color = "hover_steel"
+text_color = "bright_amber"
+border_color = "amber"
+border_width = 2.0
+corner_radius = 2.0
+
+[keyboard]
+selection_background_color = "amber"
+selection_text_color = "charcoal"
+left_selection_color = "amber"
+right_selection_color = "copper"
+dual_selection_color = "olive"
+modifier_text_color = "bright_amber"
+key_press_color = "press_glow"
+
+[[keyboard.key_groups]]
+keys = ["Return"]
+background_color = "olive"
+text_color = "warm_white"
+
+[[keyboard.key_groups]]
+keys = ["exit"]
+background_color = "copper"
+text_color = "warm_white"
+
+[keyboard.inactive]
+background_color = "steel"
+weak_background_color = "steel"
+text_color = "warm_white"
+border_color = "steel_border"
+border_width = 1.0
+corner_radius = 2.0
+
+[keyboard.hovered]
+background_color = "hover_steel"
+weak_background_color = "hover_steel"
+text_color = "bright_amber"
+border_color = "amber"
+border_width = 2.0
+corner_radius = 2.0
+
+[keyboard.active]
+background_color = "amber"
+weak_background_color = "amber"
+text_color = "charcoal"
+border_color = "bright_amber"
+border_width = 2.0
+corner_radius = 2.0
+
+[suggestions]
+background_color = "steel"
+text_color = "warm_white"
+selected_background_color = "amber"
+selected_text_color = "charcoal"
+empty_slot_background = "panel"
+armed_color = "signal_green"
+disarmed_color = "dim_steel"
+new_word_mark_color = "copper_highlight"
+corner_radius = 2.0
+selected_outline_width = 2.0
+
+[text_input]
+background_color = "input_charcoal"
+text_color = "warm_white"
+cursor_color = "bright_amber"
+
+[menus]
+heading_color = "bright_amber"
+muted_text_color = "muted_steel"
+
+[mappings]
+row_focus_color = "row_amber"
+table_focus_color = "table_amber"
+focus_border_color = "amber"
+focus_border_width = 2.0
+text_color = "warm_white"
+warning_color = "bright_amber"
+error_color = "signal_red"
+success_color = "signal_green"
+unsaved_color = "copper_highlight"
+editor_background_color = "input_charcoal"
+editor_border_color = "steel_border"
+editor_border_width = 1.0
+editor_corner_radius = 2.0
+
+[move_window]
+background_color = "ghost_charcoal"
+border_color = "amber"
+border_width = 2.0
+corner_radius = 2.0
+text_color = "warm_white"
+text_shadow_color = "shadow"
+
+[notifications]
+background_color = "panel"
+border_color = "steel_border"
+border_width = 2.0
+corner_radius = 2.0
+muted_text_color = "muted_steel"
+info_color = "signal_blue"
+warning_color = "bright_amber"
+error_color = "signal_red"
+
+[battery]
+empty = "signal_red"
+low = "copper_highlight"
+medium = "amber"
+high = "olive"
+full = "signal_green"
+charging = "signal_blue"
+unknown = "dim_steel"
