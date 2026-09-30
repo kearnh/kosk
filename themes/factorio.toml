@@ -76,6 +76,14 @@ border_color = "amber"
 border_width = 2.0
 corner_radius = 2.0
 
+[stick_pad_cursors]
+appearance = "ring"
+radius = 10.0
+ring_thickness = 3.0
+opacity = 1.0
+left_color = "bright_amber"
+right_color = "copper_highlight"
+
 [keyboard]
 selection_background_color = "amber"
 selection_text_color = "charcoal"

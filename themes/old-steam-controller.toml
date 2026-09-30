@@ -91,6 +91,13 @@ border_color = "hover_border_blue"
 border_width = 1.0
 corner_radius = 0.0
 
+[stick_pad_cursors]
+appearance = "fade"
+radius = 10.0
+opacity = 0.9
+left_color = "cursor_blue"
+right_color = "new_word_green"
+
 [keyboard]
 selection_background_color = "selection_blue"
 selection_text_color = "bright_grey"

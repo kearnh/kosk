@@ -92,6 +92,14 @@ border_color = "portal_blue"
 border_width = 1.5
 corner_radius = 4.0
 
+[stick_pad_cursors]
+appearance = "ring"
+radius = 11.0
+ring_thickness = 2.0
+opacity = 1.0
+left_color = "portal_blue"
+right_color = "portal_orange"
+
 [keyboard]
 selection_background_color = "selection_blue"
 selection_text_color = "white"
