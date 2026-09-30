@@ -109,6 +109,16 @@ section!(Theme {
     move_window: MoveWindowTheme = MoveWindowTheme::default(),
     notifications: NotificationsTheme = NotificationsTheme::default(),
     battery: BatteryTheme = BatteryTheme::default(),
+    stick_pad_cursors: StickPadCursorTheme = StickPadCursorTheme::default(),
+});
+
+section!(StickPadCursorTheme {
+    radius: Option<f32> = None,
+    appearance: Option<crate::config::CursorAppearance> = None,
+    opacity: Option<f32> = None,
+    ring_thickness: Option<f32> = None,
+    left_color: Option<[u8; 4]> = None,
+    right_color: Option<[u8; 4]> = None,
 });
 
 section!(KeyboardTheme {
@@ -239,6 +249,8 @@ impl Theme {
     fn parse_overlay(mut overlay: toml::Value) -> Result<Self> {
         let mut base = toml::Value::try_from(Self::default()).context("theme defaults")?;
         let mut schema = base.clone();
+        schema["stick_pad_cursors"] =
+            toml::Value::try_from(crate::config::StickPadCursors::default())?;
         schema["keyboard"]["key_groups"] =
             toml::Value::Array(vec![toml::Value::try_from(KeyColorGroup {
                 keys: Vec::new(),
@@ -260,6 +272,23 @@ impl Theme {
     }
 
     fn validate(&self) -> Result<()> {
+        for (name, value) in [
+            ("stick_pad_cursors.radius", self.stick_pad_cursors.radius),
+            (
+                "stick_pad_cursors.ring_thickness",
+                self.stick_pad_cursors.ring_thickness,
+            ),
+        ] {
+            if let Some(value) = value {
+                validate_size(name, value)?;
+            }
+        }
+        if let Some(opacity) = self.stick_pad_cursors.opacity {
+            if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+                bail!("stick_pad_cursors.opacity must be finite and between 0 and 1");
+            }
+        }
+
         for group in &self.keyboard.key_groups {
             group.validate()?;
         }
@@ -665,6 +694,13 @@ mod tests {
             "keyboard_opacity = 1.1",
             "ui_opacity = nan",
             "ui_opacity = inf",
+            "[stick_pad_cursors]\nradius = -1.0",
+            "[stick_pad_cursors]\nradius = nan",
+            "[stick_pad_cursors]\nopacity = 1.1",
+            "[stick_pad_cursors]\nopacity = inf",
+            "[stick_pad_cursors]\nring_thickness = -1.0",
+            "[stick_pad_cursors]\nappearance = 'unknown'",
+            "[stick_pad_cursors]\nenabled = false",
         ] {
             assert!(Theme::parse(text).is_err(), "{text}");
         }

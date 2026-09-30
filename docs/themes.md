@@ -127,6 +127,10 @@ keep only the overrides your theme needs.
   `armed_color`, `disarmed_color`, `new_word_mark_color`, `corner_radius`,
   `selected_outline_width`.
 - `[text_input]`: `background_color`, `text_color`, `cursor_color`.
+- `[stick_pad_cursors]`: `radius`, `appearance` (`solid`, `fade`, `ring`),
+  `opacity`, `ring_thickness`, `left_color`, `right_color`. Each supplied value
+  overrides config; omitted values use config defaults. Colors accept palette
+  names or RGB/RGBA arrays. Cursor visibility stays in config.
 - `[menus]`: `heading_color`, `muted_text_color`.
 - `[mappings]`: `row_focus_color`, `table_focus_color`, `focus_border_color`,
   `focus_border_width`, `text_color`, `warning_color`, `error_color`,
@@ -153,6 +157,23 @@ ghost outline.
 Opacity belongs in the theme file. The former `config.toml` opacity keys are
 ignored, and the opacity rows have been removed from Settings. Old Steam
 Controller uses full opacity so its dark gaps retain the screenshot's contrast.
+
+## Stick/pad cursors
+
+```toml
+[stick_pad_cursors]
+appearance = "ring"
+radius = 10.0
+ring_thickness = 2.0
+opacity = 0.8
+left_color = [70, 170, 255]
+right_color = [255, 160, 70]
+```
+
+`solid` fills the disc; `fade` fades toward a transparent edge; `ring` leaves
+the center transparent. Radius and thickness use screen points. Dimensions
+must be finite and nonnegative; opacity must be between 0 and 1. Ring
+thickness is capped at the radius. Omit any field to use its config value.
 
 ## Key groups
 

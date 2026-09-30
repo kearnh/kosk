@@ -25,6 +25,7 @@ use crate::{
 use anyhow::Result;
 use egui::{Context, Ui};
 
+mod cursor;
 pub(crate) mod display_icon;
 mod geom;
 pub(crate) mod geometry_snap;
@@ -224,6 +225,7 @@ pub struct KeyboardState {
     layout_hold_left: Option<(f32, f32)>,
     layout_hold_right: Option<(f32, f32)>,
     pending_reselect_px: Option<((f32, f32), (f32, f32))>,
+    cursor_input: Option<Box<dyn ControllerInput + Send + Sync>>,
 }
 
 impl KeyboardState {
@@ -937,6 +939,7 @@ impl KeyboardState {
     }
 
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
+        self.cursor_input = holdover.map(ControllerInput::box_clone);
         if holdover.is_none() {
             self.selected = StickCells::default();
             self.suppress_send_until_release.clear();
@@ -966,6 +969,7 @@ impl KeyboardState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
+        self.cursor_input = Some(input.box_clone());
         self.note_battery(input.battery());
         if let Some(layout) = self.layouts.get_mut(&self.current_layout) {
             layout.set_aim_kind(input.family());
@@ -1168,6 +1172,7 @@ impl KeyboardState {
             last_battery,
             controller_connection,
             pending_reselect_px,
+            cursor_input,
             ..
         } = self;
 
@@ -1412,6 +1417,11 @@ impl KeyboardState {
 
         if publish_geometry {
             current_layout.draw_debug(ctx, ui);
+            current_layout.draw_cursors(
+                ui,
+                cursor_input.as_deref(),
+                &visual_cfg.stick_pad_cursor_style(),
+            );
         }
 
         pressed_key

@@ -15,7 +15,6 @@ That split — “we draw here, we type elsewhere” — is the reason the windo
 - `completion` — word/next-token prediction for Keyboard and TextInput (worker + chips). Also `completion_dev` / `completion_build`.
 - `config` — TOML load, watch, and save.
 - `controller` — HID devices, bindings, recording.
-- `debug` — a tiny egui plugin that holds the latest controller snapshot for overlays.
 - `state` — `AppState` and every on-screen mode.
 
 The GUI binary is the default run target (`default-run = "kosk"` in `Cargo.toml`). Tests and the other binaries import `kosk::…` rather than reaching into `main.rs`.
@@ -82,9 +81,9 @@ Position is not left to the OS. Each frame, `AppState::get_position` returns coo
 
 Size comes from measuring the central panel after `draw_ui`. A minimum size is recorded on the first non-zero layout and then used as a floor so the window does not shrink when a mode draws less content than the keyboard. When the measured size changes, `InnerSize` is sent.
 
-## Debug plugin
+## Typing cursors
 
-`debug::register` installs an egui `Plugin` named `DebugPlugin`. It holds an optional `Box<dyn ControllerInput>`. The controller thread, when `[debug]` is present in config, clones the current snapshot into that plugin. Keyboard layout drawing can then paint stick cursors and hitboxes. The plugin is otherwise empty; there is no debug UI of its own.
+Keyboard state retains the latest controller snapshot for stick/pad cursors. Layout geometry maps it to screen positions; the cursor renderer applies config defaults and theme overrides. Diagnostic hitboxes, bounds, and reach overlays remain under `[debug]`.
 
 ## What this does not cover
 

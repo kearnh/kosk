@@ -2,7 +2,6 @@ use crate::{
     config,
     controller::record as input_record,
     controller::{ControllerInput, ControllerKind},
-    debug::DebugPlugin,
     state::{
         event::{CallRequest, Event, EventQueue, ReturnStateResult},
         key_sink::{open_key_sink, KeySink},
@@ -461,10 +460,6 @@ impl AppState {
             }
         }
 
-        // The merged config always carries `[debug]` (as before, when the
-        // built-in TOML supplied it), so the plugin always gets its input.
-        ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = Some(input.box_clone()));
-
         match self.state {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.handle_controller_input(input, &mut self.events))?
@@ -534,8 +529,6 @@ impl AppState {
         }
         self.reset_current_mode_controller(None);
         crate::user_notify::note_no_input();
-        // See above: `[debug]` is always present in the merged config.
-        ctx.with_plugin::<DebugPlugin, _>(|d| d.controller_input = None);
         self.events.end_controller_tick();
         self.process_events(ctx, None);
         Ok(())

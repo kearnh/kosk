@@ -48,9 +48,13 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
-- **`[debug]`** holds the debug-overlay flags. Individual flags inside it turn on stick cursors, hitboxes, or stick bounds.
+- **`[stick_pad_cursors]`** controls typing cursors on the Overlay settings page: `enabled`, `radius` (screen points), `appearance` (`solid`, `fade`, or `ring`), `opacity` (0–1), and `ring_thickness` (screen points). `left_color` and `right_color` accept RGBA arrays in TOML. Defaults are enabled, radius 8, solid, opacity 1, thickness 2, blue left and green right. Fade decreases opacity from the center to a transparent edge; ring leaves the center transparent. Config version 3 migrates `debug.show_stick_cursors` to `stick_pad_cursors.enabled`, preserving an explicit new value.
+- **`[debug]`** holds diagnostic flags for hitboxes, stick bounds, and reach overlays.
 - **`[text_input]`** styles the single-line field in text-input mode.
 - **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md). Next-word pair-count setup is in the [README](../../README.md#next-word-after-a-space).
+
+Themes can override each cursor appearance field in `[stick_pad_cursors]`;
+fields omitted by the theme use config values. `enabled` stays in config.
 
 The built-in defaults come from `Config::default()`, and `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
 
@@ -84,7 +88,7 @@ When a recording’s config overlay is active, `save` copies `window_pos` onto t
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, ignoring those keys and legacy opacity keys if they appear in the blob. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `stick_pad_cursors`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, ignoring those keys and legacy opacity keys if they appear in the blob. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

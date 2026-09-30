@@ -4,7 +4,6 @@ pub mod completion;
 pub mod config;
 mod config_overlay;
 pub mod controller;
-pub mod debug;
 pub mod platform;
 pub mod state;
 mod theme;

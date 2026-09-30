@@ -5,7 +5,6 @@ use eframe::CreationContext;
 use egui::Vec2;
 use kosk::config;
 use kosk::controller;
-use kosk::debug;
 use kosk::state::{
     os_focus::{text_entry_focus_wanted, OsFocusGuard},
     AppState, ControllerConnection, StateId,
@@ -61,8 +60,6 @@ impl App {
         cc.egui_ctx.set_fonts(fonts);
 
         egui_extras::install_image_loaders(&cc.egui_ctx);
-
-        debug::register(&cc.egui_ctx);
 
         Self {
             state,

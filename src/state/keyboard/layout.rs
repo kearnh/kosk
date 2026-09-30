@@ -10,7 +10,6 @@ use serde::Deserialize;
 use crate::{
     config,
     controller::{ControllerInput, ControllerKind, StickSide},
-    debug::DebugPlugin,
     state::keyboard::key::{Key, RawKey},
     state::keyboard::when::{DisplayContext, WhenExpr},
 };
@@ -1154,25 +1153,6 @@ impl KeyboardLayout {
             let debug = config::get().debug;
             let painter = ctx.debug_painter();
 
-            if debug.show_stick_cursors {
-                let d_lock = ctx.plugin::<DebugPlugin>();
-                let d = d_lock.lock();
-                let input = d.controller_input.as_deref();
-                let (cursor_x, cursor_y) = debug_cursor(self, input, StickSide::Left);
-                painter.circle_filled(
-                    [cursor_x, cursor_y].into(),
-                    8.0,
-                    Color32::from_rgb(0, 0, 255),
-                );
-
-                let (cursor_x, cursor_y) = debug_cursor(self, input, StickSide::Right);
-                painter.circle_filled(
-                    [cursor_x, cursor_y].into(),
-                    8.0,
-                    Color32::from_rgb(0, 255, 0),
-                );
-            }
-
             if debug.show_stick_bounds {
                 // Draw left stick bounds in blue
                 for r in &self.left_stick_bounds {
@@ -1247,9 +1227,29 @@ impl KeyboardLayout {
             }
         }
     }
+
+    pub(super) fn draw_cursors(
+        &self,
+        ui: &Ui,
+        input: Option<&(dyn ControllerInput + Send + Sync)>,
+        settings: &config::StickPadCursors,
+    ) {
+        if !settings.enabled {
+            return;
+        }
+
+        let painter = ui.painter().with_clip_rect(ui.ctx().content_rect());
+        for (side, color) in [
+            (StickSide::Left, settings.left_color),
+            (StickSide::Right, settings.right_color),
+        ] {
+            let (x, y) = aim_cursor(self, input, side);
+            super::cursor::draw(&painter, Pos2::new(x, y), color, settings);
+        }
+    }
 }
 
-fn debug_cursor(
+fn aim_cursor(
     layout: &KeyboardLayout,
     input: Option<&(dyn ControllerInput + Send + Sync)>,
     side: StickSide,
@@ -1573,8 +1573,8 @@ items = [{ key = "a" }]
 "#;
         let mut layout = KeyboardLayout::load_with_scales(toml, 1.0, 1.0, 1.0, 1.0).unwrap();
         layout.update_geometry(vec![vec![Some(Pos2::new(10.0, 20.0))]]);
-        assert_eq!(debug_cursor(&layout, None, StickSide::Left), (10.0, 20.0));
-        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (10.0, 20.0));
+        assert_eq!(aim_cursor(&layout, None, StickSide::Left), (10.0, 20.0));
+        assert_eq!(aim_cursor(&layout, None, StickSide::Right), (10.0, 20.0));
     }
 
     #[test]
@@ -1598,7 +1598,7 @@ items = [{ key = "q" }, { key = "w" }, { key = "e" }]
     }
 
     #[test]
-    fn recapture_translates_debug_cursor_bounds_and_position_rest() {
+    fn recapture_translates_cursor_bounds_and_position_rest() {
         let toml = r#"
 stick_rest_left = { type = "position", x = 1.0, y = 2.0 }
 stick_rest_right = [0, 0]
@@ -1615,12 +1615,12 @@ items = [{ key = "a" }]
         let left_bounds = layout.left_stick_bounds.clone();
         let right_bounds = layout.right_stick_bounds.clone();
         let position_rest = layout.left_stick_center;
-        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (5.0, 10.0));
+        assert_eq!(aim_cursor(&layout, None, StickSide::Right), (5.0, 10.0));
 
         layout.update_geometry(vec![vec![Some(Pos2::new(5.0, 50.0))]]);
 
         let dy = 40.0;
-        assert_eq!(debug_cursor(&layout, None, StickSide::Right), (5.0, 50.0));
+        assert_eq!(aim_cursor(&layout, None, StickSide::Right), (5.0, 50.0));
         assert_eq!(
             layout.left_stick_center,
             (position_rest.0, position_rest.1 + dy)

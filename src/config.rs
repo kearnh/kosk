@@ -64,13 +64,6 @@ pub enum ReachOverlay {
 #[config_section]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Debug {
-    #[config(default = true)]
-    #[setting(
-        label = "Stick cursors",
-        explain = "Draw where the sticks are pointing."
-    )]
-    pub show_stick_cursors: bool,
-
     #[setting(label = "Hitboxes", explain = "Draw the region each key occupies.")]
     pub show_hitboxes: bool,
 
@@ -85,6 +78,52 @@ pub struct Debug {
         explain = "Draw which keys a stick or a pad can reach. None leaves the keyboard as it is."
     )]
     pub reach_overlay: ReachOverlay,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Choice)]
+#[serde(rename_all = "lowercase")]
+pub enum CursorAppearance {
+    #[default]
+    Solid,
+    Fade,
+    Ring,
+}
+
+#[config_section]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct StickPadCursors {
+    #[config(default = true)]
+    #[setting(
+        label = "Stick/pad cursors",
+        explain = "Show where each stick or pad is pointing."
+    )]
+    pub enabled: bool,
+
+    #[config(default = 8.0)]
+    #[setting(label = "Stick/pad cursor radius", explain = "Default cursor radius in screen points. Themes can override it.", range = 2.0..=32.0, step = 1.0, decimals = 0)]
+    pub radius: f32,
+
+    #[setting(
+        label = "Stick/pad cursor appearance",
+        explain = "Default appearance: solid disc, fade to a transparent edge, or ring with a transparent center. Themes can override it."
+    )]
+    pub appearance: CursorAppearance,
+
+    #[config(default = 1.0)]
+    #[setting(label = "Stick/pad cursor opacity", explain = "Default cursor opacity; 0 is transparent and 1 is opaque. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+    pub opacity: f32,
+
+    #[config(default = 2.0)]
+    #[setting(label = "Stick/pad cursor ring thickness", explain = "Default ring thickness in screen points. Applies to ring appearance. Themes can override it.", range = 1.0..=8.0, step = 0.5, decimals = 1)]
+    pub ring_thickness: f32,
+
+    /// Left cursor RGBA color as `[r, g, b, a]`.
+    #[config(default = [0, 0, 255, 255])]
+    pub left_color: [u8; 4],
+
+    /// Right cursor RGBA color as `[r, g, b, a]`.
+    #[config(default = [0, 255, 0, 255])]
+    pub right_color: [u8; 4],
 }
 
 #[config_section]
@@ -161,6 +200,9 @@ pub struct Config {
 
     #[setting(section, page = Debug)]
     pub debug: Debug,
+
+    #[setting(section, page = Overlay)]
+    pub stick_pad_cursors: StickPadCursors,
 
     #[config(default = crate::state::window_pos::WindowPos::MousePointer)]
     pub window_pos: WindowPos,
@@ -619,6 +661,23 @@ impl Config {
         style
     }
 
+    pub(crate) fn stick_pad_cursor_style(&self) -> StickPadCursors {
+        let mut style = self.stick_pad_cursors.clone();
+        let theme = &self.theme().stick_pad_cursors;
+        macro_rules! override_fields {
+            ($($field:ident),*) => { $(if let Some(value) = theme.$field { style.$field = value; })* };
+        }
+        override_fields!(
+            radius,
+            appearance,
+            opacity,
+            ring_thickness,
+            left_color,
+            right_color
+        );
+        style
+    }
+
     pub(crate) fn suggestion_style(
         &self,
         cfg: &crate::completion::settings::CompletionUiConfig,
@@ -772,6 +831,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "preferred_controller",
     "key_sink",
     "debug",
+    "stick_pad_cursors",
     "transparent",
     "keyboard_opacity",
     "ui_opacity",
@@ -1969,6 +2029,42 @@ mod tests {
         assert!(!args.at_mouse);
     }
 
+    #[test]
+    fn cursor_themes_override_only_supplied_fields_and_stay_off_config() {
+        let dir = temp_dir("cursor-theme");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "active_theme = 'Custom'\nthemes = ['theme.toml']\n[stick_pad_cursors]\nenabled = false\nradius = 14.0\nopacity = 0.4\nappearance = 'fade'\n").unwrap();
+        fs::write(dir.join("theme.toml"), "name = 'Custom'\n[colours]\naccent = [10, 20, 30]\n[stick_pad_cursors]\nappearance = 'ring'\nring_thickness = 3.0\nleft_color = 'accent'\nright_color = [40, 50, 60, 70]\n").unwrap();
+        let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        let style = cfg.stick_pad_cursor_style();
+        assert!(!style.enabled);
+        assert_eq!(style.radius, 14.0);
+        assert_eq!(style.opacity, 0.4);
+        assert_eq!(style.appearance, CursorAppearance::Ring);
+        assert_eq!(style.ring_thickness, 3.0);
+        assert_eq!(style.left_color, [10, 20, 30, 255]);
+        assert_eq!(style.right_color, [40, 50, 60, 70]);
+        write_user_overlay(&config_path, &cfg, None).unwrap();
+        let saved = fs::read_to_string(&config_path).unwrap();
+        assert!(saved.contains("appearance = \"fade\""), "{saved}");
+        assert!(!saved.contains("left_color"), "{saved}");
+
+        let replay =
+            overlay_tape_config(&cfg, "[stick_pad_cursors]\nenabled = true\nradius = 2.0\n")
+                .unwrap();
+        assert_eq!(replay.stick_pad_cursor_style().radius, 14.0);
+        assert!(!replay.stick_pad_cursor_style().enabled);
+        cfg.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+        assert_eq!(
+            cfg.stick_pad_cursor_style().appearance,
+            CursorAppearance::Fade
+        );
+        assert_eq!(
+            cfg.stick_pad_cursor_style().left_color,
+            StickPadCursors::default().left_color
+        );
+    }
+
     fn sample_cfg() -> Config {
         toml::from_str(
             r#"
@@ -1991,6 +2087,7 @@ mod tests {
         assert!(!toml.contains("key_sink"), "{toml}");
         assert!(!toml.contains("text_input"), "{toml}");
         assert!(!toml.contains("completion"), "{toml}");
+        assert!(!toml.contains("stick_pad_cursors"), "{toml}");
         assert!(toml.contains("event_debounce_ms"), "{toml}");
     }
 
@@ -2056,7 +2153,10 @@ mod tests {
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
 
         let text = fs::read_to_string(&config_path).unwrap();
-        assert!(text.contains("config_version = 2"), "{text}");
+        assert_eq!(
+            crate::config_overlay::file_version(&text.parse().unwrap()),
+            crate::config_overlay::CONFIG_VERSION
+        );
         assert!(text.contains("warp = 0.70"), "{text}");
         assert!(text.contains("columns = 4"), "{text}");
         assert!(!text.contains("scale_x"), "{text}");
@@ -2127,7 +2227,7 @@ future_key = true\n\
     }
 
     #[test]
-    fn overlay_save_keeps_newer_version_and_debug_off() {
+    fn overlay_save_keeps_newer_version_and_cursors_off() {
         let dir = temp_dir("overlay-newer");
         let config_path = dir.join("config.toml");
         fs::write(
@@ -2135,20 +2235,17 @@ future_key = true\n\
             "\
 config_version = 9\n\
 \n\
-[debug]\n\
-show_stick_cursors = false\n\
+[stick_pad_cursors]\n\
+enabled = false\n\
 ",
         )
         .unwrap();
         let mut cfg = builtin_merged_config().unwrap();
-        cfg.debug = Debug {
-            show_stick_cursors: false,
-            ..Debug::default()
-        };
+        cfg.stick_pad_cursors.enabled = false;
         write_user_overlay(&config_path, &cfg, Some("mappings.toml")).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
         assert!(text.contains("config_version = 9"), "{text}");
-        assert!(text.contains("show_stick_cursors = false"), "{text}");
+        assert!(text.contains("enabled = false"), "{text}");
     }
 
     #[test]
@@ -2538,7 +2635,10 @@ show_stick_cursors = false\n\
         fs::write(&config_path, "keyboard_opacity = 0.2\n").unwrap();
         read_merged_config(&config_path, ConfigSource::User).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
-        assert!(text.contains("config_version = 2"), "{text}");
+        assert_eq!(
+            crate::config_overlay::file_version(&text.parse().unwrap()),
+            crate::config_overlay::CONFIG_VERSION
+        );
         assert!(text.contains("keyboard_opacity = 0.2"), "{text}");
     }
 
@@ -2667,7 +2767,9 @@ show_stick_cursors = false\n\
     #[test]
     fn user_can_turn_default_stick_cursors_off() {
         let mut merged: toml::Value = toml::Value::try_from(Config::default()).unwrap();
-        let over: toml::Value = toml::from_str("[debug]\nshow_stick_cursors = false\n").unwrap();
+        let migrated =
+            crate::config_overlay::migrate_toml("[debug]\nshow_stick_cursors = false\n").unwrap();
+        let over: toml::Value = toml::from_str(&migrated).unwrap();
         crate::config_overlay::merge_toml(&mut merged, &over);
         let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
             .parse()
@@ -2677,7 +2779,7 @@ show_stick_cursors = false\n\
             .unwrap()
             .insert(CONTROLLER_MAP_KEY.into(), mappings);
         let cfg: Config = merged.try_into().unwrap();
-        assert!(!cfg.debug.show_stick_cursors);
+        assert!(!cfg.stick_pad_cursors.enabled);
     }
 
     #[test]

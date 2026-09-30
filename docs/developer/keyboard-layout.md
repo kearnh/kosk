@@ -57,9 +57,9 @@ Optional `stick_bounds.left` / `right` are lists of rectangles in unscaled units
 
 `get_key_at` walks hitboxes and picks the containing shape with the smallest rim-fraction score: `0` at that key’s centre and `1` on its rim (`distance² / r²` for circles; the usual ellipse implicit value for wide keys). Overlapping hitboxes therefore resolve to the key whose centre you are closer to relative to that key’s own size, not to draw order, and not to raw pixel distance (which would let a wide ellipse beat a letter almost everywhere they overlap). Keyboard mode can pass the previous cell and that profile’s `select_sticky` into the same picker so that cell keeps winning until a neighbor is clearly closer; `get_key_at` itself does not apply that margin.
 
-## Debug drawing
+## Cursor and debug drawing
 
-When `[debug]` is set, `draw_debug` can paint the warped stick positions (`show_stick_cursors`), the hitboxes (`show_hitboxes`), and the bound rectangles (`show_stick_bounds`). Cursor drawing reads the latest snapshot from `DebugPlugin`.
+`[stick_pad_cursors]` controls typing cursors. Keyboard state owns the latest controller snapshot; layout geometry maps it to the warped stick or pad positions. Cursors paint on the keyboard's UI layer with solid, fade, or ring appearance. `[debug]` independently controls hitboxes, bound rectangles, and reach overlays.
 
 ## What this does not cover
 

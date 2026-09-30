@@ -3,7 +3,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(crate) const CONFIG_VERSION: i64 = 2;
+pub(crate) const CONFIG_VERSION: i64 = 3;
 pub(crate) const CONFIG_VERSION_KEY: &str = "config_version";
 pub(crate) const CONTROLLER_MAP_KEY: &str = "controller_map";
 pub(crate) const UNBIND_ACTION: &str = "none";
@@ -124,7 +124,27 @@ fn insert_aim_key(
     }
 }
 
-const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] = &[migrate_0_to_1, migrate_1_to_2];
+fn migrate_2_to_3(doc: &mut toml_edit::DocumentMut) {
+    let Some(value) = doc
+        .get_mut("debug")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .and_then(|table| table.remove("show_stick_cursors"))
+    else {
+        return;
+    };
+
+    if doc.get("stick_pad_cursors").is_none() {
+        doc["stick_pad_cursors"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    if let Some(table) = doc["stick_pad_cursors"].as_table_like_mut() {
+        if !table.contains_key("enabled") {
+            table.insert("enabled", value);
+        }
+    }
+}
+
+const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] =
+    &[migrate_0_to_1, migrate_1_to_2, migrate_2_to_3];
 
 /// Raise `doc` to [`CONFIG_VERSION`]. A newer file is left unchanged.
 pub(crate) fn migrate_document(doc: &mut toml_edit::DocumentMut) -> Result<MigrateOutcome> {
@@ -414,6 +434,27 @@ mod tests {
         assert_eq!(migrate_document(&mut doc).unwrap(), MigrateOutcome::Newer);
         assert_eq!(file_version(&doc), 99);
         assert!(doc.to_string().contains("unknown"));
+    }
+
+    #[test]
+    fn cursor_toggle_moves_out_of_debug_without_overriding_new_setting() {
+        for (new_setting, expected) in
+            [("", false), ("[stick_pad_cursors]\nenabled = true\n", true)]
+        {
+            let mut doc = format!("config_version = 2\n{new_setting}[debug]\nshow_stick_cursors = false\nshow_hitboxes = true\n")
+                .parse::<toml_edit::DocumentMut>().unwrap();
+            migrate_document(&mut doc).unwrap();
+            assert_eq!(
+                doc["stick_pad_cursors"]["enabled"].as_bool(),
+                Some(expected)
+            );
+            assert_eq!(doc["debug"]["show_hitboxes"].as_bool(), Some(true));
+            assert!(doc["debug"].get("show_stick_cursors").is_none());
+            assert_eq!(
+                migrate_document(&mut doc).unwrap(),
+                MigrateOutcome::Unchanged
+            );
+        }
     }
 
     #[test]
