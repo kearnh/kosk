@@ -1,16 +1,26 @@
 use egui::{epaint::Mesh, Color32, Painter, Pos2, Shape, Stroke, Vec2};
 
 use crate::config::{CursorAppearance, StickPadCursors};
+use crate::controller::StickSide;
 
 const FADE_SEGMENTS: u32 = 64;
 
-pub(super) fn draw(painter: &Painter, center: Pos2, color: [u8; 4], settings: &StickPadCursors) {
-    if let Some(shape) = cursor_shape(center, color, settings) {
+pub(super) fn draw(painter: &Painter, center: Pos2, side: StickSide, settings: &StickPadCursors) {
+    let (color, fill_color) = match side {
+        StickSide::Left => (settings.left_color, settings.left_fill_color),
+        StickSide::Right => (settings.right_color, settings.right_fill_color),
+    };
+    if let Some(shape) = cursor_shape(center, color, fill_color, settings) {
         painter.add(shape);
     }
 }
 
-fn cursor_shape(center: Pos2, color: [u8; 4], settings: &StickPadCursors) -> Option<Shape> {
+fn cursor_shape(
+    center: Pos2,
+    color: [u8; 4],
+    fill_color: Option<[u8; 4]>,
+    settings: &StickPadCursors,
+) -> Option<Shape> {
     if !settings.radius.is_finite()
         || !settings.opacity.is_finite()
         || !settings.ring_thickness.is_finite()
@@ -19,8 +29,10 @@ fn cursor_shape(center: Pos2, color: [u8; 4], settings: &StickPadCursors) -> Opt
     }
 
     let radius = settings.radius.max(0.0);
-    let color = crate::theme::color(color).gamma_multiply(settings.opacity.clamp(0.0, 1.0));
-    if radius == 0.0 || color == Color32::TRANSPARENT {
+    let opacity = settings.opacity.clamp(0.0, 1.0);
+    let fill_color = crate::theme::color(fill_color.unwrap_or(color));
+    let color = crate::theme::color(color).gamma_multiply(opacity);
+    if radius == 0.0 || opacity == 0.0 {
         return None;
     }
 
@@ -31,7 +43,8 @@ fn cursor_shape(center: Pos2, color: [u8; 4], settings: &StickPadCursors) -> Opt
             Shape::Circle(egui::epaint::CircleShape {
                 center,
                 radius: radius - thickness * 0.5,
-                fill: color.gamma_multiply(settings.ring_fill_opacity.clamp(0.0, 1.0)),
+                fill: fill_color
+                    .gamma_multiply(settings.ring_fill_opacity.clamp(0.0, 1.0) * opacity),
                 stroke: Stroke::new(thickness, color),
             })
         }
@@ -63,7 +76,7 @@ mod tests {
             opacity: 0.5,
             ..Default::default()
         };
-        let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
+        let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, None, &settings) else {
             panic!("expected circle");
         };
         assert_eq!(circle.radius, 12.0);
@@ -78,7 +91,7 @@ mod tests {
             ring_thickness: 3.0,
             ..Default::default()
         };
-        let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
+        let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, None, &settings) else {
             panic!("expected circle");
         };
         assert!(circle.fill.a() > 0);
@@ -88,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn ring_fill_opacity_scales_outline_opacity() {
+    fn ring_fill_opacity_combines_with_overall_opacity() {
         for (fill_opacity, expected_alpha) in [(0.0, 0), (0.25, 32), (1.0, 128)] {
             let settings = StickPadCursors {
                 appearance: CursorAppearance::Ring,
@@ -96,7 +109,8 @@ mod tests {
                 ring_fill_opacity: fill_opacity,
                 ..Default::default()
             };
-            let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
+            let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, COLOR, None, &settings)
+            else {
                 panic!("expected circle");
             };
             assert_eq!(circle.fill.a(), expected_alpha);
@@ -105,12 +119,52 @@ mod tests {
     }
 
     #[test]
+    fn ring_fill_color_is_independent_and_overall_opacity_scales_both() {
+        const FILL_COLOR: [u8; 4] = [255, 0, 0, 128];
+        for (opacity, outline_alpha, fill_alpha) in
+            [(0.25, 64, 32), (0.5, 128, 64), (1.0, 255, 128)]
+        {
+            let settings = StickPadCursors {
+                appearance: CursorAppearance::Ring,
+                opacity,
+                ring_fill_opacity: 1.0,
+                ..Default::default()
+            };
+            let Some(Shape::Circle(circle)) =
+                cursor_shape(Pos2::ZERO, COLOR, Some(FILL_COLOR), &settings)
+            else {
+                panic!("expected circle");
+            };
+            assert_eq!(circle.fill.a(), fill_alpha);
+            assert_eq!(circle.stroke.color.a(), outline_alpha);
+            assert!(circle.fill.r() > 0);
+            assert_eq!(circle.fill.g(), 0);
+            assert_eq!(circle.stroke.color.r(), 0);
+            assert!(circle.stroke.color.g() > 0);
+        }
+    }
+
+    #[test]
+    fn transparent_outline_preserves_independent_fill() {
+        let settings = StickPadCursors {
+            appearance: CursorAppearance::Ring,
+            ..Default::default()
+        };
+        let Some(Shape::Circle(circle)) = cursor_shape(Pos2::ZERO, [0; 4], Some(COLOR), &settings)
+        else {
+            panic!("expected circle");
+        };
+        assert_eq!(circle.stroke.color, Color32::TRANSPARENT);
+        assert!(circle.fill.a() > 0);
+    }
+
+    #[test]
     fn fade_has_opaque_center_and_transparent_edge() {
         let settings = StickPadCursors {
             appearance: CursorAppearance::Fade,
             ..Default::default()
         };
-        let Some(Shape::Mesh(mesh)) = cursor_shape(Pos2::ZERO, COLOR, &settings) else {
+        let Some(Shape::Mesh(mesh)) = cursor_shape(Pos2::ZERO, COLOR, None, &settings) else {
             panic!("expected mesh");
         };
         assert!(mesh.is_valid());
@@ -136,7 +190,7 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            assert!(cursor_shape(Pos2::ZERO, COLOR, &settings).is_none());
+            assert!(cursor_shape(Pos2::ZERO, COLOR, None, &settings).is_none());
         }
     }
 }

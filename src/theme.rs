@@ -120,6 +120,8 @@ section!(StickPadCursorTheme {
     ring_fill_opacity: Option<f32> = None,
     left_color: Option<[u8; 4]> = None,
     right_color: Option<[u8; 4]> = None,
+    left_fill_color: Option<[u8; 4]> = None,
+    right_fill_color: Option<[u8; 4]> = None,
 });
 
 section!(KeyboardTheme {
@@ -252,6 +254,12 @@ impl Theme {
         let mut schema = base.clone();
         schema["stick_pad_cursors"] =
             toml::Value::try_from(crate::config::StickPadCursors::default())?;
+        for field in ["left_fill_color", "right_fill_color"] {
+            schema["stick_pad_cursors"]
+                .as_table_mut()
+                .expect("cursor color schema")
+                .insert(field.to_owned(), toml::Value::try_from([0_u8; 4])?);
+        }
         schema["keyboard"]["key_groups"] =
             toml::Value::Array(vec![toml::Value::try_from(KeyColorGroup {
                 keys: Vec::new(),

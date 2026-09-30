@@ -1239,12 +1239,9 @@ impl KeyboardLayout {
         }
 
         let painter = ui.painter().with_clip_rect(ui.ctx().content_rect());
-        for (side, color) in [
-            (StickSide::Left, settings.left_color),
-            (StickSide::Right, settings.right_color),
-        ] {
+        for side in [StickSide::Left, StickSide::Right] {
             let (x, y) = aim_cursor(self, input, side);
-            super::cursor::draw(&painter, Pos2::new(x, y), color, settings);
+            super::cursor::draw(&painter, Pos2::new(x, y), side, settings);
         }
     }
 }

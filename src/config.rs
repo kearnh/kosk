@@ -110,7 +110,7 @@ pub struct StickPadCursors {
     pub appearance: CursorAppearance,
 
     #[config(default = 1.0)]
-    #[setting(label = "Stick/pad cursor opacity", explain = "Default cursor opacity; 0 is transparent and 1 is opaque. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+    #[setting(label = "Stick/pad cursor opacity", explain = "Default overall opacity for both outline and fill. 0 hides the cursor. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
     pub opacity: f32,
 
     #[config(default = 2.0)]
@@ -118,7 +118,7 @@ pub struct StickPadCursors {
     pub ring_thickness: f32,
 
     #[config(default = 0.2)]
-    #[setting(label = "Stick/pad cursor ring fill opacity", explain = "Default ring fill opacity relative to the outline. 0 leaves the center clear. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+    #[setting(label = "Stick/pad cursor ring fill opacity", explain = "Default fill opacity multiplier, combined with the fill color alpha and overall cursor opacity. 0 leaves the center clear. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
     pub ring_fill_opacity: f32,
 
     /// Left cursor RGBA color as `[r, g, b, a]`.
@@ -128,6 +128,12 @@ pub struct StickPadCursors {
     /// Right cursor RGBA color as `[r, g, b, a]`.
     #[config(default = [0, 0, 255, 255])]
     pub right_color: [u8; 4],
+
+    /// Left ring fill RGBA color. Omitted: use the left cursor color.
+    pub left_fill_color: Option<[u8; 4]>,
+
+    /// Right ring fill RGBA color. Omitted: use the right cursor color.
+    pub right_fill_color: Option<[u8; 4]>,
 }
 
 #[config_section]
@@ -680,6 +686,12 @@ impl Config {
             left_color,
             right_color
         );
+        if let Some(color) = theme.left_fill_color {
+            style.left_fill_color = Some(color);
+        }
+        if let Some(color) = theme.right_fill_color {
+            style.right_fill_color = Some(color);
+        }
         style
     }
 
@@ -2038,8 +2050,8 @@ mod tests {
     fn cursor_themes_override_only_supplied_fields_and_stay_off_config() {
         let dir = temp_dir("cursor-theme");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "active_theme = 'Custom'\nthemes = ['theme.toml']\n[stick_pad_cursors]\nenabled = false\nradius = 14.0\nopacity = 0.4\nappearance = 'fade'\n").unwrap();
-        fs::write(dir.join("theme.toml"), "name = 'Custom'\n[colours]\naccent = [10, 20, 30]\n[stick_pad_cursors]\nappearance = 'ring'\nring_thickness = 3.0\nring_fill_opacity = 0.35\nleft_color = 'accent'\nright_color = [40, 50, 60, 70]\n").unwrap();
+        fs::write(&config_path, "active_theme = 'Custom'\nthemes = ['theme.toml']\n[stick_pad_cursors]\nenabled = false\nradius = 14.0\nopacity = 0.4\nappearance = 'fade'\nright_fill_color = [70, 80, 90, 100]\n").unwrap();
+        fs::write(dir.join("theme.toml"), "name = 'Custom'\n[colours]\naccent = [10, 20, 30]\n[stick_pad_cursors]\nappearance = 'ring'\nring_thickness = 3.0\nring_fill_opacity = 0.35\nleft_color = 'accent'\nright_color = [40, 50, 60, 70]\nleft_fill_color = 'accent'\n").unwrap();
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         let style = cfg.stick_pad_cursor_style();
         assert!(!style.enabled);
@@ -2050,11 +2062,15 @@ mod tests {
         assert_eq!(style.ring_fill_opacity, 0.35);
         assert_eq!(style.left_color, [10, 20, 30, 255]);
         assert_eq!(style.right_color, [40, 50, 60, 70]);
+        assert_eq!(style.left_fill_color, Some([10, 20, 30, 255]));
+        assert_eq!(style.right_fill_color, Some([70, 80, 90, 100]));
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let saved = fs::read_to_string(&config_path).unwrap();
         assert!(saved.contains("appearance = \"fade\""), "{saved}");
         assert!(!saved.contains("left_color"), "{saved}");
         assert!(!saved.contains("ring_fill_opacity"), "{saved}");
+        assert!(!saved.contains("left_fill_color"), "{saved}");
+        assert!(saved.contains("right_fill_color"), "{saved}");
 
         let replay =
             overlay_tape_config(&cfg, "[stick_pad_cursors]\nenabled = true\nradius = 2.0\n")
@@ -2062,6 +2078,11 @@ mod tests {
         assert_eq!(replay.stick_pad_cursor_style().radius, 14.0);
         assert!(!replay.stick_pad_cursor_style().enabled);
         cfg.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+        assert_eq!(cfg.stick_pad_cursor_style().left_fill_color, None);
+        assert_eq!(
+            cfg.stick_pad_cursor_style().right_fill_color,
+            Some([70, 80, 90, 100])
+        );
         assert_eq!(
             cfg.stick_pad_cursor_style().ring_fill_opacity,
             StickPadCursors::default().ring_fill_opacity
