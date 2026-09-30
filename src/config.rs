@@ -1189,12 +1189,37 @@ pub(crate) fn read_layout_source(rel: &str) -> Result<String> {
 fn is_watched_path(path: &Path, config_files: &[PathBuf]) -> bool {
     let path = crate::config_overlay::watch_key(path);
     config_files.iter().any(|watched| {
-        if watched.to_string_lossy().contains(['*', '?', '[']) {
-            glob::Pattern::new(&watched.to_string_lossy())
-                .is_ok_and(|pattern| pattern.matches_path(&path))
-        } else {
-            watched == &path
+        if !path_has_glob(watched) {
+            return watched == &path;
         }
+
+        let Some(base) = watched_parent(watched) else {
+            return false;
+        };
+        let canonical_base = fs::canonicalize(&base).unwrap_or_else(|_| base.clone());
+        let (Ok(relative_path), Ok(relative_pattern)) = (
+            path.strip_prefix(canonical_base),
+            watched.strip_prefix(base),
+        ) else {
+            return false;
+        };
+        glob::Pattern::new(&relative_pattern.to_string_lossy()).is_ok_and(|pattern| {
+            pattern.matches_path_with(
+                relative_path,
+                glob::MatchOptions {
+                    case_sensitive: !cfg!(windows),
+                    require_literal_separator: true,
+                    require_literal_leading_dot: false,
+                },
+            )
+        })
+    })
+}
+
+fn path_has_glob(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(component, std::path::Component::Normal(name)
+            if name.to_string_lossy().contains(['*', '?', '[']))
     })
 }
 
@@ -1215,37 +1240,51 @@ fn watch_config_directories(
     tx: mpsc::Sender<notify::Result<Event>>,
 ) -> Result<notify::RecommendedWatcher> {
     let mut watcher = notify::recommended_watcher(tx)?;
-    watcher.watch(config_dir, notify::RecursiveMode::NonRecursive)?;
-    let mut directories = vec![config_dir.to_path_buf()];
+    let mut directories = vec![(
+        fs::canonicalize(config_dir)?,
+        notify::RecursiveMode::NonRecursive,
+    )];
     for path in config_files {
         let Some(parent) = watched_parent(path) else {
             continue;
         };
-        if directories.iter().any(|dir| dir == &parent) || !parent.is_dir() {
+        if !parent.is_dir() {
             continue;
         }
-        let mode = if path.to_string_lossy().contains("**") {
+        let mode = if path_has_glob(path)
+            && (path.to_string_lossy().contains("**") || path.parent() != Some(parent.as_path()))
+        {
             notify::RecursiveMode::Recursive
         } else {
             notify::RecursiveMode::NonRecursive
         };
+        let parent = fs::canonicalize(parent)?;
+        if let Some((_, existing_mode)) = directories.iter_mut().find(|(dir, _)| dir == &parent) {
+            if mode == notify::RecursiveMode::Recursive {
+                *existing_mode = mode;
+            }
+            continue;
+        }
+        directories.push((parent, mode));
+    }
+    for (parent, mode) in directories {
         watcher
             .watch(&parent, mode)
             .with_context(|| format!("watch {}", parent.display()))?;
-        directories.push(parent);
     }
     Ok(watcher)
 }
 
 fn watched_parent(path: &Path) -> Option<PathBuf> {
-    if !path.to_string_lossy().contains(['*', '?', '[']) {
+    if !path_has_glob(path) {
         return path.parent().map(Path::to_path_buf);
     }
 
     let mut parent = PathBuf::new();
     for component in path.components() {
-        let component_path = Path::new(component.as_os_str());
-        if component_path.to_string_lossy().contains(['*', '?', '[']) {
+        if matches!(component, std::path::Component::Normal(name)
+            if name.to_string_lossy().contains(['*', '?', '[']))
+        {
             break;
         }
         parent.push(component);
@@ -2303,8 +2342,14 @@ show_stick_cursors = false\n\
         let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
         assert_eq!(before.theme().background_color, [1, 2, 3, 255]);
-        fs::write(&theme_path, "background_color = [999, 2, 3, 255]\n").unwrap();
-        assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+        fs::write(
+            &theme_path,
+            "name = 'Custom'\nbackground_color = [999, 2, 3, 255]\n",
+        )
+        .unwrap();
+        let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(fallback.active_theme, "default");
+        assert_eq!(fallback.theme_names(), ["default"]);
         assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
         let tape = tape_config_toml(&after).unwrap();
         assert!(!tape.contains("active_theme"));
@@ -2319,7 +2364,7 @@ show_stick_cursors = false\n\
     }
 
     #[test]
-    fn invalid_theme_catalog_falls_back_at_startup() {
+    fn invalid_theme_files_preserve_other_startup_settings() {
         let dir = temp_dir("invalid-theme");
         let config_path = dir.join("config.toml");
         fs::write(dir.join("theme.toml"), "name = 'default'\n").unwrap();
@@ -2328,11 +2373,19 @@ show_stick_cursors = false\n\
             "themes = ['theme.toml']",
             "active_theme = 'missing'\nthemes = ['missing.toml']",
         ] {
-            fs::write(&config_path, format!("config_version = 2\n{body}\n")).unwrap();
-            assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+            fs::write(
+                &config_path,
+                format!("config_version = 2\nscale_x = 37.0\n{body}\n"),
+            )
+            .unwrap();
+            let (loaded, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+            assert_eq!(loaded.active_theme, "default");
+            assert_eq!(loaded.theme_names(), ["default"]);
+            assert_eq!(loaded.scale_x, 37.0);
             let (cfg, _, used_defaults) = load_initial(&config_path, ConfigSource::Explicit);
-            assert!(used_defaults);
+            assert!(!used_defaults);
             assert_eq!(cfg.active_theme, "default");
+            assert_eq!(cfg.scale_x, 37.0);
         }
     }
 
@@ -2364,7 +2417,7 @@ show_stick_cursors = false\n\
             let replacement = external.join("replacement.toml");
             fs::write(
                 &replacement,
-                format!("background_color = [{value}, 2, 3, 255]\nkeyboard_opacity = {opacity}\n[[keyboard.key_groups]]\nkeys = ['Return']\nbackground_color = [{value}, 5, 6, 255]"),
+                format!("name = 'Custom'\nbackground_color = [{value}, 2, 3, 255]\nkeyboard_opacity = {opacity}\n[[keyboard.key_groups]]\nkeys = ['Return']\nbackground_color = [{value}, 5, 6, 255]"),
             )
             .unwrap();
             fs::remove_file(&theme_path).unwrap();
@@ -2393,10 +2446,12 @@ show_stick_cursors = false\n\
             );
             fs::write(
                 &theme_path,
-                "[[keyboard.key_groups]]\nkeys = []\ntext_color = [1, 2, 3, 255]",
+                "name = 'Custom'\n[[keyboard.key_groups]]\nkeys = []\ntext_color = [1, 2, 3, 255]",
             )
             .unwrap();
-            assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
+            let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+            assert_eq!(fallback.active_theme, "default");
+            assert_eq!(fallback.theme_names(), ["default"]);
             assert_eq!(
                 after.theme().keyboard.key_groups[0].background_color,
                 Some([value, 5, 6, 255])
@@ -2404,6 +2459,48 @@ show_stick_cursors = false\n\
         }
         assert_eq!(before.theme().background_color, [1, 2, 3, 255]);
         assert!(before.theme().keyboard.key_groups.is_empty());
+    }
+
+    #[test]
+    fn theme_glob_matches_new_files_in_canonical_directories() {
+        let dir = temp_dir("theme-glob-path");
+        let config_path = dir.join("config.toml");
+        let mut files = Vec::new();
+        crate::config_overlay::append_theme_paths(&mut files, &config_path, &["*.toml".into()]);
+
+        assert!(is_watched_path(&dir.join("new-theme.toml"), &files));
+        assert!(!is_watched_path(&dir.join("other.txt"), &files));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn recursive_theme_glob_watches_nested_new_files() {
+        use std::time::{Duration, Instant};
+
+        let dir = temp_dir("recursive-theme-glob");
+        let nested = dir.join("nested");
+        fs::create_dir(&nested).unwrap();
+        let config_path = dir.join("config.toml");
+        let mut files = vec![crate::config_overlay::watch_key(&config_path)];
+        crate::config_overlay::append_theme_paths(&mut files, &config_path, &["**/*.toml".into()]);
+        let (tx, rx) = mpsc::channel();
+        let watcher =
+            watch_config_directories(&fs::canonicalize(&dir).unwrap(), &files, tx).unwrap();
+
+        fs::write(nested.join("new-theme.toml"), "name = 'New'").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let event = rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap()
+                .unwrap();
+            if is_reload_event(&event, &files) {
+                break;
+            }
+        }
+
+        drop(watcher);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

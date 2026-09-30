@@ -19,9 +19,10 @@ it. Clicking a theme also selects it. The active theme is marked **Current**.
 A config supplied on the command line keeps the existing live-only settings
 behavior. The built-in theme's config name remains `default`.
 
-Theme files reload after edits or replacement. An invalid reload keeps the
-previous appearance and displays a notice. Invalid startup configuration uses
-the built-in defaults. Recordings use the current local theme.
+Theme files reload after edits or replacement. Invalid files are skipped;
+an unavailable active theme falls back to Default and displays a notice.
+Invalid startup configuration uses the built-in defaults. Recordings use the
+current local theme.
 
 ## Included themes
 

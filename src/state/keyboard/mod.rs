@@ -259,7 +259,6 @@ impl KeyboardState {
         events: &mut EventQueue,
         source: &EventSource,
     ) -> Result<()> {
-        self.animate_key_press(key);
         match key {
             RawKey::Key(c) => {
                 let eat_out = if !self.ctrl_mod && !self.alt_mod {
@@ -314,6 +313,7 @@ impl KeyboardState {
                     steps.push(Event::SendText(" ".into()));
                 }
                 if events.push_seq(steps, source) {
+                    self.animate_key_press(key);
                     self.shift_state = false;
                     self.shift_mod = false;
                     self.ctrl_mod = false;
@@ -356,6 +356,7 @@ impl KeyboardState {
                     steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
                 if events.push_seq(steps, source) {
+                    self.animate_key_press(key);
                     self.shift_state = false;
                     self.shift_mod = false;
                     self.ctrl_mod = false;
@@ -364,6 +365,7 @@ impl KeyboardState {
                 }
             }
             RawKey::Action(action) => {
+                self.animate_key_press(key);
                 self.do_action(action, events, source)?;
             }
             RawKey::Text(text) => {
@@ -391,6 +393,7 @@ impl KeyboardState {
                 };
 
                 if ok {
+                    self.animate_key_press(key);
                     if eat {
                         crate::completion::with_mut(|s| {
                             if let Some(s) = s {
@@ -1768,6 +1771,36 @@ items = [{ key = "a" }]
             .unwrap();
         assert!(kb.key_presses[&cell] >= first);
         assert_eq!(kb.key_presses.len(), 1);
+    }
+
+    #[test]
+    fn rejected_key_send_does_not_restart_key_press() {
+        for spec in ["a", "Return", "hello"] {
+            let mut kb = stub_kb();
+            let layout = KeyboardLayout::load_with_scales(
+                &format!("[[rows]]\nindent = 0.0\nitems = [{{ key = '{spec}' }}]"),
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+            )
+            .unwrap();
+            kb.layouts.insert("main".into(), layout);
+            let key = kb.raw_key_at_selected((0, 0)).unwrap();
+            let mut events = EventQueue::passthrough();
+            events.set_debounce_ms(60_000, 0);
+            let source = pad_right();
+            kb.send_key(&key, &mut events, &source).unwrap();
+            assert_eq!(events.drain_pending().len(), 1);
+
+            let cell = ("main".to_owned(), 0, 0);
+            let pressed = Instant::now() - Duration::from_secs(1);
+            kb.key_presses.insert(cell.clone(), pressed);
+
+            kb.send_key(&key, &mut events, &source).unwrap();
+            assert!(events.drain_pending().is_empty());
+            assert_eq!(kb.key_presses[&cell], pressed, "{spec}");
+        }
     }
 
     fn pad_right() -> EventSource {
