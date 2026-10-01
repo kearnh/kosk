@@ -191,6 +191,7 @@ section!(TextInputTheme {
 section!(MenusTheme {
     heading_color: [u8; 4] = [255, 255, 255, 255],
     muted_text_color: [u8; 4] = [128, 128, 128, 255],
+    selected_text_color: Option<[u8; 4]> = None,
 });
 
 section!(MappingsTheme {
@@ -266,6 +267,13 @@ impl Theme {
                 background_color: Some([0; 4]),
                 text_color: Some([0; 4]),
             })?]);
+        schema["menus"]
+            .as_table_mut()
+            .expect("menu color schema")
+            .insert(
+                "selected_text_color".to_owned(),
+                toml::Value::try_from([0_u8; 4])?,
+            );
         let palette = take_palette(&mut overlay)?;
         resolve_theme_colors(&mut overlay, &schema, &palette)?;
 
@@ -627,7 +635,8 @@ mod tests {
                  [{spelling}]\nwhite = [255, 255, 255]\nblue = [10, 20, 30, 128]\n\
                  [keyboard.hovered]\nborder_color = 'blue'\n\
                  [[keyboard.key_groups]]\nkeys = ['q', 'w', 'e', 'r']\nbackground_color = 'blue'\ntext_color = [1, 2, 3]\n\
-                 [battery]\nfull = 'white'"
+                 [battery]\nfull = 'white'\n\
+                 [menus]\nselected_text_color = 'blue'"
             ))
             .unwrap();
             assert_eq!(theme.inactive.text_color, [255; 4]);
@@ -642,6 +651,7 @@ mod tests {
             );
             assert_eq!(theme.keyboard.key_groups[0].keys, ["q", "w", "e", "r"]);
             assert_eq!(theme.battery.full, [255; 4]);
+            assert_eq!(theme.menus.selected_text_color, Some([10, 20, 30, 128]));
         }
     }
 
@@ -655,10 +665,23 @@ mod tests {
     }
 
     #[test]
+    fn selected_menu_text_accepts_rgb_and_rgba() {
+        for (value, expected) in [
+            ("[1, 2, 3]", [1, 2, 3, 255]),
+            ("[4, 5, 6, 7]", [4, 5, 6, 7]),
+        ] {
+            let theme = Theme::parse(&format!("[menus]\nselected_text_color = {value}")).unwrap();
+            assert_eq!(theme.menus.selected_text_color, Some(expected));
+        }
+    }
+
+    #[test]
     fn invalid_palettes_and_references_are_rejected() {
         for text in [
             "text_color = 'missing'",
             "[battery]\nfull = 'missing'",
+            "[menus]\nselected_text_color = 'missing'",
+            "[menus]\nselected_text_color = [256, 0, 0]",
             "[colours]\nbad = [256, 0, 0]",
             "[colors]\nbad = [1, 2, 3, 4, 5]",
             "[colours]\nbad = 'other'",

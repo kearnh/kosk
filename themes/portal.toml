@@ -157,6 +157,7 @@ text_color = "charcoal"
 cursor_color = "portal_orange"
 
 [menus]
+selected_text_color = "charcoal"
 heading_color = "charcoal"
 muted_text_color = "muted_grey"
 

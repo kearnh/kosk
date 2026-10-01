@@ -150,6 +150,7 @@ cursor_color = "pale_yellow"
 [menus]
 heading_color = "electric_yellow"
 muted_text_color = "muted_cyan"
+selected_text_color = "black_ink"
 
 [mappings]
 row_focus_color = "yellow_row"

@@ -148,6 +148,7 @@ cursor_color = "bright_amber"
 [menus]
 heading_color = "bright_amber"
 muted_text_color = "muted_steel"
+selected_text_color = "charcoal"
 
 [mappings]
 row_focus_color = "row_amber"

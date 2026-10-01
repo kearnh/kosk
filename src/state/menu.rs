@@ -94,8 +94,14 @@ impl MenuState {
                             .skip(view_start)
                             .take(view_end - view_start)
                         {
-                            if draw_row(ui, &row.label, row.value.as_deref(), index == focus)
-                                .clicked()
+                            if draw_row(
+                                ui,
+                                &row.label,
+                                row.value.as_deref(),
+                                index == focus,
+                                appearance,
+                            )
+                            .clicked()
                             {
                                 let already = index == focus;
                                 self.form.set_focus(index, kind);
@@ -346,7 +352,13 @@ fn buttons_for(
     }
 }
 
-fn draw_row(ui: &mut Ui, label: &str, value: Option<&str>, selected: bool) -> egui::Response {
+fn draw_row(
+    ui: &mut Ui,
+    label: &str,
+    value: Option<&str>,
+    selected: bool,
+    appearance: &crate::theme::MenusTheme,
+) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(LIST_WIDTH, ROW_HEIGHT), Sense::click());
     if selected {
@@ -356,7 +368,14 @@ fn draw_row(ui: &mut Ui, label: &str, value: Option<&str>, selected: bool) -> eg
             ui.visuals().selection.bg_fill,
         );
     }
-    let color = ui.visuals().text_color();
+    let color = if selected {
+        appearance
+            .selected_text_color
+            .map(crate::theme::color)
+            .unwrap_or_else(|| ui.visuals().text_color())
+    } else {
+        ui.visuals().text_color()
+    };
     ui.painter().text(
         rect.left_center() + Vec2::new(ROW_PAD, 0.0),
         Align2::LEFT_CENTER,
@@ -419,6 +438,115 @@ fn filter_open_config_hint(mut hints: Vec<FooterHint>, uses_user_config: bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MINIMUM_MENU_TEXT_CONTRAST: f32 = 4.5;
+
+    fn row_text_colors(theme: &crate::theme::Theme, selected: bool) -> Vec<egui::Color32> {
+        let ctx = Context::default();
+        ctx.set_visuals(theme.visuals());
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            draw_row(ui, "Label", Some("Value"), selected, &theme.menus);
+        });
+        output.textures_delta.clear();
+        if selected {
+            assert!(output.shapes.iter().any(|shape| matches!(
+                &shape.shape,
+                egui::Shape::Rect(rect)
+                    if rect.fill == crate::theme::color(theme.selection_background_color)
+            )));
+        }
+        output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some(text.galley.job.sections[0].format.color),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn contrast_ratio(first: egui::Color32, second: egui::Color32) -> f32 {
+        const SRGB_LINEAR_THRESHOLD: f32 = 0.04045;
+        const SRGB_LINEAR_SCALE: f32 = 12.92;
+        const SRGB_OFFSET: f32 = 0.055;
+        const SRGB_SCALE: f32 = 1.055;
+        const SRGB_EXPONENT: f32 = 2.4;
+        const LUMINANCE_WEIGHTS: [f32; 3] = [0.2126, 0.7152, 0.0722];
+        const CONTRAST_LUMINANCE_OFFSET: f32 = 0.05;
+
+        let luminance = |color: egui::Color32| {
+            color.to_srgba_unmultiplied()[..3]
+                .iter()
+                .zip(LUMINANCE_WEIGHTS)
+                .map(|(&channel, weight)| {
+                    let channel = f32::from(channel) / f32::from(u8::MAX);
+                    let linear = if channel <= SRGB_LINEAR_THRESHOLD {
+                        channel / SRGB_LINEAR_SCALE
+                    } else {
+                        ((channel + SRGB_OFFSET) / SRGB_SCALE).powf(SRGB_EXPONENT)
+                    };
+                    weight * linear
+                })
+                .sum::<f32>()
+        };
+        let first = luminance(first);
+        let second = luminance(second);
+        (first.max(second) + CONTRAST_LUMINANCE_OFFSET)
+            / (first.min(second) + CONTRAST_LUMINANCE_OFFSET)
+    }
+
+    #[test]
+    fn included_themes_keep_selected_and_unselected_menu_text_readable() {
+        for source in [
+            include_str!("../../themes/cyberpunk-2077.toml"),
+            include_str!("../../themes/factorio.toml"),
+            include_str!("../../themes/hollow-knight.toml"),
+            include_str!("../../themes/old-steam-controller.toml"),
+            include_str!("../../themes/portal.toml"),
+            include_str!("../../themes/stardew-valley.toml"),
+        ] {
+            let document: toml::Value = toml::from_str(source).unwrap();
+            let name = document["name"].as_str().unwrap();
+            let theme = crate::theme::Theme::parse(source).unwrap();
+            for selected in [false, true] {
+                let background = crate::theme::color(if selected {
+                    theme.selection_background_color
+                } else {
+                    theme.background_color
+                });
+                let colors = row_text_colors(&theme, selected);
+                assert_eq!(colors.len(), 2, "{name}: label and value must be painted");
+                for color in colors {
+                    let contrast = contrast_ratio(color, background);
+                    assert!(
+                        contrast >= MINIMUM_MENU_TEXT_CONTRAST,
+                        "{name}: selected={selected}, text contrast {contrast:.2}:1"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn selected_menu_text_override_preserves_unselected_text_and_omitted_defaults() {
+        let source = "text_color = [40, 50, 60]\n\
+                      [noninteractive]\ntext_color = [70, 80, 90]\n";
+        let inherited = crate::theme::Theme::parse(source).unwrap();
+        let normal_color = crate::theme::color(inherited.noninteractive.text_color);
+        for selected in [false, true] {
+            assert_eq!(row_text_colors(&inherited, selected), [normal_color; 2]);
+        }
+
+        let overridden = crate::theme::Theme::parse(&format!(
+            "{source}[menus]\nselected_text_color = [10, 20, 30, 255]"
+        ))
+        .unwrap();
+        assert_eq!(row_text_colors(&overridden, false), [normal_color; 2]);
+        assert_eq!(
+            row_text_colors(&overridden, true),
+            [crate::theme::color([10, 20, 30, 255]); 2]
+        );
+    }
 
     fn test_hints() -> Vec<FooterHint> {
         vec![

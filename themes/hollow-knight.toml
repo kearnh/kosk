@@ -152,6 +152,7 @@ cursor_color = "soul_blue"
 [menus]
 heading_color = "soul_blue"
 muted_text_color = "muted_silver"
+selected_text_color = "pale_bone"
 
 [mappings]
 row_focus_color = "soul_row"

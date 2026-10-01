@@ -144,7 +144,11 @@ keep only the overrides your theme needs.
   `left_fill_color`, `right_fill_color`.
   Supplied values override config; omitted values use config defaults. Colors accept palette
   names or RGB/RGBA arrays. Cursor visibility stays in config.
-- `[menus]`: `heading_color`, `muted_text_color`.
+- `[menus]`: `heading_color`, `muted_text_color`, `selected_text_color`.
+  Selected Settings rows, including theme choices, use `selected_text_color`
+  for labels and values against the top-level `selection_background_color`.
+  Omit it to use the ordinary menu text color. Unselected rows use the
+  noninteractive text color (inherited from top-level `text_color`).
 - `[mappings]`: `row_focus_color`, `table_focus_color`, `focus_border_color`,
   `focus_border_width`, `text_color`, `warning_color`, `error_color`,
   `success_color`, `unsaved_color`, `editor_background_color`,

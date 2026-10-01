@@ -44,6 +44,7 @@ editor_border_blue = [45, 81, 104]
 move_window_navy = [15, 40, 61, 80]
 move_border_blue = [122, 163, 188, 230]
 move_text_white = [220, 229, 234]
+selection_text_white = [220, 229, 234]
 text_shadow_navy = [8, 22, 34]
 notification_navy = [15, 40, 61, 245]
 notification_grey = [132, 153, 167]
@@ -152,6 +153,7 @@ text_color = "light_grey"
 cursor_color = "cursor_blue"
 
 [menus]
+selected_text_color = "selection_text_white"
 heading_color = "light_grey"
 muted_text_color = "muted_grey"
 

@@ -153,6 +153,7 @@ cursor_color = "forest_green"
 [menus]
 heading_color = "forest_green"
 muted_text_color = "muted_brown"
+selected_text_color = "vanilla"
 
 [mappings]
 row_focus_color = "leaf_row"
