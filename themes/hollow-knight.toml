@@ -1,0 +1,196 @@
+# Hallownest: midnight caverns, bone white, soul blue and violet.
+name = "Hollow Knight"
+background_color = "void_navy"
+keyboard_opacity = 1.0
+ui_opacity = 1.0
+text_color = "bone_white"
+muted_text_color = "muted_silver"
+selection_background_color = "deep_soul_blue"
+selection_border_color = "soul_blue"
+selection_border_width = 2.0
+window_border_color = "stone_blue"
+window_border_width = 1.0
+window_corner_radius = 8.0
+
+[colours]
+void_navy = [13, 18, 31]
+cavern_panel = [23, 31, 49]
+slate_blue = [32, 44, 65]
+mist_blue = [44, 62, 87]
+stone_blue = [84, 105, 132]
+bone_white = [237, 238, 225]
+muted_silver = [158, 174, 197]
+deep_soul_blue = [50, 79, 113]
+soul_blue = [176, 213, 242]
+dream_violet = [82, 63, 116]
+deep_unn_green = [60, 93, 96]
+pale_bone = [247, 248, 239]
+unn_green = [157, 203, 177]
+pale_geo_gold = [234, 192, 125]
+infection_orange = [244, 151, 126]
+deep_void = [9, 14, 25]
+soul_flash = [220, 237, 255, 145]
+soul_row = [176, 213, 242, 55]
+soul_table = [176, 213, 242, 24]
+void_ghost = [13, 18, 31, 100]
+void_shadow = [0, 0, 0, 230]
+soul_white = [216, 238, 255]
+dream_glow = [207, 184, 241]
+
+[noninteractive]
+background_color = "cavern_panel"
+weak_background_color = "void_navy"
+text_color = "bone_white"
+border_color = "stone_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[inactive]
+background_color = "slate_blue"
+weak_background_color = "cavern_panel"
+text_color = "bone_white"
+border_color = "stone_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[hovered]
+background_color = "mist_blue"
+weak_background_color = "mist_blue"
+text_color = "bone_white"
+border_color = "soul_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[active]
+background_color = "deep_soul_blue"
+weak_background_color = "deep_soul_blue"
+text_color = "pale_bone"
+border_color = "soul_blue"
+border_width = 2.0
+corner_radius = 8.0
+
+[open]
+background_color = "mist_blue"
+weak_background_color = "mist_blue"
+text_color = "bone_white"
+border_color = "soul_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[stick_pad_cursors]
+appearance = "fade"
+radius = 12.0
+ring_thickness = 1.5
+ring_fill_opacity = 0.22
+opacity = 0.9
+left_color = "soul_white"
+right_color = "dream_glow"
+left_fill_color = "soul_white"
+right_fill_color = "dream_glow"
+
+[keyboard]
+selection_background_color = "deep_soul_blue"
+selection_text_color = "pale_bone"
+left_selection_color = "deep_soul_blue"
+right_selection_color = "dream_violet"
+dual_selection_color = "deep_unn_green"
+modifier_text_color = "bone_white"
+key_press_color = "soul_flash"
+key_press_duration_ms = 180
+
+[[keyboard.key_groups]]
+keys = ["Return"]
+background_color = "deep_soul_blue"
+text_color = "pale_bone"
+
+[[keyboard.key_groups]]
+keys = ["exit"]
+background_color = "dream_violet"
+text_color = "pale_bone"
+
+[keyboard.inactive]
+background_color = "slate_blue"
+weak_background_color = "slate_blue"
+text_color = "bone_white"
+border_color = "stone_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[keyboard.hovered]
+background_color = "mist_blue"
+weak_background_color = "mist_blue"
+text_color = "bone_white"
+border_color = "soul_blue"
+border_width = 1.0
+corner_radius = 8.0
+
+[keyboard.active]
+background_color = "deep_soul_blue"
+weak_background_color = "deep_soul_blue"
+text_color = "pale_bone"
+border_color = "soul_blue"
+border_width = 2.0
+corner_radius = 8.0
+
+[suggestions]
+background_color = "slate_blue"
+text_color = "bone_white"
+selected_background_color = "deep_soul_blue"
+selected_text_color = "pale_bone"
+empty_slot_background = "cavern_panel"
+armed_color = "unn_green"
+disarmed_color = "muted_silver"
+new_word_mark_color = "soul_blue"
+corner_radius = 8.0
+selected_outline_width = 2.0
+
+[text_input]
+background_color = "deep_void"
+text_color = "bone_white"
+cursor_color = "soul_blue"
+
+[menus]
+heading_color = "soul_blue"
+muted_text_color = "muted_silver"
+
+[mappings]
+row_focus_color = "soul_row"
+table_focus_color = "soul_table"
+focus_border_color = "soul_blue"
+focus_border_width = 2.0
+text_color = "bone_white"
+warning_color = "pale_geo_gold"
+error_color = "infection_orange"
+success_color = "unn_green"
+unsaved_color = "soul_blue"
+editor_background_color = "deep_void"
+editor_border_color = "stone_blue"
+editor_border_width = 1.0
+editor_corner_radius = 8.0
+
+[move_window]
+background_color = "void_ghost"
+border_color = "soul_blue"
+border_width = 2.0
+corner_radius = 8.0
+text_color = "bone_white"
+text_shadow_color = "void_shadow"
+
+[notifications]
+background_color = "cavern_panel"
+border_color = "stone_blue"
+border_width = 1.0
+corner_radius = 8.0
+muted_text_color = "muted_silver"
+info_color = "soul_blue"
+warning_color = "pale_geo_gold"
+error_color = "infection_orange"
+
+[battery]
+empty = "infection_orange"
+low = "pale_geo_gold"
+medium = "pale_geo_gold"
+high = "unn_green"
+full = "unn_green"
+charging = "soul_blue"
+unknown = "muted_silver"

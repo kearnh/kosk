@@ -1,0 +1,197 @@
+# Pelican Town: parchment menus, wooden frames, leaf green and harvest gold.
+name = "Stardew Valley"
+background_color = "warm_wood"
+keyboard_opacity = 1.0
+ui_opacity = 1.0
+text_color = "dark_brown"
+muted_text_color = "muted_brown"
+selection_background_color = "leaf_green"
+selection_border_color = "forest_green"
+selection_border_width = 2.0
+window_border_color = "walnut"
+window_border_width = 2.0
+window_corner_radius = 3.0
+
+[colours]
+warm_wood = [232, 195, 137]
+parchment = [250, 226, 180]
+cream = [255, 239, 202]
+pale_cream = [255, 247, 219]
+walnut = [121, 75, 43]
+dark_brown = [65, 42, 27]
+muted_brown = [113, 79, 50]
+leaf_green = [51, 100, 49]
+forest_green = [40, 83, 42]
+terracotta = [146, 65, 40]
+river_blue = [53, 91, 122]
+vanilla = [255, 245, 220]
+crop_green = [40, 99, 44]
+dark_gold = [126, 79, 13]
+berry_red = [164, 43, 34]
+paper = [255, 247, 221]
+sunlight_flash = [255, 205, 84, 155]
+leaf_row = [51, 100, 49, 60]
+leaf_table = [51, 100, 49, 25]
+wood_ghost = [232, 195, 137, 110]
+cream_shadow = [255, 247, 221, 230]
+grass_green = [47, 106, 46]
+harvest_gold = [177, 109, 12]
+ochre = [155, 94, 17]
+
+[noninteractive]
+background_color = "parchment"
+weak_background_color = "warm_wood"
+text_color = "dark_brown"
+border_color = "walnut"
+border_width = 2.0
+corner_radius = 3.0
+
+[inactive]
+background_color = "cream"
+weak_background_color = "parchment"
+text_color = "dark_brown"
+border_color = "walnut"
+border_width = 2.0
+corner_radius = 3.0
+
+[hovered]
+background_color = "pale_cream"
+weak_background_color = "pale_cream"
+text_color = "dark_brown"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+
+[active]
+background_color = "leaf_green"
+weak_background_color = "leaf_green"
+text_color = "vanilla"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+
+[open]
+background_color = "pale_cream"
+weak_background_color = "pale_cream"
+text_color = "dark_brown"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+
+[stick_pad_cursors]
+appearance = "solid"
+radius = 8.0
+ring_thickness = 2.0
+ring_fill_opacity = 0.25
+opacity = 0.85
+left_color = "grass_green"
+right_color = "harvest_gold"
+left_fill_color = "grass_green"
+right_fill_color = "harvest_gold"
+
+[keyboard]
+selection_background_color = "leaf_green"
+selection_text_color = "vanilla"
+left_selection_color = "leaf_green"
+right_selection_color = "terracotta"
+dual_selection_color = "river_blue"
+modifier_text_color = "forest_green"
+key_press_color = "sunlight_flash"
+key_press_duration_ms = 180
+
+[[keyboard.key_groups]]
+keys = ["Return"]
+background_color = "leaf_green"
+text_color = "vanilla"
+
+[[keyboard.key_groups]]
+keys = ["exit"]
+background_color = "terracotta"
+text_color = "vanilla"
+
+[keyboard.inactive]
+background_color = "cream"
+weak_background_color = "cream"
+text_color = "dark_brown"
+border_color = "walnut"
+border_width = 2.0
+corner_radius = 3.0
+
+[keyboard.hovered]
+background_color = "pale_cream"
+weak_background_color = "pale_cream"
+text_color = "dark_brown"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+
+[keyboard.active]
+background_color = "leaf_green"
+weak_background_color = "leaf_green"
+text_color = "vanilla"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+
+[suggestions]
+background_color = "cream"
+text_color = "dark_brown"
+selected_background_color = "leaf_green"
+selected_text_color = "vanilla"
+empty_slot_background = "parchment"
+armed_color = "crop_green"
+disarmed_color = "muted_brown"
+new_word_mark_color = "ochre"
+corner_radius = 3.0
+selected_outline_width = 2.0
+
+[text_input]
+background_color = "paper"
+text_color = "dark_brown"
+cursor_color = "forest_green"
+
+[menus]
+heading_color = "forest_green"
+muted_text_color = "muted_brown"
+
+[mappings]
+row_focus_color = "leaf_row"
+table_focus_color = "leaf_table"
+focus_border_color = "forest_green"
+focus_border_width = 2.0
+text_color = "dark_brown"
+warning_color = "dark_gold"
+error_color = "berry_red"
+success_color = "crop_green"
+unsaved_color = "ochre"
+editor_background_color = "paper"
+editor_border_color = "walnut"
+editor_border_width = 2.0
+editor_corner_radius = 3.0
+
+[move_window]
+background_color = "wood_ghost"
+border_color = "forest_green"
+border_width = 2.0
+corner_radius = 3.0
+text_color = "dark_brown"
+text_shadow_color = "cream_shadow"
+
+[notifications]
+background_color = "parchment"
+border_color = "walnut"
+border_width = 2.0
+corner_radius = 3.0
+muted_text_color = "muted_brown"
+info_color = "river_blue"
+warning_color = "dark_gold"
+error_color = "berry_red"
+
+[battery]
+empty = "berry_red"
+low = "terracotta"
+medium = "ochre"
+high = "crop_green"
+full = "crop_green"
+charging = "river_blue"
+unknown = "muted_brown"

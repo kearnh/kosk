@@ -1,0 +1,194 @@
+# Night City: black chrome, electric yellow, cyan and hot pink.
+name = "Cyberpunk 2077"
+background_color = "black_chrome"
+keyboard_opacity = 1.0
+ui_opacity = 1.0
+text_color = "ice_white"
+muted_text_color = "muted_cyan"
+selection_background_color = "electric_yellow"
+selection_border_color = "pale_yellow"
+selection_border_width = 2.0
+window_border_color = "steel_blue"
+window_border_width = 1.5
+window_corner_radius = 0.0
+
+[colours]
+black_chrome = [13, 17, 24]
+night_panel = [22, 29, 39]
+gunmetal = [30, 40, 52]
+hover_gunmetal = [39, 55, 69]
+steel_blue = [73, 97, 111]
+ice_white = [222, 245, 247]
+muted_cyan = [147, 177, 186]
+electric_yellow = [248, 239, 35]
+pale_yellow = [255, 249, 119]
+neon_cyan = [47, 231, 240]
+hot_pink = [245, 114, 193]
+black_ink = [13, 17, 24]
+signal_green = [111, 232, 151]
+warning_yellow = [248, 239, 35]
+coral_red = [255, 121, 130]
+deep_black = [9, 13, 20]
+cyan_flash = [47, 231, 240, 150]
+yellow_row = [248, 239, 35, 65]
+yellow_table = [248, 239, 35, 28]
+night_ghost = [13, 17, 24, 100]
+black_shadow = [0, 0, 0, 230]
+
+[noninteractive]
+background_color = "night_panel"
+weak_background_color = "black_chrome"
+text_color = "ice_white"
+border_color = "steel_blue"
+border_width = 1.5
+corner_radius = 0.0
+
+[inactive]
+background_color = "gunmetal"
+weak_background_color = "night_panel"
+text_color = "ice_white"
+border_color = "steel_blue"
+border_width = 1.5
+corner_radius = 0.0
+
+[hovered]
+background_color = "hover_gunmetal"
+weak_background_color = "hover_gunmetal"
+text_color = "ice_white"
+border_color = "neon_cyan"
+border_width = 1.5
+corner_radius = 0.0
+
+[active]
+background_color = "electric_yellow"
+weak_background_color = "electric_yellow"
+text_color = "black_ink"
+border_color = "pale_yellow"
+border_width = 2.0
+corner_radius = 0.0
+
+[open]
+background_color = "hover_gunmetal"
+weak_background_color = "hover_gunmetal"
+text_color = "ice_white"
+border_color = "pale_yellow"
+border_width = 1.5
+corner_radius = 0.0
+
+[stick_pad_cursors]
+appearance = "ring"
+radius = 10.0
+ring_thickness = 2.0
+ring_fill_opacity = 0.18
+opacity = 1.0
+left_color = "electric_yellow"
+right_color = "neon_cyan"
+left_fill_color = "electric_yellow"
+right_fill_color = "neon_cyan"
+
+[keyboard]
+selection_background_color = "electric_yellow"
+selection_text_color = "black_ink"
+left_selection_color = "electric_yellow"
+right_selection_color = "neon_cyan"
+dual_selection_color = "hot_pink"
+modifier_text_color = "ice_white"
+key_press_color = "cyan_flash"
+key_press_duration_ms = 180
+
+[[keyboard.key_groups]]
+keys = ["Return"]
+background_color = "neon_cyan"
+text_color = "black_ink"
+
+[[keyboard.key_groups]]
+keys = ["exit"]
+background_color = "hot_pink"
+text_color = "black_ink"
+
+[keyboard.inactive]
+background_color = "gunmetal"
+weak_background_color = "gunmetal"
+text_color = "ice_white"
+border_color = "steel_blue"
+border_width = 1.5
+corner_radius = 0.0
+
+[keyboard.hovered]
+background_color = "hover_gunmetal"
+weak_background_color = "hover_gunmetal"
+text_color = "ice_white"
+border_color = "pale_yellow"
+border_width = 1.5
+corner_radius = 0.0
+
+[keyboard.active]
+background_color = "electric_yellow"
+weak_background_color = "electric_yellow"
+text_color = "black_ink"
+border_color = "pale_yellow"
+border_width = 2.0
+corner_radius = 0.0
+
+[suggestions]
+background_color = "gunmetal"
+text_color = "ice_white"
+selected_background_color = "electric_yellow"
+selected_text_color = "black_ink"
+empty_slot_background = "night_panel"
+armed_color = "signal_green"
+disarmed_color = "muted_cyan"
+new_word_mark_color = "pale_yellow"
+corner_radius = 0.0
+selected_outline_width = 2.0
+
+[text_input]
+background_color = "deep_black"
+text_color = "ice_white"
+cursor_color = "pale_yellow"
+
+[menus]
+heading_color = "electric_yellow"
+muted_text_color = "muted_cyan"
+
+[mappings]
+row_focus_color = "yellow_row"
+table_focus_color = "yellow_table"
+focus_border_color = "neon_cyan"
+focus_border_width = 2.0
+text_color = "ice_white"
+warning_color = "warning_yellow"
+error_color = "coral_red"
+success_color = "signal_green"
+unsaved_color = "pale_yellow"
+editor_background_color = "deep_black"
+editor_border_color = "steel_blue"
+editor_border_width = 1.5
+editor_corner_radius = 0.0
+
+[move_window]
+background_color = "night_ghost"
+border_color = "neon_cyan"
+border_width = 2.0
+corner_radius = 0.0
+text_color = "ice_white"
+text_shadow_color = "black_shadow"
+
+[notifications]
+background_color = "night_panel"
+border_color = "steel_blue"
+border_width = 1.5
+corner_radius = 0.0
+muted_text_color = "muted_cyan"
+info_color = "neon_cyan"
+warning_color = "warning_yellow"
+error_color = "coral_red"
+
+[battery]
+empty = "coral_red"
+low = "warning_yellow"
+medium = "warning_yellow"
+high = "signal_green"
+full = "signal_green"
+charging = "neon_cyan"
+unknown = "muted_cyan"
