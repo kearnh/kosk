@@ -375,52 +375,52 @@ impl NgramEngine {
                     return None;
                 }
                 let w = (*key & ID_MASK) as u32;
-                if let Some(word) = self.vocab.get(w as usize) {
-                    if seen.insert(word.clone()) {
-                        let s = self.blend(ctx, word);
-                        scored.push((word.clone(), s, Source::Ngram));
-                    }
+                if let Some(word) = self.vocab.get(w as usize)
+                    && seen.insert(word.clone())
+                {
+                    let s = self.blend(ctx, word);
+                    scored.push((word.clone(), s, Source::Ngram));
                 }
             }
         }
 
-        if scored.is_empty() {
-            if let Some(a) = ids.last() {
-                let lo = pack2(*a, 0);
-                let hi = pack2(a.saturating_add(1), 0);
-                let rows = if *a == ID_MASK as u32 {
-                    range_with_prefix(&self.bigrams, lo, u64::MAX)
-                } else {
-                    range_with_prefix(&self.bigrams, lo, hi)
-                };
-                for (i, (key, _)) in rows.iter().enumerate() {
-                    if i % self.abort_every == 0 && abort.stale() {
-                        return None;
-                    }
-                    let w = (*key & ID_MASK) as u32;
-                    if let Some(word) = self.vocab.get(w as usize) {
-                        if seen.insert(word.clone()) {
-                            let s = self.blend(ctx, word);
-                            scored.push((word.clone(), s, Source::Ngram));
-                        }
-                    }
+        if scored.is_empty()
+            && let Some(a) = ids.last()
+        {
+            let lo = pack2(*a, 0);
+            let hi = pack2(a.saturating_add(1), 0);
+            let rows = if *a == ID_MASK as u32 {
+                range_with_prefix(&self.bigrams, lo, u64::MAX)
+            } else {
+                range_with_prefix(&self.bigrams, lo, hi)
+            };
+            for (i, (key, _)) in rows.iter().enumerate() {
+                if i % self.abort_every == 0 && abort.stale() {
+                    return None;
+                }
+                let w = (*key & ID_MASK) as u32;
+                if let Some(word) = self.vocab.get(w as usize)
+                    && seen.insert(word.clone())
+                {
+                    let s = self.blend(ctx, word);
+                    scored.push((word.clone(), s, Source::Ngram));
                 }
             }
         }
 
-        if let Some(prev) = ctx.prev_words.last() {
-            if let Some(cache) = &self.user {
-                let cont = cache.lock().unwrap().continuations(&ctx.app_type, prev);
-                for (word, _) in cont {
-                    if abort.stale() {
-                        return None;
-                    }
-                    if !seen.insert(word.clone()) {
-                        continue;
-                    }
-                    let s = self.blend(ctx, &word);
-                    scored.push((word, s, Source::UserCache));
+        if let Some(prev) = ctx.prev_words.last()
+            && let Some(cache) = &self.user
+        {
+            let cont = cache.lock().unwrap().continuations(&ctx.app_type, prev);
+            for (word, _) in cont {
+                if abort.stale() {
+                    return None;
                 }
+                if !seen.insert(word.clone()) {
+                    continue;
+                }
+                let s = self.blend(ctx, &word);
+                scored.push((word, s, Source::UserCache));
             }
         }
 
@@ -551,10 +551,10 @@ mod tests {
         eng.bigrams = vec![(pack2(0, 1), 8)];
         eng.trigrams = vec![(pack3(0, 1, 2), 7)];
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
@@ -576,10 +576,10 @@ mod tests {
         eng.bigrams = vec![(pack2(1, 2), 6)];
         eng.trigrams = Vec::new();
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
@@ -607,10 +607,10 @@ mod tests {
         eng.unigram_total = 2715;
         eng.bigrams = vec![(pack2(3, 4), 8)];
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
@@ -634,10 +634,10 @@ mod tests {
         let user = Arc::new(Mutex::new(cache));
         let eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(out[0].text, "sat");
@@ -654,10 +654,10 @@ mod tests {
         cache.learn_words("browser", &["jujutsu".into()]);
         let user = Arc::new(Mutex::new(cache));
         let eng = NgramEngine::from_dictionary(dict, &cfg, Some(user));
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
         ctx.app_type = "browser".into();
@@ -679,10 +679,10 @@ mod tests {
         let dict = DictionaryEngine::from_wordlist_text("hello\t10\nhelp\t5\n", &cfg);
         let mut eng = NgramEngine::from_dictionary(dict, &cfg, None);
         eng.set_overlay(extras);
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
         ctx.app_type = "programming".into();
@@ -731,10 +731,10 @@ mod tests {
 
     fn suggest_hel(eng: &NgramEngine, cfg: &CompletionConfig) -> Vec<Candidate> {
         let ctx = CompletionContext::from_buffer("hel", 3, cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         eng.suggest(&ctx, &abort).unwrap()
     }
@@ -785,10 +785,10 @@ mod tests {
         eng.unigrams = vec![100, 100];
         eng.unigram_total = 200;
         let ctx = CompletionContext::from_buffer("dont", 4, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         let out = eng.suggest(&ctx, &abort).unwrap();
         let apos = out.iter().find(|c| c.text == "don't").expect("don't");
@@ -813,10 +813,10 @@ mod tests {
         let dict = DictionaryEngine::from_wordlist_text("the\t10\ncat\t10\n", &cfg);
         let eng = NgramEngine::from_dictionary(dict, &cfg, None);
         let ctx = CompletionContext::from_buffer("the cat ", 8, &cfg).unwrap();
-        let gen = AtomicU64::new(1);
+        let r#gen = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,
-            current: &gen,
+            current: &r#gen,
         };
         assert!(eng.suggest(&ctx, &abort).unwrap().is_empty());
     }

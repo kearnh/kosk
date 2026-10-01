@@ -252,10 +252,10 @@ where
     let Some(snap) = guard.as_ref() else {
         return geometry_not_ready(id);
     };
-    if let Some(want) = req.get("layout").and_then(|v| v.as_str()) {
-        if want != snap.layout {
-            return err(id, "layout_mismatch");
-        }
+    if let Some(want) = req.get("layout").and_then(|v| v.as_str())
+        && want != snap.layout
+    {
+        return err(id, "layout_mismatch");
     }
     f(snap)
 }
@@ -451,16 +451,14 @@ fn handle_geometry_command(cmd: &str, id: Value, req: &Value) -> Value {
             };
 
             // Prefer a point that hits: if centre inverse misses but AABB exists, try AABB centre.
-            if !reachable {
-                if let Some(aabb) = range {
-                    let ax = ((aabb.min_x + aabb.max_x) * 0.5).clamp(-1.0, 1.0);
-                    let ay = ((aabb.min_y + aabb.max_y) * 0.5).clamp(-1.0, 1.0);
-                    if hits(ax, ay) {
-                        x = ax;
-                        y = ay;
-                        reachable = true;
-                        reason = None;
-                    }
+            if !reachable && let Some(aabb) = range {
+                let ax = ((aabb.min_x + aabb.max_x) * 0.5).clamp(-1.0, 1.0);
+                let ay = ((aabb.min_y + aabb.max_y) * 0.5).clamp(-1.0, 1.0);
+                if hits(ax, ay) {
+                    x = ax;
+                    y = ay;
+                    reachable = true;
+                    reason = None;
                 }
             }
 

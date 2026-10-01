@@ -106,10 +106,10 @@ impl SelectLayoutState {
                     }
                 }
             });
-            if self.preview {
-                if let Some(kb) = self.preview_kb.as_mut() {
-                    let _ = kb.draw_keyboard_ui(ctx, ui, events);
-                }
+            if self.preview
+                && let Some(kb) = self.preview_kb.as_mut()
+            {
+                let _ = kb.draw_keyboard_ui(ctx, ui, events);
             }
         });
 

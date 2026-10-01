@@ -86,77 +86,77 @@ impl eframe::App for App {
         ctx.set_visuals(cfg.window_visuals(state));
 
         // Setup window styles (non-transparent parts)
-        if let Ok(h) = frame.window_handle() {
-            if let RawWindowHandle::Win32(h) = h.as_raw() {
-                use windows_sys::Win32::Foundation::{COLORREF, HWND};
-                use windows_sys::Win32::Graphics::Dwm::{
-                    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+        if let Ok(h) = frame.window_handle()
+            && let RawWindowHandle::Win32(h) = h.as_raw()
+        {
+            use windows_sys::Win32::Foundation::{COLORREF, HWND};
+            use windows_sys::Win32::Graphics::Dwm::{
+                DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+            };
+            use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+                LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+            };
+            let hwnd = h.hwnd.get() as HWND;
+            // Keep the overlay non-activating (can be reset by system), except while
+            // a text-entry mode needs OS keyboard input.
+            let wants_text_entry = text_entry_focus_wanted(state);
+            unsafe {
+                let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                let mut new_ex_style = if wants_text_entry {
+                    current_ex_style & !(WS_EX_NOACTIVATE as isize)
+                } else {
+                    current_ex_style | (WS_EX_NOACTIVATE as isize)
                 };
-                use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
-                use windows_sys::Win32::UI::WindowsAndMessaging::{
-                    GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
-                    LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-                };
-                let hwnd = h.hwnd.get() as HWND;
-                // Keep the overlay non-activating (can be reset by system), except while
-                // a text-entry mode needs OS keyboard input.
-                let wants_text_entry = text_entry_focus_wanted(state);
-                unsafe {
-                    let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                    let mut new_ex_style = if wants_text_entry {
-                        current_ex_style & !(WS_EX_NOACTIVATE as isize)
-                    } else {
-                        current_ex_style | (WS_EX_NOACTIVATE as isize)
-                    };
 
-                    if is_transparent {
-                        new_ex_style |= WS_EX_LAYERED as isize;
-                    }
+                if is_transparent {
+                    new_ex_style |= WS_EX_LAYERED as isize;
+                }
 
-                    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
 
-                    if is_transparent {
-                        // Set layered window attributes for alpha transparency
-                        let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
-                    }
+                if is_transparent {
+                    // Set layered window attributes for alpha transparency
+                    let _ = SetLayeredWindowAttributes(hwnd, 0 as COLORREF, 255, LWA_ALPHA);
+                }
 
-                    if is_transparent {
-                        let want_see_through = state == StateId::MoveWindow;
-                        if !self.window_setup_done || self.dwm_see_through != want_see_through {
-                            if want_see_through {
-                                let region = CreateRectRgn(0, 0, -1, -1);
-                                let bb = DWM_BLURBEHIND {
-                                    dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
-                                    fEnable: 1,
-                                    hRgnBlur: region,
-                                    fTransitionOnMaximized: 0,
-                                };
-                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
-                                let _ = DeleteObject(region);
-                            } else {
-                                let bb = DWM_BLURBEHIND {
-                                    dwFlags: DWM_BB_ENABLE,
-                                    fEnable: 1,
-                                    hRgnBlur: std::ptr::null_mut(),
-                                    fTransitionOnMaximized: 0,
-                                };
-                                let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
-                            }
-                            self.dwm_see_through = want_see_through;
+                if is_transparent {
+                    let want_see_through = state == StateId::MoveWindow;
+                    if !self.window_setup_done || self.dwm_see_through != want_see_through {
+                        if want_see_through {
+                            let region = CreateRectRgn(0, 0, -1, -1);
+                            let bb = DWM_BLURBEHIND {
+                                dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                                fEnable: 1,
+                                hRgnBlur: region,
+                                fTransitionOnMaximized: 0,
+                            };
+                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
+                            let _ = DeleteObject(region);
+                        } else {
+                            let bb = DWM_BLURBEHIND {
+                                dwFlags: DWM_BB_ENABLE,
+                                fEnable: 1,
+                                hRgnBlur: std::ptr::null_mut(),
+                                fTransitionOnMaximized: 0,
+                            };
+                            let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
                         }
-                        self.window_setup_done = true;
-                    } else if !self.window_setup_done {
-                        self.window_setup_done = true;
+                        self.dwm_see_through = want_see_through;
                     }
+                    self.window_setup_done = true;
+                } else if !self.window_setup_done {
+                    self.window_setup_done = true;
                 }
-                if wants_text_entry {
-                    if self.os_focus_guard.is_none() {
-                        self.os_focus_guard =
-                            Some(OsFocusGuard::activate_for_text_entry(hwnd as isize));
-                    }
-                } else if let Some(guard) = self.os_focus_guard.take() {
-                    guard.restore();
+            }
+            if wants_text_entry {
+                if self.os_focus_guard.is_none() {
+                    self.os_focus_guard =
+                        Some(OsFocusGuard::activate_for_text_entry(hwnd as isize));
                 }
+            } else if let Some(guard) = self.os_focus_guard.take() {
+                guard.restore();
             }
         }
 

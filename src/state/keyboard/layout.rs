@@ -601,11 +601,11 @@ impl KeyboardLayout {
                 let Some(key_button) = item.as_key() else {
                     continue;
                 };
-                if key_button.key.normal == *key {
-                    if let Some(centres) = &self.captured_centres {
-                        let pos = centres[row_idx][col_idx]?;
-                        return Some((pos.x, pos.y));
-                    }
+                if key_button.key.normal == *key
+                    && let Some(centres) = &self.captured_centres
+                {
+                    let pos = centres[row_idx][col_idx]?;
+                    return Some((pos.x, pos.y));
                 }
             }
         }
@@ -1098,10 +1098,10 @@ impl KeyboardLayout {
 
         let (other_score, row, col) = best?;
 
-        if let Some(s_sticky) = sticky_score {
-            if s_sticky <= other_score * k {
-                return sticky;
-            }
+        if let Some(s_sticky) = sticky_score
+            && s_sticky <= other_score * k
+        {
+            return sticky;
         }
 
         Some((row, col))
@@ -1203,25 +1203,25 @@ impl KeyboardLayout {
                 }
             }
 
-            if debug.reach_overlay != config::ReachOverlay::None {
-                if let Some(cache) = &self.reach_cache {
-                    match cache {
-                        ReachCache::Stick { left, right } => {
-                            draw_reach_envelope(&painter, left, side_color(StickSide::Left), 64);
-                            draw_reach_envelope(&painter, right, side_color(StickSide::Right), 64);
-                        }
-                        ReachCache::Pad {
-                            left_all,
-                            right_all,
-                            left_safe,
-                            right_safe,
-                        } => {
-                            let gray = reach_color(Color32::from_gray(210), 45);
-                            draw_reach_envelope(&painter, left_all, gray, 80);
-                            draw_reach_envelope(&painter, right_all, gray, 80);
-                            draw_dashed_reach_envelope(&painter, left_safe, StickSide::Left);
-                            draw_dashed_reach_envelope(&painter, right_safe, StickSide::Right);
-                        }
+            if debug.reach_overlay != config::ReachOverlay::None
+                && let Some(cache) = &self.reach_cache
+            {
+                match cache {
+                    ReachCache::Stick { left, right } => {
+                        draw_reach_envelope(&painter, left, side_color(StickSide::Left), 64);
+                        draw_reach_envelope(&painter, right, side_color(StickSide::Right), 64);
+                    }
+                    ReachCache::Pad {
+                        left_all,
+                        right_all,
+                        left_safe,
+                        right_safe,
+                    } => {
+                        let gray = reach_color(Color32::from_gray(210), 45);
+                        draw_reach_envelope(&painter, left_all, gray, 80);
+                        draw_reach_envelope(&painter, right_all, gray, 80);
+                        draw_dashed_reach_envelope(&painter, left_safe, StickSide::Left);
+                        draw_dashed_reach_envelope(&painter, right_safe, StickSide::Right);
                     }
                 }
             }

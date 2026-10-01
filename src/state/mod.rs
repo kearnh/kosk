@@ -448,11 +448,9 @@ impl AppState {
                 if toasts::is_tip_acknowledge(&notice.key) {
                     toasts::acknowledge_tip();
                 }
-                if open_guide {
-                    if let Err(e) = toasts::open_setup_guide() {
-                        eprintln!("setup guide: {e:#}");
-                        crate::user_notify::notify(crate::user_notify::Notice::guide_failed());
-                    }
+                if open_guide && let Err(e) = toasts::open_setup_guide() {
+                    eprintln!("setup guide: {e:#}");
+                    crate::user_notify::notify(crate::user_notify::Notice::guide_failed());
                 }
                 self.reset_current_mode_controller(Some(input));
                 self.events.end_controller_tick();

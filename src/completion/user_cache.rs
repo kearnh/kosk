@@ -79,13 +79,13 @@ impl UserCache {
         let bytes =
             std::fs::read(&self.path).with_context(|| format!("read {}", self.path.display()))?;
         let now = Instant::now();
-        if let Ok(v2) = postcard::from_bytes::<PersistV2>(&bytes) {
-            if v2.version == PERSIST_VERSION {
-                for (ty, bucket) in v2.by_type {
-                    self.insert_bucket(&ty, bucket, now);
-                }
-                return Ok(());
+        if let Ok(v2) = postcard::from_bytes::<PersistV2>(&bytes)
+            && v2.version == PERSIST_VERSION
+        {
+            for (ty, bucket) in v2.by_type {
+                self.insert_bucket(&ty, bucket, now);
             }
+            return Ok(());
         }
         let v1: PersistV1 = postcard::from_bytes(&bytes).context("parse user cache")?;
         self.insert_bucket(

@@ -119,20 +119,20 @@ impl MenuState {
                         draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));
                     });
 
-                    if let Some(row) = focused {
-                        if let Some(explain) = row.explain {
-                            ui.vertical(|ui| {
-                                ui.set_min_width(PANEL_WIDTH);
-                                ui.set_max_width(PANEL_WIDTH);
-                                ui.label(
-                                    RichText::new(&row.label)
-                                        .strong()
-                                        .color(crate::theme::color(appearance.heading_color)),
-                                );
-                                ui.add_space(6.0);
-                                ui.label(explain);
-                            });
-                        }
+                    if let Some(row) = focused
+                        && let Some(explain) = row.explain
+                    {
+                        ui.vertical(|ui| {
+                            ui.set_min_width(PANEL_WIDTH);
+                            ui.set_max_width(PANEL_WIDTH);
+                            ui.label(
+                                RichText::new(&row.label)
+                                    .strong()
+                                    .color(crate::theme::color(appearance.heading_color)),
+                            );
+                            ui.add_space(6.0);
+                            ui.label(explain);
+                        });
                     }
                 });
             });

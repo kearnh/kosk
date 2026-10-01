@@ -226,10 +226,10 @@ impl MoveWindowState {
             }
             AnalogSource::LeftPad(sample) => {
                 let mut pos = coords;
-                if self.last_right_pad.is_some() {
-                    if let Some(p) = self.finish_pad(pos, window_size, monitor_size, now) {
-                        pos = p;
-                    }
+                if self.last_right_pad.is_some()
+                    && let Some(p) = self.finish_pad(pos, window_size, monitor_size, now)
+                {
+                    pos = p;
                 }
                 Self::apply_pad_mouse(
                     &mut self.last_left_pad,
@@ -244,10 +244,10 @@ impl MoveWindowState {
             }
             AnalogSource::RightPad(sample) => {
                 let mut pos = coords;
-                if self.last_left_pad.is_some() {
-                    if let Some(p) = self.finish_pad(pos, window_size, monitor_size, now) {
-                        pos = p;
-                    }
+                if self.last_left_pad.is_some()
+                    && let Some(p) = self.finish_pad(pos, window_size, monitor_size, now)
+                {
+                    pos = p;
                 }
                 Self::apply_pad_mouse(
                     &mut self.last_right_pad,

@@ -214,10 +214,10 @@ fn validate_binding_candidate(
     candidate_when: Option<&str>,
     ignore: Option<&MappingPill>,
 ) -> Result<(), String> {
-    if let ControllerBinding::Chord { leader, follower } = candidate {
-        if leader == follower {
-            return Err("conflict: chord leader and follower must differ".to_owned());
-        }
+    if let ControllerBinding::Chord { leader, follower } = candidate
+        && leader == follower
+    {
+        return Err("conflict: chord leader and follower must differ".to_owned());
     }
 
     let mut occupied: HashMap<(ControllerBinding, Option<String>), String> = HashMap::new();
@@ -603,22 +603,22 @@ impl MappingsState {
                     when: keep_when,
                 };
                 if action == old_action {
-                    if let Some(vec) = self.current_draft_mut().get_mut(&old_action) {
-                        if pill < vec.len() {
-                            vec[pill] = new_pill;
-                            self.dirty = true;
-                            self.status = "ready".to_owned();
-                        }
+                    if let Some(vec) = self.current_draft_mut().get_mut(&old_action)
+                        && pill < vec.len()
+                    {
+                        vec[pill] = new_pill;
+                        self.dirty = true;
+                        self.status = "ready".to_owned();
                     }
                     self.focus_action_pill(&old_action, pill);
                 } else {
                     let draft = self.current_draft_mut();
-                    if let Some(vec) = draft.get_mut(&old_action) {
-                        if pill < vec.len() {
-                            vec.remove(pill);
-                            if vec.is_empty() {
-                                draft.remove(&old_action);
-                            }
+                    if let Some(vec) = draft.get_mut(&old_action)
+                        && pill < vec.len()
+                    {
+                        vec.remove(pill);
+                        if vec.is_empty() {
+                            draft.remove(&old_action);
                         }
                     }
                     draft.entry(action.clone()).or_default().push(new_pill);
@@ -818,10 +818,10 @@ impl MappingsState {
                 }
                 for (i, pill) in bindings.iter().enumerate() {
                     let mut temp = draft_mode.clone();
-                    if let Some(vec) = temp.get_mut(action) {
-                        if i < vec.len() {
-                            vec.remove(i);
-                        }
+                    if let Some(vec) = temp.get_mut(action)
+                        && i < vec.len()
+                    {
+                        vec.remove(i);
                     }
                     if let Err(err) =
                         validate_binding_candidate(&temp, &pill.binding, pill.when.as_deref(), None)

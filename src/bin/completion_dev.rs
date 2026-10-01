@@ -80,10 +80,10 @@ fn main() -> Result<()> {
     let mut ctx = CompletionContext::from_buffer(&text, cursor, &cfg)
         .context("cursor must be on a UTF-8 character boundary and <= text length")?;
     stamp_app_type(&mut ctx, &cfg, args.exe.as_deref());
-    let gen = AtomicU64::new(1);
+    let r#gen = AtomicU64::new(1);
     let abort = kosk::completion::Abort {
         mine: 1,
-        current: &gen,
+        current: &r#gen,
     };
     let sugs = engine.suggest(&ctx, &abort).unwrap_or_default();
     if sugs.is_empty() {
@@ -143,10 +143,10 @@ fn run_eval(
     let mut top1 = 0u64;
     let mut top3 = 0u64;
     let mut next_n = 0u64;
-    let gen = AtomicU64::new(1);
+    let r#gen = AtomicU64::new(1);
     let abort = kosk::completion::Abort {
         mine: 1,
-        current: &gen,
+        current: &r#gen,
     };
 
     let mut i = 0;
@@ -178,16 +178,15 @@ fn run_eval(
                         top3 += 1;
                     }
                 }
-                if !rest_word.is_empty() {
-                    if let Some(hit) = sugs.iter().find(|s| s.text.eq_ignore_ascii_case(&upcoming))
-                    {
-                        let rem = kosk::completion::remainder(&ctx.token, &hit.text);
-                        if !rem.is_empty() {
-                            typed.push_str(&rem);
-                            i += rem.chars().count();
-                            keystrokes += 1;
-                            continue;
-                        }
+                if !rest_word.is_empty()
+                    && let Some(hit) = sugs.iter().find(|s| s.text.eq_ignore_ascii_case(&upcoming))
+                {
+                    let rem = kosk::completion::remainder(&ctx.token, &hit.text);
+                    if !rem.is_empty() {
+                        typed.push_str(&rem);
+                        i += rem.chars().count();
+                        keystrokes += 1;
+                        continue;
                     }
                 }
             }

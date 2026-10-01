@@ -1155,10 +1155,10 @@ fn read_merged_config(
 
     let mut mappings: toml::Value = toml::from_str(crate::config_overlay::builtin_mappings_toml())
         .context("built-in mappings")?;
-    if let (Some(dir), Some(rel)) = (config_path.parent(), &map_rel) {
-        if let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)? {
-            crate::config_overlay::merge_mappings(&mut mappings, &over);
-        }
+    if let (Some(dir), Some(rel)) = (config_path.parent(), &map_rel)
+        && let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)?
+    {
+        crate::config_overlay::merge_mappings(&mut mappings, &over);
     }
     if let Some(inline) = user_value.get(CONTROLLER_MAP_KEY).filter(|v| v.is_table()) {
         crate::config_overlay::merge_mappings(&mut mappings, inline);
@@ -1199,43 +1199,43 @@ fn normalize_legacy_theme_config(user: &mut toml::Value, config_path: &Path) -> 
     }
     files.sort_by(|left, right| left.0.cmp(&right.0));
 
-    if let Some(active) = user.get("active_theme").and_then(toml::Value::as_str) {
-        if let Some((_, file)) = files.iter().find(|(name, _)| name == active) {
-            let path = Path::new(file);
-            let path = if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                config_path.parent().unwrap_or(Path::new("")).join(path)
-            };
-            let fallback_name = || {
-                let stem = path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or("Theme")
-                    .replace(['-', '_'], " ");
-                stem.split_whitespace()
-                    .map(|word| {
-                        let mut chars = word.chars();
-                        chars
-                            .next()
-                            .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            };
-            let name = fs::read_to_string(&path)
-                .ok()
-                .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
-                .and_then(|mut theme| {
-                    theme
-                        .as_table_mut()
-                        .and_then(|table| table.remove("name"))
-                        .and_then(|value| value.as_str().map(str::to_owned))
+    if let Some(active) = user.get("active_theme").and_then(toml::Value::as_str)
+        && let Some((_, file)) = files.iter().find(|(name, _)| name == active)
+    {
+        let path = Path::new(file);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            config_path.parent().unwrap_or(Path::new("")).join(path)
+        };
+        let fallback_name = || {
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("Theme")
+                .replace(['-', '_'], " ");
+            stem.split_whitespace()
+                .map(|word| {
+                    let mut chars = word.chars();
+                    chars
+                        .next()
+                        .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
+                        .unwrap_or_default()
                 })
-                .unwrap_or_else(fallback_name);
-            user["active_theme"] = toml::Value::String(name);
-        }
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let name = fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+            .and_then(|mut theme| {
+                theme
+                    .as_table_mut()
+                    .and_then(|table| table.remove("name"))
+                    .and_then(|value| value.as_str().map(str::to_owned))
+            })
+            .unwrap_or_else(fallback_name);
+        user["active_theme"] = toml::Value::String(name);
     }
 
     user["themes"] = toml::Value::Array(
@@ -1432,10 +1432,10 @@ fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Res
 
 pub fn init() -> Result<()> {
     let args = Args::parse();
-    if let Some(ref path) = args.replay {
-        if !path.exists() {
-            bail!("replay file not found: {}", path.display());
-        }
+    if let Some(ref path) = args.replay
+        && !path.exists()
+    {
+        bail!("replay file not found: {}", path.display());
     }
     CLI_REPLAY
         .set(args.replay.clone())

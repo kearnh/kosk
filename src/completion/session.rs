@@ -21,12 +21,12 @@ use crate::platform::{ForegroundExe, OsForeground};
 use crate::platform::FixedForeground;
 
 struct Request {
-    gen: u64,
+    r#gen: u64,
     ctx: CompletionContext,
 }
 
 pub struct Batch {
-    pub gen: u64,
+    pub r#gen: u64,
     pub candidates: Vec<Candidate>,
 }
 
@@ -80,7 +80,7 @@ struct OriginalSuggestion {
 
 pub struct Session {
     slot: Arc<(Mutex<Slot>, Condvar)>,
-    gen: Arc<AtomicU64>,
+    r#gen: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     rx: Receiver<Batch>,
     candidates: Vec<Candidate>,
@@ -163,20 +163,20 @@ impl Session {
             }),
             Condvar::new(),
         ));
-        let gen = Arc::new(AtomicU64::new(0));
+        let r#gen = Arc::new(AtomicU64::new(0));
         let join = std::thread::Builder::new()
             .name("kosk-completion".into())
             .spawn({
                 let slot = Arc::clone(&slot);
-                let gen = Arc::clone(&gen);
+                let r#gen = Arc::clone(&r#gen);
                 let backend = Arc::clone(&backend);
                 let notify = Arc::clone(&notify);
-                move || worker_loop(backend, slot, gen, tx, notify)
+                move || worker_loop(backend, slot, r#gen, tx, notify)
             })?;
 
         Ok(Self {
             slot,
-            gen,
+            r#gen,
             join: Some(join),
             rx,
             candidates: Vec::new(),
@@ -247,18 +247,18 @@ impl Session {
             }),
             Condvar::new(),
         ));
-        let gen = Arc::new(AtomicU64::new(0));
+        let r#gen = Arc::new(AtomicU64::new(0));
         let join = std::thread::Builder::new()
             .name("kosk-completion-test".into())
             .spawn({
                 let slot = Arc::clone(&slot);
-                let gen = Arc::clone(&gen);
+                let r#gen = Arc::clone(&r#gen);
                 let backend = Arc::clone(&backend);
                 let notify = Arc::clone(&notify);
-                move || worker_loop(backend, slot, gen, tx, notify)
+                move || worker_loop(backend, slot, r#gen, tx, notify)
             })
             .unwrap();
-        Self::finish_spawn_for_test(backend, cfg, notify, user, slot, gen, join, rx, fg)
+        Self::finish_spawn_for_test(backend, cfg, notify, user, slot, r#gen, join, rx, fg)
     }
 
     #[cfg(test)]
@@ -269,7 +269,7 @@ impl Session {
         notify: Arc<dyn Fn() + Send + Sync>,
         user: Arc<Mutex<UserCache>>,
         slot: Arc<(Mutex<Slot>, Condvar)>,
-        gen: Arc<AtomicU64>,
+        r#gen: Arc<AtomicU64>,
         join: JoinHandle<()>,
         rx: Receiver<Batch>,
         fg: Arc<dyn ForegroundExe>,
@@ -277,7 +277,7 @@ impl Session {
         let types = AppTypeMap::from_config(&cfg.app_types).unwrap();
         Self {
             slot,
-            gen,
+            r#gen,
             join: Some(join),
             rx,
             candidates: Vec::new(),
@@ -419,7 +419,7 @@ impl Session {
         self.candidates.clear();
         self.highlight = None;
         self.request_from_buffer(text, cursor);
-        self.current_gen = self.gen.fetch_add(1, Ordering::Relaxed) + 1;
+        self.current_gen = self.r#gen.fetch_add(1, Ordering::Relaxed) + 1;
         self.last_ctx = self.pending_ctx.clone();
         self.apply_candidates(Vec::new());
         self.highlight = None;
@@ -555,7 +555,7 @@ impl Session {
         loop {
             match self.rx.try_recv() {
                 Ok(batch) => {
-                    if batch.gen != self.current_gen {
+                    if batch.r#gen != self.current_gen {
                         continue;
                     }
                     self.apply_candidates(batch.candidates);
@@ -587,12 +587,12 @@ impl Session {
             );
         }
 
-        if let Some(text) = prev {
-            if let Some(i) = self.candidates.iter().position(|c| c.text == text) {
-                self.highlight = Some(i);
-                self.remember_shown();
-                return;
-            }
+        if let Some(text) = prev
+            && let Some(i) = self.candidates.iter().position(|c| c.text == text)
+        {
+            self.highlight = Some(i);
+            self.remember_shown();
+            return;
         }
 
         if self.cfg.reset_highlight_on_refresh {
@@ -601,10 +601,10 @@ impl Session {
                 Preselect::First if !self.candidates.is_empty() => Some(0),
                 Preselect::First => None,
             };
-        } else if let Some(h) = self.highlight {
-            if h >= self.candidates.len() {
-                self.highlight = None;
-            }
+        } else if let Some(h) = self.highlight
+            && h >= self.candidates.len()
+        {
+            self.highlight = None;
         }
 
         self.remember_shown();
@@ -635,10 +635,10 @@ impl Session {
     fn request_now(&mut self, ctx: CompletionContext) {
         let (lock, cv) = &*self.slot;
         let mut s = lock.lock().unwrap();
-        let gen = self.gen.fetch_add(1, Ordering::Relaxed) + 1;
-        self.current_gen = gen;
+        let r#gen = self.r#gen.fetch_add(1, Ordering::Relaxed) + 1;
+        self.current_gen = r#gen;
         self.last_ctx = Some(ctx.clone());
-        s.pending = Some(Request { gen, ctx });
+        s.pending = Some(Request { r#gen, ctx });
         cv.notify_one();
     }
 
@@ -825,7 +825,7 @@ impl Drop for Session {
         {
             let (lock, cv) = &*self.slot;
             lock.lock().unwrap().shutdown = true;
-            self.gen.fetch_add(1, Ordering::Relaxed);
+            self.r#gen.fetch_add(1, Ordering::Relaxed);
             cv.notify_all();
         }
         if let Some(j) = self.join.take() {
@@ -840,7 +840,7 @@ impl Drop for Session {
 fn worker_loop(
     model: Arc<dyn CompletionBackend>,
     slot: Arc<(Mutex<Slot>, Condvar)>,
-    gen: Arc<AtomicU64>,
+    r#gen: Arc<AtomicU64>,
     tx: std::sync::mpsc::Sender<Batch>,
     notify: Arc<dyn Fn() + Send + Sync>,
 ) {
@@ -860,15 +860,15 @@ fn worker_loop(
         };
 
         let abort = Abort {
-            mine: req.gen,
-            current: &gen,
+            mine: req.r#gen,
+            current: &r#gen,
         };
         let Some(cands) = model.suggest(&req.ctx, &abort) else {
             continue;
         };
-        if gen.load(Ordering::Relaxed) == req.gen {
+        if r#gen.load(Ordering::Relaxed) == req.r#gen {
             let _ = tx.send(Batch {
-                gen: req.gen,
+                r#gen: req.r#gen,
                 candidates: cands,
             });
             notify();
@@ -1463,7 +1463,7 @@ mod tests {
         s.note_accepted_suggestion_backspace();
         let current_gen = s.current_gen;
         tx.send(Batch {
-            gen: stale_gen,
+            r#gen: stale_gen,
             candidates: vec![cand("stale")],
         })
         .unwrap();
@@ -1476,7 +1476,7 @@ mod tests {
             .all(|shown| !shown.chips.iter().any(|c| c.text == "stale")));
 
         tx.send(Batch {
-            gen: current_gen,
+            r#gen: current_gen,
             candidates: vec![cand("hel"), cand("hello")],
         })
         .unwrap();

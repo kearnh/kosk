@@ -41,12 +41,13 @@ pub fn is_fuzzy_prefix(
         return Some(EditKind::Substitute);
     }
 
-    if n >= 2 && w.len() >= n {
-        if let Some(i) = one_adjacent_transpose(&t, &w[..n]) {
-            let pair_ok = !transpose_neighbors_only || is_neighbor(t[i], t[i + 1], neighbors);
-            if pair_ok {
-                return Some(EditKind::Transpose);
-            }
+    if n >= 2
+        && w.len() >= n
+        && let Some(i) = one_adjacent_transpose(&t, &w[..n])
+    {
+        let pair_ok = !transpose_neighbors_only || is_neighbor(t[i], t[i + 1], neighbors);
+        if pair_ok {
+            return Some(EditKind::Transpose);
         }
     }
 

@@ -136,10 +136,10 @@ fn migrate_2_to_3(doc: &mut toml_edit::DocumentMut) {
     if doc.get("stick_pad_cursors").is_none() {
         doc["stick_pad_cursors"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
-    if let Some(table) = doc["stick_pad_cursors"].as_table_like_mut() {
-        if !table.contains_key("enabled") {
-            table.insert("enabled", value);
-        }
+    if let Some(table) = doc["stick_pad_cursors"].as_table_like_mut()
+        && !table.contains_key("enabled")
+    {
+        table.insert("enabled", value);
     }
 }
 

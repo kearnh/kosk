@@ -12,7 +12,7 @@ pub(crate) fn color(rgba: [u8; 4]) -> Color32 {
 }
 
 macro_rules! section {
-    ($name:ident { $($field:ident: $ty:ty = $default:expr),* $(,)? }) => {
+    ($name:ident { $($field:ident: $ty:ty = $default:expr_2021),* $(,)? }) => {
         #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
         #[serde(default, deny_unknown_fields)]
         pub(crate) struct $name { $(pub(crate) $field: $ty),* }

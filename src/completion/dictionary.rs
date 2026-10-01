@@ -303,12 +303,11 @@ fn mix_slots(
         seen.insert(c.lower.clone());
         out.push(c);
     }
-    if out.len() < max {
-        if let Some(c) = inserted.into_iter().next() {
-            if seen.insert(c.lower.clone()) {
-                out.push(c);
-            }
-        }
+    if out.len() < max
+        && let Some(c) = inserted.into_iter().next()
+        && seen.insert(c.lower.clone())
+    {
+        out.push(c);
     }
     for r in exact.into_iter().chain(fuzzy) {
         if out.len() >= max {
@@ -360,12 +359,11 @@ pub(crate) fn mix_candidate_slots(
         seen.insert(c.text.clone());
         out.push(c);
     }
-    if out.len() < max {
-        if let Some(c) = inserted.into_iter().next() {
-            if seen.insert(c.text.clone()) {
-                out.push(c);
-            }
-        }
+    if out.len() < max
+        && let Some(c) = inserted.into_iter().next()
+        && seen.insert(c.text.clone())
+    {
+        out.push(c);
     }
     for c in exact.into_iter().chain(fuzzy) {
         if out.len() >= max {
@@ -614,10 +612,10 @@ mod tests {
         let cfg = CompletionConfig::default();
         let eng = DictionaryEngine::from_wordlist_text("aardvark\t1\nand\t1000\napple\t10\n", &cfg);
         let ctx = CompletionContext::from_buffer("a", 1, &cfg).unwrap();
-        let (gen, mine) = abort();
+        let (r#gen, mine) = abort();
         let abort = Abort {
             mine,
-            current: &gen,
+            current: &r#gen,
         };
         let s = eng.suggest(&ctx, &abort).unwrap();
         assert_eq!(s[0].text, "and");
@@ -632,10 +630,10 @@ mod tests {
         };
         let eng = DictionaryEngine::from_wordlist_text("aa\t3\nab\t2\nac\t1\nad\t1\n", &cfg);
         let ctx = CompletionContext::from_buffer("a", 1, &cfg).unwrap();
-        let (gen, mine) = abort();
+        let (r#gen, mine) = abort();
         let abort = Abort {
             mine,
-            current: &gen,
+            current: &r#gen,
         };
         assert_eq!(eng.suggest(&ctx, &abort).unwrap().len(), 2);
     }
@@ -648,10 +646,10 @@ mod tests {
         };
         let eng = DictionaryEngine::from_wordlist_text("the\t100\n", &cfg);
         let ctx = CompletionContext::from_buffer("hello ", 6, &cfg).unwrap();
-        let (gen, mine) = abort();
+        let (r#gen, mine) = abort();
         let abort = Abort {
             mine,
-            current: &gen,
+            current: &r#gen,
         };
         assert!(eng.suggest(&ctx, &abort).unwrap().is_empty());
     }
@@ -667,10 +665,10 @@ mod tests {
             ctx.neighbors.entry(a).or_default().push(b);
             ctx.neighbors.entry(b).or_default().push(a);
         }
-        let (gen, mine) = abort();
+        let (r#gen, mine) = abort();
         let abort = Abort {
             mine,
-            current: &gen,
+            current: &r#gen,
         };
         eng.suggest(&ctx, &abort).unwrap()
     }
@@ -854,10 +852,10 @@ mod tests {
         let mut eng = DictionaryEngine::from_wordlist_text("hello\t10\nhelp\t5\n", &cfg);
         eng.set_overlay(extras, None);
 
-        let (gen, mine) = abort();
+        let (r#gen, mine) = abort();
         let abort = Abort {
             mine,
-            current: &gen,
+            current: &r#gen,
         };
         let mut ctx = CompletionContext::from_buffer("juju", 4, &cfg).unwrap();
         ctx.app_type = "programming".into();

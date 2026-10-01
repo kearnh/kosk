@@ -249,10 +249,11 @@ impl Ps4Device {
 
     pub fn open(hid: &HidApi) -> Option<Self> {
         for device in hid.device_list() {
-            if device.vendor_id() == PS4_VID && device.product_id() == PS4_PID {
-                if let Ok(dev) = device.open_device(hid) {
-                    return Some(Self::new(dev));
-                }
+            if device.vendor_id() == PS4_VID
+                && device.product_id() == PS4_PID
+                && let Ok(dev) = device.open_device(hid)
+            {
+                return Some(Self::new(dev));
             }
         }
         None

@@ -1,11 +1,11 @@
 [workspace]
 members = [".", "crates/kosk-mcp", "crates/wordlist-convert", "crates/kosk-config-derive"]
-resolver = "2"
+resolver = "3"
 
 [package]
 name = "kosk"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 default-run = "kosk"
 
 [[bin]]

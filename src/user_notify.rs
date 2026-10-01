@@ -384,11 +384,11 @@ impl Store {
             return;
         }
 
-        if let Some(visible) = &mut self.visible {
-            if visible.notice.key == notice.key {
-                keep_immediate(&mut visible.notice, notice);
-                return;
-            }
+        if let Some(visible) = &mut self.visible
+            && visible.notice.key == notice.key
+        {
+            keep_immediate(&mut visible.notice, notice);
+            return;
         }
 
         if let Some(queued) = self.queue.iter_mut().find(|q| q.notice.key == notice.key) {
@@ -397,26 +397,25 @@ impl Store {
         }
 
         if notice.cooldown() {
-            if let Some(last) = self.last_fire.get(&notice.key) {
-                if now.duration_since(*last) < RECURRING_COOLDOWN {
-                    return;
-                }
+            if let Some(last) = self.last_fire.get(&notice.key)
+                && now.duration_since(*last) < RECURRING_COOLDOWN
+            {
+                return;
             }
 
             self.last_fire.insert(notice.key.clone(), now);
         }
 
-        if self.queue.len() >= QUEUE_CAP {
-            if let Some(victim) = self
+        if self.queue.len() >= QUEUE_CAP
+            && let Some(victim) = self
                 .queue
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, q)| (q.notice.severity.rank(), q.enqueued_at))
                 .map(|(i, _)| i)
-            {
-                self.queue.remove(victim);
-                self.overflow_dropped += 1;
-            }
+        {
+            self.queue.remove(victim);
+            self.overflow_dropped += 1;
         }
 
         self.queue.push(Queued {

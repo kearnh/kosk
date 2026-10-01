@@ -159,9 +159,21 @@ mod tests {
         ] {
             let key = key(spec);
             for shift in [false, true] {
-                let ctx = DisplayContext { shift, ..Default::default() };
-                let style = groups.style(&key, &key.appearance(&ctx), &theme.keyboard, KeySelection::None);
-                assert_eq!(style.background, Some(color([1, 2, 3, 255])), "{spec}, shift={shift}");
+                let ctx = DisplayContext {
+                    shift,
+                    ..Default::default()
+                };
+                let style = groups.style(
+                    &key,
+                    &key.appearance(&ctx),
+                    &theme.keyboard,
+                    KeySelection::None,
+                );
+                assert_eq!(
+                    style.background,
+                    Some(color([1, 2, 3, 255])),
+                    "{spec}, shift={shift}"
+                );
             }
         }
         for spec in [
@@ -194,7 +206,9 @@ mod tests {
         ).unwrap();
         let groups = groups(&theme);
         let plain = key("key = 'q'");
-        let layout = key("key = 'q'\ndisplay = [{text = 'Q', when = 'shift', button_color = [7, 8, 9, 255], text_color = [10, 11, 12, 255]}]");
+        let layout = key(
+            "key = 'q'\ndisplay = [{text = 'Q', when = 'shift', button_color = [7, 8, 9, 255], text_color = [10, 11, 12, 255]}]",
+        );
         let ctx = DisplayContext {
             shift: true,
             ..Default::default()

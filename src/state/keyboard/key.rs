@@ -24,10 +24,10 @@ fn raw_key_from_config_str(s: &str) -> RawKey {
     if s.eq_ignore_ascii_case("skip") {
         return RawKey::Skip;
     }
-    if let Some(action) = get_action(StateId::Keyboard, s) {
-        if let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>() {
-            return RawKey::Action(action.clone());
-        }
+    if let Some(action) = get_action(StateId::Keyboard, s)
+        && let Some(action) = action.as_ref().as_any().downcast_ref::<KeyboardAction>()
+    {
+        return RawKey::Action(action.clone());
     }
     // Use Unicode scalar count, not UTF-8 byte length (e.g. "é" is one char but two bytes).
     let mut it = s.chars();

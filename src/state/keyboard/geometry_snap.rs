@@ -202,10 +202,10 @@ impl GeometrySnapshot {
             let Some(hb) = key.hitbox.as_ref() else {
                 continue;
             };
-            if let Some(score) = hb.contains(cursor_x, cursor_y) {
-                if best.as_ref().is_none_or(|(s, _)| score < *s) {
-                    best = Some((score, key));
-                }
+            if let Some(score) = hb.contains(cursor_x, cursor_y)
+                && best.as_ref().is_none_or(|(s, _)| score < *s)
+            {
+                best = Some((score, key));
             }
         }
         best.map(|(_, k)| k)

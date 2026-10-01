@@ -106,14 +106,12 @@ fn monitor(dump_raw: bool, config: Option<PathBuf>) -> Result<()> {
                     println!("{line}");
                     last = line;
                 }
-                if dump_raw {
-                    if let Some(report) = device.last_raw_report() {
-                        print!("  raw");
-                        for b in report.iter().take(report.len().min(54)) {
-                            print!(" {b:02x}");
-                        }
-                        println!();
+                if dump_raw && let Some(report) = device.last_raw_report() {
+                    print!("  raw");
+                    for b in report.iter().take(report.len().min(54)) {
+                        print!(" {b:02x}");
                     }
+                    println!();
                 }
             }
             Some(None) => pads.reset(),

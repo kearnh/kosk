@@ -67,11 +67,11 @@ impl LogSink {
     }
 
     pub fn open_file(path: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("create keys log dir {}", parent.display()))?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("create keys log dir {}", parent.display()))?;
         }
         let file =
             File::create(path).with_context(|| format!("create keys log {}", path.display()))?;
