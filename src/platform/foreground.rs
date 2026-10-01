@@ -48,7 +48,7 @@ fn windows_basename() -> Option<String> {
 
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd == 0 {
+        if hwnd.is_null() {
             return None;
         }
         let mut pid: u32 = 0;
@@ -57,7 +57,7 @@ fn windows_basename() -> Option<String> {
             return None;
         }
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return None;
         }
         let mut buf = [0u16; IMAGE_NAME_CAP as usize];

@@ -100,7 +100,7 @@ fn load_completion_cfg() -> CompletionConfig {
     let Ok(raw) = std::fs::read_to_string("config.toml") else {
         return CompletionConfig::default();
     };
-    let Ok(val) = raw.parse::<toml::Value>() else {
+    let Ok(val) = toml::from_str::<toml::Value>(&raw) else {
         return CompletionConfig::default();
     };
     let Some(comp) = val.get("completion") else {

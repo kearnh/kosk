@@ -861,7 +861,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
 /// Config TOML stored in a recording: live config minus [`TAPE_CONFIG_SKIP`].
 pub fn tape_config_toml(cfg: &Config) -> Result<String> {
     let serialized = toml::to_string(cfg).context("serialize config for tape")?;
-    let mut val: toml::Value = serialized.parse().context("reparse config toml")?;
+    let mut val: toml::Value = toml::from_str(&serialized).context("reparse config toml")?;
     let table = val
         .as_table_mut()
         .ok_or_else(|| anyhow::anyhow!("config did not serialize as a table"))?;
@@ -884,7 +884,8 @@ pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
         bail!("recorded config must be a TOML table");
     }
     let live_serialized = toml::to_string(live).context("serialize live config")?;
-    let mut live_val: toml::Value = live_serialized.parse().context("reparse live config")?;
+    let mut live_val: toml::Value =
+        toml::from_str(&live_serialized).context("reparse live config")?;
     let live_table = live_val
         .as_table_mut()
         .ok_or_else(|| anyhow::anyhow!("live config did not serialize as a table"))?;
@@ -985,7 +986,7 @@ fn child_config_path(path: &str, key: &str) -> String {
     }
 }
 
-/// Convert a `toml::Value` into a `toml_edit::Item` (toml_edit 0.22 has no `ser::to_item`).
+/// Convert a `toml::Value` into a `toml_edit::Item`, preserving config float formatting.
 fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
     if let Some(n) = value.as_float() {
         let literal = format_config_float(path, n);
@@ -1144,18 +1145,15 @@ fn read_merged_config(
         | crate::config_overlay::MigrateOutcome::Unchanged => {}
     }
 
-    let mut user_value: toml::Value = user_doc
-        .to_string()
-        .parse()
-        .context("Could not parse config TOML")?;
+    let mut user_value: toml::Value =
+        toml::from_str(&user_doc.to_string()).context("Could not parse config TOML")?;
     normalize_legacy_theme_config(&mut user_value, config_path)?;
     let mut merged: toml::Value =
         toml::Value::try_from(Config::default()).context("built-in config")?;
     let map_rel = controller_map_rel(&user_value);
     crate::config_overlay::merge_toml(&mut merged, &user_value);
 
-    let mut mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
-        .parse()
+    let mut mappings: toml::Value = toml::from_str(crate::config_overlay::builtin_mappings_toml())
         .context("built-in mappings")?;
     if let (Some(dir), Some(rel)) = (config_path.parent(), &map_rel) {
         if let Some(over) = crate::config_overlay::read_user_mappings(dir, rel)? {
@@ -1624,8 +1622,7 @@ pub(crate) fn replace_live(cfg: Config) {
 
 fn builtin_merged_config() -> Result<Config> {
     let mut cfg = Config::default();
-    let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
-        .parse()
+    let mappings: toml::Value = toml::from_str(crate::config_overlay::builtin_mappings_toml())
         .context("built-in mappings")?;
     cfg.controller_map = mappings
         .try_into()
@@ -2803,9 +2800,8 @@ enabled = false\n\
             crate::config_overlay::migrate_toml("[debug]\nshow_stick_cursors = false\n").unwrap();
         let over: toml::Value = toml::from_str(&migrated).unwrap();
         crate::config_overlay::merge_toml(&mut merged, &over);
-        let mappings: toml::Value = crate::config_overlay::builtin_mappings_toml()
-            .parse()
-            .unwrap();
+        let mappings: toml::Value =
+            toml::from_str(crate::config_overlay::builtin_mappings_toml()).unwrap();
         merged
             .as_table_mut()
             .unwrap()

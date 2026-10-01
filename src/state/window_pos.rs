@@ -129,7 +129,7 @@ fn capture_pointer_snapshot_win() -> Option<PointerSnapshot> {
             return None;
         }
         let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-        if monitor == 0 {
+        if monitor.is_null() {
             return None;
         }
         let mut info = MONITORINFO {

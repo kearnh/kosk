@@ -15,6 +15,8 @@ fn open_path(path: &Path) -> Result<()> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWDEFAULT;
 
+    const SHELL_EXECUTE_MAX_ERROR_CODE: isize = 32;
+
     fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
         s.encode_wide().chain(std::iter::once(0)).collect()
     }
@@ -23,14 +25,14 @@ fn open_path(path: &Path) -> Result<()> {
     let file = wide(path.as_os_str());
     unsafe {
         let result = ShellExecuteW(
-            0,
+            std::ptr::null_mut(),
             operation.as_ptr(),
             file.as_ptr(),
             std::ptr::null(),
             std::ptr::null(),
             SW_SHOWDEFAULT,
-        );
-        if result <= 32 {
+        ) as isize;
+        if result <= SHELL_EXECUTE_MAX_ERROR_CODE {
             anyhow::bail!("ShellExecuteW failed with code {}", result);
         }
     }
@@ -52,10 +54,10 @@ fn foreground_handle() -> Option<isize> {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd == 0 {
+        if hwnd.is_null() {
             None
         } else {
-            Some(hwnd)
+            Some(hwnd as isize)
         }
     }
 }

@@ -137,7 +137,7 @@ impl eframe::App for App {
                                 let bb = DWM_BLURBEHIND {
                                     dwFlags: DWM_BB_ENABLE,
                                     fEnable: 1,
-                                    hRgnBlur: 0,
+                                    hRgnBlur: std::ptr::null_mut(),
                                     fTransitionOnMaximized: 0,
                                 };
                                 let _ = DwmEnableBlurBehindWindow(hwnd, &bb);
@@ -151,7 +151,8 @@ impl eframe::App for App {
                 }
                 if wants_text_entry {
                     if self.os_focus_guard.is_none() {
-                        self.os_focus_guard = Some(OsFocusGuard::activate_for_text_entry(hwnd));
+                        self.os_focus_guard =
+                            Some(OsFocusGuard::activate_for_text_entry(hwnd as isize));
                     }
                 } else if let Some(guard) = self.os_focus_guard.take() {
                     guard.restore();
@@ -272,7 +273,7 @@ impl App {
 /// Failures leave a readable card.
 #[cfg(target_os = "windows")]
 fn style_satellite_window() {
-    use windows_sys::Win32::Foundation::{COLORREF, HWND};
+    use windows_sys::Win32::Foundation::COLORREF;
     use windows_sys::Win32::Graphics::Dwm::{
         DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR,
         DWMWA_COLOR_NONE, DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -291,10 +292,9 @@ fn style_satellite_window() {
     unsafe {
         let title = wide(kosk::state::toasts::SATELLITE_TITLE);
         let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-        if hwnd == 0 {
+        if hwnd.is_null() {
             return;
         }
-        let hwnd = hwnd as HWND;
 
         let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let wanted = current

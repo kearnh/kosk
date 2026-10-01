@@ -14,6 +14,7 @@ pub fn text_entry_focus_wanted(current: StateId) -> bool {
 
 #[cfg(target_os = "windows")]
 mod imp {
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SetActiveWindow, SetFocus};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -26,6 +27,7 @@ mod imp {
 
     impl OsFocusGuard {
         pub fn activate_for_text_entry(kosk_hwnd: isize) -> Self {
+            let kosk_hwnd = kosk_hwnd as HWND;
             let previous = unsafe { GetForegroundWindow() };
             if previous != kosk_hwnd {
                 // SetForegroundWindow is foreground-locked for background
@@ -46,14 +48,16 @@ mod imp {
                     }
                 }
             }
-            Self { previous }
+            Self {
+                previous: previous as isize,
+            }
         }
 
         /// Best-effort restore; no-op if the old window is gone.
         pub fn restore(self) {
             if self.previous != 0 {
                 unsafe {
-                    let _ = SetForegroundWindow(self.previous);
+                    let _ = SetForegroundWindow(self.previous as HWND);
                 }
             }
         }

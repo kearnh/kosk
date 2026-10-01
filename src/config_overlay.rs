@@ -246,9 +246,7 @@ pub(crate) fn read_user_mappings(config_dir: &Path, rel: &str) -> Result<Option<
     }
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let value = text
-        .parse()
-        .with_context(|| format!("parse {}", path.display()))?;
+    let value = toml::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     Ok(Some(value))
 }
 

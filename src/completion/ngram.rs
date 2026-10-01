@@ -19,6 +19,10 @@ pub const ID_BITS: u32 = 21;
 pub const ID_MASK: u64 = (1 << ID_BITS) - 1;
 pub const FORMAT_VERSION: u32 = 1;
 
+const NGRAM_KEY_BYTES: usize = std::mem::size_of::<u64>();
+const COUNT_BYTES: usize = std::mem::size_of::<u32>();
+const COUNT_RECORD_BYTES: usize = NGRAM_KEY_BYTES + COUNT_BYTES;
+
 pub fn pack2(a: u32, b: u32) -> u64 {
     ((a as u64) << ID_BITS) | (b as u64 & ID_MASK)
 }
@@ -53,13 +57,19 @@ pub fn write_count_table(path: &Path, rows: &[(u64, u32)]) -> Result<()> {
 pub fn read_count_table(path: &Path) -> Result<Vec<(u64, u32)>> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mmap = unsafe { Mmap::map(&file) }.with_context(|| format!("mmap {}", path.display()))?;
-    if mmap.len() % 12 != 0 {
-        bail!("{}: size {} not multiple of 12", path.display(), mmap.len());
+    let (chunks, remainder) = mmap.as_chunks::<COUNT_RECORD_BYTES>();
+    if !remainder.is_empty() {
+        bail!(
+            "{}: size {} not multiple of {COUNT_RECORD_BYTES}",
+            path.display(),
+            mmap.len()
+        );
     }
-    let mut rows = Vec::with_capacity(mmap.len() / 12);
-    for chunk in mmap.chunks_exact(12) {
-        let k = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
-        let c = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
+    let mut rows = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let (key, count) = chunk.split_at(NGRAM_KEY_BYTES);
+        let k = u64::from_le_bytes(key.try_into().unwrap());
+        let c = u32::from_le_bytes(count.try_into().unwrap());
         rows.push((k, c));
     }
     Ok(rows)
@@ -76,13 +86,15 @@ pub fn write_unigrams(path: &Path, counts: &[u32]) -> Result<()> {
 pub fn read_unigrams(path: &Path) -> Result<Vec<u32>> {
     let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mmap = unsafe { Mmap::map(&file) }.with_context(|| format!("mmap {}", path.display()))?;
-    if mmap.len() % 4 != 0 {
-        bail!("{}: size {} not multiple of 4", path.display(), mmap.len());
+    let (chunks, remainder) = mmap.as_chunks::<COUNT_BYTES>();
+    if !remainder.is_empty() {
+        bail!(
+            "{}: size {} not multiple of {COUNT_BYTES}",
+            path.display(),
+            mmap.len()
+        );
     }
-    Ok(mmap
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-        .collect())
+    Ok(chunks.iter().copied().map(u32::from_le_bytes).collect())
 }
 
 pub struct NgramEngine {
