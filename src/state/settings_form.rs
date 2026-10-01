@@ -1066,8 +1066,8 @@ mod tests {
         let rows = form.drawn(&sample(), ControllerKind::Sc2);
         let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
         assert!(labels.contains(&"Thumb rest"));
-        assert!(labels.contains(&"Pad click"));
-        assert!(labels.contains(&"Stretch limit"));
+        assert!(labels.contains(&"Pad click feedback"));
+        assert!(labels.contains(&"Movement boost limit"));
         assert!(labels.contains(&"Touch settle time"));
     }
 

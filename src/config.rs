@@ -64,7 +64,10 @@ pub enum ReachOverlay {
 #[config_section]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Debug {
-    #[setting(label = "Hitboxes", explain = "Draw the region each key occupies.")]
+    #[setting(
+        label = "Key selection regions",
+        explain = "Draw the region where each key can be selected."
+    )]
     pub show_hitboxes: bool,
 
     #[setting(
@@ -75,7 +78,7 @@ pub struct Debug {
 
     #[setting(
         label = "Reach overlay",
-        explain = "Draw which keys a stick or a pad can reach. None leaves the keyboard as it is."
+        explain = "Draw estimated movement ranges for sticks or pads. None hides the overlay."
     )]
     pub reach_overlay: ReachOverlay,
 }
@@ -118,7 +121,7 @@ pub struct StickPadCursors {
     pub ring_thickness: f32,
 
     #[config(default = 0.2)]
-    #[setting(label = "Stick/pad cursor ring fill opacity", explain = "Default fill opacity multiplier, combined with the fill color alpha and overall cursor opacity. 0 leaves the center clear. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
+    #[setting(label = "Stick/pad cursor ring fill opacity", explain = "Default opacity of ring centers. 0 leaves them clear; 1 uses the fill color's full opacity. Overall cursor opacity also applies. Themes can override it.", range = 0.0..=1.0, step = 0.05, decimals = 2)]
     pub ring_fill_opacity: f32,
 
     /// Left cursor RGBA color as `[r, g, b, a]`.
@@ -204,7 +207,7 @@ pub struct Config {
     #[setting(
         page = Overlay,
         label = "See-through window",
-        explain = "Draws the overlay as a layered window. Theme opacity applies only while this is on."
+        explain = "Let the desktop show through the overlay using the theme's opacity."
     )]
     pub transparent: bool,
 
@@ -221,7 +224,7 @@ pub struct Config {
     #[setting(
         page = Overlay,
         label = "Key width",
-        explain = "Horizontal size of a key. This is layout scale, not how far the stick moves.",
+        explain = "Width of one keyboard layout unit, in screen points.",
         range = 16.0..=48.0,
         step = 1.0,
         decimals = 0
@@ -231,7 +234,7 @@ pub struct Config {
     #[setting(
         page = Overlay,
         label = "Key height",
-        explain = "Vertical size of a key.",
+        explain = "Height of one keyboard layout unit, in screen points.",
         range = 16.0..=48.0,
         step = 1.0,
         decimals = 0
@@ -245,7 +248,7 @@ pub struct Config {
     #[setting(
         page = Typing,
         label = "Delay before repeat",
-        explain = "How long a key must be held before it starts repeating. 0 sends a repeat on every poll.",
+        explain = "Wait this long before a held action can repeat. 0 disables the repeat delay.",
         range = 0..=500,
         step = 10,
         unit = "ms"
@@ -259,7 +262,7 @@ pub struct Config {
     #[setting(
         page = Typing,
         label = "Repeat interval",
-        explain = "Time between repeats after the first one. 0 uses the delay before repeat for every step.",
+        explain = "Time between repeats after the first one. 0 uses Delay before repeat. Ignored when that delay is 0.",
         range = 0..=200,
         step = 5,
         unit = "ms"
@@ -319,7 +322,7 @@ pub struct AimProfile {
     #[config(default = 3.8)]
     #[setting(
         label = "Horizontal range",
-        explain = "A full movement left or right covers this much of the keyboard. Raise it when the outer columns stay out of reach.",
+        explain = "Distance from rest at full left or right movement, in key widths. Higher moves the selection farther.",
         range = 1.0..=8.0,
         step = 0.1,
         decimals = 1
@@ -329,7 +332,7 @@ pub struct AimProfile {
     #[config(default = 2.8)]
     #[setting(
         label = "Vertical range",
-        explain = "A full movement up or down covers this much of the keyboard.",
+        explain = "Distance from rest at full up or down movement, in key heights. Higher moves the selection farther.",
         range = 1.0..=8.0,
         step = 0.1,
         decimals = 1
@@ -350,8 +353,8 @@ pub struct AimProfile {
     /// Extra hit-test margin for the current key (`1` = off).
     #[config(default = 1.25)]
     #[setting(
-        label = "Stickiness",
-        explain = "The key you are already on keeps the highlight until another key is this many times closer to your thumb. At 1.25 a neighbor has to be noticeably closer before the highlight moves. 1 turns that off, and the nearest key wins immediately.",
+        label = "Key stickiness",
+        explain = "Reduce accidental selection changes where key regions overlap. Higher favors the current key. 1 removes this preference. Moving outside its selection region releases it.",
         range = 1.0..=2.0,
         step = 0.05,
         decimals = 2
@@ -361,8 +364,8 @@ pub struct AimProfile {
     /// Milliseconds the highlight stays on a key after it is sent.
     #[config(default = 100)]
     #[setting(
-        label = "Hold after a key",
-        explain = "After a letter is sent, the highlight stays on that key for this long. 0 releases it immediately.",
+        label = "Key selection hold",
+        explain = "Keep the current key selected for this long after sending it. 0 disables this hold.",
         range = 0..=300,
         step = 10,
         unit = "ms"
@@ -387,7 +390,7 @@ pub struct TriggerThresholds {
     #[config(default = 40)]
     #[setting(
         label = "Right trigger",
-        explain = "The same cutoff, on the right trigger.",
+        explain = "How far the right trigger must travel before it counts as pressed. Raise it if a resting finger sends keys.",
         range = 0..=255,
         step = 5
     )]
@@ -416,7 +419,7 @@ pub struct Sc2Config {
     #[config(default = 0.6)]
     #[setting(
         label = "Thumb rest",
-        explain = "0 treats the place you touch as the key. A thumb on the upper right of the pad highlights an upper-right key. 1 treats the first contact as rest: the highlight starts on that pad's home-row key and only moves as you slide away from where you landed. A value in between starts part-way between those two.",
+        explain = "Choose the pad's rest position. 0 uses the pad center; 1 uses your first settled touch. Values between blend the two positions. Sliding away from rest moves the selection.",
         range = 0.0..=1.0,
         step = 0.05,
         decimals = 2
@@ -430,8 +433,8 @@ pub struct Sc2Config {
     /// reachable; the long side is left as it is.
     #[config(default = 1.0)]
     #[setting(
-        label = "Stretch the short side",
-        explain = "If rest is not the center of the pad, one direction has less pad left. 0 follows your thumb one-to-one, so you can run out of pad before the far keys. 1 speeds up only that short direction, so those keys stay reachable. The long direction is left as it is.",
+        label = "Short-side movement boost",
+        explain = "Boost movement toward the nearer pad edge when rest is off-center. 0 adds no boost; 1 applies the full boost allowed by Movement boost limit.",
         range = 0.0..=1.0,
         step = 0.05,
         decimals = 2
@@ -441,8 +444,8 @@ pub struct Sc2Config {
     /// Cap on per-axis short-edge gain (`1` = no extra gain).
     #[config(default = 1.5)]
     #[setting(
-        label = "Stretch limit",
-        explain = "Caps how much the short direction of the pad can speed up. 1 turns that extra speed-up off.",
+        label = "Movement boost limit",
+        explain = "Maximum movement multiplier for the short side of the pad. 1 disables the boost.",
         range = 1.0..=3.0,
         step = 0.05,
         decimals = 2,
@@ -454,7 +457,7 @@ pub struct Sc2Config {
     #[config(default = 20)]
     #[setting(
         label = "Touch settle time",
-        explain = "How long to wait after your thumb lands before reading the touch. Raise it if the first key picked is jumpy.",
+        explain = "Wait this long after touching the pad before fixing its rest position. Movement is still read during this wait.",
         range = 0..=100,
         step = 5,
         unit = "ms",
@@ -464,8 +467,8 @@ pub struct Sc2Config {
 
     #[config(default = HapticIntensity::Low)]
     #[setting(
-        label = "Pad click",
-        explain = "How hard the pads click when you press them. Off is silent. Both pads use this level.",
+        label = "Pad click feedback",
+        explain = "Vibration strength when a pad is pressed. Off disables this feedback. Applies to both pads.",
         mirror = touchpad_right_haptic
     )]
     pub touchpad_left_haptic: HapticIntensity,

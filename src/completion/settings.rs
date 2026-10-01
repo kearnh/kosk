@@ -24,8 +24,11 @@ pub enum Preselect {
 #[serde(rename_all = "snake_case")]
 pub enum ChipPlacement {
     #[default]
+    #[choice(label = "Between field and keyboard")]
     Between,
+    #[choice(label = "Above text field")]
     AboveField,
+    #[choice(label = "Above keyboard")]
     AboveKeyboard,
 }
 
@@ -34,6 +37,7 @@ pub enum ChipPlacement {
 pub enum ChipWidth {
     #[default]
     Fill,
+    #[choice(label = "Fixed")]
     Hug,
 }
 
@@ -82,14 +86,14 @@ pub struct CompletionConfig {
     #[config(default = true)]
     #[setting(
         label = "Suggestions",
-        explain = "Hides the suggestions. The empty slots stay reserved, so the keys do not jump."
+        explain = "Enable word suggestions. Keep empty slots controls whether their space stays reserved when hidden."
     )]
     pub enabled: bool,
 
     /// Draw suggestions in Keyboard mode (from keys sent to the app).
     #[config(default = true)]
     #[setting(
-        label = "On the keyboard",
+        label = "Suggestions on the keyboard",
         explain = "Draw suggestions while typing into another app."
     )]
     pub show_in_keyboard: bool,
@@ -97,7 +101,7 @@ pub struct CompletionConfig {
     /// Draw suggestions in TextInput (the field being composed).
     #[config(default = true)]
     #[setting(
-        label = "In the text field",
+        label = "Suggestions in the text field",
         explain = "Draw suggestions on the text-input screen."
     )]
     pub show_in_text_input: bool,
@@ -107,7 +111,7 @@ pub struct CompletionConfig {
     #[config(default = true)]
     #[setting(
         label = "Typo corrections",
-        explain = "Offer a word one edit away from what you typed."
+        explain = "Offer suggestions despite a wrong, missing, extra, or swapped letter."
     )]
     pub typo_tolerance: bool,
 
@@ -147,7 +151,7 @@ pub struct CompletionConfig {
     #[config(default = true)]
     #[setting(
         label = "Restart highlight on refresh",
-        explain = "When the suggestion list changes, move the highlight back to the start instead of keeping its place.",
+        explain = "Keep the highlighted word if it remains in the list. If it disappears, use Highlight at rest. Off keeps the highlight's position when possible.",
         advanced
     )]
     pub reset_highlight_on_refresh: bool,
@@ -200,8 +204,8 @@ pub struct CompletionConfig {
     /// Restore model lowercase to HEL / Hel / sentence-start.
     #[config(default = true)]
     #[setting(
-        label = "Fix capitalization",
-        explain = "Offer the word with the right capital letter when what you typed is close but for the case.",
+        label = "Capitalize sentence suggestions",
+        explain = "Capitalize suggestions at the start of a sentence when no letters have been typed yet.",
         advanced
     )]
     pub capitalization: bool,
@@ -210,7 +214,7 @@ pub struct CompletionConfig {
     /// (from completion_build); otherwise it uses the wordlist.
     #[setting(
         label = "Word source",
-        explain = "Where suggestions come from. Smart uses your recent writing; Dictionary uses the plain word list.",
+        explain = "Smart ranks words using word frequencies and available word histories. Dictionary matches the word list. Both can use learned words.",
         advanced
     )]
     pub backend: CompletionBackendKind,
@@ -219,7 +223,7 @@ pub struct CompletionConfig {
     #[config(default = CompletionBackendKind::Dictionary)]
     #[setting(
         label = "Backup word source",
-        explain = "Where suggestions come from when the main source has nothing to offer.",
+        explain = "Word source to load if the selected source fails to load.",
         advanced
     )]
     pub fallback: CompletionBackendKind,
@@ -239,7 +243,7 @@ pub struct CompletionConfig {
     #[config(default = 1)]
     #[setting(
         label = "Letters before suggesting",
-        explain = "How many letters you must type before any suggestions appear. 0 shows them right away.",
+        explain = "Minimum typed letters for word completions. Next-word suggestions after a space are controlled separately.",
         range = 0..=5,
         step = 1,
         advanced
@@ -262,8 +266,8 @@ pub struct CompletionConfig {
     /// Transposition still applies at length 2.
     #[config(default = 3)]
     #[setting(
-        label = "Shortest typo fix",
-        explain = "Words shorter than this never get typo corrections, only exact matches.",
+        label = "Letters before typo corrections",
+        explain = "Minimum typed letters for wrong, missing, or extra letter corrections. Swapped letters can still be corrected from two letters.",
         range = 2..=8,
         step = 1,
         advanced
@@ -274,7 +278,7 @@ pub struct CompletionConfig {
     /// and learns it.
     #[setting(
         label = "Current word position",
-        explain = "Which end of the suggestion row shows the word you are typing right now.",
+        explain = "Which end of the list shows your typed word when it is unknown to the word source.",
         advanced
     )]
     pub current_word_chip: CurrentWordChip,
@@ -282,8 +286,8 @@ pub struct CompletionConfig {
     /// If true, only transpose keys that are layout neighbors.
     /// `false` also allows wider swaps (e.g. wehn → when).
     #[setting(
-        label = "Only next-door swaps",
-        explain = "Only suggest a word when the two swapped letters sit right next to each other. Off also allows wider swaps.",
+        label = "Swapped letters must be neighboring keys",
+        explain = "Restrict swapped-letter corrections to letters whose keys are neighbors in the keyboard layout.",
         advanced
     )]
     pub transpose_neighbors_only: bool,
@@ -323,7 +327,7 @@ pub struct CompletionUiConfig {
     /// keys; above_field = strip, field, keys; above_keyboard = between.
     #[setting(
         label = "Suggestion position",
-        explain = "Where the suggestion row sits: between the keys, above the text field, or above the keyboard.",
+        explain = "On the text-input screen, place suggestions above the field or between the field and keyboard. While typing into another app, they stay above the keyboard.",
         advanced
     )]
     pub placement: ChipPlacement,
@@ -333,7 +337,7 @@ pub struct CompletionUiConfig {
     /// correction beside the completions.
     #[config(default = 3)]
     #[setting(
-        label = "Columns",
+        label = "Suggestion columns",
         explain = "How many suggestions sit on one row. Suggestions past columns times rows are not shown.",
         range = 1..=6,
         step = 1
@@ -344,8 +348,8 @@ pub struct CompletionUiConfig {
     /// the other suggestions.
     #[config(default = 2)]
     #[setting(
-        label = "Rows",
-        explain = "How many suggestion rows to reserve. Use two when you want a correction beside the other suggestions.",
+        label = "Suggestion rows",
+        explain = "Number of suggestion rows. Columns times rows limits how many suggestions can be displayed.",
         range = 1..=3,
         step = 1
     )]
@@ -364,7 +368,7 @@ pub struct CompletionUiConfig {
     /// hug = size to text, capped by max_chip_width.
     #[setting(
         label = "Suggestion width",
-        explain = "Fill stretches each suggestion across its slot. Hug shrinks each one to fit its word.",
+        explain = "Fill divides the available row width into slots. Fixed uses Fixed suggestion width. A highlighted suggestion can borrow width from its neighbors.",
         advanced
     )]
     pub chip_width: ChipWidth,
@@ -372,8 +376,8 @@ pub struct CompletionUiConfig {
     /// Hug cap. Fill ignores this.
     #[config(default = 200.0)]
     #[setting(
-        label = "Widest suggestion",
-        explain = "A suggestion never grows wider than this, no matter how long the word is.",
+        label = "Fixed suggestion width",
+        explain = "Starting slot width in Fixed mode, in screen points. Highlighted suggestions can grow by borrowing space from neighbors.",
         range = 80.0..=400.0,
         step = 4.0,
         decimals = 0,
@@ -384,8 +388,8 @@ pub struct CompletionUiConfig {
     /// Floor for both fill and hug.
     #[config(default = 48.0)]
     #[setting(
-        label = "Narrowest suggestion",
-        explain = "A suggestion never shrinks narrower than this, no matter how short the word is.",
+        label = "Minimum suggestion slot width",
+        explain = "Minimum starting slot width in Fill mode, in screen points. Neighbors can shrink below this when the highlighted suggestion grows.",
         range = 24.0..=200.0,
         step = 2.0,
         decimals = 0,
@@ -421,7 +425,7 @@ pub struct CompletionUiConfig {
 
     #[config(default = 10.0)]
     #[setting(
-        label = "Side padding",
+        label = "Suggestion side padding",
         explain = "Empty space left and right inside each suggestion.",
         range = 0.0..=32.0,
         step = 1.0,
@@ -432,7 +436,7 @@ pub struct CompletionUiConfig {
 
     #[config(default = 4.0)]
     #[setting(
-        label = "Top padding",
+        label = "Suggestion vertical padding",
         explain = "Empty space above and below inside each suggestion.",
         range = 0.0..=16.0,
         step = 1.0,
@@ -464,7 +468,7 @@ pub struct CompletionUiConfig {
     #[config(default = true)]
     #[setting(
         label = "Fade typed part",
-        explain = "Draw the part of the word you already typed in a dimmer color.",
+        explain = "Dim the matching typed prefix when Suggestion text is Full.",
         advanced
     )]
     pub dim_typed_prefix: bool,
@@ -474,8 +478,8 @@ pub struct CompletionUiConfig {
 
     /// Paint the ranking score on each suggestion.
     #[setting(
-        label = "Show scores",
-        explain = "Print each suggestion's match score beside it. Useful when tuning, noisy otherwise.",
+        label = "Show suggestion scores",
+        explain = "Show each suggestion's ranking score beside its word.",
         advanced
     )]
     pub show_debug_scores: bool,
@@ -484,15 +488,15 @@ pub struct CompletionUiConfig {
     #[config(default = true)]
     #[setting(
         label = "Listening dot",
-        explain = "Show a small dot while the keyboard is watching your typing.",
+        explain = "Show a dot whose color indicates whether suggestion listening is on or off.",
         advanced
     )]
     pub armed_dot: bool,
 
     #[config(default = 4.0)]
     #[setting(
-        label = "Dot size",
-        explain = "How big the listening dot is drawn.",
+        label = "Listening dot radius",
+        explain = "Radius of the listening dot in screen points. The drawn radius is at least 2.",
         range = 1.0..=10.0,
         step = 0.5,
         decimals = 1,
@@ -502,7 +506,7 @@ pub struct CompletionUiConfig {
 
     /// chips_leading | chips_trailing (first row only).
     #[setting(
-        label = "Dot position",
+        label = "Listening dot position",
         explain = "Which end of the suggestion row the listening dot sits on.",
         advanced
     )]
@@ -531,8 +535,8 @@ pub struct CompletionKeyboardConfig {
     /// word. Non-prefix suggestions (typo corrections) always use
     /// backspace_replace.
     #[setting(
-        label = "How a pick is typed",
-        explain = "How the picked word replaces what you typed. One way retypes the ending, the other deletes it first.",
+        label = "Suggestion insertion method",
+        explain = "Suffix types only the untyped ending. Backspace deletes the typed word and types the suggestion. Typo corrections always use Backspace.",
         advanced
     )]
     pub accept_via: AcceptVia,
@@ -543,7 +547,7 @@ pub struct CompletionKeyboardConfig {
     #[config(default = true)]
     #[setting(
         label = "Allow suggestion cancellation to undo a pick",
-        explain = "The cancel suggestion action can restore your original letters immediately after accepting a suggestion.",
+        explain = "Cancel suggestion can undo the last accepted suggestion when no suggestion is highlighted and no further edit has occurred.",
         advanced
     )]
     pub retract_last_accept: bool,
@@ -551,7 +555,7 @@ pub struct CompletionKeyboardConfig {
     /// Backspace also forgets that character for suggestions.
     #[config(default = true)]
     #[setting(
-        label = "Follow backspace",
+        label = "Track backspace for suggestions",
         explain = "Keep the suggestion list in step when you delete letters.",
         advanced
     )]
@@ -561,7 +565,7 @@ pub struct CompletionKeyboardConfig {
     /// suggestions back on.
     #[config(default = true)]
     #[setting(
-        label = "Clear on enter",
+        label = "Clear typing history on Enter",
         explain = "Forget what you typed and start fresh after you submit a line.",
         advanced
     )]
@@ -571,7 +575,7 @@ pub struct CompletionKeyboardConfig {
     /// off (only paste does).
     #[config(default = true)]
     #[setting(
-        label = "Ignore ctrl and alt",
+        label = "Ignore Ctrl/Alt shortcuts",
         explain = "Key presses held with ctrl or alt do not disturb the suggestion list.",
         advanced
     )]
@@ -580,8 +584,8 @@ pub struct CompletionKeyboardConfig {
     /// At start: suggestion context empty and suggestions on.
     #[config(default = true)]
     #[setting(
-        label = "Listen from the start",
-        explain = "Start watching your typing as soon as the keyboard opens, instead of waiting for the first letter.",
+        label = "Listen for suggestions on startup",
+        explain = "Start suggestion listening automatically when the keyboard opens. Off requires turning listening on.",
         advanced
     )]
     pub start_armed: bool,
@@ -590,8 +594,8 @@ pub struct CompletionKeyboardConfig {
     /// suggestions until toggleCompletion.
     #[config(default = true)]
     #[setting(
-        label = "Arrow keys pause listening",
-        explain = "Moving the caret with an arrow key stops suggestions until you type again.",
+        label = "Navigation keys pause listening",
+        explain = "Arrow, Home, End, Page Up, Page Down, Insert, and Delete keys pause suggestions until listening is turned on again.",
         advanced
     )]
     pub latch_off_on_arrow: bool,
@@ -600,7 +604,7 @@ pub struct CompletionKeyboardConfig {
     #[config(default = true)]
     #[setting(
         label = "Pasting pauses listening",
-        explain = "Pasted text stops suggestions until you type again.",
+        explain = "Pasting with Ctrl+V pauses suggestions until listening is turned on again.",
         advanced
     )]
     pub latch_off_on_paste: bool,
@@ -608,7 +612,7 @@ pub struct CompletionKeyboardConfig {
     /// Turning suggestions back on wipes old context (it is stale).
     #[config(default = true)]
     #[setting(
-        label = "Fresh start on wake",
+        label = "Clear typing history when listening resumes",
         explain = "Throw away the remembered keystrokes each time listening starts again.",
         advanced
     )]
@@ -617,8 +621,8 @@ pub struct CompletionKeyboardConfig {
     /// Drop oldest characters from suggestion context past this length.
     #[config(default = 2048)]
     #[setting(
-        label = "Longest tracked word",
-        explain = "Letters past this many are forgotten while matching. Lower uses less memory.",
+        label = "Typing history limit",
+        explain = "Maximum bytes of recent typing kept for suggestions. Older text is discarded first. Some letters use more than one byte.",
         range = 256..=8192,
         step = 256,
         advanced
@@ -627,8 +631,8 @@ pub struct CompletionKeyboardConfig {
 
     /// 0 = off. Else forget suggestion context after this idle (ms).
     #[setting(
-        label = "Forget when idle",
-        explain = "Stop listening after this long with no typing. 0 never stops on its own.",
+        label = "Clear typing history when idle",
+        explain = "Clear typing history after this long without input. Listening stays on. 0 disables idle clearing.",
         range = 0..=5000,
         step = 100,
         unit = "ms",
@@ -659,7 +663,7 @@ pub struct CompletionNgramConfig {
     #[config(default = 3)]
     #[setting(
         label = "Word memory length",
-        explain = "How many previous words the smart source looks at. 3 means the last two words shape the next suggestion.",
+        explain = "Word count used for suggestion context, including the predicted word. 3 keeps the previous two words.",
         range = 1..=5,
         step = 1,
         advanced
@@ -670,8 +674,8 @@ pub struct CompletionNgramConfig {
     /// by this.
     #[config(default = 0.4)]
     #[setting(
-        label = "Trust in longer memory",
-        explain = "How much to trust longer word histories over shorter ones. Higher leans on longer histories.",
+        label = "Shorter history fallback weight",
+        explain = "Weight applied when a word history is missing and a shorter one is used. Higher reduces the penalty for falling back.",
         range = 0.0..=1.0,
         step = 0.05,
         decimals = 2,
@@ -731,7 +735,7 @@ pub struct CompletionNgramConfig {
     #[config(default = -2.0)]
     #[setting(
         label = "Typo penalty",
-        explain = "How much to lower the score of a word that differs from what you typed. More negative punishes typos harder.",
+        explain = "Score adjustment for typo corrections. More negative ranks them lower.",
         range = -5.0..=0.0,
         step = 0.1,
         decimals = 1,
@@ -742,8 +746,8 @@ pub struct CompletionNgramConfig {
     /// Cap how many words a prefix scan considers.
     #[config(default = 8192)]
     #[setting(
-        label = "Words scanned",
-        explain = "How many dictionary words to scan for each keystroke. Higher finds more, but can feel slower.",
+        label = "Prefix scan limit",
+        explain = "Maximum words checked in each matching-prefix scan. Higher can consider more candidates.",
         range = 512..=32768,
         step = 512,
         advanced
@@ -753,8 +757,8 @@ pub struct CompletionNgramConfig {
     /// How often to check whether a slow search should give up early.
     #[config(default = 64)]
     #[setting(
-        label = "Slow-search cutoff",
-        explain = "How often to check whether a slow search should give up early. Lower gives up sooner.",
+        label = "Search cancellation check interval",
+        explain = "How often a search checks for newer input, measured in scanned words. Lower abandons outdated searches sooner.",
         range = 16..=512,
         step = 16,
         advanced
