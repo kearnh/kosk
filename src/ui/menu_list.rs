@@ -8,6 +8,7 @@ const ROW_HEIGHT: f32 = 28.0;
 const ROW_FONT: f32 = 14.0;
 const ROW_PAD: f32 = 8.0;
 const EDGE_INSET: i8 = 16;
+const TOP_INSET: i8 = 12;
 const HINT_GLYPH: f32 = 16.0;
 const HINT_GAP: f32 = 10.0;
 
@@ -15,7 +16,7 @@ pub(crate) fn frame() -> Frame {
     Frame::NONE.inner_margin(Margin {
         left: EDGE_INSET,
         right: EDGE_INSET,
-        top: EDGE_INSET,
+        top: TOP_INSET,
         bottom: 0,
     })
 }
@@ -98,4 +99,25 @@ pub(crate) fn hints<'a>(
             ui.label(*label);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn menu_heading_has_compact_top_spacing() {
+        let mut output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+            let menu = frame().show(ui, |ui| {
+                heading(ui, "Settings", &MenusTheme::default());
+                ui.min_rect()
+            });
+
+            assert_eq!(
+                menu.inner.min - menu.response.rect.min,
+                Vec2::new(16.0, 12.0)
+            );
+        });
+        output.textures_delta.clear();
+    }
 }
