@@ -68,8 +68,8 @@ pub struct Debug {
     pub show_hitboxes: bool,
 
     #[setting(
-        label = "Stick bounds",
-        explain = "Draw the rectangle the sticks can reach."
+        label = "Stick/pad selection bounds",
+        explain = "Draw the layout regions that restrict which keys each left or right stick/pad can select."
     )]
     pub show_stick_bounds: bool,
 
@@ -339,8 +339,8 @@ pub struct AimProfile {
     /// `0` keeps the raw direction. `1` fills the square corners.
     #[config(default = 1.0)]
     #[setting(
-        label = "Square the corners",
-        explain = "A diagonal falls short of the corner keys. 0 keeps the raw direction. 1 stretches a full diagonal out to the corner keys. A value in between is a partial stretch.",
+        label = "Diagonal reach",
+        explain = "Make corner keys easier to reach by stretching diagonal movement. 0 adds no stretch; 1 applies the full stretch.",
         range = 0.0..=1.0,
         step = 0.05,
         decimals = 2
