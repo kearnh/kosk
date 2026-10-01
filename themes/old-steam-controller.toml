@@ -45,6 +45,7 @@ move_window_navy = [15, 40, 61, 80]
 move_border_blue = [122, 163, 188, 230]
 move_text_white = [220, 229, 234]
 selection_text_white = [220, 229, 234]
+key_selection_white = [245, 245, 245]
 text_shadow_navy = [8, 22, 34]
 notification_navy = [15, 40, 61, 245]
 notification_grey = [132, 153, 167]
@@ -101,7 +102,7 @@ right_color = "cursor_blue"
 
 [keyboard]
 selection_background_color = "selection_blue"
-selection_text_color = "bright_grey"
+selection_text_color = "key_selection_white"
 left_selection_color = "selection_blue"
 right_selection_color = "right_selection_green"
 dual_selection_color = "dual_selection_teal"

@@ -110,8 +110,11 @@ These states describe individual controls, independently of window focus:
 Keyboard keys use `keyboard.inactive`, `keyboard.hovered`, and `keyboard.active`
 for ordinary mouse interaction. Controller selection uses the separate
 `left_selection_color`, `right_selection_color`, and `dual_selection_color`.
-Key press pulses use `key_press_color`. Explicit key fills, including selection,
-key groups and pulses, override the state background.
+Selected keys use `selection_text_color`; optional `left_selection_text_color`,
+`right_selection_text_color`, and `dual_selection_text_color` override it for
+each highlight. Selection text overrides key-group text; explicit layout text
+retains priority. Layout fills keep their ordinary text colors.
+Selection and key-group fills override the state background.
 
 `open` has no current caller in kosk. Keyboard labels use explicit colours,
 so `keyboard.hovered.text_color` and `keyboard.active.text_color` have no effect.
@@ -132,6 +135,7 @@ keep only the overrides your theme needs.
   control fields, applied to keyboard keys.
 - `[keyboard]`: `selection_background_color`, `selection_text_color`,
   `left_selection_color`, `right_selection_color`, `dual_selection_color`,
+  `left_selection_text_color`, `right_selection_text_color`, `dual_selection_text_color`,
   `modifier_text_color`, `key_press_color`, `key_press_duration_ms`.
 - `[[keyboard.key_groups]]`: `keys`, `background_color`, `text_color`.
 - `[suggestions]`: `background_color`, `text_color`,
@@ -159,7 +163,9 @@ keep only the overrides your theme needs.
   `corner_radius`, `muted_text_color`, `info_color`, `warning_color`, `error_color`.
 - `[battery]`: `empty`, `low`, `medium`, `high`, `full`, `charging`, `unknown`.
 
-Key presses flash `key_press_color` over the key's background and fade out.
+Key presses briefly inset the key and flash its outline with `key_press_color`.
+A contrasting outline keeps the effect visible when the flash matches the fill.
+The fill and text colors stay unchanged during the animation.
 Defaults are `[255, 255, 255, 180]` and `key_press_duration_ms = 180`.
 Set the duration to `0` to disable animation; allowed durations are `0`–`65535` ms.
 Repeated presses restart the pulse. Mouse and controller presses use the same animation.
@@ -197,6 +203,8 @@ multiplies `ring_fill_opacity`; 0 leaves the center clear. Radius and
 thickness use screen points. Dimensions must be finite and nonnegative;
 opacity must be between 0 and 1. Ring
 thickness is capped at the radius. Omit any field to use its config value.
+Visible cursor outlines have a thin contrasting edge just outside the cursor
+radius. The edge shares the cursor's opacity; transparent outlines have no edge.
 
 ## Key groups
 

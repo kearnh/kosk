@@ -31,6 +31,7 @@ mod geom;
 pub(crate) mod geometry_snap;
 mod key;
 mod key_colors;
+mod key_press;
 mod keyboard_action;
 mod layout;
 mod reach_extent;
@@ -1294,28 +1295,42 @@ impl KeyboardState {
                                 if let Some(fill) = key_style.background {
                                     button = button.fill(fill);
                                 }
-                                if let Some(pressed) = key_presses.get(&(
-                                    current_layout_name.clone(),
-                                    row_idx,
-                                    col_idx,
-                                )) {
-                                    let remaining = 1.0
-                                        - frame_time.duration_since(*pressed).as_secs_f32()
-                                            / pulse_duration.as_secs_f32();
-                                    let base = key_style.background.unwrap_or_else(|| {
-                                        crate::theme::color(
-                                            keyboard_theme.inactive.background_color,
+                                let press_feedback = key_presses
+                                    .get(&(current_layout_name.clone(), row_idx, col_idx))
+                                    .map(|pressed| {
+                                        let remaining = 1.0
+                                            - frame_time.duration_since(*pressed).as_secs_f32()
+                                                / pulse_duration.as_secs_f32();
+                                        let base = key_style.background.unwrap_or_else(|| {
+                                            crate::theme::color(
+                                                keyboard_theme.inactive.background_color,
+                                            )
+                                        });
+                                        key_press::KeyPressFeedback::new(
+                                            base,
+                                            crate::theme::color(keyboard_theme.key_press_color),
+                                            remaining,
                                         )
                                     });
-                                    let pulse = crate::theme::color(keyboard_theme.key_press_color)
-                                        .gamma_multiply(remaining * remaining);
-                                    button = button.fill(base.blend(pulse));
+                                if let Some(feedback) = &press_feedback {
+                                    button = button.fill(feedback.background());
                                 }
 
                                 let size =
                                     egui::Vec2::new(current_layout.scale_x(key.width), row_height);
                                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                                let response = ui.place(rect, button.truncate());
+                                let button_rect = press_feedback
+                                    .as_ref()
+                                    .map_or(rect, |feedback| feedback.rect(rect));
+                                let response = ui.place(button_rect, button.truncate());
+                                if let Some(feedback) = &press_feedback {
+                                    feedback.draw(
+                                        ui.painter(),
+                                        button_rect,
+                                        keyboard_theme.inactive.corner_radius.into(),
+                                        key_style.text,
+                                    );
+                                }
 
                                 row_centres[col_idx] = Some(rect.center());
 
@@ -1339,7 +1354,11 @@ impl KeyboardState {
                                         egui::Align2::LEFT_BOTTOM,
                                         mod_string,
                                         egui::FontId::proportional(font_size),
-                                        crate::theme::color(keyboard_theme.modifier_text_color),
+                                        if key_style.selected {
+                                            key_style.text
+                                        } else {
+                                            crate::theme::color(keyboard_theme.modifier_text_color)
+                                        },
                                     );
                                 }
 

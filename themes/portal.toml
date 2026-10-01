@@ -103,7 +103,8 @@ right_color = "portal_blue"
 
 [keyboard]
 selection_background_color = "selection_blue"
-selection_text_color = "white"
+selection_text_color = "charcoal"
+dual_selection_text_color = "white"
 left_selection_color = "portal_blue"
 right_selection_color = "portal_orange"
 dual_selection_color = "portal_purple"

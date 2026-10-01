@@ -80,6 +80,14 @@ impl KeyColorGroups {
             KeySelection::Dual => Some(theme.dual_selection_color),
         }
         .map(color);
+        let selected = appearance.button_color.is_none() && selection != KeySelection::None;
+        let selection_text = match selection {
+            KeySelection::Left => theme.left_selection_text_color,
+            KeySelection::Right => theme.right_selection_text_color,
+            KeySelection::Dual => theme.dual_selection_text_color,
+            KeySelection::None | KeySelection::Shift => None,
+        }
+        .unwrap_or(theme.selection_text_color);
 
         KeyStyle {
             background: appearance
@@ -88,9 +96,10 @@ impl KeyColorGroups {
                 .or(group.background),
             text: appearance
                 .text_color
+                .or_else(|| selected.then(|| color(selection_text)))
                 .or(group.text)
                 .unwrap_or_else(|| color(theme.inactive.text_color)),
-            selected: appearance.button_color.is_none() && selection != KeySelection::None,
+            selected,
         }
     }
 }
@@ -225,7 +234,7 @@ mod tests {
             let selected =
                 groups.style(&plain, &plain.appearance(&ctx), &theme.keyboard, selection);
             assert_eq!(selected.background, Some(color(background)));
-            assert_eq!(selected.text, color([4, 5, 6, 255]));
+            assert_eq!(selected.text, color(theme.keyboard.selection_text_color));
             assert!(selected.selected);
             let selected = groups.style(
                 &layout,
@@ -253,6 +262,68 @@ mod tests {
             Some(color(theme.keyboard.left_selection_color))
         );
         assert_eq!(selected.text, color([10, 11, 12, 255]));
+    }
+
+    #[test]
+    fn controller_highlights_use_selection_text_over_group_text() {
+        let theme = Theme::parse(include_str!("../../../themes/cyberpunk-2077.toml")).unwrap();
+        let groups = groups(&theme);
+        for spec in ["key = 'q'", "key = 'Return'"] {
+            let key = key(spec);
+            for selection in [
+                KeySelection::Shift,
+                KeySelection::Left,
+                KeySelection::Right,
+                KeySelection::Dual,
+            ] {
+                let style = groups.style(
+                    &key,
+                    &key.appearance(&DisplayContext::default()),
+                    &theme.keyboard,
+                    selection,
+                );
+                assert_eq!(style.text, color(theme.keyboard.selection_text_color));
+            }
+        }
+    }
+
+    #[test]
+    fn selection_text_overrides_are_independent_and_layout_fills_keep_group_text() {
+        let theme = Theme::parse(
+            "[colours]\nleft = [1, 2, 3]\nright = [4, 5, 6, 255]\n\
+             [keyboard]\nselection_text_color = [10, 20, 30]\n\
+             left_selection_text_color = 'left'\nright_selection_text_color = 'right'\n\
+             dual_selection_text_color = [7, 8, 9]\n\
+             [[keyboard.key_groups]]\nkeys = ['q']\ntext_color = [40, 50, 60]",
+        )
+        .unwrap();
+        let groups = groups(&theme);
+        let plain = key("key = 'q'");
+        for (selection, text) in [
+            (KeySelection::Shift, [10, 20, 30, 255]),
+            (KeySelection::Left, [1, 2, 3, 255]),
+            (KeySelection::Right, [4, 5, 6, 255]),
+            (KeySelection::Dual, [7, 8, 9, 255]),
+            (KeySelection::None, [40, 50, 60, 255]),
+        ] {
+            let style = groups.style(
+                &plain,
+                &plain.appearance(&DisplayContext::default()),
+                &theme.keyboard,
+                selection,
+            );
+            assert_eq!(style.text, color(text));
+        }
+
+        let layout = key("key = 'q'\ndisplay = [{text = 'Q', button_color = [100, 110, 120]}]");
+        let selected = groups.style(
+            &layout,
+            &layout.appearance(&DisplayContext::default()),
+            &theme.keyboard,
+            KeySelection::Left,
+        );
+        assert_eq!(selected.text, color([40, 50, 60, 255]));
+        assert!(!selected.selected);
     }
 
     #[test]

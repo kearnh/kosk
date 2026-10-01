@@ -30,6 +30,7 @@ signal_red = [231, 111, 88]
 signal_blue = [120, 182, 202]
 dim_steel = [121, 121, 109]
 input_charcoal = [23, 24, 22]
+selection_ink = [12, 13, 12]
 press_glow = [255, 210, 115, 170]
 row_amber = [224, 161, 42, 65]
 table_amber = [224, 161, 42, 30]
@@ -87,7 +88,7 @@ right_color = "bright_amber"
 
 [keyboard]
 selection_background_color = "amber"
-selection_text_color = "charcoal"
+selection_text_color = "selection_ink"
 left_selection_color = "amber"
 right_selection_color = "copper"
 dual_selection_color = "olive"

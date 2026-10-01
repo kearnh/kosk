@@ -140,6 +140,9 @@ section!(KeyboardTheme {
     selection_background_color: [u8; 4] =
         Color32::from_rgba_premultiplied(50, 100, 180, 220).to_srgba_unmultiplied(),
     selection_text_color: [u8; 4] = [255, 255, 255, 255],
+    left_selection_text_color: Option<[u8; 4]> = None,
+    right_selection_text_color: Option<[u8; 4]> = None,
+    dual_selection_text_color: Option<[u8; 4]> = None,
     left_selection_color: [u8; 4] = [50, 100, 180, 255],
     right_selection_color: [u8; 4] = [50, 150, 80, 255],
     dual_selection_color: [u8; 4] = [120, 60, 180, 255],
@@ -274,6 +277,16 @@ impl Theme {
                 "selected_text_color".to_owned(),
                 toml::Value::try_from([0_u8; 4])?,
             );
+        for field in [
+            "left_selection_text_color",
+            "right_selection_text_color",
+            "dual_selection_text_color",
+        ] {
+            schema["keyboard"]
+                .as_table_mut()
+                .expect("keyboard text color schema")
+                .insert(field.to_owned(), toml::Value::try_from([0_u8; 4])?);
+        }
         let palette = take_palette(&mut overlay)?;
         resolve_theme_colors(&mut overlay, &schema, &palette)?;
 
