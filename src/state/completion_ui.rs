@@ -194,6 +194,28 @@ fn text_width(ui: &Ui, text: &str, font: &FontId) -> f32 {
     })
 }
 
+fn original_text_galley(ui: &Ui, text: &str, font: &FontId) -> std::sync::Arc<egui::Galley> {
+    ui.painter()
+        .layout_job(egui::text::LayoutJob::simple_format(
+            text.to_owned(),
+            egui::TextFormat {
+                font_id: font.clone(),
+                color: Color32::PLACEHOLDER,
+                italics: true,
+                ..Default::default()
+            },
+        ))
+}
+
+fn chip_label_width(ui: &Ui, text: &str, font: &FontId, source: Source) -> f32 {
+    if source != Source::OriginalText {
+        return text_width(ui, text, font);
+    }
+
+    let galley = original_text_galley(ui, text, font);
+    galley.size().x.max(galley.mesh_bounds.max.x)
+}
+
 enum RowSlot {
     Empty,
     Chip(usize),
@@ -242,7 +264,7 @@ fn chip_outer_width(
     font: &FontId,
     token: &str,
 ) -> f32 {
-    let text = text_width(ui, &painted_label(cand, cfg, token), font);
+    let text = chip_label_width(ui, &painted_label(cand, cfg, token), font, cand.source);
     let mark = if cand.source == Source::CurrentWord {
         text_width(ui, CURRENT_WORD_MARK, font)
     } else {
@@ -418,7 +440,9 @@ fn draw_chip(
     let word_pos = Pos2::new(text_pos.x + mark_w, text_pos.y);
     let dim_prefix = dims_typed_prefix(cand, cfg, token);
     let available = (text_clip.right() - word_pos.x).max(0.0);
-    let fitted = truncate_to_width(&display, available, |sample| text_width(ui, sample, font));
+    let fitted = truncate_to_width(&display, available, |sample| {
+        chip_label_width(ui, sample, font, cand.source)
+    });
     if dim_prefix {
         let (dim_text, bright_text) = split_dim_prefix(&fitted, token);
         let dim = Color32::from_rgba_unmultiplied(fg.r(), fg.g(), fg.b(), 140);
@@ -437,6 +461,10 @@ fn draw_chip(
             font.clone(),
             fg,
         );
+    } else if cand.source == Source::OriginalText {
+        let galley = original_text_galley(ui, &fitted.text, font);
+        let rect = egui::Align2::LEFT_CENTER.anchor_size(word_pos, galley.size());
+        painter.galley(rect.min, galley, fg);
     } else {
         painter.text(
             word_pos,
