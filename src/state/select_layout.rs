@@ -2,7 +2,7 @@ use crate::{
     config,
     controller::bindings::BindingEngine,
     controller::record as input_record,
-    controller::ControllerInput,
+    controller::{ControllerInput, ControllerKind},
     state::{
         actions::load_bindings,
         event::{Event, EventQueue, EventSource},
@@ -10,17 +10,16 @@ use crate::{
         select_layout_action::SelectLayoutAction,
         StateId,
     },
+    ui::{controller_glyph::GlyphFamily, menu_list},
 };
 
 use anyhow::Result;
-use egui::{Button, Context, Ui};
+use egui::{Context, RichText, Ui};
 use std::sync::{Mutex, OnceLock};
 
 pub struct SelectLayoutState {
     names: Vec<String>,
     selected: usize,
-    preview: bool,
-    preview_kb: Option<keyboard::KeyboardState>,
     bindings: BindingEngine<SelectLayoutAction>,
 }
 
@@ -29,8 +28,6 @@ impl SelectLayoutState {
         Ok(Self {
             names: Vec::new(),
             selected: 0,
-            preview: false,
-            preview_kb: None,
             bindings: load_bindings(StateId::SelectLayout)?.with_left_stick_dpad(),
         })
     }
@@ -39,78 +36,39 @@ impl SelectLayoutState {
         self.names = keyboard::layout_names();
         let current = keyboard::current_layout_name();
         self.selected = self.names.iter().position(|n| n == &current).unwrap_or(0);
-        self.preview = false;
-        self.rebuild_preview_kb();
     }
 
-    fn rebuild_preview_kb(&mut self) {
-        let mut cfg = config::get();
-        if let Some(name) = self.names.get(self.selected) {
-            cfg.start_layout = name.clone();
-        }
-        match keyboard::KeyboardState::with_config(cfg) {
-            Ok(mut kb) => {
-                kb.set_feed_completion_log(false);
-                self.preview_kb = Some(kb);
-            }
-            Err(e) => {
-                eprintln!("select layout preview: {e:#}");
-                self.preview_kb = None;
-            }
-        }
-    }
-
-    fn sync_preview_layout(&mut self) {
-        let Some(name) = self.names.get(self.selected) else {
-            return;
-        };
-        let Some(kb) = self.preview_kb.as_mut() else {
-            return;
-        };
-        if let Err(e) = kb.set_current_layout(name) {
-            eprintln!("select layout preview: {e:#}");
-        }
-    }
-
-    pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
+    pub fn draw_ui(&mut self, ui: &mut Ui, events: &mut EventQueue, kind: ControllerKind) {
         self.names = keyboard::layout_names();
         if self.names.is_empty() {
             self.selected = 0;
         } else if self.selected >= self.names.len() {
             self.selected = self.names.len() - 1;
         }
-        self.sync_preview_layout();
 
-        if self.names.is_empty() {
-            ui.add_enabled(false, Button::new("No layouts"));
-            return;
-        }
-
+        let cfg = config::get();
+        let appearance = &cfg.theme().menus;
         let current = keyboard::current_layout_name();
         let mut clicked: Option<usize> = None;
 
-        ui.horizontal(|ui| {
+        menu_list::frame().show(ui, |ui| {
             ui.vertical(|ui| {
-                ui.heading("Layouts");
+                menu_list::heading(ui, "Layouts", appearance);
+                if self.names.is_empty() {
+                    ui.label(
+                        RichText::new("No layouts")
+                            .color(crate::theme::color(appearance.muted_text_color)),
+                    );
+                }
                 for (i, name) in self.names.iter().enumerate() {
-                    let label = if *name == current {
-                        format!("{name} (current)")
-                    } else {
-                        name.clone()
-                    };
-                    if ui
-                        .add(Button::new(label).selected(i == self.selected))
-                        .clicked()
-                    {
+                    let value = (*name == current).then_some("current");
+                    if menu_list::row(ui, name, value, i == self.selected, appearance).clicked() {
                         clicked = Some(i);
                     }
                 }
+                ui.separator();
+                self.draw_hints(ui, GlyphFamily::from_kind(kind));
             });
-            if self.preview
-                && let Some(kb) = self.preview_kb.as_mut()
-            {
-                let _ = kb.draw_keyboard_ui(ctx, ui, events);
-            }
         });
 
         if let Some(i) = clicked {
@@ -121,6 +79,16 @@ impl SelectLayoutState {
                 &EventSource::MouseClick,
             );
         }
+    }
+
+    fn draw_hints(&self, ui: &mut Ui, family: GlyphFamily) {
+        let activate = self
+            .bindings
+            .buttons_matching(|action| matches!(action, SelectLayoutAction::Activate));
+        let back = self.bindings.buttons_matching(|action| {
+            matches!(action, SelectLayoutAction::SwitchState(StateId::Settings))
+        });
+        menu_list::hints(ui, family, [(activate, "select layout"), (back, "back")]);
     }
 
     fn do_action(
@@ -157,9 +125,6 @@ impl SelectLayoutState {
                     Err(e) => eprintln!("{e:#}"),
                 }
             }
-            TogglePreview => {
-                self.preview = !self.preview;
-            }
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
             }
@@ -189,7 +154,6 @@ impl SelectLayoutState {
 
     fn reload_from_config(&mut self) -> Result<()> {
         self.bindings = load_bindings(StateId::SelectLayout)?.with_left_stick_dpad();
-        self.rebuild_preview_kb();
         Ok(())
     }
 }

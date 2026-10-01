@@ -10,23 +10,16 @@ use crate::{
         settings_form::{Effect, FooterButtons, FooterHint, SettingsForm},
         StateId,
     },
-    ui::controller_glyph::{self, GlyphFamily},
+    ui::{controller_glyph::GlyphFamily, menu_list},
 };
 
 use anyhow::Result;
-use egui::{Align2, Context, FontId, Frame, Margin, RichText, Sense, Ui, Vec2};
+use egui::{Context, RichText, Ui};
 use std::sync::{Mutex, OnceLock};
 
 use crate::controller::bindings::BindingEngine;
 
-const LIST_WIDTH: f32 = 320.0;
 const PANEL_WIDTH: f32 = 240.0;
-const ROW_HEIGHT: f32 = 28.0;
-const ROW_FONT: f32 = 14.0;
-const ROW_PAD: f32 = 8.0;
-const EDGE_INSET: i8 = 16;
-const HINT_GLYPH: f32 = 16.0;
-const HINT_GAP: f32 = 10.0;
 
 pub struct MenuState {
     form: SettingsForm,
@@ -64,84 +57,69 @@ impl MenuState {
         let (above, below) = self.form.scroll_counts(kind);
 
         let hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
-        Frame::NONE
-            .inner_margin(Margin {
-                left: EDGE_INSET,
-                right: EDGE_INSET,
-                top: EDGE_INSET,
-                bottom: 0,
-            })
-            .show(ui, |ui| {
-                ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(LIST_WIDTH);
+        menu_list::frame().show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    menu_list::heading(ui, &self.form.title(), appearance);
+                    if above > 0 {
                         ui.label(
-                            RichText::new(self.form.title())
-                                .heading()
-                                .color(crate::theme::color(appearance.heading_color)),
+                            RichText::new(format!("▲ {above} more above"))
+                                .small()
+                                .color(crate::theme::color(appearance.muted_text_color)),
                         );
-                        ui.separator();
-                        if above > 0 {
-                            ui.label(
-                                RichText::new(format!("▲ {above} more above"))
-                                    .small()
-                                    .color(crate::theme::color(appearance.muted_text_color)),
-                            );
-                        }
-                        for (index, row) in rows
-                            .iter()
-                            .enumerate()
-                            .skip(view_start)
-                            .take(view_end - view_start)
+                    }
+                    for (index, row) in rows
+                        .iter()
+                        .enumerate()
+                        .skip(view_start)
+                        .take(view_end - view_start)
+                    {
+                        if menu_list::row(
+                            ui,
+                            &row.label,
+                            row.value.as_deref(),
+                            index == focus,
+                            appearance,
+                        )
+                        .clicked()
                         {
-                            if draw_row(
-                                ui,
-                                &row.label,
-                                row.value.as_deref(),
-                                index == focus,
-                                appearance,
-                            )
-                            .clicked()
-                            {
-                                let already = index == focus;
-                                self.form.set_focus(index, kind);
-                                if !self.form.on_page() || already {
-                                    self.commit(
-                                        events,
-                                        &EventSource::MouseClick,
-                                        |form, cfg, kind| form.activate(cfg, kind),
-                                    );
-                                }
+                            let already = index == focus;
+                            self.form.set_focus(index, kind);
+                            if !self.form.on_page() || already {
+                                self.commit(events, &EventSource::MouseClick, |form, cfg, kind| {
+                                    form.activate(cfg, kind)
+                                });
                             }
                         }
-                        if below > 0 {
-                            ui.label(
-                                RichText::new(format!("▼ {below} more below"))
-                                    .small()
-                                    .color(crate::theme::color(appearance.muted_text_color)),
-                            );
-                        }
-                        ui.separator();
-                        draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));
-                    });
-
-                    if let Some(row) = focused
-                        && let Some(explain) = row.explain
-                    {
-                        ui.vertical(|ui| {
-                            ui.set_min_width(PANEL_WIDTH);
-                            ui.set_max_width(PANEL_WIDTH);
-                            ui.label(
-                                RichText::new(&row.label)
-                                    .strong()
-                                    .color(crate::theme::color(appearance.heading_color)),
-                            );
-                            ui.add_space(6.0);
-                            ui.label(explain);
-                        });
                     }
+                    if below > 0 {
+                        ui.label(
+                            RichText::new(format!("▼ {below} more below"))
+                                .small()
+                                .color(crate::theme::color(appearance.muted_text_color)),
+                        );
+                    }
+                    ui.separator();
+                    draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));
                 });
+
+                if let Some(row) = focused
+                    && let Some(explain) = row.explain
+                {
+                    ui.vertical(|ui| {
+                        ui.set_min_width(PANEL_WIDTH);
+                        ui.set_max_width(PANEL_WIDTH);
+                        ui.label(
+                            RichText::new(&row.label)
+                                .strong()
+                                .color(crate::theme::color(appearance.heading_color)),
+                        );
+                        ui.add_space(6.0);
+                        ui.label(explain);
+                    });
+                }
             });
+        });
     }
 
     fn commit(
@@ -282,31 +260,13 @@ fn draw_hint_line(
     hints: &[&FooterHint],
     family: GlyphFamily,
 ) {
-    if hints
-        .iter()
-        .all(|hint| buttons_for(bindings, hint.buttons).is_empty())
-    {
-        return;
-    }
-
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        let mut started = false;
-        for hint in hints {
-            let buttons = buttons_for(bindings, hint.buttons);
-            if buttons.is_empty() {
-                continue;
-            }
-            if started {
-                ui.add_space(HINT_GAP);
-            }
-            started = true;
-            for button in buttons {
-                controller_glyph::show(ui, family, button, HINT_GLYPH);
-            }
-            ui.label(hint.label);
-        }
-    });
+    menu_list::hints(
+        ui,
+        family,
+        hints
+            .iter()
+            .map(|hint| (buttons_for(bindings, hint.buttons), hint.label)),
+    );
 }
 
 fn buttons_for(
@@ -350,49 +310,6 @@ fn buttons_for(
             bindings.buttons_matching(|action| matches!(action, MenuAction::ToggleShowMore))
         }
     }
-}
-
-fn draw_row(
-    ui: &mut Ui,
-    label: &str,
-    value: Option<&str>,
-    selected: bool,
-    appearance: &crate::theme::MenusTheme,
-) -> egui::Response {
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(LIST_WIDTH, ROW_HEIGHT), Sense::click());
-    if selected {
-        ui.painter().rect_filled(
-            rect,
-            ui.visuals().widgets.inactive.corner_radius,
-            ui.visuals().selection.bg_fill,
-        );
-    }
-    let color = if selected {
-        appearance
-            .selected_text_color
-            .map(crate::theme::color)
-            .unwrap_or_else(|| ui.visuals().text_color())
-    } else {
-        ui.visuals().text_color()
-    };
-    ui.painter().text(
-        rect.left_center() + Vec2::new(ROW_PAD, 0.0),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(ROW_FONT),
-        color,
-    );
-    if let Some(value) = value {
-        ui.painter().text(
-            rect.right_center() - Vec2::new(ROW_PAD, 0.0),
-            Align2::RIGHT_CENTER,
-            value,
-            FontId::proportional(ROW_FONT),
-            color,
-        );
-    }
-    response
 }
 
 static MENU: OnceLock<Mutex<MenuState>> = OnceLock::new();
@@ -445,7 +362,7 @@ mod tests {
         let ctx = Context::default();
         ctx.set_visuals(theme.visuals());
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            draw_row(ui, "Label", Some("Value"), selected, &theme.menus);
+            menu_list::row(ui, "Label", Some("Value"), selected, &theme.menus);
         });
         output.textures_delta.clear();
         if selected {

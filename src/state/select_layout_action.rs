@@ -10,7 +10,6 @@ pub enum SelectLayoutAction {
     SelectUp,
     SelectDown,
     Activate,
-    TogglePreview,
     SwitchState(StateId),
 }
 

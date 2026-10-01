@@ -217,7 +217,6 @@ pub struct KeyboardState {
     label_cache: display_icon::LabelCache,
     key_colors: key_colors::KeyColorGroups,
     key_presses: HashMap<(String, usize, usize), Instant>,
-    config: Option<config::Config>,
     last_battery: Option<BatteryStatus>,
     controller_connection: ControllerConnection,
     feed_completion_log: bool,
@@ -230,28 +229,10 @@ pub struct KeyboardState {
 }
 
 impl KeyboardState {
-    fn cfg(&self) -> config::Config {
-        match &self.config {
-            Some(c) => c.clone(),
-            None => config::get(),
-        }
-    }
-
     pub fn new() -> Result<Self> {
-        Self::construct(None)
-    }
-
-    pub fn with_config(config: config::Config) -> Result<Self> {
-        Self::construct(Some(config))
-    }
-
-    fn construct(config: Option<config::Config>) -> Result<Self> {
-        let mut state = Self {
-            config,
-            ..Default::default()
-        };
+        let mut state = Self::default();
         state.reload_from_config()?;
-        state.current_layout = state.cfg().start_layout;
+        state.current_layout = config::get().start_layout;
         state.feed_completion_log = true;
         Ok(state)
     }
@@ -789,7 +770,7 @@ impl KeyboardState {
     }
 
     pub(crate) fn tape_header(&self, kind: ControllerKind) -> Result<TapeHeader> {
-        let cfg = self.cfg();
+        let cfg = config::get();
         let mut layouts: Vec<(String, String)> = self
             .layouts
             .iter()
@@ -909,9 +890,7 @@ impl KeyboardState {
         for layout in self.layouts.values_mut() {
             layout.clear_captured_geometry();
         }
-        if self.config.is_none() {
-            geometry_snap::clear();
-        }
+        geometry_snap::clear();
         self.label_cache.clear();
     }
 
@@ -988,7 +967,7 @@ impl KeyboardState {
         if let Some(layout) = self.layouts.get_mut(&self.current_layout) {
             layout.set_aim_kind(input.family());
         }
-        let cfg = self.cfg();
+        let cfg = config::get();
 
         let current_layout = self
             .layouts
@@ -1154,13 +1133,12 @@ impl KeyboardState {
         events: &mut EventQueue,
     ) -> Option<RawKey> {
         let display_ctx = self.when_context();
+        let visual_cfg = config::get();
 
         let show_chips = self.feed_completion_log
             && (crate::completion::showing_recorded()
-                || (self.cfg().completion.enabled && self.cfg().completion.show_in_keyboard));
+                || (visual_cfg.completion.enabled && visual_cfg.completion.show_in_keyboard));
 
-        let publish_geometry = self.config.is_none();
-        let visual_cfg = self.cfg();
         let keyboard_theme = &visual_cfg.theme().keyboard;
         self.key_colors.sync(&keyboard_theme.key_groups);
         let frame_time = Instant::now();
@@ -1437,9 +1415,7 @@ impl KeyboardState {
                     }
                 });
             }
-            if publish_geometry {
-                geometry_snap::publish(current_layout_name, current_layout);
-            }
+            geometry_snap::publish(current_layout_name, current_layout);
         }
 
         if let Some((l, r)) = pending_reselect_px.take() {
@@ -1447,20 +1423,18 @@ impl KeyboardState {
             selected.right = current_layout.cell_at_pixel(StickSide::Right, r);
         }
 
-        if publish_geometry {
-            current_layout.draw_debug(ctx, ui);
-            current_layout.draw_cursors(
-                ui,
-                cursor_input.as_deref(),
-                &visual_cfg.stick_pad_cursor_style(),
-            );
-        }
+        current_layout.draw_debug(ctx, ui);
+        current_layout.draw_cursors(
+            ui,
+            cursor_input.as_deref(),
+            &visual_cfg.stick_pad_cursor_style(),
+        );
 
         pressed_key
     }
 
     fn reload_from_config(&mut self) -> Result<()> {
-        let cfg = self.cfg();
+        let cfg = config::get();
 
         // Reload all layouts
         self.layouts = HashMap::new();

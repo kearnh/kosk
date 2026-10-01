@@ -349,7 +349,9 @@ impl AppState {
                 select_key::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
             }
             StateId::SelectLayout => {
-                select_layout::with_mut(|s| s.draw_ui(ctx, ui, &mut self.events));
+                select_layout::with_mut(|s| {
+                    s.draw_ui(ui, &mut self.events, self.controller_kind);
+                });
             }
         }
         self.process_events(ctx, None);

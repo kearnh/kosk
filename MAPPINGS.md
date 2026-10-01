@@ -110,4 +110,4 @@ Up and down move the highlight. Left and right change the highlighted value. Act
 
 ## Select-layout actions
 
-`selectUp`, `selectDown`, `activate`, `togglePreview`, `switchState.…`
+`selectUp`, `selectDown`, `activate`, `switchState.…`
