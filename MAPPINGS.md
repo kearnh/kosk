@@ -69,6 +69,8 @@ These names are true or false while you hold the button. You can combine them wi
 
 ## Keyboard actions
 
+`toggleOverlayVisibility` shows or hides KOSK. It is available in every mapping table and remains active while hidden; other actions are ignored while hidden. The mappings editor and binding picker use the keyboard's visibility bindings. Avoid binding it to a button that also sends KOSK's global shortcut through Steam, which would toggle twice.
+
 | Name | What it does |
 |------|----------------|
 | `sendKeyUnderLeftStick` | type the key under the left stick |

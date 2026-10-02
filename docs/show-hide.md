@@ -1,10 +1,21 @@
 # Show and hide KOSK
 
-Press **F3** to show or hide KOSK. It stays running while hidden and ignores controller input. Both transitions clear word suggestions and their typing context. Hiding clears modifiers and releases held keys. Release held controller buttons before typing again.
+KOSK starts hidden. Press **F3** to show or hide it. It stays running while hidden and accepts only visibility bindings. Both transitions clear word suggestions and their typing context. Hiding clears modifiers and releases held keys. Release held controller buttons before typing again.
 
 The blue **K** in the Windows notification area toggles visibility when clicked. Right-click it for **Show KOSK** / **Hide KOSK** and **Quit KOSK**. Windows may place the icon in the notification area's overflow menu. The overlay has no taskbar button.
 
-Showing preserves position and leaves the current application focused. Hiding a binding editor cancels its keyboard capture. Quit closes KOSK.
+Showing leaves the current application focused. Mouse-pointer placement, including `--at-mouse`, follows the cursor on every show. Other positions are retained. Hiding a binding editor cancels its keyboard capture. Quit closes KOSK.
+
+Turn **Start hidden** off in settings, or set `start_hidden = false` at the top level of your settings file. `--start-hidden` and `--start-visible` override the setting for that launch.
+
+Map `toggleOverlayVisibility` in any mapping table to show or hide KOSK with a controller button. It also works while hidden. The mappings editor and binding picker use the keyboard's visibility bindings. Layout keys can use the same action. For example, in `mappings.toml`:
+
+```toml
+[Keyboard]
+quickAccess = "toggleOverlayVisibility"
+```
+
+Bind each mode where you need it. Keep visibility bindings unconditional if the same button must always reopen KOSK.
 
 To change the global shortcut, add this to the top level of your settings file:
 

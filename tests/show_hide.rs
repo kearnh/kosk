@@ -38,10 +38,10 @@ fn visibility_clears_completion_and_blocks_input_until_release() {
     let path = dir.join("config.toml");
     std::fs::write(
         &path,
-        "config_version = 1\n\
+        "config_version = 1\nstart_hidden = false\n\
         [key_sink]\ntype = 'log'\nfile = 'keys.log'\n\
         [tips]\ncompletion_next_word_setup_shown = true\n\
-        [controller_map.Keyboard]\nfaceLeft = 'sendKey.a'\nfaceTop = 'toggleCtrl'\n",
+        [controller_map.Keyboard]\nfaceLeft = 'sendKey.a'\nfaceTop = 'toggleCtrl'\nquickAccess = 'toggleOverlayVisibility'\n",
     )
     .unwrap();
     config::init_from_path(path).unwrap();
@@ -87,4 +87,51 @@ fn visibility_clears_completion_and_blocks_input_until_release() {
     let log = std::fs::read_to_string(&log_path).unwrap();
     assert!(log.lines().any(|line| line.ends_with(" text a")), "{log}");
     assert!(!log.contains("Control"), "{log}");
+
+    let visibility = Input(Some(ControllerButton::QuickAccess));
+    let changes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = changes.clone();
+    state.on_overlay_visibility_changed(std::sync::Arc::new(move |visible, _| {
+        observed.lock().unwrap().push(visible)
+    }));
+    state.handle_controller_input(&ctx, &visibility).unwrap();
+    assert!(!state.overlay_visible());
+    state.handle_controller_input(&ctx, &visibility).unwrap();
+    assert!(!state.overlay_visible());
+    state.note_controller_idle(&ctx, &idle).unwrap();
+    state.handle_controller_input(&ctx, &visibility).unwrap();
+    assert!(state.overlay_visible());
+    assert_eq!(*changes.lock().unwrap(), [false, true]);
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
+
+        struct RestoreCursor(POINT);
+        impl Drop for RestoreCursor {
+            fn drop(&mut self) {
+                unsafe {
+                    SetCursorPos(self.0.x, self.0.y);
+                }
+            }
+        }
+        let mut original = POINT::default();
+        assert_ne!(unsafe { GetCursorPos(&mut original) }, 0);
+        let _restore = RestoreCursor(original);
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(20.0, 20.0));
+        unsafe {
+            SetCursorPos(100, 100);
+        }
+        state.set_overlay_visible(false);
+        state.set_overlay_visible(true);
+        let first = state.get_position(rect, 1.0);
+        state.set_overlay_visible(false);
+        unsafe {
+            SetCursorPos(500, 100);
+        }
+        state.set_overlay_visible(true);
+        let second = state.get_position(rect, 1.0);
+        assert_ne!(first, second, "show must refresh the mouse position");
+    }
 }

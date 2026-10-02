@@ -19,6 +19,7 @@ Optional flags:
 - `--ignore-recorded-config` keeps the on-disk config when replaying a tape that embedded one. See [record-replay.md](record-replay.md).
 - `--mcp-controller` opens an exclusive virtual controller instead of any HID device, for scripted or agent-driven input. The same mode can be enabled with the `KOSK_CONTROLLER_MCP` environment variable, which also accepts a `host:port` bind address (the default is `127.0.0.1:5720`). This mode cannot be combined with replay. See the virtual-controller page.
 - `--at-mouse` places the overlay at the mouse cursor, ignoring config `window_pos`. The file is not rewritten unless the user later saves from Move Window.
+- `--start-hidden` / `--start-visible` override `start_hidden` for that launch. The default is hidden; the setting is never rewritten by these flags.
 
 Auxiliary binaries that need config without parsing those flags call `init_from_path`.
 

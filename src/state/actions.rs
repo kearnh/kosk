@@ -27,6 +27,14 @@ pub trait Action: Any {
 }
 
 pub fn get_action(state: StateId, name: &str) -> Option<Box<dyn Action>> {
+    if name.eq_ignore_ascii_case(super::overlay::TOGGLE_OVERLAY_VISIBILITY_ACTION)
+        && !matches!(
+            state,
+            StateId::Keyboard | StateId::Mappings | StateId::SelectKey
+        )
+    {
+        return Some(Box::new(super::overlay::OverlayAction::Toggle));
+    }
     match state {
         StateId::Keyboard => {
             let action = KeyboardAction::try_from(name).ok()?;
@@ -56,10 +64,34 @@ pub fn load_bindings<A: Action + Clone + 'static>(
     state_id: StateId,
 ) -> Result<BindingEngine<A>, anyhow::Error> {
     let cfg = config::get();
+    load_bindings_with_parser(state_id, &cfg, parse_typed::<A>)
+}
+
+pub(super) fn load_overlay_bindings(
+    state: StateId,
+    cfg: &config::Config,
+) -> Result<BindingEngine<super::overlay::OverlayAction>, anyhow::Error> {
+    load_bindings_with_parser(state, cfg, |state, name| {
+        get_action(state, name)?;
+        Some(
+            if name.eq_ignore_ascii_case(super::overlay::TOGGLE_OVERLAY_VISIBILITY_ACTION) {
+                super::overlay::OverlayAction::Toggle
+            } else {
+                super::overlay::OverlayAction::Ignore
+            },
+        )
+    })
+}
+
+fn load_bindings_with_parser<A: Action + Clone + 'static>(
+    state_id: StateId,
+    cfg: &config::Config,
+    parse: fn(StateId, &str) -> Option<A>,
+) -> Result<BindingEngine<A>, anyhow::Error> {
     let mut raw_bindings = HashMap::new();
     if let Some(raw_mapping) = cfg.controller_map.get(&state_id).cloned() {
         for (binding, value) in raw_mapping {
-            match compile_mapping_value::<A>(state_id, &value) {
+            match compile_mapping_value::<A>(state_id, &value, parse) {
                 Ok(Some(target)) => {
                     raw_bindings.insert(binding, target);
                 }
@@ -104,6 +136,7 @@ fn expand_or_accept(state: StateId, name: &str) -> Option<(&'static str, &'stati
 fn compile_mapping_value<A: Action + Clone + 'static>(
     state: StateId,
     value: &MappingValue,
+    parse: fn(StateId, &str) -> Option<A>,
 ) -> Result<Option<BindingTarget<A>>, String> {
     if let MappingValue::Action(name) = value {
         if name == crate::config::UNBIND_ACTION {
@@ -122,24 +155,26 @@ fn compile_mapping_value<A: Action + Clone + 'static>(
                         when: None,
                     },
                 ],
+                parse,
             );
         }
     }
 
     let rules = value.rules()?;
-    compile_rules::<A>(state, &rules)
+    compile_rules::<A>(state, &rules, parse)
 }
 
 fn compile_rules<A: Action + Clone + 'static>(
     state: StateId,
     rules: &[MappingRule],
+    parse: fn(StateId, &str) -> Option<A>,
 ) -> Result<Option<BindingTarget<A>>, String> {
     validate_rule_order(rules)?;
 
     let mut arms = Vec::new();
     let mut otherwise = None;
     for rule in rules {
-        let Some(action) = parse_typed::<A>(state, &rule.action) else {
+        let Some(action) = parse(state, &rule.action) else {
             continue;
         };
         match &rule.when {

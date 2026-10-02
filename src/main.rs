@@ -110,25 +110,40 @@ impl App {
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
         let os_focus_guard = Arc::new(Mutex::new(None::<OsFocusGuard>));
-        let set_visible = |toggle: bool| {
-            let state = state.clone();
-            let focus = os_focus_guard.clone();
-            let ctx = cc.egui_ctx.clone();
-            move || {
-                let mut state = state.lock().unwrap();
-                let visible = !toggle || !state.overlay_visible();
-                state.set_overlay_visible(visible);
+        let focus = os_focus_guard.clone();
+        let visibility_ctx = cc.egui_ctx.clone();
+        state
+            .lock()
+            .unwrap()
+            .on_overlay_visibility_changed(Arc::new(move |visible, position| {
                 if !visible && let Some(guard) = focus.lock().unwrap().take() {
                     guard.restore();
                 }
-                ctx.send_viewport_cmd_to(
+                if let Some((x, y)) = position {
+                    visibility_ctx.send_viewport_cmd_to(
+                        egui::ViewportId::ROOT,
+                        egui::ViewportCommand::OuterPosition(egui::pos2(x, y)),
+                    );
+                }
+                visibility_ctx.send_viewport_cmd_to(
                     egui::ViewportId::ROOT,
                     egui::ViewportCommand::Visible(visible),
                 );
                 if !visible {
-                    ctx.send_viewport_cmd_to(toast_viewport_id(), egui::ViewportCommand::Close);
+                    visibility_ctx
+                        .send_viewport_cmd_to(toast_viewport_id(), egui::ViewportCommand::Close);
                 }
-                ctx.request_repaint();
+                visibility_ctx.request_repaint();
+            }));
+        let set_visible = |toggle: bool| {
+            let state = state.clone();
+            move || {
+                let mut state = state.lock().unwrap();
+                if toggle {
+                    state.toggle_overlay_visibility();
+                } else {
+                    state.set_overlay_visible(true);
+                }
             }
         };
         let ctx = cc.egui_ctx.clone();
@@ -163,9 +178,13 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        let state_guard = self.state.lock().unwrap();
+        let mut state_guard = self.state.lock().unwrap();
         if !state_guard.overlay_visible() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             return;
+        }
+        if state_guard.take_shown_position_refresh() {
+            self.last_outer = None;
         }
         let cfg = config::get();
         let is_transparent = cfg.transparent;
@@ -457,6 +476,7 @@ fn main() -> Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_transparent(config::get().transparent)
             .with_active(false)
+            .with_visible(!config::start_hidden())
             .with_taskbar(false)
             .with_always_on_top()
             .with_decorations(false)

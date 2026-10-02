@@ -145,7 +145,7 @@ impl GlobalShortcut {
                     let result = Shortcut::parse(&value).and_then(|shortcut| shortcut.map(Registration::new).transpose());
                     match result {
                         Ok(active) => {
-                            if active.is_none() { on_show(); }
+                            if active.is_none() && tray.is_none() { on_show(); }
                             registration = active;
                         }
                         Err(error) => {

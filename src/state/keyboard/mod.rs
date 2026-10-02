@@ -765,6 +765,9 @@ impl KeyboardState {
             ToggleRecord => {
                 let _ = events.push(Event::ToggleRecord, source);
             }
+            ToggleOverlayVisibility => {
+                let _ = events.push(Event::ToggleOverlayVisibility, source);
+            }
         }
         Ok(())
     }

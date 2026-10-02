@@ -85,6 +85,7 @@ pub enum Event {
     RotateWindow,
     Exit,
     ToggleRecord,
+    ToggleOverlayVisibility,
     ToggleShift,
     ToggleCtrl,
     ToggleAlt,

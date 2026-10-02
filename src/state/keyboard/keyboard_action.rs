@@ -21,6 +21,7 @@ pub enum KeyboardAction {
     RotateWindow,
     Exit,
     ToggleRecord,
+    ToggleOverlayVisibility,
     CycleSuggestion,
     CycleSuggestionPrev,
     CancelSuggestion,
@@ -51,6 +52,7 @@ impl Action for KeyboardAction {
             | RotateWindow
             | Exit
             | ToggleRecord
+            | ToggleOverlayVisibility
             | CycleSuggestion
             | CycleSuggestionPrev
             | CancelSuggestion
@@ -159,6 +161,9 @@ impl KeyboardAction {
             RotateWindow => "rotateWindow".into(),
             Exit => "exit".into(),
             ToggleRecord => "toggleRecord".into(),
+            ToggleOverlayVisibility => {
+                crate::state::overlay::TOGGLE_OVERLAY_VISIBILITY_ACTION.into()
+            }
             CycleSuggestion => "cycleSuggestion".into(),
             CycleSuggestionPrev => "cycleSuggestionPrev".into(),
             CancelSuggestion => "cancelSuggestion".into(),

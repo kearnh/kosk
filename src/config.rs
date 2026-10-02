@@ -47,9 +47,26 @@ pub struct Args {
     #[arg(long)]
     pub mcp_controller: bool,
 
-    /// Place the overlay at the mouse cursor, ignoring config window_pos.
+    /// Place the overlay at the mouse cursor whenever shown, ignoring config window_pos.
     #[arg(long)]
     pub at_mouse: bool,
+
+    /// Start with the overlay hidden, overriding start_hidden in settings.
+    #[arg(long, conflicts_with = "start_visible")]
+    pub start_hidden: bool,
+
+    /// Show the overlay on startup, overriding start_hidden in settings.
+    #[arg(long)]
+    pub start_visible: bool,
+}
+
+impl Args {
+    fn startup_visibility_override(&self) -> Option<bool> {
+        if self.start_hidden {
+            return Some(true);
+        }
+        self.start_visible.then_some(false)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Choice)]
@@ -215,6 +232,10 @@ pub struct Config {
     /// An empty string disables the shortcut.
     #[config(default = "F3".to_owned())]
     pub show_hide_shortcut: String,
+
+    #[config(default = true)]
+    #[setting(page = Overlay, label = "Start hidden", explain = "Keep the overlay hidden on startup. Show it with the shortcut or tray icon.")]
+    pub start_hidden: bool,
 
     #[setting(section, page = Debug)]
     pub debug: Debug,
@@ -776,6 +797,7 @@ static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLI_REPLAY: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_MCP_CONTROLLER: OnceLock<bool> = OnceLock::new();
 static CLI_AT_MOUSE: OnceLock<bool> = OnceLock::new();
+static CLI_START_HIDDEN: OnceLock<Option<bool>> = OnceLock::new();
 static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -863,6 +885,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "stick_pad_cursors",
     "transparent",
     "show_hide_shortcut",
+    "start_hidden",
     "keyboard_opacity",
     "ui_opacity",
     "window_pos",
@@ -1455,6 +1478,9 @@ fn start_watcher_thread(config_path: PathBuf, config_files: Vec<PathBuf>) -> Res
 
 pub fn init() -> Result<()> {
     let args = Args::parse();
+    CLI_START_HIDDEN
+        .set(args.startup_visibility_override())
+        .expect("CLI startup visibility was already set");
     if let Some(ref path) = args.replay
         && !path.exists()
     {
@@ -1553,6 +1579,14 @@ pub fn cli_keys_log() -> Option<PathBuf> {
 
 pub fn cli_at_mouse() -> bool {
     CLI_AT_MOUSE.get().copied().unwrap_or(false)
+}
+
+pub fn start_hidden() -> bool {
+    CLI_START_HIDDEN
+        .get()
+        .copied()
+        .flatten()
+        .unwrap_or_else(|| get().start_hidden)
 }
 
 pub fn ignore_recorded_config() -> bool {
@@ -1964,6 +1998,26 @@ where
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn startup_visibility_flags_override_both_config_values() {
+        for (args, expected) in [
+            (vec!["kosk"], None),
+            (vec!["kosk", "--start-hidden"], Some(true)),
+            (vec!["kosk", "--start-visible"], Some(false)),
+        ] {
+            let args = Args::try_parse_from(args).unwrap();
+            assert_eq!(args.startup_visibility_override(), expected);
+            for configured in [false, true] {
+                assert_eq!(
+                    args.startup_visibility_override().unwrap_or(configured),
+                    expected.unwrap_or(configured)
+                );
+            }
+        }
+        assert!(Args::try_parse_from(["kosk", "--start-hidden", "--start-visible"]).is_err());
+        assert!(Config::default().start_hidden);
+    }
 
     #[test]
     fn parse_replay_flag() {

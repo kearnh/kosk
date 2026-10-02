@@ -11,7 +11,7 @@ The keyboard should sit where you can see it without covering the caret you are 
 The saved value in config is one of:
 
 - `top left`, `top right`, `bottom left`, `bottom right` — named corners.
-- `mouse pointer` — place beside the cursor captured at launch (or first use).
+- `mouse pointer` — place beside the cursor captured whenever the overlay is shown.
 - `[x, y]` — an absolute top-left in egui points.
 
 `resolve_position` turns a variant into coordinates given the current window size and monitor size. Corners are recomputed every time, so a larger keyboard still sits in the same corner. Absolute coordinates are clamped to keep the window on the monitor; if clamping changes the pair, `AppState` writes the clamped `Absolute` back to config, except while Move Window is active so dragging cannot rewrite the file.
@@ -24,7 +24,7 @@ The saved value in config is one of:
 
 On Windows, `capture_pointer_snapshot` reads `GetCursorPos` and the work area of the monitor that contains the cursor (excluding the taskbar). Those values are stored in physical pixels. Later conversions divide by `pixels_per_point` so placement stays in egui points.
 
-The snapshot is taken once, when `window_pos` is `mouse pointer` and no snapshot exists yet. After that, moving the real mouse does not move the overlay. That is deliberate: the window should not follow the pointer while you aim at a key.
+The snapshot is refreshed whenever the overlay is shown with mouse-pointer placement. It remains fixed while visible, so moving the mouse does not move the overlay while you aim at a key.
 
 Default placement is horizontal **right** of the cursor if the work area has room (`POINTER_GAP` is 12 px-equivalent), otherwise left. Vertically the top of the window **aligns** with the cursor so the overlay hangs down (bottom-right of the pointer), unless there is not enough work area below, in which case it hangs up. `place_near_pointer` applies those offsets independently and then clamps so the full window stays inside the work area.
 

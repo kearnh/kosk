@@ -305,7 +305,7 @@ fn unit_and_switch_rows(variants: &[&str]) -> Vec<String> {
 }
 
 fn catalog_rows(mode: StateId, draft: &ModeDraft) -> Vec<String> {
-    match mode {
+    let mut rows = match mode {
         StateId::Keyboard => {
             let mut rows = unit_names(
                 KeyboardAction::VARIANTS,
@@ -345,7 +345,14 @@ fn catalog_rows(mode: StateId, draft: &ModeDraft) -> Vec<String> {
         }
         StateId::MoveWindow => unit_and_switch_rows(MoveWindowAction::VARIANTS),
         StateId::Mappings | StateId::SelectKey => Vec::new(),
+    };
+    let visibility_action = super::overlay::TOGGLE_OVERLAY_VISIBILITY_ACTION.to_owned();
+    if !matches!(mode, StateId::Mappings | StateId::SelectKey) && !rows.contains(&visibility_action)
+    {
+        rows.push(visibility_action);
+        rows.sort();
     }
+    rows
 }
 
 fn mode_label(mode: StateId) -> &'static str {

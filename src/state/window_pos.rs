@@ -45,7 +45,7 @@ const SLOT_RING: [PointerPlacement; 4] = [
     },
 ];
 
-/// Cursor and work-area at launch, in physical pixels (virtual screen).
+/// Captured cursor and work-area, in physical pixels (virtual screen).
 #[derive(Clone, Copy, Debug)]
 pub struct PointerSnapshot {
     cursor_px: (i32, i32),

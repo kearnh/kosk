@@ -24,6 +24,7 @@ mod menu_action;
 mod move_window;
 mod move_window_action;
 pub mod os_focus;
+mod overlay;
 mod select_key;
 mod select_layout;
 mod select_layout_action;
@@ -60,6 +61,8 @@ impl StateId {
     }
 }
 
+type VisibilityCallback = dyn Fn(bool, Option<(f32, f32)>) + Send + Sync;
+
 pub struct AppState {
     state: StateId,
     /// Modes pushed by `CallState`, most-recent callee's caller at the end.
@@ -79,6 +82,10 @@ pub struct AppState {
     overlay_visible: bool,
     resume_controller_after_release: bool,
     held_keys: Vec<enigo::Key>,
+    overlay_bindings: overlay::OverlayBindings,
+    visibility_changed: Option<Arc<VisibilityCallback>>,
+    shown_position: bool,
+    last_window_geometry: Option<(Rect, f32)>,
 }
 
 impl AppState {
@@ -114,9 +121,13 @@ impl AppState {
             key_sink: open_key_sink()?,
             unsupported_checked_for: None,
             background: crate::ui::background::Background::default(),
-            overlay_visible: true,
+            overlay_visible: !config::start_hidden(),
             resume_controller_after_release: false,
             held_keys: Vec::new(),
+            overlay_bindings: overlay::OverlayBindings::default(),
+            visibility_changed: None,
+            shown_position: false,
+            last_window_geometry: None,
         })
     }
 
@@ -130,6 +141,14 @@ impl AppState {
 
     pub fn overlay_visible(&self) -> bool {
         self.overlay_visible
+    }
+
+    pub fn on_overlay_visibility_changed(&mut self, callback: Arc<VisibilityCallback>) {
+        self.visibility_changed = Some(callback);
+    }
+
+    pub fn toggle_overlay_visibility(&mut self) {
+        self.set_overlay_visible(!self.overlay_visible);
     }
 
     pub fn set_overlay_visible(&mut self, visible: bool) {
@@ -149,6 +168,16 @@ impl AppState {
         });
 
         if visible {
+            if self.pos == WindowPos::MousePointer {
+                self.pointer_snapshot = capture_pointer_snapshot();
+                self.shown_position = true;
+            }
+            let position = self
+                .last_window_geometry
+                .map(|(rect, ppp)| self.get_position(rect, ppp));
+            if let Some(callback) = &self.visibility_changed {
+                callback(true, position);
+            }
             return;
         }
 
@@ -166,10 +195,17 @@ impl AppState {
                 crate::user_notify::note_type_failure();
             }
         }
+        if let Some(callback) = &self.visibility_changed {
+            callback(false, None);
+        }
     }
 
     fn window_size_from(content_rect: Rect) -> (f32, f32) {
         (content_rect.width(), content_rect.height())
+    }
+
+    pub fn take_shown_position_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.shown_position)
     }
 
     fn clamp_absolute_pos(&self, pos: WindowPos, content_rect: Rect) -> WindowPos {
@@ -181,9 +217,10 @@ impl AppState {
     /// Resolve the configured position for the current monitor and window size.
     ///
     /// If an absolute position had to be clamped (e.g. after display scaling changed),
-    /// the corrected value is persisted to config. `MousePointer` is snapped once
-    /// at launch and not written back as coordinates.
+    /// the corrected value is persisted to config. `MousePointer` is captured
+    /// when shown and not written back as coordinates.
     pub fn get_position(&mut self, content_rect: Rect, pixels_per_point: f32) -> (f32, f32) {
+        self.last_window_geometry = Some((content_rect, pixels_per_point));
         let window_size = Self::window_size_from(content_rect);
         if self.pos == WindowPos::MousePointer {
             if self.pointer_snapshot.is_none() {
@@ -335,6 +372,10 @@ impl AppState {
                             eprintln!("toggleRecord: {e:#}");
                             crate::user_notify::notify(crate::user_notify::Notice::record_failed());
                         }
+                    }
+                    Event::ToggleOverlayVisibility => {
+                        self.toggle_overlay_visibility();
+                        return;
                     }
                     Event::ToggleShift => {
                         keyboard::with_mut(|kb| kb.toggle_shift());
@@ -493,6 +534,18 @@ impl AppState {
         ctx: &Context,
         input: &dyn ControllerInput,
     ) -> Result<()> {
+        let cfg = config::get();
+        let when = match self.state {
+            StateId::Keyboard | StateId::TextInput => keyboard::with_mut(|kb| kb.when_context()),
+            _ => crate::when::WhenContext::default(),
+        };
+        if self
+            .overlay_bindings
+            .toggle_requested(self.state, &cfg, input, &when)?
+        {
+            self.toggle_overlay_visibility();
+            return Ok(());
+        }
         if !self.overlay_visible {
             return Ok(());
         }
@@ -505,8 +558,6 @@ impl AppState {
                 .any(|button| input.query(*button));
             return Ok(());
         }
-
-        let cfg = config::get();
 
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
@@ -591,6 +642,7 @@ impl AppState {
         input: &dyn ControllerInput,
     ) -> Result<()> {
         self.note_battery(input);
+        self.overlay_bindings.reset();
         if self.overlay_visible && self.resume_controller_after_release {
             self.reset_controller_input(ctx)?;
         }
@@ -603,6 +655,7 @@ impl AppState {
 
     /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.
     pub fn reset_controller_input(&mut self, ctx: &Context) -> Result<()> {
+        self.overlay_bindings.reset();
         if !self.overlay_visible {
             return Ok(());
         }
