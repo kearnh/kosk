@@ -28,8 +28,9 @@ toolchain, model-input hashes, and build commands in a release manifest.
 
 Exclude development binaries, recordings, captures, personal completion
 caches, private files, raw corpora, and repository metadata. Never ZIP the
-working directory. Do not ship Factorio images without redistribution terms;
-the palette-only Factorio theme currently has its image settings commented out.
+working directory. Include the palette-only Factorio theme; exclude
+`themes/images/factorio-refined-concrete.png` and
+`themes/images/factorio-iron-gear-wheel.png`.
 
 A checksum detects changed files; it does not establish publisher identity.
 Verify DLL/runtime requirements on a Windows installation without Rust or

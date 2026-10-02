@@ -36,9 +36,6 @@ Add `themes/*.toml` to the `themes` list to discover them.
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 
 The Factorio theme uses charcoal and steel panels with amber and copper accents.
-Its background uses Factorio's original refined-concrete floor texture,
-visible through dark translucent keyboard panels.
-The asset's source and ownership are recorded in [themes/images/README.md](../themes/images/README.md).
 
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
@@ -109,7 +106,7 @@ alongside the theme when sharing it.
 
 ```toml
 [background_image]
-path = "images/factorio-refined-concrete.png"
+path = "images/background.png"
 opacity = 0.65
 source_region = [0, 0, 512, 512]
 scaling = "cover"
