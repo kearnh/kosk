@@ -19,6 +19,8 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 
 use kosk_config_derive::{config_section, Choice};
 
+#[path = "config/bundled.rs"]
+mod bundled;
 #[path = "config/schema.rs"]
 pub(crate) mod schema;
 pub(crate) use schema::{device_name, DevicePage, Page, Setting};
@@ -1225,6 +1227,9 @@ fn read_merged_config(
     normalize_legacy_theme_config(&mut user_value, config_path)?;
     let mut merged: toml::Value =
         toml::Value::try_from(Config::default()).context("built-in config")?;
+    if source == ConfigSource::User {
+        bundled::apply_defaults(config_path, &mut merged)?;
+    }
     let map_rel = controller_map_rel(&user_value);
     crate::config_overlay::merge_toml(&mut merged, &user_value);
 
@@ -1532,10 +1537,12 @@ pub fn init() -> Result<()> {
         .expect("CLI at-mouse was already set");
     let (path, source) = match &args.config_path {
         Some(path) => (PathBuf::from(path), ConfigSource::Explicit),
-        None => (
-            crate::config_overlay::ensure_user_config_file()?,
-            ConfigSource::User,
-        ),
+        None => {
+            let path = crate::config_overlay::ensure_user_config_file()?;
+            let executable = std::env::current_exe().context("locate application")?;
+            bundled::provision(&path, &executable.with_file_name("resources"))?;
+            (path, ConfigSource::User)
+        }
     };
     CONFIG_SOURCE
         .set(source)
@@ -1724,10 +1731,11 @@ fn builtin_merged_config() -> Result<Config> {
     Ok(cfg)
 }
 
-/// Write `new` into the user file as values that differ from the built-in default.
+/// Write `new` as differences from the built-in and bundled defaults.
 fn write_user_overlay(path: &Path, new: &Config, mappings_file: Option<&str>) -> Result<()> {
     let builtin = builtin_merged_config()?;
     let mut default_val = toml::Value::try_from(&builtin).context("serialize built-in config")?;
+    bundled::apply_defaults(path, &mut default_val)?;
     let mut new_val = toml::Value::try_from(new).context("serialize config")?;
     if let Some(table) = default_val.as_table_mut() {
         table.remove(CONTROLLER_MAP_KEY);

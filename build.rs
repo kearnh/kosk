@@ -4,22 +4,25 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
 
-    let commit = git_stdout(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
-    let dirty = match git_stdout(&["status", "--porcelain"]) {
-        Some(s) => !s.is_empty(),
-        None => true,
-    };
+    println!("cargo:rerun-if-env-changed=KOSK_BUILD_COMMIT");
+    println!("cargo:rerun-if-env-changed=KOSK_BUILD_DIRTY");
+
+    let commit = std::env::var("KOSK_BUILD_COMMIT")
+        .ok()
+        .or_else(|| jj_stdout(&["log", "-r", "@-", "--no-graph", "-T", "commit_id"]))
+        .unwrap_or_else(|| "unknown".to_string());
+    let dirty = std::env::var("KOSK_BUILD_DIRTY")
+        .ok()
+        .or_else(|| jj_stdout(&["log", "-r", "@", "--no-graph", "-T", "if(empty, '0', '1')"]))
+        .unwrap_or_else(|| "1".to_string());
 
     println!("cargo:rustc-env=GIT_COMMIT={commit}");
-    println!(
-        "cargo:rustc-env=GIT_DIRTY={}",
-        if dirty { "1" } else { "0" }
-    );
+    println!("cargo:rustc-env=GIT_DIRTY={}", dirty);
 }
 
-fn git_stdout(args: &[&str]) -> Option<String> {
-    let out = Command::new("git")
-        .env("GIT_OPTIONAL_LOCKS", "0")
+fn jj_stdout(args: &[&str]) -> Option<String> {
+    let out = Command::new("jj")
+        .arg("--ignore-working-copy")
         .args(args)
         .output()
         .ok()?;
@@ -28,7 +31,7 @@ fn git_stdout(args: &[&str]) -> Option<String> {
     }
     let s = String::from_utf8(out.stdout).ok()?;
     let s = s.trim().to_string();
-    if s.is_empty() && args[0] == "rev-parse" {
+    if s.is_empty() {
         return None;
     }
     Some(s)
