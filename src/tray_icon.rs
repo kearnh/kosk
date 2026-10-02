@@ -13,6 +13,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const TRAY_CALLBACK: u32 = WM_APP + 1;
+const TRAY_EVENT: u32 = WM_APP + 2;
+const RESTORE_TRAY_EVENT: u32 = WM_APP + 3;
 const TRAY_ID: u32 = 1;
 const TOGGLE_COMMAND: usize = 1;
 const QUIT_COMMAND: usize = 2;
@@ -23,12 +25,29 @@ fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }
 
+fn taskbar_created_message() -> u32 {
+    static MESSAGE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *MESSAGE.get_or_init(|| unsafe { RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()) })
+}
+
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    let event = if message == TRAY_CALLBACK {
+        Some(TRAY_EVENT)
+    } else if message != 0 && message == taskbar_created_message() {
+        Some(RESTORE_TRAY_EVENT)
+    } else {
+        None
+    };
+    if let Some(event) = event {
+        unsafe { PostMessageW(hwnd, event, wparam, lparam) };
+        return 0;
+    }
+
     unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
 }
 
@@ -86,7 +105,6 @@ impl MenuDismissal {
 pub(super) struct TrayIcon {
     hwnd: HWND,
     icon: HICON,
-    taskbar_created: u32,
 }
 
 impl TrayIcon {
@@ -134,11 +152,7 @@ impl TrayIcon {
                 return Err(error);
             }
         };
-        let tray = Self {
-            hwnd,
-            icon,
-            taskbar_created: unsafe { RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()) },
-        };
+        let tray = Self { hwnd, icon };
         tray.add()?;
         Ok(tray)
     }
@@ -170,13 +184,13 @@ impl TrayIcon {
         if message.hwnd != self.hwnd {
             return None;
         }
-        if self.taskbar_created != 0 && message.message == self.taskbar_created {
+        if message.message == RESTORE_TRAY_EVENT {
             if let Err(error) = self.add() {
                 eprintln!("restore tray icon: {error:#}");
             }
             return None;
         }
-        if message.message != TRAY_CALLBACK {
+        if message.message != TRAY_EVENT {
             return None;
         }
         match message.lParam as u32 {
@@ -233,5 +247,63 @@ impl Drop for TrayIcon {
             DestroyIcon(self.icon);
             DestroyWindow(self.hwnd);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PeekMessageW, SendMessageW, PM_REMOVE};
+
+    #[test]
+    fn sent_shell_messages_reach_the_event_queue() {
+        let class = wide("KOSK tray callback test");
+        let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+        let window_class = WNDCLASSW {
+            lpfnWndProc: Some(window_proc),
+            hInstance: instance,
+            lpszClassName: class.as_ptr(),
+            ..Default::default()
+        };
+        unsafe { RegisterClassW(&window_class) };
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                class.as_ptr(),
+                class.as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                instance,
+                std::ptr::null(),
+            )
+        };
+        assert!(!hwnd.is_null());
+
+        let taskbar_created = unsafe { RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()) };
+        let mut forwarded = Vec::new();
+        for (message, expected, event) in [
+            (TRAY_CALLBACK, TRAY_EVENT, WM_RBUTTONUP as LPARAM),
+            (taskbar_created, RESTORE_TRAY_EVENT, 0),
+        ] {
+            unsafe { SendMessageW(hwnd, message, TRAY_ID as WPARAM, event) };
+            let mut queued = MSG::default();
+            let received =
+                unsafe { PeekMessageW(&mut queued, hwnd, expected, expected, PM_REMOVE) };
+            forwarded.push((received, queued.wParam, queued.lParam));
+        }
+        unsafe { DestroyWindow(hwnd) };
+
+        assert_eq!(
+            forwarded,
+            vec![
+                (1, TRAY_ID as WPARAM, WM_RBUTTONUP as LPARAM),
+                (1, TRAY_ID as WPARAM, 0)
+            ]
+        );
     }
 }
