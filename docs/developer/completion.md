@@ -70,7 +70,34 @@ Application types (`app_type.rs`) let different programs get different vocabular
 
 Neighbor keys for typo substitution are precomputed from letter-key centers whenever keyboard geometry updates, filtered to keys reachable from the same stick bounds. When the current board has fewer than ten letters (the symbols layout, for example), the last letter-layout map is kept instead. Backends only ever see a plain map from each character to its neighbors on the context object; they never call layout code. Completion never calls Win32 directly; the operating-system layer is `platform::ForegroundExe`, which text-input and the session use through `app_type.rs`.
 
-The English unigrams themselves live at `data/completion/en/unigrams.tsv` and are the source wordlist for prefix completion, not a build output. `completion_build` writes only the generated `vocab.txt` and `*.bin` tables, which stay out of the repo. Pair counts are required for contextual next-word prediction; a unigrams-only pack is not enough, so packing without `--bigrams` writes an empty `bigrams.bin` and still succeeds. The full next-word setup, including where to download the bigram counts, is in the [README](../../README.md#next-word-after-a-space).
+The English unigrams themselves live at `data/completion/en/unigrams.tsv` and are the source wordlist for prefix completion, not a build output. `completion_build` writes only the generated `vocab.txt` and `*.bin` tables, which stay out of the repo. Pair counts are required for contextual next-word prediction; a unigrams-only pack is not enough, so packing without `--bigrams` writes an empty `bigrams.bin` and still succeeds. Developer setup is described below; packaged releases supply the prepared tables.
+
+## Building English next-word tables
+
+1. Download Peter Norvig's [count_2w.txt](https://norvig.com/ngrams/count_2w.txt). Save it as `data/completion/en/count_2w.txt`. Each line is two words and how often they appear together. Words that are not in the English list above are ignored.
+
+2. Convert that file into the tables kosk loads:
+
+```text
+cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --bigrams data/completion/en/count_2w.txt --out data/completion/en
+```
+
+`--unigrams` is the word list from the repo. `--bigrams` is the download from step 1. `--out` is the folder for the generated files (`vocab.txt`, `unigrams.bin`, `bigrams.bin`). Those generated files stay out of git. The word list is only read; it is not rewritten.
+
+The last printed line includes how many two-word pairs were kept. If that number is zero, `--bigrams` was probably omitted, and after a space you will only see the most common English words (`you`, `i`, `the`).
+
+The built-in config has `[completion.ngram] model_dir = "data/completion/en"`. That path is resolved beside the active config file. For next-word tables during development, set an absolute `model_dir` in the user config, or run with an explicit config that sits beside `data/`. The English word list is built into the binary when the file is not on disk.
+
+If you have your own text, `--corpus FILE` counts pairs from one sentence per line. There is no corpus in this repo. For three-word sequences, add `--trigrams` and [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
+
+3. Check without opening the overlay. This pretends you typed `going` and a space:
+
+```text
+cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --model_dir data/completion/en
+```
+
+You should see words that follow `going` (for example `to`). If the guesses are still `you` / `i` / `the`, the two-word table did not load. The same problem shows up on stderr as `ngram model at … not loaded; unigram-only` or `no bigrams`.
+
 
 ## Domain wordlists and headless tools
 
