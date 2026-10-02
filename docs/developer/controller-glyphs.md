@@ -6,7 +6,7 @@ This document describes how on-screen prompts draw a controller button. The mapp
 
 A prompt should show the button the person is holding, in the art for the controller they are holding. `faceBottom` is A on a Steam Controller and Cross on a DualShock 4. Keyboard code, the settings footer, and move-window should not each pick a file path. They pass a `ControllerButton` and a `GlyphFamily`, and `controller_glyph::show` draws the icon.
 
-The art is Steam Input’s knockout set (`controller_base/images/api/knockout`). Knockout icons that are a single white fill disappear on a white panel, so callers draw them on a dark background.
+The art is Kenney Input Prompts 1.5A under CC0 1.0, embedded under legacy filenames. Source and release status are recorded in [the glyph notice](../../assets/controller-glyphs/README.md). Knockout icons that are a single white fill disappear on a white panel, so callers draw them on a dark background.
 
 ## `GlyphFamily`
 

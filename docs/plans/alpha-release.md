@@ -73,8 +73,10 @@ code, but leaves data redistribution terms unclear. Confirm the applicable
 terms or build from a corpus with explicit redistribution permission before
 shipping next-word tables. Download availability alone is insufficient evidence.
 
-Audit controller glyph provenance and the licenses/notices of dependencies,
-including embedded fonts and icons. The two Factorio images have ownership
+Controller glyphs were copied from the Steam installation; their source is
+recorded in [the glyph notice](../../assets/controller-glyphs/README.md).
+Verify redistribution terms and audit dependency licenses/notices, including
+embedded fonts and icons. The two Factorio images have ownership
 notes in [themes/images/README.md](../../themes/images/README.md), but no
 recorded redistribution grant. Exclude them from the alpha package.
 
