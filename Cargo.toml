@@ -5,6 +5,7 @@ resolver = "3"
 [package]
 name = "kosk"
 version = "0.1.0"
+license = "MIT"
 edition = "2024"
 default-run = "kosk"
 

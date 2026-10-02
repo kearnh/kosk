@@ -63,3 +63,8 @@ See [docs/developer/completion.md](docs/developer/completion.md) (app types, cur
 ## Reading the code
 
 Start with [docs/developer/README.md](docs/developer/README.md). That page lists one explanation document per subsystem, written so each file can be read on its own.
+
+## License
+
+KOSK code is [MIT licensed](LICENSE). Bundled [English completion data](data/completion/en/README.md)
+and [theme artwork](themes/images/README.md) have separate terms.
