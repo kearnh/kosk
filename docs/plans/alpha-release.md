@@ -64,7 +64,7 @@ clean-machine or controller interaction verification.
 
 ## Completion data and credits
 
-The local packed vocabulary, unigrams, and bigrams total about 3.5 MB
+The local packed vocabulary, unigrams, and bigrams total about 3.2 MB
 uncompressed. Bundling is practical; users need not download or build a model.
 Rebuild from pinned inputs rather than copying unverified ignored outputs.
 Fail packaging when contextual bigrams are absent; an empty table can still
@@ -98,7 +98,7 @@ Do not instruct users to disable Windows protection.
 ## Release gate
 
 - [x] First-launch provisioning and update preservation implemented and tested.
-- [ ] Completion inputs cleared; nonempty contextual tables rebuilt and verified.
+- [x] Completion inputs cleared; nonempty contextual tables rebuilt and verified.
 - [ ] Asset and dependency license notices complete.
 - [x] Repeatable Windows x64 packaging with manifest and checksums.
 - [x] Unsigned alpha selected.
@@ -109,5 +109,6 @@ Do not instruct users to disable Windows protection.
 - [ ] Bug-reporting channel documented.
 - [ ] User README finalized against verified behavior.
 
-Publish only after these gates pass. The local ZIP includes themes and contextual
-completion tables; public asset redistribution checks remain unresolved.
+Publish only after these gates pass. The local ZIP includes themes, contextual
+completion tables, and data/glyph licenses. Clean-Windows testing and the
+remaining checklist items are still required.
