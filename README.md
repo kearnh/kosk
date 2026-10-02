@@ -11,9 +11,9 @@ I built KOSK for my own use and am sharing it under the MIT license. You're welc
 1. Download the Windows x64 ZIP from this repository's **Releases** section.
 2. Extract the whole ZIP into a folder.
 3. Connect your controller and open `kosk.exe`.
-4. Press **Ctrl+Alt+F10** to show KOSK, or click the blue **K** in the Windows notification area. The icon may be in the overflow menu.
+4. Press **Ctrl+Alt+F10** to show KOSK, or click the blue **K** in the Windows notification area.
 
-KOSK starts hidden. Press the shortcut or click the tray icon again to hide it. It keeps running until you quit from the tray menu.
+KOSK starts hidden. Use the shortcut or tray icon to show/hide it, and the tray menu to quit. You can [change the shortcut](docs/show-hide.md).
 
 There's nothing else to install or download, and KOSK doesn't need administrator rights. The included layouts, mappings, themes, and English word suggestions work offline.
 
@@ -24,14 +24,13 @@ The alpha is **unsigned**, so Windows may warn about it or block it from running
 - **Windows 11 x64.**
 - **Steam Controller 2** or **DualShock 4**; check the release notes for tested models and connections.
 - Windows only for now. I'd like to support Linux later.
-- Start and update KOSK manually; the alpha doesn't do either automatically.
 
 <!-- Screenshot placeholder: replace with a keyboard screenshot before release. -->
 *Screenshot coming soon.*
 
 ## Controls
 
-These are the default controls. If you change them, the on-screen hints update to match. A/B/X/Y on the Steam Controller correspond to Cross/Circle/Square/Triangle on DualShock 4.
+Default controls; A/B/X/Y on the Steam Controller correspond to Cross/Circle/Square/Triangle on DualShock 4.
 
 - **Pads or sticks:** move the left and right key selections.
 - **Left/right trigger:** enter the selected key on that side, or accept a highlighted word suggestion.
@@ -45,21 +44,13 @@ These are the default controls. If you change them, the on-screen hints update t
 - **Hold that same left button, then press B:** open text-input mode. On DualShock 4, hold Share and press Circle.
 - **Quick Access (⋯):** open the mappings editor.
 
-You can also select the keyboard's settings, modifier, and letter/symbol keys. Choose other layouts in **Settings → Layouts**.
-
-In settings, up/down selects a row, left/right changes its value, A/Cross confirms, and B/Circle goes back. To reposition KOSK, open **Settings → Move window**. A/Cross saves the position; B/Circle leaves without saving.
-
 Normal typing sends each key straight to your application. In text-input mode, you compose a line inside KOSK first. Submitting sends the line followed by Enter, then returns to the keyboard.
-
-Hiding KOSK releases held keys and clears modifiers. Showing or hiding it also clears suggestions and the text they were following. Release any held controller buttons before typing again. You can [change the show/hide shortcut](docs/show-hide.md).
 
 ## Word suggestions
 
 Suggestions can finish a word, correct a typo, or offer the next word. English suggestions are included and need no setup.
 
-Use the bumpers to highlight a suggestion, then press a trigger or A/Cross to accept it. B/Circle clears the highlight so those buttons resume their usual actions.
-
-Press **L5** just after accepting a suggestion to delete one character and offer your original text as the first suggestion. Select it to restore that text without adding a space. Another edit or cursor movement dismisses it. Backspace still deletes one character as usual.
+Press **L5** just after accepting a suggestion to delete one character and offer your original text as the first suggestion. Select it to restore that text.
 
 Hold the left button beside Steam and press X to turn suggestions on or off; on DualShock 4, hold Share and press Square. Change their appearance and behavior in **Settings → Options → Suggestions**. You can also choose whether KOSK remembers picked words and submitted lines. That memory stays on your computer under `%LOCALAPPDATA%\kosk`.
 
@@ -67,9 +58,7 @@ Suggestions follow what you type through KOSK; they don't read text from your ap
 
 ## Settings and appearance
 
-Open settings to adjust controller feel, key and text size, and key repeat. **Themes** changes the appearance, **Layouts** chooses the keyboard, and **Mappings** changes what the buttons do.
-
-The included themes are Old Steam Controller, Portal 2, Factorio, Cyberpunk 2077, Hollow Knight, and Stardew Valley.
+Open settings to adjust controller feel, key and text size, and key repeat, or change themes, layouts, and button mappings.
 
 KOSK saves your changes in `%LOCALAPPDATA%\kosk\config.toml`. The file only needs settings you've changed. To open it in your editor, press the left button beside Steam (Share on DualShock 4) while in settings.
 
