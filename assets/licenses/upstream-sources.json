@@ -1,0 +1,184 @@
+[
+  {
+    "files": [
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/2026968c30ad14d268f3d70c618a704e22a3b980/LICENSES/Apache-2.0.txt",
+        "path": "upstream/xfix-enum-map-2026968c/LICENSES-Apache-2.0.txt"
+      },
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/2026968c30ad14d268f3d70c618a704e22a3b980/LICENSES/CC0-1.0.txt",
+        "path": "upstream/xfix-enum-map-2026968c/LICENSES-CC0-1.0.txt"
+      },
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/2026968c30ad14d268f3d70c618a704e22a3b980/LICENSES/MIT.txt",
+        "path": "upstream/xfix-enum-map-2026968c/LICENSES-MIT.txt"
+      }
+    ],
+    "revision": "2026968c30ad14d268f3d70c618a704e22a3b980",
+    "repository": "https://codeberg.org/xfix/enum-map",
+    "packages": [
+      "enum-map-derive 0.17.0"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/c788a9c4bd0431308d889942719f7a38761d9884/LICENSES/Apache-2.0.txt",
+        "path": "upstream/xfix-enum-map-c788a9c4/LICENSES-Apache-2.0.txt"
+      },
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/c788a9c4bd0431308d889942719f7a38761d9884/LICENSES/CC0-1.0.txt",
+        "path": "upstream/xfix-enum-map-c788a9c4/LICENSES-CC0-1.0.txt"
+      },
+      {
+        "url": "https://codeberg.org/sugar700/enum-map/raw/commit/c788a9c4bd0431308d889942719f7a38761d9884/LICENSES/MIT.txt",
+        "path": "upstream/xfix-enum-map-c788a9c4/LICENSES-MIT.txt"
+      }
+    ],
+    "revision": "c788a9c4bd0431308d889942719f7a38761d9884",
+    "repository": "https://codeberg.org/xfix/enum-map",
+    "packages": [
+      "enum-map 2.7.3"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/1bbcf100942bac96c2c3a4a91cb67b0b20201a24/LICENSE-APACHE",
+        "path": "upstream/AccessKit-accesskit-1bbcf100/LICENSE-APACHE"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/1bbcf100942bac96c2c3a4a91cb67b0b20201a24/LICENSE-MIT",
+        "path": "upstream/AccessKit-accesskit-1bbcf100/LICENSE-MIT"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/1bbcf100942bac96c2c3a4a91cb67b0b20201a24/LICENSE.chromium",
+        "path": "upstream/AccessKit-accesskit-1bbcf100/LICENSE.chromium"
+      }
+    ],
+    "revision": "1bbcf100942bac96c2c3a4a91cb67b0b20201a24",
+    "repository": "https://github.com/AccessKit/accesskit",
+    "packages": [
+      "accesskit_consumer 0.35.0",
+      "accesskit_windows 0.32.1",
+      "accesskit_winit 0.32.2"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969/LICENSE-APACHE",
+        "path": "upstream/AccessKit-accesskit-a55d3e1a/LICENSE-APACHE"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969/LICENSE-MIT",
+        "path": "upstream/AccessKit-accesskit-a55d3e1a/LICENSE-MIT"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/AccessKit/accesskit/a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969/LICENSE.chromium",
+        "path": "upstream/AccessKit-accesskit-a55d3e1a/LICENSE.chromium"
+      }
+    ],
+    "revision": "a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969",
+    "repository": "https://github.com/AccessKit/accesskit",
+    "packages": [
+      "accesskit 0.24.1",
+      "accesskit_consumer 0.37.0"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE",
+        "path": "upstream/aclysma-profiling-82715511/LICENSE-APACHE"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+        "path": "upstream/aclysma-profiling-82715511/LICENSE-MIT"
+      }
+    ],
+    "revision": "8271551172eb6fa4cba47369aedd93790c623df9",
+    "repository": "https://github.com/aclysma/profiling",
+    "packages": [
+      "profiling 1.0.18"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/rust-windowing/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE",
+        "path": "upstream/brendanzab-gl-rs-ea503e8d/LICENSE"
+      }
+    ],
+    "revision": "ea503e8d5fb6d73c6030e6191ce738cd3bf3433e",
+    "repository": "https://github.com/brendanzab/gl-rs",
+    "packages": [
+      "gl_generator 0.14.0"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/rust-windowing/gl-rs/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE",
+        "path": "upstream/brendanzab-gl-rs-f150967b/LICENSE"
+      }
+    ],
+    "revision": "f150967b1c44ae888e6676f93f639ebc82771bdc",
+    "repository": "https://github.com/brendanzab/gl-rs",
+    "packages": [
+      "khronos_api 3.1.0"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342/LICENSE",
+        "path": "upstream/DoumanAsh-clipboard-win-3b27cf2b/LICENSE"
+      }
+    ],
+    "revision": "3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342",
+    "repository": "https://github.com/DoumanAsh/clipboard-win",
+    "packages": [
+      "clipboard-win 5.4.1"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/emilk/egui/49682f8baa058bf49e011035cfbd6e825f88a5ef/LICENSE-APACHE",
+        "path": "upstream/emilk-egui-49682f8b/LICENSE-APACHE"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/emilk/egui/49682f8baa058bf49e011035cfbd6e825f88a5ef/LICENSE-MIT",
+        "path": "upstream/emilk-egui-49682f8b/LICENSE-MIT"
+      }
+    ],
+    "revision": "49682f8baa058bf49e011035cfbd6e825f88a5ef",
+    "repository": "https://github.com/emilk/egui",
+    "packages": [
+      "ecolor 0.36.2",
+      "eframe 0.36.2",
+      "egui 0.36.2",
+      "egui-wgpu 0.36.2",
+      "egui-winit 0.36.2",
+      "egui_extras 0.36.2",
+      "egui_glow 0.36.2",
+      "egui_inspection 0.36.2",
+      "emath 0.36.2",
+      "epaint 0.36.2"
+    ]
+  },
+  {
+    "files": [
+      {
+        "url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE",
+        "path": "upstream/gfx-rs-rspirv-8afc3d0a/LICENSE"
+      }
+    ],
+    "revision": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4",
+    "repository": "https://github.com/gfx-rs/rspirv",
+    "packages": [
+      "spirv 0.4.0+sdk-1.4.341.0"
+    ]
+  }
+]

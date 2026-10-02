@@ -27,12 +27,14 @@ function Copy-PackageFile {
 Push-Location $repository
 $previousCommit = $env:KOSK_BUILD_COMMIT
 $previousDirty = $env:KOSK_BUILD_DIRTY
+$previousRustFlags = $env:RUSTFLAGS
 try {
     $changes = Invoke-Checked jj @('diff', '--summary')
     if ($changes) { throw 'Commit working-copy changes before packaging' }
     $sourceCommit = (Invoke-Checked jj @('log', '-r', '@-', '--no-graph', '-T', 'commit_id')).Trim()
     $env:KOSK_BUILD_COMMIT = $sourceCommit
     $env:KOSK_BUILD_DIRTY = '0'
+    $env:RUSTFLAGS = '-C target-feature=+crt-static'
 
     $metadata = (Invoke-Checked cargo @('metadata', '--locked', '--offline', '--format-version', '1',
         '--filter-platform', $platform)) | ConvertFrom-Json
@@ -108,6 +110,7 @@ try {
     }
 
     $notices = [System.Text.StringBuilder]::new()
+    $upstreamLicenses = Get-Content -Raw -LiteralPath (Join-Path $repository 'assets/licenses/upstream-sources.json') | ConvertFrom-Json
     [void]$notices.AppendLine('KOSK third-party notices')
     [void]$notices.AppendLine((Get-Content -Raw -LiteralPath (Join-Path $repository 'data/completion/en/README.md')))
     [void]$notices.AppendLine((Get-Content -Raw -LiteralPath (Join-Path $repository 'assets/controller-glyphs/README.md')))
@@ -119,6 +122,7 @@ try {
         if (-not $license -and $directory.StartsWith($repository, [StringComparison]::OrdinalIgnoreCase)) { $license = 'MIT (KOSK workspace)' }
         if (-not $license) { throw "Missing license metadata: $($dependency.name)" }
         [void]$notices.AppendLine("License: $license")
+        [void]$notices.AppendLine("Repository: $($dependency.repository)")
         $licenseFiles = if ($directory.StartsWith($repository, [StringComparison]::OrdinalIgnoreCase)) {
             @(Get-Item -LiteralPath (Join-Path $repository 'LICENSE'))
         } else {
@@ -126,11 +130,16 @@ try {
                 $_.Name -match '^(LICENSE|LICENCE|COPYING|NOTICE|OFL)([._-]|$)' -and $_.Length -lt 200000
             })
         }
-        if (-not $licenseFiles -and -not $directory.StartsWith($repository, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Missing license text: $($dependency.name)"
+        if (-not $licenseFiles) {
+            $upstream = $upstreamLicenses | Where-Object { $_.packages -contains "$($dependency.name) $($dependency.version)" }
+            if (-not $upstream) { throw "Missing license text: $($dependency.name)" }
+            [void]$notices.AppendLine("Upstream revision: $($upstream.revision)")
+            $licenseFiles = @($upstream.files | ForEach-Object {
+                Get-Item -LiteralPath (Join-Path $repository "assets/licenses/$($_.path)")
+            })
         }
         foreach ($licenseFile in $licenseFiles) {
-            [void]$notices.AppendLine("--- $([System.IO.Path]::GetRelativePath($directory, $licenseFile.FullName)) ---")
+            [void]$notices.AppendLine("--- $($licenseFile.Name) ---")
             [void]$notices.AppendLine((Get-Content -Raw -LiteralPath $licenseFile.FullName))
         }
     }
@@ -143,6 +152,7 @@ try {
         unsigned = $true
         rustc = (Invoke-Checked rustc @('--version')).Trim()
         build_command = 'cargo build --release --locked --offline --target x86_64-pc-windows-msvc --bin kosk --bin completion_build --bin completion_dev'
+        rustflags = $env:RUSTFLAGS
         bundle_id = $bundleId
         model_inputs = @(
             @{ name = 'unigrams.tsv'; sha256 = (Get-FileHash -LiteralPath $unigrams -Algorithm SHA256).Hash.ToLowerInvariant() },
@@ -167,5 +177,6 @@ try {
 finally {
     $env:KOSK_BUILD_COMMIT = $previousCommit
     $env:KOSK_BUILD_DIRTY = $previousDirty
+    $env:RUSTFLAGS = $previousRustFlags
     Pop-Location
 }

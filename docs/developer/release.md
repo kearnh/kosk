@@ -6,14 +6,15 @@ Run from a clean, committed Jujutsu working copy using PowerShell 7:
 ./scripts/package-alpha.ps1
 ```
 
-The script builds Windows x64 with both renderers, rebuilds completion tables
+The script builds Windows x64 with both renderers and a static C runtime, rebuilds completion tables
 from `data/completion/en/unigrams.tsv` and the local `count_2w.txt`, checks
 contextual predictions, and packages an explicit file list. Supply another
 pair-count input with `-BigramSource PATH`. Empty optional trigram tables are
 omitted. Outputs are `target/dist/*.zip` and adjacent SHA-256 checksums.
 
 The ZIP includes source revision, input hashes, asset hashes, toolchain, build
-command, and dependency notices. Build metadata uses `jj`; the release script
+command, and dependency notices. License texts omitted from Cargo archives
+are pinned in `assets/licenses/upstream-sources.json`. Build metadata uses `jj`; the release script
 supplies the committed source revision explicitly. Signing is not required.
 
 On ordinary launch, `resources/bundle.toml` beside the executable identifies
