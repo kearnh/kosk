@@ -31,7 +31,7 @@ The native options are chosen for an overlay, not a normal app window:
 - Decorations are off and the window is not user-resizable. Size is driven by layout instead.
 - An initial inner size is given only as a placeholder. After the first frames, `App::update` measures the keyboard and sends `ViewportCommand::InnerSize`.
 
-The renderer is Glow unless the `wgpu` feature is enabled.
+Both renderers are built in. Set `renderer = "glow"` (default) or `renderer = "wgpu"` in config, or choose Renderer under Options → Overlay. Changes require a restart; config reloads and menu edits leave the running renderer unchanged.
 
 Inside the eframe creation closure, KOSK builds `AppState` with the current monitor size, wraps it in `Arc<Mutex<AppState>>`, registers a config-change callback that requests a repaint, and spawns the controller thread. The UI object (`App`) holds the same `Arc`.
 

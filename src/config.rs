@@ -179,9 +179,35 @@ pub struct TextInputStyle {
     pub font_size: f32,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Choice)]
+#[serde(rename_all = "lowercase")]
+enum Renderer {
+    #[default]
+    #[choice(label = "Glow (OpenGL)")]
+    Glow,
+    #[choice(label = "WGPU")]
+    Wgpu,
+}
+
+impl Renderer {
+    fn at_startup(self, selection: &OnceLock<Self>) -> eframe::Renderer {
+        match selection.get_or_init(|| self) {
+            Self::Glow => eframe::Renderer::Glow,
+            Self::Wgpu => eframe::Renderer::Wgpu,
+        }
+    }
+}
+
 #[config_section]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
+    #[setting(
+        page = Overlay,
+        label = "Renderer",
+        explain = "Choose Glow (OpenGL) or WGPU to draw the overlay. Requires restart."
+    )]
+    renderer: Renderer,
+
     /// Schema version of the user file. Missing counts as 0.
     ///
     /// The serde default stays 0 (unknown version); `Default` uses the current
@@ -791,6 +817,7 @@ pub fn battery() -> BatteryConfig {
 static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
+static STARTUP_RENDERER: OnceLock<Renderer> = OnceLock::new();
 /// Relative path string from `controller_map = "…"` on the last successful load, or `None` if inline/absent.
 static CONTROLLER_MAP_FILE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static TAPE_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -873,6 +900,7 @@ fn open_user_config_for_source(source: ConfigSource) -> bool {
 }
 
 const TAPE_CONFIG_SKIP: &[&str] = &[
+    "renderer",
     "active_theme",
     "themes",
     "battery",
@@ -1124,6 +1152,7 @@ fn publish_loaded_config(
     map_rel: Option<String>,
     config_path: &Path,
 ) -> Vec<PathBuf> {
+    new_config.renderer.at_startup(&STARTUP_RENDERER);
     store_controller_map_file(map_rel.clone());
     if let Some(instance) = CONFIG_INSTANCE.get() {
         *instance.lock().unwrap() = new_config.clone();
@@ -1656,6 +1685,14 @@ pub fn replay_tape_path() -> Result<PathBuf> {
     crate::controller::record::resolve_against_config_dir(&rel)
 }
 
+/// Renderer selected at initial config load; changes require a process restart.
+pub fn renderer() -> eframe::Renderer {
+    STARTUP_RENDERER
+        .get()
+        .expect("Config is not initialized")
+        .at_startup(&STARTUP_RENDERER)
+}
+
 pub fn get() -> Config {
     let instance = CONFIG_INSTANCE
         .get()
@@ -1998,6 +2035,73 @@ where
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn renderer_selection_is_fixed_until_restart() {
+        for (initial, changed, expected) in [
+            (Renderer::Glow, Renderer::Wgpu, eframe::Renderer::Glow),
+            (Renderer::Wgpu, Renderer::Glow, eframe::Renderer::Wgpu),
+        ] {
+            let startup = OnceLock::new();
+            assert_eq!(initial.at_startup(&startup), expected);
+            assert_eq!(changed.at_startup(&startup), expected);
+            assert_eq!(
+                changed.at_startup(&OnceLock::new()),
+                match changed {
+                    Renderer::Glow => eframe::Renderer::Glow,
+                    Renderer::Wgpu => eframe::Renderer::Wgpu,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn renderer_config_roundtrips_and_rejects_unknown_values() {
+        assert_eq!(Config::default().renderer, Renderer::Glow);
+        assert_eq!(
+            toml::from_str::<Config>("").unwrap().renderer,
+            Renderer::Glow
+        );
+        for (name, expected) in [("glow", Renderer::Glow), ("wgpu", Renderer::Wgpu)] {
+            let cfg: Config = toml::from_str(&format!("renderer = {name:?}")).unwrap();
+            assert_eq!(cfg.renderer, expected);
+            let restored: Config = toml::from_str(&toml::to_string(&cfg).unwrap()).unwrap();
+            assert_eq!(restored.renderer, expected);
+            assert!(!tape_config_toml(&cfg).unwrap().contains("renderer"));
+            let merged = overlay_tape_config(&cfg, "renderer = 'unknown'").unwrap();
+            assert_eq!(merged.renderer, expected);
+        }
+        assert!(toml::from_str::<Config>("renderer = 'unknown'").is_err());
+    }
+
+    #[test]
+    fn renderer_setting_persists_for_next_launch() {
+        let dir = temp_dir("renderer-save");
+        let path = dir.join("config.toml");
+        let mut cfg = builtin_merged_config().unwrap();
+        let startup = OnceLock::new();
+        assert_eq!(cfg.renderer.at_startup(&startup), eframe::Renderer::Glow);
+
+        let setting = schema::setting_for_key("renderer").unwrap();
+        assert_eq!(setting.page, Page::Overlay);
+        assert!(setting.explain.contains("Requires restart"));
+        assert!(setting.nudge(&mut cfg, 1));
+        assert_eq!(setting.format(&cfg), "WGPU");
+        write_user_overlay(&path, &cfg, Some("mappings.toml")).unwrap();
+
+        let (loaded, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(loaded.renderer.at_startup(&startup), eframe::Renderer::Glow);
+        assert_eq!(
+            loaded.renderer.at_startup(&OnceLock::new()),
+            eframe::Renderer::Wgpu
+        );
+        assert!(setting.nudge(&mut cfg, -1));
+        write_user_overlay(&path, &cfg, Some("mappings.toml")).unwrap();
+        let (loaded, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(loaded.renderer, Renderer::Glow);
+        assert!(!fs::read_to_string(&path).unwrap().contains("renderer"));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn startup_visibility_flags_override_both_config_values() {

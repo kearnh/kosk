@@ -466,12 +466,6 @@ fn main() -> Result<()> {
         controller::control_server::spawn(config::mcp_controller_bind())?;
     }
 
-    // Box<dyn 'app + FnOnce(&CreationContext<'_>) -> Result<Box<dyn 'app + App>, DynError>>;
-    #[cfg(feature = "wgpu")]
-    let renderer = eframe::Renderer::Wgpu;
-    #[cfg(not(feature = "wgpu"))]
-    let renderer = eframe::Renderer::Glow;
-
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_transparent(config::get().transparent)
@@ -482,7 +476,7 @@ fn main() -> Result<()> {
             .with_decorations(false)
             .with_resizable(false)
             .with_inner_size([520.0, 250.0]), // Initial size, will be resized by App::new()
-        renderer,
+        renderer: config::renderer(),
         centered: true,
         ..Default::default()
     };
