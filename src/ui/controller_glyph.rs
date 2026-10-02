@@ -1,12 +1,12 @@
-//! CC0 Kenney Input Prompts, embedded under legacy glyph filenames.
+//! CC0 Kenney Input Prompts, embedded for on-screen controller prompts.
 
 use crate::config;
 use crate::controller::{ControllerButton, ControllerKind};
 use egui::{Image, Ui, Vec2};
 
-macro_rules! knockout {
+macro_rules! glyph {
     ($file:literal) => {
-        include_bytes!(concat!("../../assets/controller-glyphs/knockout/", $file))
+        include_bytes!(concat!("../../assets/controller-glyphs/kenney/", $file))
     };
 }
 
@@ -37,49 +37,63 @@ impl GlyphFamily {
 
 pub fn svg_bytes(family: GlyphFamily, button: ControllerButton) -> &'static [u8] {
     match (family, button) {
-        (GlyphFamily::Sc2, ControllerButton::FaceBottom) => knockout!("shared_color_button_a.svg"),
-        (GlyphFamily::Sc2, ControllerButton::FaceRight) => knockout!("shared_color_button_b.svg"),
-        (GlyphFamily::Sc2, ControllerButton::FaceLeft) => knockout!("shared_color_button_x.svg"),
-        (GlyphFamily::Sc2, ControllerButton::FaceTop) => knockout!("shared_color_button_y.svg"),
-        (GlyphFamily::Sc2, ControllerButton::DpadUp) => knockout!("sc_dpad_up.svg"),
-        (GlyphFamily::Sc2, ControllerButton::DpadDown) => knockout!("sc_dpad_down.svg"),
-        (GlyphFamily::Sc2, ControllerButton::DpadLeft) => knockout!("sc_dpad_left.svg"),
-        (GlyphFamily::Sc2, ControllerButton::DpadRight) => knockout!("sc_dpad_right.svg"),
-        (GlyphFamily::Sc2, ControllerButton::ShoulderLeft) => knockout!("sc_l1.svg"),
-        (GlyphFamily::Sc2, ControllerButton::ShoulderRight) => knockout!("sc_r1.svg"),
-        (GlyphFamily::Sc2, ControllerButton::TriggerLeft) => knockout!("sc_l2.svg"),
-        (GlyphFamily::Sc2, ControllerButton::TriggerRight) => knockout!("sc_r2.svg"),
-        (GlyphFamily::Sc2, ControllerButton::Options) => knockout!("sd_button_menu.svg"),
-        (GlyphFamily::Sc2, ControllerButton::Share) => knockout!("sd_button_view.svg"),
-        (GlyphFamily::Sc2, ControllerButton::System) => knockout!("sc_button_steam.svg"),
-        (GlyphFamily::Sc2, ControllerButton::PadLeft) => knockout!("sc_touchpad_left.svg"),
-        (GlyphFamily::Sc2, ControllerButton::PadRight) => knockout!("sc_touchpad_right.svg"),
+        (GlyphFamily::Sc2, ControllerButton::FaceBottom) => glyph!("steam_button_color_a.svg"),
+        (GlyphFamily::Sc2, ControllerButton::FaceRight) => glyph!("steam_button_color_b.svg"),
+        (GlyphFamily::Sc2, ControllerButton::FaceLeft) => glyph!("steam_button_color_x.svg"),
+        (GlyphFamily::Sc2, ControllerButton::FaceTop) => glyph!("steam_button_color_y.svg"),
+        (GlyphFamily::Sc2, ControllerButton::DpadUp) => glyph!("steam_dpad_up.svg"),
+        (GlyphFamily::Sc2, ControllerButton::DpadDown) => glyph!("steam_dpad_down.svg"),
+        (GlyphFamily::Sc2, ControllerButton::DpadLeft) => glyph!("steam_dpad_left.svg"),
+        (GlyphFamily::Sc2, ControllerButton::DpadRight) => glyph!("steam_dpad_right.svg"),
+        (GlyphFamily::Sc2, ControllerButton::ShoulderLeft) => glyph!("controller_button_l1.svg"),
+        (GlyphFamily::Sc2, ControllerButton::ShoulderRight) => glyph!("controller_button_r1.svg"),
+        (GlyphFamily::Sc2, ControllerButton::TriggerLeft) => glyph!("controller_button_l2.svg"),
+        (GlyphFamily::Sc2, ControllerButton::TriggerRight) => glyph!("controller_button_r2.svg"),
+        (GlyphFamily::Sc2, ControllerButton::Options) => glyph!("controller_button_options.svg"),
+        (GlyphFamily::Sc2, ControllerButton::Share) => glyph!("controller_button_view.svg"),
+        (GlyphFamily::Sc2, ControllerButton::System) => glyph!("controller_icon.svg"),
+        (GlyphFamily::Sc2, ControllerButton::PadLeft) => glyph!("steamdeck_trackpad_l.svg"),
+        (GlyphFamily::Sc2, ControllerButton::PadRight) => glyph!("steamdeck_trackpad_r.svg"),
 
-        (GlyphFamily::Ps4, ControllerButton::FaceBottom) => knockout!("ps_color_button_x.svg"),
-        (GlyphFamily::Ps4, ControllerButton::FaceRight) => knockout!("ps_color_button_circle.svg"),
-        (GlyphFamily::Ps4, ControllerButton::FaceLeft) => knockout!("ps_color_button_square.svg"),
-        (GlyphFamily::Ps4, ControllerButton::FaceTop) => knockout!("ps_color_button_triangle.svg"),
-        (GlyphFamily::Ps4, ControllerButton::DpadUp) => knockout!("ps_dpad_up.svg"),
-        (GlyphFamily::Ps4, ControllerButton::DpadDown) => knockout!("ps_dpad_down.svg"),
-        (GlyphFamily::Ps4, ControllerButton::DpadLeft) => knockout!("ps_dpad_left.svg"),
-        (GlyphFamily::Ps4, ControllerButton::DpadRight) => knockout!("ps_dpad_right.svg"),
-        (GlyphFamily::Ps4, ControllerButton::ShoulderLeft) => knockout!("ps4_l1.svg"),
-        (GlyphFamily::Ps4, ControllerButton::ShoulderRight) => knockout!("ps4_r1.svg"),
-        (GlyphFamily::Ps4, ControllerButton::TriggerLeft) => knockout!("ps4_l2.svg"),
-        (GlyphFamily::Ps4, ControllerButton::TriggerRight) => knockout!("ps4_r2.svg"),
-        (GlyphFamily::Ps4, ControllerButton::Options) => knockout!("ps4_button_options.svg"),
-        (GlyphFamily::Ps4, ControllerButton::Share) => knockout!("ps4_button_share.svg"),
-        (GlyphFamily::Ps4, ControllerButton::System) => knockout!("ps4_button_logo.svg"),
-        (GlyphFamily::Ps4, ControllerButton::PadLeft) => knockout!("ps4_trackpad_l_click.svg"),
-        (GlyphFamily::Ps4, ControllerButton::PadRight) => knockout!("ps4_trackpad_r_click.svg"),
+        (GlyphFamily::Ps4, ControllerButton::FaceBottom) => {
+            glyph!("playstation_button_color_cross.svg")
+        }
+        (GlyphFamily::Ps4, ControllerButton::FaceRight) => {
+            glyph!("playstation_button_color_circle.svg")
+        }
+        (GlyphFamily::Ps4, ControllerButton::FaceLeft) => {
+            glyph!("playstation_button_color_square.svg")
+        }
+        (GlyphFamily::Ps4, ControllerButton::FaceTop) => {
+            glyph!("playstation_button_color_triangle.svg")
+        }
+        (GlyphFamily::Ps4, ControllerButton::DpadUp) => glyph!("playstation_dpad_up.svg"),
+        (GlyphFamily::Ps4, ControllerButton::DpadDown) => glyph!("playstation_dpad_down.svg"),
+        (GlyphFamily::Ps4, ControllerButton::DpadLeft) => glyph!("playstation_dpad_left.svg"),
+        (GlyphFamily::Ps4, ControllerButton::DpadRight) => glyph!("playstation_dpad_right.svg"),
+        (GlyphFamily::Ps4, ControllerButton::ShoulderLeft) => glyph!("playstation_trigger_l1.svg"),
+        (GlyphFamily::Ps4, ControllerButton::ShoulderRight) => glyph!("playstation_trigger_r1.svg"),
+        (GlyphFamily::Ps4, ControllerButton::TriggerLeft) => glyph!("playstation_trigger_l2.svg"),
+        (GlyphFamily::Ps4, ControllerButton::TriggerRight) => glyph!("playstation_trigger_r2.svg"),
+        (GlyphFamily::Ps4, ControllerButton::Options) => glyph!("playstation4_button_options.svg"),
+        (GlyphFamily::Ps4, ControllerButton::Share) => glyph!("playstation4_button_share.svg"),
+        (GlyphFamily::Ps4, ControllerButton::System) => glyph!("switch_button_home.svg"),
+        (GlyphFamily::Ps4, ControllerButton::PadLeft) => {
+            glyph!("playstation4_touchpad_press_left.svg")
+        }
+        (GlyphFamily::Ps4, ControllerButton::PadRight) => {
+            glyph!("playstation4_touchpad_press_right.svg")
+        }
 
-        (_, ControllerButton::StickLeft) => knockout!("shared_l3.svg"),
-        (_, ControllerButton::StickRight) => knockout!("shared_r3.svg"),
-        (_, ControllerButton::L4) => knockout!("sc_l4.svg"),
-        (_, ControllerButton::L5) => knockout!("sc_l5.svg"),
-        (_, ControllerButton::R4) => knockout!("sc_r4.svg"),
-        (_, ControllerButton::R5) => knockout!("sc_r5.svg"),
-        (_, ControllerButton::QuickAccess) => knockout!("qam_icon.svg"),
+        (GlyphFamily::Sc2, ControllerButton::StickLeft) => glyph!("steamdeck_stick_l_press.svg"),
+        (GlyphFamily::Ps4, ControllerButton::StickLeft) => glyph!("playstation_stick_l_press.svg"),
+        (GlyphFamily::Sc2, ControllerButton::StickRight) => glyph!("steamdeck_stick_r_press.svg"),
+        (GlyphFamily::Ps4, ControllerButton::StickRight) => glyph!("playstation_stick_r_press.svg"),
+        (_, ControllerButton::L4) => glyph!("controller_button_l4.svg"),
+        (_, ControllerButton::L5) => glyph!("controller_button_l5.svg"),
+        (_, ControllerButton::R4) => glyph!("controller_button_r4.svg"),
+        (_, ControllerButton::R5) => glyph!("controller_button_r5.svg"),
+        (_, ControllerButton::QuickAccess) => glyph!("controller_button_quickaccess.svg"),
     }
 }
 
@@ -112,14 +126,49 @@ mod tests {
     }
 
     #[test]
-    fn every_button_has_svg_for_both_families() {
+    fn every_button_renders_for_both_families() {
         for family in [GlyphFamily::Sc2, GlyphFamily::Ps4] {
             for button in ControllerButton::VARIANTS {
                 let bytes = svg_bytes(family, *button);
-                assert!(
-                    bytes.starts_with(b"<svg"),
-                    "{family:?} {button:?} is not an svg"
-                );
+                let tree = resvg::usvg::Tree::from_data(bytes, &Default::default())
+                    .unwrap_or_else(|error| panic!("{family:?} {button:?}: {error}"));
+
+                for size in [16, 28, 32] {
+                    let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size).unwrap();
+                    let scale = size as f32 / tree.size().width();
+                    resvg::render(
+                        &tree,
+                        resvg::tiny_skia::Transform::from_scale(scale, scale),
+                        &mut pixmap.as_mut(),
+                    );
+
+                    assert!(
+                        pixmap.pixels().iter().any(|pixel| pixel.alpha() > 0),
+                        "{family:?} {button:?} is empty at {size}px"
+                    );
+                    assert_eq!(pixmap.pixel(0, 0).unwrap().alpha(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn paired_controls_have_distinct_artwork() {
+        use ControllerButton::*;
+
+        for family in [GlyphFamily::Sc2, GlyphFamily::Ps4] {
+            for (left, right) in [
+                (PadLeft, PadRight),
+                (StickLeft, StickRight),
+                (ShoulderLeft, ShoulderRight),
+                (TriggerLeft, TriggerRight),
+                (Options, Share),
+                (L4, L5),
+                (R4, R5),
+                (DpadUp, DpadDown),
+                (DpadLeft, DpadRight),
+            ] {
+                assert_ne!(svg_bytes(family, left), svg_bytes(family, right));
             }
         }
     }

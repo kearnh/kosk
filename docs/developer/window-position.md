@@ -51,7 +51,7 @@ Entry (Settings **Move**) snapshots the current `WindowPos`. Analog does not go 
 - Sticks stay velocity: deadzone `0.15` on the max axis, full deflection crosses the monitor in one second. Stick up decreases window `y`.
 - The live position becomes `WindowPos::Absolute` and is not written to config.
 
-`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to settings. `switchState.settings` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show the bound buttons as knockout glyphs plus Save/Cancel as labels, not buttons. The art is described in [controller-glyphs.md](controller-glyphs.md).
+`save` (shipped map: `faceBottom`) writes config: if analog never moved, the original variant is kept; otherwise the live `Absolute` is stored. Then the mode returns to settings. `switchState.settings` (shipped map: `faceRight`) restores the snapshot and leaves without saving. Both are Edge actions. The prompts show the bound buttons as controller glyphs plus Save/Cancel as labels, not buttons. The art is described in [controller-glyphs.md](controller-glyphs.md).
 
 ## What this does not cover
 

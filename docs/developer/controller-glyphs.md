@@ -1,12 +1,12 @@
 # Controller button glyphs (`controller_glyph.rs`)
 
-This document describes how on-screen prompts draw a controller button. The mapping and the draw helper live in `src/ui/controller_glyph.rs`. The SVG files are embedded from `assets/controller-glyphs/knockout/`. Settings, the mappings screen, and move-window mode all call the same helper. Placement of the overlay is in [window-position.md](window-position.md). The settings footer is in [menu.md](menu.md).
+This document describes how on-screen prompts draw a controller button. The mapping and the draw helper live in `src/ui/controller_glyph.rs`. The SVG files are embedded from `assets/controller-glyphs/kenney/`. Settings, the mappings screen, and move-window mode all call the same helper. Placement of the overlay is in [window-position.md](window-position.md). The settings footer is in [menu.md](menu.md).
 
 ## What problem does this solve?
 
 A prompt should show the button the person is holding, in the art for the controller they are holding. `faceBottom` is A on a Steam Controller and Cross on a DualShock 4. Keyboard code, the settings footer, and move-window should not each pick a file path. They pass a `ControllerButton` and a `GlyphFamily`, and `controller_glyph::show` draws the icon.
 
-The art is Kenney Input Prompts 1.5A under CC0 1.0, embedded under legacy filenames. Source and release status are recorded in [the glyph notice](../../assets/controller-glyphs/README.md). Knockout icons that are a single white fill disappear on a white panel, so callers draw them on a dark background.
+The art comes from Kenney Input Prompts 1.5A under CC0. Source, license, and substitutions are recorded in [the glyph notice](../../assets/controller-glyphs/README.md). White icons need a dark background.
 
 ## `GlyphFamily`
 
@@ -20,13 +20,13 @@ Discovery order uses the same config list, but that walk is separate. Glyph sele
 
 ## Which file is drawn
 
-`svg_bytes` returns the embedded bytes for one family and one button. `show` hands those bytes to egui as an image whose URI ends in `.svg`, which is what the SVG loader requires. The bytes are compiled in with `include_bytes!`. A unit test checks that every `ControllerButton` for both families starts with `<svg`. It does not check that the picture is the right button.
+`svg_bytes` returns the embedded bytes for one family and one button. `show` hands those bytes to egui as an image whose URI ends in `.svg`, which is what the SVG loader requires. The bytes are compiled in with `include_bytes!`. Tests parse and render every button for both families. The gallery checks their appearance.
 
-Face buttons follow the semantic names, not a shared Xbox sheet for both devices. `FaceBottom` is `shared_color_button_a.svg` for `Sc2` and `ps_color_button_x.svg` for `Ps4`. `FaceRight`, `FaceLeft`, and `FaceTop` follow the same split: B/X/Y on the Steam Controller, Circle/Square/Triangle on the DualShock 4.
+Face buttons follow the semantic names. `FaceBottom` is `steam_button_color_a.svg` for `Sc2` and `playstation_button_color_cross.svg` for `Ps4`. `FaceRight`, `FaceLeft`, and `FaceTop` follow the same split: B/X/Y on the Steam Controller, Circle/Square/Triangle on the DualShock 4.
 
-Shoulders, triggers, the d-pad, Options, Share, System, and the pad clicks also differ by family. On `Sc2`, Share is `sd_button_view.svg` and Options is `sd_button_menu.svg` (the Steam Deck view and menu icons). On `Ps4`, those are `ps4_button_share.svg` and `ps4_button_options.svg`. System uses a controller symbol on `Sc2` and a home symbol on `Ps4`.
+Shoulders, triggers, the d-pad, Options, Share, System, pad clicks, and stick clicks differ by family. Steam Controller uses its view/menu icons and Steam symbol. DualShock 4 uses its Share/Options icons and a home symbol for System. Steam Controller square pad and stick-click prompts use Steam Deck artwork; DualShock 4 uses its own touchpad and stick-click artwork.
 
-Stick clicks, the rear paddles, and Quick Access use the same file for both families: `shared_l3.svg`, `shared_r3.svg`, `sc_l4.svg`, `sc_l5.svg`, `sc_r4.svg`, `sc_r5.svg`, and `qam_icon.svg`. DualShock 4 does not have paddles or Quick Access. The mapping still has art for those buttons so a prompt can draw them if a binding names them.
+Rear buttons and Quick Access use Steam Controller artwork for both families. DualShock 4 does not have those buttons. The mapping still has art so a prompt can draw them if a binding names them.
 
 ## Where prompts call `show`
 
@@ -48,4 +48,4 @@ The settings footer in `src/state/menu.rs` draws each bound button at 16px, then
 
 ## Summary
 
-`controller_glyph::show` draws one embedded knockout SVG for a `ControllerButton` and a `GlyphFamily`. Steam Controller 2 and DualShock 4 use different face, shoulder, trigger, d-pad, and system art. Share and Options on the Steam Controller use the Deck view and menu icons. Stick clicks, paddles, and Quick Access share files. Replay picks a family from `preferred_controller`, or `Sc2` if that list does not name one. The glyph gallery binary is the visual check of every pair.
+`controller_glyph::show` draws one embedded CC0 SVG for a `ControllerButton` and a `GlyphFamily`. Rear buttons and Quick Access share files; other buttons use family-specific artwork. Replay picks a family from `preferred_controller`, or `Sc2` if that list does not name one. The glyph gallery binary is the visual check of every pair.

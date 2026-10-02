@@ -76,7 +76,8 @@ try {
 
     $documents = @('README.md', 'LICENSE', 'MAPPINGS.md', 'old_sc.toml', 'old_sc_symbols.toml',
         'qwerty.toml', 'mappings.toml', 'docs/themes.md', 'docs/show-hide.md',
-        'assets/controller-glyphs/README.md', 'data/completion/en/README.md',
+        'assets/controller-glyphs/README.md', 'assets/controller-glyphs/LICENSE.txt',
+        'data/completion/en/README.md',
         'assets/licenses/CC-BY-SA-4.0.txt')
     $tracked = Invoke-Checked jj @('file', 'list', '-r', '@-')
     $documents += $tracked | ForEach-Object { $_.Replace('\', '/') } | Where-Object { $_ -like 'docs/developer/*.md' }
@@ -114,6 +115,7 @@ try {
     [void]$notices.AppendLine('KOSK third-party notices')
     [void]$notices.AppendLine((Get-Content -Raw -LiteralPath (Join-Path $repository 'data/completion/en/README.md')))
     [void]$notices.AppendLine((Get-Content -Raw -LiteralPath (Join-Path $repository 'assets/controller-glyphs/README.md')))
+    [void]$notices.AppendLine((Get-Content -Raw -LiteralPath (Join-Path $repository 'assets/controller-glyphs/LICENSE.txt')))
     $dependencies = @($included | ForEach-Object { $packagesById[$_] } | Sort-Object name, version)
     foreach ($dependency in $dependencies) {
         [void]$notices.AppendLine("`n===== $($dependency.name) $($dependency.version) =====")
@@ -160,7 +162,7 @@ try {
         )
         contextual_bigrams = $pairBytes / $countRecordBytes
         bundled_assets = $assetRows
-        pending_publication_checks = @('Steam glyph redistribution terms', 'Norvig bigram redistribution terms', 'Clean Windows machine verification')
+        pending_publication_checks = @('Norvig bigram redistribution terms', 'Clean Windows machine verification')
     }
     $manifest.files = @(Get-ChildItem -LiteralPath $staging -File -Recurse | ForEach-Object {
         @{ path = [System.IO.Path]::GetRelativePath($staging, $_.FullName).Replace('\', '/');

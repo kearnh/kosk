@@ -55,7 +55,7 @@ impl eframe::App for Gallery {
         });
 
         ui.heading("Controller glyphs");
-        ui.label("Sc2 and Ps4 columns. White knockout art needs this dark background.");
+        ui.label("Steam Controller and DualShock 4. CC0 artwork by Kenney.");
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("glyphs")

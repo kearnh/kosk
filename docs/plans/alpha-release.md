@@ -80,10 +80,9 @@ code, but leaves data redistribution terms unclear. Confirm the applicable
 terms or build from a corpus with explicit redistribution permission before
 shipping next-word tables. Download availability alone is insufficient evidence.
 
-Controller glyphs were copied from the Steam installation; their source is
-recorded in [the glyph notice](../../assets/controller-glyphs/README.md).
-Verify redistribution terms and audit dependency licenses/notices, including
-embedded fonts and icons.
+Controller glyphs use Kenney Input Prompts 1.5A under CC0. Include
+[the glyph notice](../../assets/controller-glyphs/README.md) and its upstream
+license. Audit dependency licenses/notices, including embedded fonts and icons.
 
 ## Hosting and Windows security prompts
 
