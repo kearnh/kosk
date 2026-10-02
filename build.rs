@@ -18,7 +18,11 @@ fn main() {
 }
 
 fn git_stdout(args: &[&str]) -> Option<String> {
-    let out = Command::new("git").args(args).output().ok()?;
+    let out = Command::new("git")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .args(args)
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
