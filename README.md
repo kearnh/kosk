@@ -2,36 +2,36 @@
 
 [Download and start](#download-and-start) · [Controls](#controls) · [Steam setup](#steam-desktop-configuration) · [Customization](#advanced-customization)
 
-An on-screen keyboard primarily designed for the Steam Controller. KOSK sits above other windows without taking focus and types into the application you are using.
+An on-screen keyboard primarily designed for the Steam Controller. It stays above other windows without taking focus, so you can type into the application you're using.
 
-KOSK is a personal project made for my own use and shared publicly under the MIT license. You're welcome to use and modify it. I'm sharing it without a commitment to provide support, respond to issues, or implement requests.
+I built KOSK for my own use and am sharing it under the MIT license. You're welcome to use and modify it, but I can't promise support, replies to issues, or new features.
 
 ## Download and start
 
 1. Download the Windows x64 ZIP from this repository's **Releases** section.
-2. Extract the whole ZIP into a folder of your choice.
+2. Extract the whole ZIP into a folder.
 3. Connect your controller and open `kosk.exe`.
 4. Press **Ctrl+Alt+F10** to show KOSK, or click the blue **K** in the Windows notification area. The icon may be in the overflow menu.
 
-KOSK starts hidden. The same shortcut or tray icon hides it again while keeping it running. Right-click the tray icon to quit.
+KOSK starts hidden. Press the shortcut or click the tray icon again to hide it. It keeps running until you quit from the tray menu.
 
-No installer, terminal, administrator rights, or first-launch download is required. Default layouts, mappings, themes, and English word suggestions, including next-word prediction, are included for offline use.
+There's nothing else to install or download, and KOSK doesn't need administrator rights. The included layouts, mappings, themes, and English word suggestions work offline.
 
-The alpha is **unsigned**. Windows may warn about an unrecognized application, and some security policies may prevent it from running. Use the ZIP from this repository's Releases section; do not disable Windows protection to run KOSK.
+The alpha is **unsigned**, so Windows may warn about it or block it from running. Only use the ZIP from this repository's Releases section. Don't disable Windows protection to run it.
 
-## Requirements and alpha limitations
+## Requirements
 
 - **Windows 11 x64.**
-- Controller drivers target **Steam Controller 2** and **DualShock 4**. See release notes for verified controller revisions and connection methods.
-- Linux support is intended for the future; there is no Linux release yet.
-- The alpha has no automatic startup or updater.
+- **Steam Controller 2** or **DualShock 4**; check the release notes for tested models and connections.
+- Windows only for now. I'd like to support Linux later.
+- Start and update KOSK manually; the alpha doesn't do either automatically.
 
 <!-- Screenshot placeholder: replace with a keyboard screenshot before release. -->
 *Screenshot coming soon.*
 
 ## Controls
 
-These are the default bindings. Custom mappings can change them; the on-screen hints reflect your bindings. Steam Controller face buttons are A/B/X/Y; their DualShock 4 equivalents are Cross/Circle/Square/Triangle.
+These are the default controls. If you change them, the on-screen hints update to match. A/B/X/Y on the Steam Controller correspond to Cross/Circle/Square/Triangle on DualShock 4.
 
 - **Pads or sticks:** move the left and right key selections.
 - **Left/right trigger:** enter the selected key on that side, or accept a highlighted word suggestion.
@@ -45,37 +45,37 @@ These are the default bindings. Custom mappings can change them; the on-screen h
 - **Hold that same left button, then press B:** open text-input mode. On DualShock 4, hold Share and press Circle.
 - **Quick Access (⋯):** open the mappings editor.
 
-The keyboard also has selectable keys for settings, modifiers, and switching between letters and symbols. Choose other layouts through **Settings → Layouts**.
+You can also select the keyboard's settings, modifier, and letter/symbol keys. Choose other layouts in **Settings → Layouts**.
 
-In settings, use up/down to select a row, left/right to change a value, A/Cross to confirm, and B/Circle to go back. **Settings → Move window** lets you reposition the overlay; A/Cross saves, B/Circle leaves without saving.
+In settings, up/down selects a row, left/right changes its value, A/Cross confirms, and B/Circle goes back. To reposition KOSK, open **Settings → Move window**. A/Cross saves the position; B/Circle leaves without saving.
 
-Text-input mode holds a line inside KOSK until you submit it. Submission sends the line and Enter to the focused application, then returns to the keyboard. Normal keyboard mode sends each key immediately.
+Normal typing sends each key straight to your application. In text-input mode, you compose a line inside KOSK first. Submitting sends the line followed by Enter, then returns to the keyboard.
 
-**Ctrl+Alt+F10** shows or hides KOSK without changing application focus. Hiding releases held keys and clears modifiers; both showing and hiding clear suggestion context. Release held controller buttons before resuming. See [visibility controls](docs/show-hide.md) for shortcut options.
+Hiding KOSK releases held keys and clears modifiers. Showing or hiding it also clears suggestions and the text they were following. Release any held controller buttons before typing again. You can [change the show/hide shortcut](docs/show-hide.md).
 
 ## Word suggestions
 
-KOSK offers word completions, corrections, and next-word suggestions. The packaged English data needs no setup.
+Suggestions can finish a word, correct a typo, or offer the next word. English suggestions are included and need no setup.
 
 Use the bumpers to highlight a suggestion, then press a trigger or A/Cross to accept it. B/Circle clears the highlight so those buttons resume their usual actions.
 
-Immediately after accepting a suggestion, **L5** deletes one character and offers your original text as the first suggestion. Selecting it restores that text without adding a space. Further edits or cursor movement dismiss the offer; ordinary Backspace still deletes one character.
+Press **L5** just after accepting a suggestion to delete one character and offer your original text as the first suggestion. Select it to restore that text without adding a space. Another edit or cursor movement dismisses it. Backspace still deletes one character as usual.
 
-Hold the left button beside Steam and press X to toggle suggestions; on DualShock 4, hold Share and press Square. **Settings → Options → Suggestions** controls their behavior and appearance, including whether accepted words and submitted lines are learned. Learned words are stored locally under `%LOCALAPPDATA%\kosk`.
+Hold the left button beside Steam and press X to turn suggestions on or off; on DualShock 4, hold Share and press Square. Change their appearance and behavior in **Settings → Options → Suggestions**. You can also choose whether KOSK remembers picked words and submitted lines. That memory stays on your computer under `%LOCALAPPDATA%\kosk`.
 
-In normal keyboard mode, suggestions follow text entered through KOSK. They do not read the destination application's text. Cursor movement and pasting can pause suggestions because KOSK no longer knows the surrounding text.
+Suggestions follow what you type through KOSK; they don't read text from your application. Moving the cursor or pasting can pause them because KOSK loses track of the text.
 
 ## Settings and appearance
 
-Open settings to change controller feel, key size, text size, repeat behavior, suggestions, and overlay placement. Select **Themes** to apply an appearance, **Layouts** to choose a keyboard, or **Mappings** to change button actions.
+Open settings to adjust controller feel, key and text size, and key repeat. **Themes** changes the appearance, **Layouts** chooses the keyboard, and **Mappings** changes what the buttons do.
 
-Bundled themes are available automatically: Old Steam Controller, Portal 2, Factorio, Cyberpunk 2077, Hollow Knight, and Stardew Valley.
+The included themes are Old Steam Controller, Portal 2, Factorio, Cyberpunk 2077, Hollow Knight, and Stardew Valley.
 
-Personal settings live in `%LOCALAPPDATA%\kosk\config.toml`. KOSK creates this file and stores your changes there; it need not contain every default setting. In settings, the left button beside Steam (Share on DualShock 4) opens the file in your editor.
+KOSK saves your changes in `%LOCALAPPDATA%\kosk\config.toml`. The file only needs settings you've changed. To open it in your editor, press the left button beside Steam (Share on DualShock 4) while in settings.
 
 ## Steam desktop configuration
 
-You can keep Steam's normal desktop controls and switch them off while using KOSK. Steam must change its action layer at the same time that it sends KOSK's visibility shortcut.
+This is how I use KOSK alongside Steam's desktop controls: one button shows KOSK and switches Steam to an action layer with its desktop bindings cleared. The same button hides KOSK and switches back.
 
 1. Set KOSK's shortcut to F3 by adding this top-level setting to `config.toml`, before any `[section]` headings:
 
@@ -87,26 +87,26 @@ You can keep Steam's normal desktop controls and switch them off while using KOS
 3. In that layer, remove all inherited desktop actions. Bind only R4: send F3 and leave the layer.
 4. Leave R4 unbound in KOSK. It is unbound in the default mappings.
 
-Start KOSK once. R4 then shows KOSK and enters the empty Steam layer; pressing it again hides KOSK and restores Steam's desktop controls. No AutoHotkey script is needed.
+Leave KOSK running and use R4 to switch between it and Steam's desktop controls.
 
-Do not also bind R4 to KOSK's own visibility action: the same press would toggle twice. Using the tray or another shortcut changes only KOSK's visibility, so it can leave Steam's layer out of sync. Hiding KOSK does not restore Steam's desktop bindings by itself.
+Don't also bind R4 inside KOSK: one press could show it and immediately hide it again. The tray and other shortcuts don't switch Steam's layer, so using them can leave the two out of sync.
 
 ## Advanced customization
 
-Custom files use TOML. Relative paths start beside `config.toml`, except theme image paths, which start beside the theme file. Keep custom files separate from bundled defaults so updates preserve your edits. Top-level options such as `themes` and `controller_map` belong before any `[section]` headings.
+Layouts, themes, and mappings are TOML files. Keep your copies separate from the bundled files so updates don't overwrite them. Relative paths start beside `config.toml`; image paths in themes start beside the theme file. Put top-level settings such as `themes` and `controller_map` before any `[section]` headings.
 
 ### Create a layout
 
-Copy [the main layout](old_sc.toml) or [the symbols layout](old_sc_symbols.toml) into a custom file, such as `%LOCALAPPDATA%\kosk\layouts\mine.toml`. Register it in `config.toml`:
+Start with a copy of [the main layout](old_sc.toml) or [the symbols layout](old_sc_symbols.toml), saved as `%LOCALAPPDATA%\kosk\layouts\mine.toml`. Add it to `config.toml`:
 
 ```toml
 [layouts]
 mine = "layouts/mine.toml"
 ```
 
-Choose it through **Settings → Layouts**. Keep a `main` layout registered.
+Select it in **Settings → Layouts**. Don't remove the `main` layout entry.
 
-Layouts define rows, key widths, labels, left/right selection bounds, and resting positions. A key can send a character, a string, a named key such as Backspace, or an action such as switching layouts. For example, within a row:
+Edit the rows and keys to suit your layout. You can change their widths and labels, the area each pad or stick can reach, and where its selection rests. Keys can type characters or whole strings, send keys such as Backspace, or run actions. These two entries inside a row add a number key and a switch back to the main layout:
 
 ```toml
 [[rows.items]]
@@ -118,7 +118,7 @@ key = "switchLayout.main"
 display = "Letters"
 ```
 
-`display` changes the label independently of the action. Conditional display rules can change labels or colours when Shift is active or a suggestion is selected. See the [layout format](docs/developer/keyboard-layout.md) for fields and examples.
+`display` sets the label without changing what the key does. You can also use conditions to change labels or colours when Shift is on or a suggestion is selected. The [layout reference](docs/developer/keyboard-layout.md) explains the remaining fields.
 
 ### Create a theme
 
@@ -142,7 +142,7 @@ Add your custom theme files to the top-level `themes` list in `config.toml`:
 themes = ["themes/*.toml"]
 ```
 
-Select the theme through **Settings → Themes**. Omitted fields inherit the built-in appearance. Colours accept RGB, RGBA, or names from a `[colours]` palette. Themes can customize keys, menus, suggestions, cursors, borders, and background images. See the [theme guide](docs/themes.md).
+Select it in **Settings → Themes**. Anything you leave out uses the built-in appearance. Colours can be RGB, RGBA, or names you've defined in a `[colours]` palette. The [theme guide](docs/themes.md) covers the other options, including background images.
 
 ### Add bindings and conditions
 
@@ -152,9 +152,9 @@ Use **Settings → Mappings**, or create `mappings.toml` beside `config.toml` an
 controller_map = "mappings.toml"
 ```
 
-Your file only needs bindings that differ from the defaults. A binding belongs to a screen, such as `[Keyboard]` or `[TextInput]`. Use `"none"` to remove an inherited binding.
+Only write the bindings you want to change. Put them under the screen where they apply, such as `[Keyboard]` or `[TextInput]`. Set a binding to `"none"` to remove a default.
 
-This example accepts a highlighted suggestion with the right trigger, but otherwise enters the key under the right selection:
+For example, make the right trigger accept a highlighted suggestion, or type the selected right-hand key if none is highlighted:
 
 ```toml
 [Keyboard]
@@ -165,21 +165,23 @@ triggerRight = [
 r4 = "none"
 ```
 
-Rules are tried in order; the first matching rule wins. Put an unconditional fallback last. Without a matching rule or fallback, the button does nothing.
+KOSK uses the first rule whose `when` condition is true. Put the default action last, without a `when` clause. If nothing matches, the button does nothing.
 
-Conditions can combine flags with `&&`, `||`, `!`, and parentheses, such as `"completionActive && !modifier.ctrl"`. Two button names joined by `+` form a chord: hold the first, then press the second. The first button cannot also have its own binding on that screen.
+Combine conditions with `&&` (and), `||` (or), `!` (not), and parentheses. For example, `"completionActive && !modifier.ctrl"` means suggestions are on and Ctrl is off.
 
-See the [binding reference](MAPPINGS.md) for button names, actions, available screens, and all `when` conditions.
+For a chord, join two button names with `+`: hold the first, then press the second. The first button can't also have its own binding on that screen.
+
+The [binding reference](MAPPINGS.md) lists the button names, actions, screens, and `when` conditions.
 
 ## Updates and removal
 
-To update, quit KOSK, extract the new release into a new folder, and run its `kosk.exe`. Personal settings, custom themes, layouts, bindings, and learned words under `%LOCALAPPDATA%\kosk` are preserved.
+To update, quit KOSK, extract the new release into a new folder, and run its `kosk.exe`. Your settings, custom files, and learned words stay in `%LOCALAPPDATA%\kosk`.
 
-To remove KOSK, quit it and delete the application folder. Delete `%LOCALAPPDATA%\kosk` as well only if you want to remove your settings, customizations, and learned words.
+To remove it, quit and delete the application folder. Delete `%LOCALAPPDATA%\kosk` too if you want to remove your settings, custom files, and learned words.
 
 ## AI development disclaimer
 
-KOSK was coded using AI. I've made every effort to understand the code rather than treat it as a black box, including maintaining [developer documentation](docs/developer/README.md) explaining its architecture. This does not guarantee that the software is free of bugs.
+I used AI to write KOSK. I've made every effort to understand the code rather than leave it as a black box, and I maintain [developer documentation](docs/developer/README.md) explaining its architecture. There will still be bugs.
 
 ## License and credits
 
