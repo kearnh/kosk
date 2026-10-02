@@ -2,7 +2,9 @@
 
 [Download and start](#download-and-start) · [Controls](#controls) · [Steam setup](#steam-desktop-configuration) · [Customization](#advanced-customization)
 
-An on-screen keyboard primarily designed for the Steam Controller. It stays above other windows without taking focus, so you can type into the application you're using.
+An on-screen keyboard primarily designed for the Steam Controller.
+
+I have an OG Steam Controller and remember the original OSK that Steam shipped for it. In anticipation of SC2's pending release, I wanted to see how desktop navigation using Steam and a controller holds up today. I tried with a GameSir Cyclone 2 I own (want to preserve my OG SC), and the experience was not great, especially the OSK. I sorely missed the original OSK, so I decided to make my own one. I have since gotten my own SC2, and have been exclusively using this OSK. See below for my hacky way of using it together with Steam, effectively replacing the built-in OSK.
 
 I built KOSK for my own use and am sharing it under the MIT license. You're welcome to use and modify it, but I can't promise support, replies to issues, or new features.
 
