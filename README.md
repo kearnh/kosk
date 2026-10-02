@@ -25,8 +25,7 @@ The alpha is **unsigned**, so Windows may warn about it or block it from running
 - **Steam Controller 2** or **DualShock 4**; check the release notes for tested models and connections.
 - Windows only for now. I'd like to support Linux later.
 
-<!-- Screenshot placeholder: replace with a keyboard screenshot before release. -->
-*Screenshot coming soon.*
+![KOSK keyboard with word suggestions](docs/images/kosk.png)
 
 ## Controls
 
