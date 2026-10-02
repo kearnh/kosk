@@ -9,7 +9,7 @@ const ROW_FONT: f32 = 14.0;
 const ROW_PAD: f32 = 8.0;
 const EDGE_INSET: i8 = 16;
 const TOP_INSET: i8 = 12;
-const HINT_GLYPH: f32 = 16.0;
+const HINT_GLYPH: f32 = 24.0;
 const HINT_GAP: f32 = 10.0;
 
 pub(crate) fn frame() -> Frame {

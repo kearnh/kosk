@@ -32,11 +32,11 @@ Rear buttons and Quick Access use Steam Controller artwork for both families. Du
 
 Each caller takes the current snapshot’s kind, converts it with `GlyphFamily::from_kind`, and draws only the buttons that binding mentions.
 
-The settings footer in `src/state/menu.rs` draws each bound button at 16px, then a short word. A remapped button shows that button’s glyph. The mappings screen in `src/state/mappings.rs` uses the same 16px size for its hint row. Move-window mode in `src/state/move_window.rs` draws the Save and Cancel bindings at 28px beside those labels. The labels are words, not egui buttons.
+The settings footer in `src/state/menu.rs` draws each bound button at 24px, then a short word. A remapped button shows that button’s glyph. The mappings screen in `src/state/mappings.rs` and toast tips use the same 24px size. Move-window mode in `src/state/move_window.rs` draws the Save and Cancel bindings at 40px beside those labels. The labels are words, not egui buttons.
 
 ## Checking the whole set
 
-`cargo run --bin glyph_gallery` opens a dark window with one row per `ControllerButton`. The Sc2 column and the Ps4 column sit side by side, each icon at 32px. The binary calls `kosk::controller_glyph::show`. It does not open a controller and it does not read `preferred_controller`.
+`cargo run --bin glyph_gallery` opens a dark window with one row per `ControllerButton`. The Sc2 column and the Ps4 column sit side by side, each icon at 48px. The binary calls `kosk::controller_glyph::show`. It does not open a controller and it does not read `preferred_controller`.
 
 ## What this does not cover
 

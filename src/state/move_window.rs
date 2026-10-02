@@ -33,7 +33,7 @@ const PAD_SMOOTH_TAU_SECS: f32 = 0.012;
 /// Drop pad motion this recent when the thumb lifts.
 const PAD_LIFT_SUPPRESS: Duration = Duration::from_millis(40);
 
-const GLYPH_SIZE: f32 = 28.0;
+const GLYPH_SIZE: f32 = 40.0;
 const PROMPT_LABEL_SIZE: f32 = 18.0;
 const PROMPT_ROW_GAP: f32 = 12.0;
 const PROMPT_ITEM_GAP: f32 = 8.0;

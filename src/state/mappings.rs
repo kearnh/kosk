@@ -34,7 +34,7 @@ const TAB_NEXT: ControllerButton = ControllerButton::ShoulderRight; // R1
 const ACTIVATE: ControllerButton = ControllerButton::FaceBottom; // A
 const DELETE_CONFIRM: ControllerButton = ControllerButton::FaceTop; // Y
 const BACK_CANCEL: ControllerButton = ControllerButton::FaceRight; // B
-const HINT_GLYPH: f32 = 16.0;
+const HINT_GLYPH: f32 = 24.0;
 const HINT_GAP: f32 = 10.0;
 // ----------------------------------------------------------------------
 

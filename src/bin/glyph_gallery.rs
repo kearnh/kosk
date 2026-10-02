@@ -5,7 +5,7 @@ use kosk::controller::ControllerButton;
 use kosk::controller_glyph::{self, GlyphFamily};
 use strum::VariantArray;
 
-const GLYPH_SIZE: f32 = 32.0;
+const GLYPH_SIZE: f32 = 48.0;
 const COLUMN_GAP: f32 = 20.0;
 const ROW_GAP: f32 = 8.0;
 const BACKGROUND: egui::Color32 = egui::Color32::from_rgb(20, 20, 20);

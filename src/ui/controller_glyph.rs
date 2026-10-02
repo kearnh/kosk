@@ -133,7 +133,7 @@ mod tests {
                 let tree = resvg::usvg::Tree::from_data(bytes, &Default::default())
                     .unwrap_or_else(|error| panic!("{family:?} {button:?}: {error}"));
 
-                for size in [16, 28, 32] {
+                for size in [24, 40, 48] {
                     let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size).unwrap();
                     let scale = size as f32 / tree.size().width();
                     resvg::render(
