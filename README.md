@@ -61,7 +61,7 @@ Suggestions follow what you type through KOSK; they don't read text from your ap
 
 Open settings to adjust controller feel, key and text size, and key repeat, or change themes, layouts, and button mappings.
 
-KOSK saves your changes in `%LOCALAPPDATA%\kosk\config.toml`. The file only needs settings you've changed. To open it in your editor, press the left button beside Steam (Share on DualShock 4) while in settings.
+KOSK saves your changes in `%LOCALAPPDATA%\kosk\config.toml`. To open it in your editor, go to **Settings → Options** and press **Share** (the left button beside Steam). The file only needs settings you've changed.
 
 ## Steam desktop configuration
 
@@ -69,7 +69,7 @@ This is how I use KOSK alongside Steam's desktop controls: one button shows KOSK
 
 Choose a shortcut and use the same one in KOSK and Steam. F3 below is just an example.
 
-1. Set your shortcut at the top of `config.toml`, before any `[section]` headings:
+1. Open `%LOCALAPPDATA%\kosk\config.toml`, or go to **Settings → Options** and press **Share**. Set your shortcut at the top, before any `[section]` headings:
 
    ```toml
    show_hide_shortcut = "F3"
@@ -85,11 +85,11 @@ Don't also bind that button inside KOSK: one press could show it and immediately
 
 ## Advanced customization
 
-Layouts, themes, and mappings are TOML files. Keep your copies separate from the bundled files so updates don't overwrite them. Relative paths start beside `config.toml`; image paths in themes start beside the theme file. Put top-level settings such as `themes` and `controller_map` before any `[section]` headings.
+Layouts, themes, and mappings are TOML files. Keep your copies separate from the bundled files so updates don't overwrite them. Relative paths start beside `%LOCALAPPDATA%\kosk\config.toml`; image paths in themes start beside the theme file. Put top-level settings such as `themes` and `controller_map` before any `[section]` headings.
 
 ### Create a layout
 
-Start with a copy of [the main layout](old_sc.toml) or [the symbols layout](old_sc_symbols.toml), saved as `%LOCALAPPDATA%\kosk\layouts\mine.toml`. Add it to `config.toml`:
+Start with a copy of [the main layout](old_sc.toml) or [the symbols layout](old_sc_symbols.toml), saved as `%LOCALAPPDATA%\kosk\layouts\mine.toml`. Add it to `%LOCALAPPDATA%\kosk\config.toml`:
 
 ```toml
 [layouts]
@@ -128,7 +128,7 @@ right_selection_color = [100, 130, 45, 255]
 dual_selection_color = [150, 85, 110, 255]
 ```
 
-Add your custom theme files to the top-level `themes` list in `config.toml`:
+Add your custom theme files to the top-level `themes` list in `%LOCALAPPDATA%\kosk\config.toml`:
 
 ```toml
 themes = ["themes/*.toml"]
@@ -138,7 +138,7 @@ Select it in **Settings → Themes**. Anything you leave out uses the built-in a
 
 ### Add bindings and conditions
 
-Use **Settings → Mappings**, or create `mappings.toml` beside `config.toml` and set this top-level option:
+Use **Settings → Mappings**, or create `%LOCALAPPDATA%\kosk\mappings.toml` and set this top-level option in `%LOCALAPPDATA%\kosk\config.toml`:
 
 ```toml
 controller_map = "mappings.toml"
