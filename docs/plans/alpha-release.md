@@ -75,10 +75,9 @@ content. Its attribution and modifications are recorded in
 [the data notice](../../data/completion/en/README.md). Include that notice
 with the binary even when the word list is embedded.
 
-Norvig's [source page](https://www.norvig.com/ngrams/) explicitly licenses
-code, but leaves data redistribution terms unclear. Confirm the applicable
-terms or build from a corpus with explicit redistribution permission before
-shipping next-word tables. Download availability alone is insufficient evidence.
+Next-word tables derive from the pinned Tatoeba English CC0 export. Source
+hashes, transformations, and counts are recorded in the data notice. Include
+the CC0 license alongside the FrequencyWords attribution and CC BY-SA license.
 
 Controller glyphs use Kenney Input Prompts 1.5A under CC0. Include
 [the glyph notice](../../assets/controller-glyphs/README.md) and its upstream

@@ -74,26 +74,30 @@ The English unigrams themselves live at `data/completion/en/unigrams.tsv` and ar
 
 ## Building English next-word tables
 
-1. Download Peter Norvig's [count_2w.txt](https://norvig.com/ngrams/count_2w.txt). Save it as `data/completion/en/count_2w.txt`. Each line is two words and how often they appear together. Words that are not in the English list above are ignored.
+1. Use the checked-in `data/completion/en/bigrams.tsv`. Each line contains two words and their count, derived from the pinned Tatoeba English CC0 export. [Source and license details](../../data/completion/en/README.md) describe the conversion. To reproduce the pair counts with Python 3:
+
+```text
+python scripts/build_english_bigrams.py
+```
 
 2. Convert that file into the tables kosk loads:
 
 ```text
-cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --bigrams data/completion/en/count_2w.txt --out data/completion/en
+cargo run --bin completion_build -- --unigrams data/completion/en/unigrams.tsv --bigrams data/completion/en/bigrams.tsv --out data/completion/en
 ```
 
-`--unigrams` is the word list from the repo. `--bigrams` is the download from step 1. `--out` is the folder for the generated files (`vocab.txt`, `unigrams.bin`, `bigrams.bin`). Those generated files stay out of git. The word list is only read; it is not rewritten.
+`--unigrams` is the word list from the repo. `--bigrams` is the pair-count file from step 1. Words outside the vocabulary are ignored. `--out` is the folder for generated files (`vocab.txt`, `unigrams.bin`, `bigrams.bin`). Those generated files stay out of version control. The word list is only read; it is not rewritten.
 
 The last printed line includes how many two-word pairs were kept. If that number is zero, `--bigrams` was probably omitted, and after a space you will only see the most common English words (`you`, `i`, `the`).
 
 The built-in config has `[completion.ngram] model_dir = "data/completion/en"`. That path is resolved beside the active config file. For next-word tables during development, set an absolute `model_dir` in the user config, or run with an explicit config that sits beside `data/`. The English word list is built into the binary when the file is not on disk.
 
-If you have your own text, `--corpus FILE` counts pairs from one sentence per line. There is no corpus in this repo. For three-word sequences, add `--trigrams` and [count_3w.txt](https://norvig.com/ngrams/count_3w.txt).
+For your own licensed text, `--corpus FILE` counts pairs and triples from one sentence per line. Extract sentence text before passing a TSV export; metadata fields are not prose. Alternatively, `--trigrams FILE` reads pre-counted triples. The supplied Tatoeba conversion produces pair counts only.
 
 3. Check without opening the overlay. This pretends you typed `going` and a space:
 
 ```text
-cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --model_dir data/completion/en
+cargo run --bin completion_dev -- --text "going " --cursor 6 --backend ngram --model-dir data/completion/en
 ```
 
 You should see words that follow `going` (for example `to`). If the guesses are still `you` / `i` / `the`, the two-word table did not load. The same problem shows up on stderr as `ngram model at … not loaded; unigram-only` or `no bigrams`.

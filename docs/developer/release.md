@@ -7,9 +7,10 @@ Run from a clean, committed Jujutsu working copy using PowerShell 7:
 ```
 
 The script builds Windows x64 with both renderers and a static C runtime, rebuilds completion tables
-from `data/completion/en/unigrams.tsv` and the local `count_2w.txt`, checks
+from `data/completion/en/unigrams.tsv` and the checked-in `bigrams.tsv`, checks
 contextual predictions, and packages an explicit file list. Supply another
-pair-count input with `-BigramSource PATH`. Empty optional trigram tables are
+pair-count input with `-BigramSource PATH`; record its redistribution terms
+before publishing. Empty optional trigram tables are
 omitted. Outputs are `target/dist/*.zip` and adjacent SHA-256 checksums.
 
 The ZIP includes source revision, input hashes, asset hashes, toolchain, build

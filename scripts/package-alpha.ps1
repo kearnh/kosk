@@ -41,7 +41,7 @@ try {
     $package = $metadata.packages | Where-Object name -eq 'kosk'
     $version = $package.version
     $packageName = "kosk-$version-windows-x64"
-    if (-not $BigramSource) { $BigramSource = Join-Path $repository 'data/completion/en/count_2w.txt' }
+    if (-not $BigramSource) { $BigramSource = Join-Path $repository 'data/completion/en/bigrams.tsv' }
     $BigramSource = (Resolve-Path -LiteralPath $BigramSource).Path
     if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repository 'target/dist' }
     $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
@@ -78,7 +78,7 @@ try {
         'qwerty.toml', 'mappings.toml', 'docs/themes.md', 'docs/show-hide.md',
         'assets/controller-glyphs/README.md', 'assets/controller-glyphs/LICENSE.txt',
         'data/completion/en/README.md',
-        'assets/licenses/CC-BY-SA-4.0.txt')
+        'assets/licenses/CC-BY-SA-4.0.txt', 'assets/licenses/CC0-1.0.txt')
     $tracked = Invoke-Checked jj @('file', 'list', '-r', '@-')
     $documents += $tracked | ForEach-Object { $_.Replace('\', '/') } | Where-Object { $_ -like 'docs/developer/*.md' }
     foreach ($document in $documents) {
@@ -162,7 +162,7 @@ try {
         )
         contextual_bigrams = $pairBytes / $countRecordBytes
         bundled_assets = $assetRows
-        pending_publication_checks = @('Norvig bigram redistribution terms', 'Clean Windows machine verification')
+        pending_publication_checks = @('Clean Windows machine verification')
     }
     $manifest.files = @(Get-ChildItem -LiteralPath $staging -File -Recurse | ForEach-Object {
         @{ path = [System.IO.Path]::GetRelativePath($staging, $_.FullName).Replace('\', '/');
