@@ -12,6 +12,51 @@ use kosk::state::{
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
 
+#[cfg(target_os = "windows")]
+static TERMINAL_QUIT_CONTEXT: std::sync::OnceLock<egui::Context> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn attach_terminal_console() {
+    use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn terminal_control_handler(event: u32) -> windows_sys::core::BOOL {
+    use windows_sys::Win32::System::Console::CTRL_C_EVENT;
+
+    if event != CTRL_C_EVENT {
+        return 0;
+    }
+
+    let Some(ctx) = TERMINAL_QUIT_CONTEXT.get() else {
+        return 0;
+    };
+
+    ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+    ctx.request_repaint();
+    1
+}
+
+#[cfg(target_os = "windows")]
+fn install_terminal_quit_handler(ctx: &egui::Context) -> Result<()> {
+    use windows_sys::Win32::System::Console::{GetConsoleCP, SetConsoleCtrlHandler};
+
+    if unsafe { GetConsoleCP() } == 0 {
+        return Ok(());
+    }
+
+    let _ = TERMINAL_QUIT_CONTEXT.set(ctx.clone());
+    if unsafe { SetConsoleCtrlHandler(Some(terminal_control_handler), 1) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
+    Ok(())
+}
+
 struct App {
     state: Arc<Mutex<AppState>>,
     window_setup_done: bool,
@@ -346,6 +391,9 @@ fn style_satellite_window() {
 fn style_satellite_window() {}
 
 fn main() -> Result<()> {
+    #[cfg(target_os = "windows")]
+    attach_terminal_console();
+
     config::init()?;
     if config::mcp_controller_mode() {
         controller::control_server::spawn(config::mcp_controller_bind())?;
@@ -385,6 +433,9 @@ fn main() -> Result<()> {
         native_options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
+
+            #[cfg(target_os = "windows")]
+            install_terminal_quit_handler(&ctx)?;
 
             let state = {
                 let monitor_size = ctx
