@@ -437,18 +437,21 @@ mod tests {
     }
 
     #[test]
-    fn installed_factorio_frame_asset_matches_the_theme_region() {
+    fn factorio_floor_is_drawn_behind_translucent_keys() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config.toml");
         let (catalog, skipped) =
             crate::theme::ThemeCatalog::load(&config_path, &["themes/factorio.toml".into()])
                 .unwrap();
         assert!(skipped.is_empty());
-        let image = catalog.get("Factorio").background_image.as_ref().unwrap();
-        assert_eq!(image.source_region, Some([0, 0, 17, 17]));
-        assert_eq!(image.frame_border, 8);
+        let theme = catalog.get("Factorio");
+        let image = theme.background_image.as_ref().unwrap();
+        assert_eq!(image.source_region, Some([0, 0, 512, 512]));
+        assert_eq!(image.frame_border, 0);
+        assert_eq!(image.scaling, BackgroundImageScaling::Cover);
+        assert!(theme.keyboard.inactive.background_color[3] < u8::MAX);
         let decoded = load_image(&image.path).unwrap();
-        assert!(decoded.size[0] >= 17 && decoded.size[1] >= 17);
-        assert!(decoded.pixels.iter().any(|pixel| pixel.a() == 0));
+        assert_eq!(decoded.size, [4096, 512]);
+        assert!(decoded.pixels.iter().all(|pixel| pixel.a() == u8::MAX));
     }
 
     #[test]
