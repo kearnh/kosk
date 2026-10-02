@@ -15,7 +15,7 @@ KOSK is a personal project made for my own use and shared publicly under the MIT
 
 KOSK starts hidden. The same shortcut or tray icon hides it again while keeping it running. Right-click the tray icon to quit.
 
-No installer, Rust, terminal, administrator rights, or first-launch download is required. Default layouts, mappings, themes, and English word suggestions, including next-word prediction, are included for offline use.
+No installer, terminal, administrator rights, or first-launch download is required. Default layouts, mappings, themes, and English word suggestions, including next-word prediction, are included for offline use.
 
 The alpha is **unsigned**. Windows may warn about an unrecognized application, and some security policies may prevent it from running. Use the ZIP from this repository's Releases section; do not disable Windows protection to run KOSK.
 
