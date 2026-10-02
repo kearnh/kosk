@@ -66,19 +66,21 @@ KOSK saves your changes in `%LOCALAPPDATA%\kosk\config.toml`. The file only need
 
 This is how I use KOSK alongside Steam's desktop controls: one button shows KOSK and switches Steam to an action layer with its desktop bindings cleared. The same button hides KOSK and switches back.
 
-1. Set KOSK's shortcut to F3 by adding this top-level setting to `config.toml`, before any `[section]` headings:
+Choose a shortcut and use the same one in KOSK and Steam. F3 below is just an example.
+
+1. Set your shortcut at the top of `config.toml`, before any `[section]` headings:
 
    ```toml
    show_hide_shortcut = "F3"
    ```
 
-2. In Steam's desktop configuration, bind **R4** to send F3 and enter a dedicated KOSK action layer.
-3. In that layer, remove all inherited desktop actions. Bind only R4: send F3 and leave the layer.
-4. Leave R4 unbound in KOSK. It is unbound in the default mappings.
+2. In Steam's desktop configuration, bind a button (for example, **R4**) to send your shortcut and enter a dedicated KOSK action layer.
+3. In that layer, remove all inherited desktop actions. Bind only that button: send the same shortcut and leave the layer.
+4. Leave that button unbound in KOSK.
 
-Leave KOSK running and use R4 to switch between it and Steam's desktop controls.
+Leave KOSK running and use that button to switch between it and Steam's desktop controls.
 
-Don't also bind R4 inside KOSK: one press could show it and immediately hide it again. The tray and other shortcuts don't switch Steam's layer, so using them can leave the two out of sync.
+Don't also bind that button inside KOSK: one press could show it and immediately hide it again. The tray and other shortcuts don't switch Steam's layer, so using them can leave the two out of sync.
 
 ## Advanced customization
 
