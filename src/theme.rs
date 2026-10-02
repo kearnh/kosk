@@ -77,6 +77,7 @@ impl WidgetTheme {
 
 section!(Theme {
     background_color: [u8; 4] = [20, 20, 20, 255],
+    background_image: Option<BackgroundImageTheme> = None,
     keyboard_opacity: f32 = 0.7,
     ui_opacity: f32 = 1.0,
     text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
@@ -111,6 +112,34 @@ section!(Theme {
     battery: BatteryTheme = BatteryTheme::default(),
     stick_pad_cursors: StickPadCursorTheme = StickPadCursorTheme::default(),
 });
+
+section!(BackgroundImageTheme {
+    path: std::path::PathBuf = std::path::PathBuf::new(),
+    opacity: f32 = 1.0,
+    scaling: BackgroundImageScaling = BackgroundImageScaling::Cover,
+    position: BackgroundImagePosition = BackgroundImagePosition::Center,
+});
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BackgroundImageScaling {
+    #[default]
+    Cover,
+    Contain,
+    Stretch,
+    Original,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum BackgroundImagePosition {
+    #[default]
+    Center,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
 
 section!(StickPadCursorTheme {
     radius: Option<f32> = None,
@@ -302,6 +331,15 @@ impl Theme {
     }
 
     fn validate(&self) -> Result<()> {
+        if let Some(image) = &self.background_image {
+            if image.path.as_os_str().is_empty() || image.path.to_string_lossy().contains("://") {
+                bail!("background_image.path must name a local image file");
+            }
+            if !image.opacity.is_finite() || !(0.0..=1.0).contains(&image.opacity) {
+                bail!("background_image.opacity must be finite and between 0 and 1");
+            }
+        }
+
         for (name, value) in [
             ("stick_pad_cursors.radius", self.stick_pad_cursors.radius),
             (
@@ -526,14 +564,14 @@ fn validate_radius(value: f32) -> Result<()> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ThemeCatalog(BTreeMap<String, Theme>);
+pub(crate) struct ThemeCatalog(BTreeMap<String, Theme>, u64);
 
 impl Default for ThemeCatalog {
     fn default() -> Self {
-        Self(BTreeMap::from([(
-            DEFAULT_THEME_NAME.to_owned(),
-            Theme::default(),
-        )]))
+        Self(
+            BTreeMap::from([(DEFAULT_THEME_NAME.to_owned(), Theme::default())]),
+            0,
+        )
     }
 }
 
@@ -543,6 +581,8 @@ impl ThemeCatalog {
         files: &[String],
     ) -> Result<(Self, Vec<std::path::PathBuf>)> {
         let mut catalog = Self::default();
+        static NEXT_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        catalog.1 = NEXT_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut skipped = Vec::new();
         for path in expand_theme_files(config_path, files)? {
             let loaded = (|| {
@@ -560,8 +600,13 @@ impl ThemeCatalog {
                 if name.trim().is_empty() || name == DEFAULT_THEME_NAME {
                     bail!("theme name {name:?} is empty or reserved");
                 }
-                let theme = Theme::parse_overlay(overlay)
+                let mut theme = Theme::parse_overlay(overlay)
                     .with_context(|| format!("theme {name:?} ({})", path.display()))?;
+                if let Some(image) = &mut theme.background_image
+                    && image.path.is_relative()
+                {
+                    image.path = path.parent().unwrap_or(Path::new("")).join(&image.path);
+                }
                 Ok::<_, anyhow::Error>((name, theme))
             })();
 
@@ -579,6 +624,19 @@ impl ThemeCatalog {
 
     pub(crate) fn get(&self, name: &str) -> &Theme {
         self.0.get(name).unwrap_or(&self.0[DEFAULT_THEME_NAME])
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.1
+    }
+
+    pub(crate) fn image_paths(&self) -> impl Iterator<Item = &Path> {
+        self.0.values().filter_map(|theme| {
+            theme
+                .background_image
+                .as_ref()
+                .map(|image| image.path.as_path())
+        })
     }
 
     pub(crate) fn names(&self) -> Vec<&str> {
@@ -639,6 +697,30 @@ pub(crate) fn expand_theme_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_image_settings_validate_without_changing_defaults() {
+        assert!(Theme::default().background_image.is_none());
+        let theme = Theme::parse("[background_image]\npath = 'gear.png'\nopacity = 0.3\nscaling = 'original'\nposition = 'bottom_right'\n").unwrap();
+        let image = theme.background_image.unwrap();
+        assert_eq!(image.path, Path::new("gear.png"));
+        assert_eq!(image.scaling, BackgroundImageScaling::Original);
+        assert_eq!(image.position, BackgroundImagePosition::BottomRight);
+        for settings in [
+            "path = ''",
+            "path = 'https://example.com/gear.png'",
+            "path = 'gear.png'\nopacity = 1.1",
+            "path = 'gear.png'\nopacity = nan",
+            "path = 'gear.png'\nscaling = 'unknown'",
+            "path = 'gear.png'\nposition = 'unknown'",
+            "path = 'gear.png'\nunknown = 1",
+        ] {
+            assert!(
+                Theme::parse(&format!("[background_image]\n{settings}")).is_err(),
+                "{settings}"
+            );
+        }
+    }
 
     #[test]
     fn named_colors_resolve_in_nested_sections_and_key_groups() {

@@ -36,6 +36,9 @@ Add `themes/*.toml` to the `themes` list to discover them.
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 
 The Factorio theme uses charcoal and steel panels with amber and copper accents.
+Its faint bottom-right gear is the original PNG icon from the
+[official Factorio Wiki](https://wiki.factorio.com/Iron_gear_wheel).
+The asset's source and ownership are recorded in [themes/images/README.md](../themes/images/README.md).
 
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
@@ -97,6 +100,42 @@ names and invalid tuples make the theme invalid. Border widths are
 finite, nonnegative numbers. Corner radii range from 0 to 255 and round to whole
 points. Unknown sections or fields are errors.
 
+## Background images
+
+An optional `[background_image]` section draws a local image behind the controls.
+PNG and JPEG are supported, along with self-contained SVG shapes. Relative paths
+start beside the theme file; absolute paths are also accepted. Keep the image
+alongside the theme when sharing it.
+
+```toml
+[background_image]
+path = "images/factorio-iron-gear-wheel.png"
+opacity = 0.3
+scaling = "original"
+position = "bottom_right"
+```
+
+`opacity` defaults to `1.0` and accepts finite values from `0.0` to `1.0`.
+In a transparent window, the image also inherits the background colour's alpha
+and the current mode's `keyboard_opacity` or `ui_opacity`. Move mode hides images.
+Transparent image pixels reveal `background_color`. Opaque controls cover the
+image; translucent control backgrounds allow it to show through.
+
+`scaling` defaults to `cover`, which preserves aspect ratio and crops to fill
+the window. `contain` preserves aspect ratio and fits the whole image, leaving
+the background colour in unused space. `stretch` fills the window without
+preserving aspect ratio. `original` uses one image pixel per UI point, which
+suits small corner decorations. `position` defaults to `center`; `top_left`,
+`top_right`, `bottom_left` and `bottom_right` are also supported. Images are
+clipped to the window and do not affect its layout or size.
+
+Loading and decoding run on a worker thread. kosk retains only the active
+background texture and runs at most one image-loading job at a time. Images
+reload after image or theme edits. Missing, corrupt or oversized images retain
+the theme's background colour and display a notice. Files are limited to
+16 MiB and dimensions to 4096 pixels per side. SVGs rasterize once at their
+declared size; embedded images and external image references are ignored.
+
 ## Control states
 
 These states describe individual controls, independently of window focus:
@@ -127,6 +166,7 @@ keep only the overrides your theme needs.
   `selection_background_color`, `selection_border_color`,
   `selection_border_width`, `window_border_color`, `window_border_width`,
   `window_corner_radius`.
+- `[background_image]`: `path`, `opacity`, `scaling`, `position`.
 - `[noninteractive]`, `[inactive]`, `[hovered]`, `[active]`, `[open]`: `background_color`,
   `weak_background_color`, `text_color`, `border_color`, `border_width`,
   `corner_radius`. These style standard controls, including both pickers.

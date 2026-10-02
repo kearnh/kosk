@@ -25,6 +25,8 @@ eframe = { version = "0.36.2", default-features = false, features = ["glow", "in
 glob = "0.3.4"
 egui = { version = "0.36.2", features = ["serde"] }
 egui_extras = { version = "0.36.2", features = ["svg"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+resvg = { version = "0.45.1", default-features = false }
 egui_phosphor_icons = "0.5.0"
 enigo = { version = "0.6.1", features = ["serde"] }
 hidapi = "2.6.7"

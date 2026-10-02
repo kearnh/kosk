@@ -71,6 +71,7 @@ pub enum NoticeKey {
     SettingsSaveFailed,
     GuideFailed,
     ThemeFiles(String),
+    ThemeBackgroundImage(String),
 }
 
 #[derive(Debug, Clone)]
@@ -274,6 +275,21 @@ impl Notice {
         }
     }
 
+    pub(crate) fn theme_background_failed(path: &std::path::Path) -> Self {
+        Self {
+            key: NoticeKey::ThemeBackgroundImage(path.to_string_lossy().into_owned()),
+            severity: Severity::Warning,
+            title: "Background image not loaded",
+            body: format!(
+                "Could not load {}. The theme is using its background colour.",
+                path.display()
+            ),
+            action: None,
+            wide: false,
+            immediate: false,
+        }
+    }
+
     pub fn theme_files_skipped(paths: &[PathBuf], missing_active: Option<&str>) -> Self {
         let mut identity = paths
             .iter()
@@ -330,6 +346,7 @@ impl Notice {
                 | NoticeKey::UnsupportedButtons(_)
                 | NoticeKey::NextWordSetup
                 | NoticeKey::ThemeFiles(_)
+                | NoticeKey::ThemeBackgroundImage(_)
         )
     }
 

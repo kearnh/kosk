@@ -14,15 +14,6 @@ Input Text Prediction
 Left: neural rerank, OS caret scrape.
 See [docs/plans/completion.md](docs/plans/completion.md).
 
-Themes
-------
-
-- Add optional static background images: local PNG/JPEG paths relative to the
-  theme file, opacity and scaling options, and background-colour fallback.
-  Load asynchronously; cache only the active texture; limit image dimensions.
-  Preserve window transparency and move mode. Handle image reloads and missing
-  files. Check readability, resize cropping, memory use and repaint cost.
-
 Bugs
 ----
 

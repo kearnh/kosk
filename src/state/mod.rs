@@ -75,6 +75,7 @@ pub struct AppState {
     events: EventQueue,
     key_sink: Box<dyn KeySink>,
     unsupported_checked_for: Option<ControllerKind>,
+    background: crate::ui::background::Background,
 }
 
 impl AppState {
@@ -109,6 +110,7 @@ impl AppState {
             events: EventQueue::new(),
             key_sink: open_key_sink()?,
             unsupported_checked_for: None,
+            background: crate::ui::background::Background::default(),
         })
     }
 
@@ -326,6 +328,7 @@ impl AppState {
         let cfg = config::get();
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
+        self.background.draw(ui, &cfg, self.state);
         match self.state {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));

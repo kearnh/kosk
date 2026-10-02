@@ -642,6 +642,10 @@ impl Config {
         self.theme_catalog.get(&self.active_theme)
     }
 
+    pub(crate) fn theme_revision(&self) -> u64 {
+        self.theme_catalog.revision()
+    }
+
     pub(crate) fn theme_names(&self) -> Vec<&str> {
         self.theme_catalog.names()
     }
@@ -1105,7 +1109,17 @@ fn publish_loaded_config(
     let mut files =
         crate::config_overlay::config_file_paths(config_path, map_rel.as_deref(), &layouts);
     crate::config_overlay::append_theme_paths(&mut files, config_path, &new_config.themes);
+    append_background_image_paths(&mut files, &new_config.theme_catalog);
     files
+}
+
+fn append_background_image_paths(files: &mut Vec<PathBuf>, catalog: &crate::theme::ThemeCatalog) {
+    for path in catalog.image_paths() {
+        let path = crate::config_overlay::watch_key(path);
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
 }
 
 /// Load the built-in defaults, then the active config file on top.
@@ -2516,6 +2530,110 @@ enabled = false\n\
             assert_eq!(cfg.active_theme, "default");
             assert_eq!(cfg.scale_x, 37.0);
         }
+    }
+
+    #[test]
+    fn background_image_paint_respects_opacity_move_mode_and_layout() {
+        let dir = temp_dir("background-image-paint");
+        let image_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("themes/images/factorio-iron-gear-wheel.png");
+        let encoded_path = toml::Value::String(image_path.to_string_lossy().into_owned());
+        fs::write(dir.join("theme.toml"), format!("name = 'Custom'\nbackground_color = [30, 30, 28, 128]\nkeyboard_opacity = 0.5\n[background_image]\npath = {encoded_path}\nopacity = 0.5\nscaling = 'original'\nposition = 'bottom_right'\n")).unwrap();
+        let (catalog, skipped) =
+            crate::theme::ThemeCatalog::load(&dir.join("config.toml"), &["theme.toml".into()])
+                .unwrap();
+        assert!(skipped.is_empty());
+        let cfg = Config {
+            active_theme: "Custom".into(),
+            theme_catalog: Arc::new(catalog),
+            transparent: true,
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let mut background = crate::ui::background::Background::default();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let mut painted = None;
+        while painted.is_none() && std::time::Instant::now() < deadline {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let before = ui.min_rect();
+                background.draw(ui, &cfg, StateId::Keyboard);
+                assert_eq!(ui.min_rect(), before);
+            });
+            output.textures_delta.clear();
+            painted = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Mesh(mesh) => Some((shape.clip_rect, mesh.clone())),
+                _ => None,
+            });
+            if painted.is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        let (clip, mesh) = painted.expect("background image painted");
+        assert_eq!(clip, ctx.content_rect());
+        assert_eq!(mesh.vertices.len(), 4);
+        assert!(mesh.vertices.iter().all(|vertex| vertex.color.a() == 32));
+        assert_eq!(mesh.calc_bounds().size(), egui::vec2(64.0, 64.0));
+        assert_eq!(mesh.calc_bounds().right_bottom(), clip.right_bottom());
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            background.draw(ui, &cfg, StateId::MoveWindow)
+        });
+        assert!(output
+            .shapes
+            .iter()
+            .all(|shape| !matches!(shape.shape, egui::Shape::Mesh(_))));
+        assert!(output.textures_delta.free.contains(&mesh.texture_id));
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn directory_watcher_reloads_background_images_beside_the_theme() {
+        let dir = temp_dir("background-image-config");
+        let external = temp_dir("background-image-theme");
+        let config_path = dir.join("config.toml");
+        let theme_path = external.join("theme.toml");
+        let image_path = external.join("gear.png");
+        let encoded_path = toml::Value::String(theme_path.to_string_lossy().into_owned());
+        fs::write(
+            &config_path,
+            format!(
+                "config_version = {}\nactive_theme = 'Custom'\nthemes = [{encoded_path}]\n",
+                crate::config_overlay::CONFIG_VERSION
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &theme_path,
+            "name = 'Custom'\n[background_image]\npath = 'gear.png'\n",
+        )
+        .unwrap();
+        let (before, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_eq!(
+            before.theme().background_image.as_ref().unwrap().path,
+            image_path
+        );
+        let mut files = Vec::new();
+        append_background_image_paths(&mut files, &before.theme_catalog);
+        assert!(is_watched_path(&image_path, &files));
+        let (tx, rx) = mpsc::channel();
+        let _watcher = watch_config_directories(&dir, &files, tx).unwrap();
+        fs::write(
+            &image_path,
+            include_bytes!("../themes/images/factorio-iron-gear-wheel.png"),
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let event = rx
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .unwrap()
+                .unwrap();
+            if is_reload_event(&event, &files) {
+                break;
+            }
+        }
+        let (after, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
+        assert_ne!(before.theme_revision(), after.theme_revision());
+        assert_eq!(before.theme(), after.theme());
     }
 
     #[test]
