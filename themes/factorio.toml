@@ -16,7 +16,6 @@ window_corner_radius = 2.0
 charcoal = [30, 30, 28]
 panel = [48, 48, 44]
 steel = [66, 66, 60]
-keyboard_steel = [66, 66, 60, 210]
 hover_steel = [83, 81, 70]
 steel_border = [106, 103, 88]
 warm_white = [235, 230, 210]
@@ -107,8 +106,8 @@ background_color = "copper"
 text_color = "warm_white"
 
 [keyboard.inactive]
-background_color = "keyboard_steel"
-weak_background_color = "keyboard_steel"
+background_color = "steel"
+weak_background_color = "steel"
 text_color = "warm_white"
 border_color = "steel_border"
 border_width = 1.0

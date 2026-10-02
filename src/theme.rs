@@ -118,6 +118,8 @@ section!(BackgroundImageTheme {
     opacity: f32 = 1.0,
     scaling: BackgroundImageScaling = BackgroundImageScaling::Cover,
     position: BackgroundImagePosition = BackgroundImagePosition::Center,
+    source_region: Option<[u32; 4]> = None,
+    frame_border: u32 = 0,
 });
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -337,6 +339,14 @@ impl Theme {
             }
             if !image.opacity.is_finite() || !(0.0..=1.0).contains(&image.opacity) {
                 bail!("background_image.opacity must be finite and between 0 and 1");
+            }
+            if let Some([_, _, width, height]) = image.source_region
+                && (width == 0
+                    || height == 0
+                    || image.frame_border >= width.div_ceil(2)
+                    || image.frame_border >= height.div_ceil(2))
+            {
+                bail!("background_image.source_region must leave space inside frame_border");
             }
         }
 
@@ -714,6 +724,10 @@ mod tests {
             "path = 'gear.png'\nscaling = 'unknown'",
             "path = 'gear.png'\nposition = 'unknown'",
             "path = 'gear.png'\nunknown = 1",
+            "path = 'frame.png'\nsource_region = [0, 0, 0, 17]",
+            "path = 'frame.png'\nsource_region = [0, 0, 17, 17]\nframe_border = 9",
+            "path = 'frame.png'\nsource_region = [-1, 0, 17, 17]",
+            "path = 'frame.png'\nframe_border = -1",
         ] {
             assert!(
                 Theme::parse(&format!("[background_image]\n{settings}")).is_err(),

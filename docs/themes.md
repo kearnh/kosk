@@ -36,8 +36,7 @@ Add `themes/*.toml` to the `themes` list to discover them.
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 
 The Factorio theme uses charcoal and steel panels with amber and copper accents.
-Its faint bottom-right gear is the original PNG icon from the
-[official Factorio Wiki](https://wiki.factorio.com/Iron_gear_wheel).
+Its border uses the original frame tiles from Factorio's interface texture.
 The asset's source and ownership are recorded in [themes/images/README.md](../themes/images/README.md).
 
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
@@ -109,10 +108,10 @@ alongside the theme when sharing it.
 
 ```toml
 [background_image]
-path = "images/factorio-iron-gear-wheel.png"
-opacity = 0.3
-scaling = "original"
-position = "bottom_right"
+path = "images/factorio-gui.png"
+opacity = 0.85
+source_region = [0, 0, 17, 17]
+frame_border = 8
 ```
 
 `opacity` defaults to `1.0` and accepts finite values from `0.0` to `1.0`.
@@ -128,6 +127,14 @@ preserving aspect ratio. `original` uses one image pixel per UI point, which
 suits small corner decorations. `position` defaults to `center`; `top_left`,
 `top_right`, `bottom_left` and `bottom_right` are also supported. Images are
 clipped to the window and do not affect its layout or size.
+
+`source_region = [x, y, width, height]` selects a rectangle in image pixels;
+omitting it uses the whole image. A positive `frame_border` draws only that
+many pixels around the source rectangle as a window frame. Corners keep their
+size, edges stretch with the window, and the centre stays clear. Frame drawing
+fills the window regardless of `scaling` or `position`. The default border is
+`0`, which draws the image normally. The source region must fit inside the
+image and leave a centre larger than zero after subtracting both borders.
 
 Loading and decoding run on a worker thread. kosk retains only the active
 background texture and runs at most one image-loading job at a time. Images
@@ -166,7 +173,7 @@ keep only the overrides your theme needs.
   `selection_background_color`, `selection_border_color`,
   `selection_border_width`, `window_border_color`, `window_border_width`,
   `window_corner_radius`.
-- `[background_image]`: `path`, `opacity`, `scaling`, `position`.
+- `[background_image]`: `path`, `opacity`, `scaling`, `position`, `source_region`, `frame_border`.
 - `[noninteractive]`, `[inactive]`, `[hovered]`, `[active]`, `[open]`: `background_color`,
   `weak_background_color`, `text_color`, `border_color`, `border_width`,
   `corner_radius`. These style standard controls, including both pickers.

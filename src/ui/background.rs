@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use anyhow::{bail, Context, Result};
-use egui::{Color32, ColorImage, Rect, TextureHandle, TextureOptions, Ui, Vec2};
+use egui::{Color32, ColorImage, Mesh, Rect, TextureHandle, TextureOptions, Ui, Vec2};
 
 use crate::config::Config;
 use crate::state::StateId;
@@ -12,7 +12,6 @@ use crate::theme::{BackgroundImagePosition, BackgroundImageScaling, BackgroundIm
 const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 4096;
 const MAX_DECODE_BYTES: u64 = 128 * 1024 * 1024;
-const IMAGE_UV: Rect = Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
 
 #[derive(Clone, PartialEq, Eq)]
 struct ImageKey {
@@ -66,15 +65,17 @@ impl Background {
         if !viewport.is_positive() {
             return;
         }
-        let rect = image_rect(viewport, texture.size_vec2(), image);
         let window_alpha = cfg.window_visuals(state).panel_fill.a() as f32 / u8::MAX as f32;
         let alpha = (image.opacity * window_alpha * u8::MAX as f32).round() as u8;
-        ui.painter().with_clip_rect(viewport).image(
-            texture.id(),
-            rect,
-            IMAGE_UV,
-            Color32::from_white_alpha(alpha),
-        );
+        let mesh = match image_mesh(viewport, texture, image, Color32::from_white_alpha(alpha)) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                self.texture = None;
+                report_failure(&image.path, &error.to_string());
+                return;
+            }
+        };
+        ui.painter().with_clip_rect(viewport).add(mesh);
     }
 
     fn start_loading(&mut self, ui: &Ui, key: ImageKey) {
@@ -122,6 +123,89 @@ impl Background {
 fn report_failure(path: &Path, error: &str) {
     eprintln!("theme background {}: {error}", path.display());
     crate::user_notify::notify(crate::user_notify::Notice::theme_background_failed(path));
+}
+
+fn image_mesh(
+    viewport: Rect,
+    texture: &TextureHandle,
+    image: &BackgroundImageTheme,
+    tint: Color32,
+) -> Result<Mesh> {
+    let texture_size = texture.size_vec2();
+    let source = match image.source_region {
+        Some([x, y, width, height]) => Rect::from_min_size(
+            egui::pos2(x as f32, y as f32),
+            egui::vec2(width as f32, height as f32),
+        ),
+        None => Rect::from_min_size(egui::Pos2::ZERO, texture_size),
+    };
+    if !source.is_positive()
+        || !Rect::from_min_size(egui::Pos2::ZERO, texture_size).contains_rect(source)
+    {
+        bail!("background_image.source_region exceeds image dimensions");
+    }
+    let mut mesh = Mesh::with_texture(texture.id());
+    let border = image.frame_border as f32;
+    if border == 0.0 {
+        let uv = Rect::from_min_max(
+            egui::Pos2::ZERO + source.min.to_vec2() / texture_size,
+            egui::Pos2::ZERO + source.max.to_vec2() / texture_size,
+        );
+        mesh.add_rect_with_uv(image_rect(viewport, source.size(), image), uv, tint);
+        return Ok(mesh);
+    }
+    if border * 2.0 >= source.width() || border * 2.0 >= source.height() {
+        bail!("background_image.frame_border must leave space inside the source image");
+    }
+
+    let horizontal_border = border.min(viewport.width() / 2.0);
+    let vertical_border = border.min(viewport.height() / 2.0);
+    let x = [
+        viewport.left(),
+        viewport.left() + horizontal_border,
+        viewport.right() - horizontal_border,
+        viewport.right(),
+    ];
+    let y = [
+        viewport.top(),
+        viewport.top() + vertical_border,
+        viewport.bottom() - vertical_border,
+        viewport.bottom(),
+    ];
+    let u = [
+        source.left(),
+        source.left() + border,
+        source.right() - border,
+        source.right(),
+    ]
+    .map(|x| x / texture_size.x);
+    let v = [
+        source.top(),
+        source.top() + border,
+        source.bottom() - border,
+        source.bottom(),
+    ]
+    .map(|y| y / texture_size.y);
+    for row in 0..3 {
+        for column in 0..3 {
+            if row == 1 && column == 1 {
+                continue;
+            }
+            let rect = Rect::from_min_max(
+                egui::pos2(x[column], y[row]),
+                egui::pos2(x[column + 1], y[row + 1]),
+            );
+            if !rect.is_positive() {
+                continue;
+            }
+            let uv = Rect::from_min_max(
+                egui::pos2(u[column], v[row]),
+                egui::pos2(u[column + 1], v[row + 1]),
+            );
+            mesh.add_rect_with_uv(rect, uv, tint);
+        }
+    }
+    Ok(mesh)
 }
 
 fn image_rect(viewport: Rect, source: Vec2, image: &BackgroundImageTheme) -> Rect {
@@ -282,6 +366,89 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert!(load_image(&path).is_err());
         std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn factorio_frame_preserves_corners_and_leaves_the_center_clear() {
+        let ctx = egui::Context::default();
+        let texture = ctx.load_texture(
+            "frame",
+            ColorImage::filled([64, 64], Color32::WHITE),
+            TextureOptions::LINEAR,
+        );
+        let image = BackgroundImageTheme {
+            source_region: Some([0, 0, 17, 17]),
+            frame_border: 8,
+            ..Default::default()
+        };
+        let viewport = Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(300.0, 100.0));
+        let mesh = image_mesh(viewport, &texture, &image, Color32::WHITE).unwrap();
+        assert_eq!(mesh.vertices.len(), 32);
+        assert_eq!(mesh.calc_bounds(), viewport);
+        let mut area = 0.0;
+        for vertices in mesh.vertices.chunks_exact(4) {
+            let rect = Rect::from_min_max(vertices[0].pos, vertices[3].pos);
+            assert!(!rect.contains(viewport.center()));
+            assert!(viewport.contains_rect(rect));
+            area += rect.area();
+        }
+        assert_eq!(area, viewport.area() - viewport.shrink(8.0).area());
+        assert_eq!(mesh.vertices[0].uv, egui::Pos2::ZERO);
+        assert_eq!(mesh.vertices[3].uv, egui::pos2(8.0 / 64.0, 8.0 / 64.0));
+        assert_eq!(
+            mesh.vertices[3].pos - mesh.vertices[0].pos,
+            egui::vec2(8.0, 8.0)
+        );
+
+        let tiny = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(12.0, 10.0));
+        let mesh = image_mesh(tiny, &texture, &image, Color32::WHITE).unwrap();
+        assert!(mesh.vertices.iter().all(|vertex| tiny.contains(vertex.pos)));
+        drop(texture);
+        let mut output = ctx.run_ui(Default::default(), |_| {});
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn source_region_crops_and_rejects_regions_outside_the_texture() {
+        let ctx = egui::Context::default();
+        let texture = ctx.load_texture(
+            "region",
+            ColorImage::filled([64, 64], Color32::WHITE),
+            TextureOptions::LINEAR,
+        );
+        let mut image = BackgroundImageTheme {
+            source_region: Some([16, 8, 17, 17]),
+            scaling: BackgroundImageScaling::Original,
+            ..Default::default()
+        };
+        let viewport = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 100.0));
+        let mesh = image_mesh(viewport, &texture, &image, Color32::WHITE).unwrap();
+        assert_eq!(mesh.calc_bounds().size(), egui::vec2(17.0, 17.0));
+        assert_eq!(mesh.vertices[0].uv, egui::pos2(16.0 / 64.0, 8.0 / 64.0));
+        assert_eq!(mesh.vertices[3].uv, egui::pos2(33.0 / 64.0, 25.0 / 64.0));
+        image.source_region = Some([63, 0, 17, 17]);
+        assert!(image_mesh(viewport, &texture, &image, Color32::WHITE).is_err());
+        image.source_region = None;
+        image.frame_border = 32;
+        assert!(image_mesh(viewport, &texture, &image, Color32::WHITE).is_err());
+        drop(texture);
+        let mut output = ctx.run_ui(Default::default(), |_| {});
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn installed_factorio_frame_asset_matches_the_theme_region() {
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config.toml");
+        let (catalog, skipped) =
+            crate::theme::ThemeCatalog::load(&config_path, &["themes/factorio.toml".into()])
+                .unwrap();
+        assert!(skipped.is_empty());
+        let image = catalog.get("Factorio").background_image.as_ref().unwrap();
+        assert_eq!(image.source_region, Some([0, 0, 17, 17]));
+        assert_eq!(image.frame_border, 8);
+        let decoded = load_image(&image.path).unwrap();
+        assert!(decoded.size[0] >= 17 && decoded.size[1] >= 17);
+        assert!(decoded.pixels.iter().any(|pixel| pixel.a() == 0));
     }
 
     #[test]
