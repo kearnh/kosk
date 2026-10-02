@@ -1,7 +1,7 @@
 # Public alpha distribution
 
-Status: distribution decisions settled; implementation incomplete. No downloadable release exists.
-Reviewed 2026-10-02. KOSK code uses MIT; bundled data and artwork retain separate terms.
+Status: local ZIP built and verified; not published. First-launch provisioning is implemented.
+Reviewed 2026-10-03. KOSK code uses MIT; bundled data and artwork retain separate terms.
 
 ## Release contract
 
@@ -33,10 +33,11 @@ caches, private files, raw corpora, and repository metadata. Never ZIP the
 working directory. The Factorio theme uses colours only.
 
 A checksum detects changed files; it does not establish publisher identity.
-Verify DLL/runtime requirements on a Windows installation without Rust or
-Visual Studio. Package only dependencies actually required and redistributable.
+The package uses a static C runtime. Local PE inspection found no separate
+C runtime imports. Verify it on Windows without Rust or Visual Studio.
+Package only dependencies actually required and redistributable.
 
-## First-launch and update implementation
+## First-launch and update behavior
 
 1. Provision bundled assets before loading default user configuration.
    Existing per-user settings creation is already implemented.
@@ -50,10 +51,16 @@ Visual Studio. Package only dependencies actually required and redistributable.
    atomically; an interrupted write must not leave a partially usable model.
 5. Keep explicit-config launches isolated: no asset extraction or writes
    outside the supplied configuration's existing behavior.
-6. Replace the developer-oriented next-word setup notice for packaged builds.
-   Missing bundled data should produce a repair instruction, not a Cargo recipe.
-7. Exercise fresh setup, repeated launches, upgrades, edited custom assets,
+6. Valid packaged models suppress the developer-oriented next-word setup notice.
+   Missing bundled model files stop provisioning rather than activating partial data.
+7. Tests cover fresh setup, repeated launches, upgrades, edited custom assets,
    custom model paths, interrupted provisioning, and unwritable directories.
+
+The extracted ZIP starts with Glow and Wgpu using isolated user data and an
+unrelated working directory. Installed assets match their recorded hashes;
+custom settings and themes survive relaunch. Explicit-config launch leaves
+the user data directory untouched. This is local startup verification, not
+clean-machine or controller interaction verification.
 
 ## Completion data and credits
 
@@ -92,10 +99,10 @@ Do not instruct users to disable Windows protection.
 
 ## Release gate
 
-- [ ] First-launch provisioning and update preservation implemented and tested.
+- [x] First-launch provisioning and update preservation implemented and tested.
 - [ ] Completion inputs cleared; nonempty contextual tables rebuilt and verified.
 - [ ] Asset and dependency license notices complete.
-- [ ] Repeatable Windows x64 packaging with manifest and checksums.
+- [x] Repeatable Windows x64 packaging with manifest and checksums.
 - [x] Unsigned alpha selected.
 - [ ] Downloaded ZIP tested on clean Windows, offline and as a standard user.
 - [ ] Ctrl+Alt+F10/tray visibility, controller typing, themes, prefix and contextual
@@ -104,6 +111,5 @@ Do not instruct users to disable Windows protection.
 - [ ] Bug-reporting channel documented.
 - [ ] User README finalized against verified behavior.
 
-Publish only after these gates pass. The current executable is unsigned;
-settings/layouts/mappings/prefix word-list fallback already work without
-repository files, but theme and next-word provisioning remain unimplemented.
+Publish only after these gates pass. The local ZIP includes themes and contextual
+completion tables; public asset redistribution checks remain unresolved.
