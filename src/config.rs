@@ -230,7 +230,7 @@ pub struct Config {
 
     /// Global show/hide shortcut: F1-F24, optionally prefixed by Ctrl, Alt, Shift, or Win.
     /// An empty string disables the shortcut.
-    #[config(default = "F3".to_owned())]
+    #[config(default = "Ctrl+Alt+F10".to_owned())]
     pub show_hide_shortcut: String,
 
     #[config(default = true)]

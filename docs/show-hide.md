@@ -1,6 +1,6 @@
 # Show and hide KOSK
 
-KOSK starts hidden. Press **F3** to show or hide it. It stays running while hidden and accepts only visibility bindings. Both transitions clear word suggestions and their typing context. Hiding clears modifiers and releases held keys. Release held controller buttons before typing again.
+KOSK starts hidden. Press **Ctrl+Alt+F10** to show or hide it. It stays running while hidden and accepts only visibility bindings. Both transitions clear word suggestions and their typing context. Hiding clears modifiers and releases held keys. Release held controller buttons before typing again.
 
 The blue **K** in the Windows notification area toggles visibility when clicked. Right-click it for **Show KOSK** / **Hide KOSK** and **Quit KOSK**. Windows may place the icon in the notification area's overflow menu. The overlay has no taskbar button.
 
@@ -17,7 +17,7 @@ quickAccess = "toggleOverlayVisibility"
 
 Bind each mode where you need it. Keep visibility bindings unconditional if the same button must always reopen KOSK.
 
-To change the global shortcut, add this to the top level of your settings file:
+To use F3 instead, add this to the top level of your settings file:
 
 ```toml
 show_hide_shortcut = "F3"

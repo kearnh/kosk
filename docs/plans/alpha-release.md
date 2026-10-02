@@ -8,7 +8,7 @@ Reviewed 2026-10-02. KOSK code uses MIT; bundled data and artwork retain separat
 - Windows x64 ZIP: `kosk-0.1.0-alpha.1-windows-x64.zip`.
 - Extract the whole folder and run `kosk.exe`. No Rust, terminal, administrator
   rights, installer, or first-launch download.
-- KOSK starts hidden. The included quick-start explains F3 and the tray icon.
+- KOSK starts hidden. The included quick-start explains Ctrl+Alt+F10 and the tray icon.
 - Default layouts, mappings, themes, and English suggestions work offline.
 - Settings and learned words remain under `%LOCALAPPDATA%\kosk`.
 - Updates: quit KOSK, extract the new release into a new folder, run it.
@@ -109,7 +109,7 @@ An installer does not solve these signing or reputation issues.
 - [ ] Repeatable Windows x64 packaging with manifest and checksums.
 - [ ] Signing arranged, or unsigned-release limitations explicitly accepted.
 - [ ] Downloaded ZIP tested on clean Windows, offline and as a standard user.
-- [ ] F3/tray visibility, controller typing, themes, prefix and contextual
+- [ ] Ctrl+Alt+F10/tray visibility, controller typing, themes, prefix and contextual
       suggestions, upgrade, and removal verified from the extracted package.
 - [ ] Public repository, release destination, and bug-reporting channel selected.
 - [ ] User README finalized against verified behavior.
