@@ -1,11 +1,13 @@
 # Public alpha distribution
 
-Status: release contract and implementation checklist; no downloadable release exists.
+Status: distribution decisions settled; implementation incomplete. No downloadable release exists.
 Reviewed 2026-10-02. KOSK code uses MIT; bundled data and artwork retain separate terms.
 
 ## Release contract
 
 - Windows x64 ZIP: `kosk-0.1.0-alpha.1-windows-x64.zip`.
+- Public download through [GitHub Releases](https://github.com/kearnh/kosk/releases).
+- Unsigned alpha. No signing service or certificate setup.
 - Extract the whole folder and run `kosk.exe`. No Rust, terminal, administrator
   rights, installer, or first-launch download.
 - KOSK starts hidden. The included quick-start explains Ctrl+Alt+F10 and the tray icon.
@@ -76,28 +78,17 @@ recorded in [the glyph notice](../../assets/controller-glyphs/README.md).
 Verify redistribution terms and audit dependency licenses/notices, including
 embedded fonts and icons.
 
-## Signing and hosting
+## Hosting and Windows security prompts
 
 Use a public release page with versioned assets, source revision, changes,
-known limitations, checksums, and support/reporting links. GitHub Releases is
-the proposed host; `jj git remote list` currently returns no remotes.
-Repository ownership and destination must be established before publishing.
+known limitations, checksums, and support/reporting links. The repository is
+[kearnh/kosk](https://github.com/kearnh/kosk); `origin` uses its HTTPS URL.
+Finish the user README before the first source push.
 
-Investigate [SignPath Foundation](https://signpath.org/terms.html) for free
-open-source signing. Acceptance is not guaranteed; it requires a public,
-documented, maintained project, verifiable builds, signing policy, and release
-approval. Do not claim sponsorship before acceptance.
-
-[Microsoft's signing guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)
-currently limits Artifact Signing for individuals to the USA and Canada.
-Check publisher eligibility before selecting a paid service. Sign and timestamp
-the executable before packaging; then compute checksums.
-
-An unsigned public alpha is possible, but the release page must state that it
-is unsigned. [SmartScreen](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
-can warn for new signed builds too, and Smart App Control or enterprise policy
-can block unsigned builds. Do not instruct users to disable Windows protection.
-An installer does not solve these signing or reputation issues.
+The alpha is unsigned. State this in the README and release notes.
+[SmartScreen](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+may warn; Smart App Control or enterprise policy may block execution.
+Do not instruct users to disable Windows protection.
 
 ## Release gate
 
@@ -105,11 +96,12 @@ An installer does not solve these signing or reputation issues.
 - [ ] Completion inputs cleared; nonempty contextual tables rebuilt and verified.
 - [ ] Asset and dependency license notices complete.
 - [ ] Repeatable Windows x64 packaging with manifest and checksums.
-- [ ] Signing arranged, or unsigned-release limitations explicitly accepted.
+- [x] Unsigned alpha selected.
 - [ ] Downloaded ZIP tested on clean Windows, offline and as a standard user.
 - [ ] Ctrl+Alt+F10/tray visibility, controller typing, themes, prefix and contextual
       suggestions, upgrade, and removal verified from the extracted package.
-- [ ] Public repository, release destination, and bug-reporting channel selected.
+- [x] Public repository and GitHub Releases destination selected.
+- [ ] Bug-reporting channel documented.
 - [ ] User README finalized against verified behavior.
 
 Publish only after these gates pass. The current executable is unsigned;
