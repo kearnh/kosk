@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(mesh.vertices.len(), 32);
         assert_eq!(mesh.calc_bounds(), viewport);
         let mut area = 0.0;
-        for vertices in mesh.vertices.chunks_exact(4) {
+        for vertices in mesh.vertices.as_chunks::<4>().0 {
             let rect = Rect::from_min_max(vertices[0].pos, vertices[3].pos);
             assert!(!rect.contains(viewport.center()));
             assert!(viewport.contains_rect(rect));

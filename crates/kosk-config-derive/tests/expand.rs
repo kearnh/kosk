@@ -6,6 +6,10 @@ use kosk_config_derive::{config_section, Choice};
 use crate::config::schema::{Choice as _, Lens, Page, Setting};
 use crate::controller::ControllerKind;
 
+#[expect(
+    dead_code,
+    reason = "Stub mirrors the controller types used by generated code."
+)]
 mod controller {
     #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub enum ControllerKind {
@@ -14,6 +18,10 @@ mod controller {
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "Stub schema includes fields required by generated code."
+)]
 mod config {
     pub mod schema {
         use std::sync::Arc;

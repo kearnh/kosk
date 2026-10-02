@@ -1433,8 +1433,10 @@ mod tests {
 
     #[test]
     fn accepted_suggestion_backspace_without_inserted_space_deletes_letter() {
-        let mut cfg = CompletionConfig::default();
-        cfg.insert_space_on_accept = false;
+        let mut cfg = CompletionConfig {
+            insert_space_on_accept: false,
+            ..Default::default()
+        };
         cfg.keyboard.retract_last_accept = false;
         let mut s = session_with(cfg);
         let out = accept_hello(&mut s);
@@ -1502,9 +1504,11 @@ mod tests {
     fn original_suggestion_respects_chip_limit_and_discards_stale_batch() {
         const PENDING_REQUEST_DEBOUNCE_MS: u64 = 60_000;
 
-        let mut cfg = CompletionConfig::default();
-        cfg.max_suggestions = 1;
-        cfg.debounce_ms = PENDING_REQUEST_DEBOUNCE_MS;
+        let cfg = CompletionConfig {
+            max_suggestions: 1,
+            debounce_ms: PENDING_REQUEST_DEBOUNCE_MS,
+            ..Default::default()
+        };
         let mut s = session_with(cfg);
         let out = accept_hello(&mut s);
         apply_keyboard_accept(&mut s, &out);
