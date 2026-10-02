@@ -18,6 +18,8 @@ Useful flags are documented in [docs/developer/config.md](docs/developer/config.
 
 ## Controller mappings
 
+Use F3 or the blue K tray icon to show or hide KOSK. See [show/hide and Steam desktop controls](docs/show-hide.md).
+
 Custom colors, borders, and corner rounding are documented in [docs/themes.md](docs/themes.md).
 
 What each button does is in `mappings.toml`. Button names, action names, and `when` conditions are listed in [MAPPINGS.md](MAPPINGS.md).

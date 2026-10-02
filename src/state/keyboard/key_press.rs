@@ -67,15 +67,12 @@ impl KeyPressFeedback {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::{color, Theme};
 
     #[test]
     fn matching_key_and_flash_colors_still_show_a_press() {
-        let theme = Theme::parse(include_str!("../../../themes/cyberpunk-2077.toml")).unwrap();
-        let background = color(theme.keyboard.right_selection_color);
+        let background = Color32::YELLOW;
         let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(30.0, 32.0));
-        let feedback =
-            KeyPressFeedback::new(background, color(theme.keyboard.key_press_color), 1.0);
+        let feedback = KeyPressFeedback::new(background, background, 1.0);
         assert!(feedback.background() != background || feedback.rect(rect) != rect);
     }
 

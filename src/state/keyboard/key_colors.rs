@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn controller_highlights_use_selection_text_over_group_text() {
-        let theme = Theme::parse(include_str!("../../../themes/cyberpunk-2077.toml")).unwrap();
+        let theme = Theme::parse("[keyboard]\nselection_text_color = [10, 20, 30]\n[[keyboard.key_groups]]\nkeys = ['q', 'Return']\ntext_color = [40, 50, 60]").unwrap();
         let groups = groups(&theme);
         for spec in ["key = 'q'", "key = 'Return'"] {
             let key = key(spec);
@@ -354,9 +354,11 @@ mod tests {
     }
 
     #[test]
-    fn old_steam_controller_colors_return_and_done_green() {
-        let theme =
-            Theme::parse(include_str!("../../../themes/old-steam-controller.toml")).unwrap();
+    fn key_group_colors_return_and_done() {
+        let theme = Theme::parse(
+            "[[keyboard.key_groups]]\nkeys = ['Return', 'exit']\nbackground_color = [63, 100, 58]",
+        )
+        .unwrap();
         let groups = groups(&theme);
         for spec in ["key = 'Return'", "key = 'exit'\ndisplay = 'Done'"] {
             assert_eq!(

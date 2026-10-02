@@ -76,6 +76,9 @@ pub struct AppState {
     key_sink: Box<dyn KeySink>,
     unsupported_checked_for: Option<ControllerKind>,
     background: crate::ui::background::Background,
+    overlay_visible: bool,
+    resume_controller_after_release: bool,
+    held_keys: Vec<enigo::Key>,
 }
 
 impl AppState {
@@ -111,6 +114,9 @@ impl AppState {
             key_sink: open_key_sink()?,
             unsupported_checked_for: None,
             background: crate::ui::background::Background::default(),
+            overlay_visible: true,
+            resume_controller_after_release: false,
+            held_keys: Vec::new(),
         })
     }
 
@@ -120,6 +126,46 @@ impl AppState {
 
     pub fn current_state(&self) -> StateId {
         self.state
+    }
+
+    pub fn overlay_visible(&self) -> bool {
+        self.overlay_visible
+    }
+
+    pub fn set_overlay_visible(&mut self, visible: bool) {
+        if self.overlay_visible == visible {
+            return;
+        }
+
+        self.overlay_visible = visible;
+        self.resume_controller_after_release = true;
+        self.events.drain_pending();
+        self.events.end_controller_tick();
+        self.reset_current_mode_controller(None);
+        crate::completion::with_mut(|session| {
+            if let Some(session) = session {
+                session.clear_context();
+            }
+        });
+
+        if visible {
+            return;
+        }
+
+        keyboard::with_mut(|kb| kb.clear_modifiers());
+        if self.state == StateId::SelectKey {
+            self.return_state(
+                ReturnStateResult::Cancelled,
+                None,
+                &mut EventQueue::passthrough(),
+            );
+        }
+        for key in self.held_keys.drain(..) {
+            if let Err(e) = self.key_sink.key(key, enigo::Direction::Release) {
+                eprintln!("release held key: {e:#}");
+                crate::user_notify::note_type_failure();
+            }
+        }
     }
 
     fn window_size_from(content_rect: Rect) -> (f32, f32) {
@@ -218,9 +264,17 @@ impl AppState {
                 }
                 match event {
                     Event::SendKey(key, direction) => {
+                        match direction {
+                            enigo::Direction::Press if !self.held_keys.contains(&key) => {
+                                self.held_keys.push(key);
+                            }
+                            _ => {}
+                        }
                         if let Err(e) = self.key_sink.key(key, direction) {
                             eprintln!("key sink: {e:#}");
                             crate::user_notify::note_type_failure();
+                        } else if direction == enigo::Direction::Release {
+                            self.held_keys.retain(|held| *held != key);
                         }
                     }
                     Event::SendText(text) => {
@@ -298,6 +352,10 @@ impl AppState {
     }
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
+        if !self.overlay_visible {
+            return;
+        }
+
         let ctx_notify = ctx.clone();
         if let Err(e) = crate::completion::ensure(Arc::new(move || {
             ctx_notify.request_repaint();
@@ -435,6 +493,19 @@ impl AppState {
         ctx: &Context,
         input: &dyn ControllerInput,
     ) -> Result<()> {
+        if !self.overlay_visible {
+            return Ok(());
+        }
+        if self.resume_controller_after_release {
+            use strum::VariantArray;
+
+            self.reset_current_mode_controller(Some(input));
+            self.resume_controller_after_release = crate::controller::ControllerButton::VARIANTS
+                .iter()
+                .any(|button| input.query(*button));
+            return Ok(());
+        }
+
         let cfg = config::get();
 
         self.events
@@ -514,12 +585,29 @@ impl AppState {
         keyboard::with_mut(|kb| kb.note_battery(input.battery()));
     }
 
+    pub fn note_controller_idle(
+        &mut self,
+        ctx: &Context,
+        input: &dyn ControllerInput,
+    ) -> Result<()> {
+        self.note_battery(input);
+        if self.overlay_visible && self.resume_controller_after_release {
+            self.reset_controller_input(ctx)?;
+        }
+        Ok(())
+    }
+
     pub fn set_controller_connection(&mut self, connection: ControllerConnection) {
         keyboard::with_mut(|kb| kb.set_controller_connection(connection));
     }
 
     /// Iterator yielded idle (`None`): clear edge baselines; do not run handle.
     pub fn reset_controller_input(&mut self, ctx: &Context) -> Result<()> {
+        if !self.overlay_visible {
+            return Ok(());
+        }
+        self.resume_controller_after_release = false;
+
         if self.state == StateId::MoveWindow {
             let (x, y) = self.get_position(ctx.content_rect(), ctx.pixels_per_point());
             let window_size = Self::window_size_from(ctx.content_rect());

@@ -931,6 +931,13 @@ impl KeyboardState {
         layout.left_content_width(pad_x)
     }
 
+    pub(crate) fn clear_modifiers(&mut self) {
+        self.shift_state = false;
+        self.shift_mod = false;
+        self.ctrl_mod = false;
+        self.alt_mod = false;
+    }
+
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.cursor_input = holdover.map(ControllerInput::box_clone);
         if holdover.is_none() {

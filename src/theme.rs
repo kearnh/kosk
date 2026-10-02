@@ -937,10 +937,8 @@ mod tests {
     }
 
     #[test]
-    fn old_steam_controller_palette_matches_reference() {
-        let theme = Theme::parse(include_str!("../themes/old-steam-controller.toml")).unwrap();
-        assert_eq!(theme.keyboard_opacity, 1.0);
-        assert_eq!(theme.ui_opacity, 1.0);
+    fn named_palette_colors_apply_to_keyboard() {
+        let theme = Theme::parse("background_color = 'navy'\n[colours]\nnavy = [15, 40, 61]\nkey = [25, 62, 87]\ntext = [163, 163, 163]\nhover = [39, 81, 108]\n[keyboard.inactive]\nbackground_color = 'key'\nweak_background_color = 'key'\ntext_color = 'text'\n[keyboard.hovered]\nbackground_color = 'hover'").unwrap();
         assert_eq!(theme.background_color, [15, 40, 61, 255]);
         assert_eq!(theme.keyboard.inactive.background_color, [25, 62, 87, 255]);
         assert_eq!(

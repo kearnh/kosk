@@ -12,6 +12,8 @@ use kosk::state::{
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::{Arc, Mutex};
 
+mod global_shortcut;
+
 #[cfg(target_os = "windows")]
 static TERMINAL_QUIT_CONTEXT: std::sync::OnceLock<egui::Context> = std::sync::OnceLock::new();
 
@@ -66,11 +68,12 @@ struct App {
     dwm_see_through: bool,
     last_outer: Option<egui::Pos2>,
     /// Held while a text-entry mode has OS foreground focus.
-    os_focus_guard: Option<OsFocusGuard>,
+    os_focus_guard: Arc<Mutex<Option<OsFocusGuard>>>,
+    _global_shortcut: global_shortcut::GlobalShortcut,
 }
 
 impl App {
-    fn new(cc: &CreationContext<'_>, state: Arc<Mutex<AppState>>) -> Self {
+    fn new(cc: &CreationContext<'_>, state: Arc<Mutex<AppState>>) -> Result<Self> {
         // Configure fonts: Phosphor icons always; Segoe fallbacks on Windows when present.
         let mut fonts = egui::FontDefinitions::default();
         egui_phosphor_icons::add_fonts(&mut fonts);
@@ -106,15 +109,50 @@ impl App {
 
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
-        Self {
+        let os_focus_guard = Arc::new(Mutex::new(None::<OsFocusGuard>));
+        let set_visible = |toggle: bool| {
+            let state = state.clone();
+            let focus = os_focus_guard.clone();
+            let ctx = cc.egui_ctx.clone();
+            move || {
+                let mut state = state.lock().unwrap();
+                let visible = !toggle || !state.overlay_visible();
+                state.set_overlay_visible(visible);
+                if !visible && let Some(guard) = focus.lock().unwrap().take() {
+                    guard.restore();
+                }
+                ctx.send_viewport_cmd_to(
+                    egui::ViewportId::ROOT,
+                    egui::ViewportCommand::Visible(visible),
+                );
+                if !visible {
+                    ctx.send_viewport_cmd_to(toast_viewport_id(), egui::ViewportCommand::Close);
+                }
+                ctx.request_repaint();
+            }
+        };
+        let ctx = cc.egui_ctx.clone();
+        let tray_state = state.clone();
+        let global_shortcut = global_shortcut::GlobalShortcut::start(
+            set_visible(true),
+            set_visible(false),
+            move || tray_state.lock().unwrap().overlay_visible(),
+            move || {
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+                ctx.request_repaint();
+            },
+        )?;
+
+        Ok(Self {
             state,
             window_setup_done: false,
             size: Vec2::ZERO,
             min_size: Vec2::ZERO,
             last_outer: None,
-            os_focus_guard: None,
+            os_focus_guard,
+            _global_shortcut: global_shortcut,
             dwm_see_through: false,
-        }
+        })
     }
 }
 
@@ -125,9 +163,13 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let state_guard = self.state.lock().unwrap();
+        if !state_guard.overlay_visible() {
+            return;
+        }
         let cfg = config::get();
         let is_transparent = cfg.transparent;
-        let state = self.state.lock().unwrap().current_state();
+        let state = state_guard.current_state();
         ctx.set_visuals(cfg.window_visuals(state));
 
         // Setup window styles (non-transparent parts)
@@ -141,7 +183,7 @@ impl eframe::App for App {
             use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
             use windows_sys::Win32::UI::WindowsAndMessaging::{
                 GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
-                LWA_ALPHA, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+                LWA_ALPHA, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
             };
             let hwnd = h.hwnd.get() as HWND;
             // Keep the overlay non-activating (can be reset by system), except while
@@ -154,6 +196,8 @@ impl eframe::App for App {
                 } else {
                     current_ex_style | (WS_EX_NOACTIVATE as isize)
                 };
+                new_ex_style =
+                    (new_ex_style | WS_EX_TOOLWINDOW as isize) & !(WS_EX_APPWINDOW as isize);
 
                 if is_transparent {
                     new_ex_style |= WS_EX_LAYERED as isize;
@@ -196,14 +240,16 @@ impl eframe::App for App {
                 }
             }
             if wants_text_entry {
-                if self.os_focus_guard.is_none() {
-                    self.os_focus_guard =
-                        Some(OsFocusGuard::activate_for_text_entry(hwnd as isize));
+                let mut guard = self.os_focus_guard.lock().unwrap();
+                if guard.is_none() {
+                    *guard = Some(OsFocusGuard::activate_for_text_entry(hwnd as isize));
                 }
-            } else if let Some(guard) = self.os_focus_guard.take() {
+            } else if let Some(guard) = self.os_focus_guard.lock().unwrap().take() {
                 guard.restore();
             }
         }
+
+        drop(state_guard);
 
         // Measure first; OuterPosition is applied after size so content-driven
         // resizes can keep the previous top edge instead of re-resolving corners.
@@ -267,7 +313,9 @@ impl eframe::App for App {
         self.last_outer = Some(outer);
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(outer));
 
-        self.show_toast_satellite(&ctx, state, outer, size, monitor_size);
+        if self.state.lock().unwrap().overlay_visible() {
+            self.show_toast_satellite(&ctx, state, outer, size, monitor_size);
+        }
     }
 }
 
@@ -409,6 +457,7 @@ fn main() -> Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_transparent(config::get().transparent)
             .with_active(false)
+            .with_taskbar(false)
             .with_always_on_top()
             .with_decorations(false)
             .with_resizable(false)
@@ -497,8 +546,7 @@ fn main() -> Result<()> {
                                     }
                                     Some(snap) if !snap.is_engaged() => {
                                         kosk::user_notify::note_no_input();
-                                        s.note_battery(snap.as_ref());
-                                        Ok(())
+                                        s.note_controller_idle(&ctx, snap.as_ref())
                                     }
                                     Some(snap) => {
                                         controller::record::session().tap_input(&input);
@@ -535,7 +583,7 @@ fn main() -> Result<()> {
                 }
                 Ok(())
             });
-            Ok(Box::new(App::new(cc, state)))
+            Ok(Box::new(App::new(cc, state)?))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{:#}", e))?;

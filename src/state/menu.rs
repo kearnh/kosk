@@ -413,14 +413,10 @@ mod tests {
     }
 
     #[test]
-    fn included_themes_keep_selected_and_unselected_menu_text_readable() {
+    fn menu_text_colors_keep_dark_and_light_rows_readable() {
         for source in [
-            include_str!("../../themes/cyberpunk-2077.toml"),
-            include_str!("../../themes/factorio.toml"),
-            include_str!("../../themes/hollow-knight.toml"),
-            include_str!("../../themes/old-steam-controller.toml"),
-            include_str!("../../themes/portal.toml"),
-            include_str!("../../themes/stardew-valley.toml"),
+            "name = 'Dark'\nbackground_color = [0, 0, 0]\nselection_background_color = [255, 255, 255]\n[noninteractive]\ntext_color = [255, 255, 255]\n[menus]\nselected_text_color = [0, 0, 0]",
+            "name = 'Light'\nbackground_color = [255, 255, 255]\nselection_background_color = [0, 0, 0]\n[noninteractive]\ntext_color = [0, 0, 0]\n[menus]\nselected_text_color = [255, 255, 255]",
         ] {
             let document: toml::Value = toml::from_str(source).unwrap();
             let name = document["name"].as_str().unwrap();

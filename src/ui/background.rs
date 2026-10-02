@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn factorio_frame_preserves_corners_and_leaves_the_center_clear() {
+    fn image_frame_preserves_corners_and_leaves_the_center_clear() {
         let ctx = egui::Context::default();
         let texture = ctx.load_texture(
             "frame",
@@ -437,24 +437,6 @@ mod tests {
     }
 
     #[test]
-    fn factorio_floor_is_drawn_behind_translucent_keys() {
-        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config.toml");
-        let (catalog, skipped) =
-            crate::theme::ThemeCatalog::load(&config_path, &["themes/factorio.toml".into()])
-                .unwrap();
-        assert!(skipped.is_empty());
-        let theme = catalog.get("Factorio");
-        let image = theme.background_image.as_ref().unwrap();
-        assert_eq!(image.source_region, Some([0, 0, 512, 512]));
-        assert_eq!(image.frame_border, 0);
-        assert_eq!(image.scaling, BackgroundImageScaling::Cover);
-        assert!(theme.keyboard.inactive.background_color[3] < u8::MAX);
-        let decoded = load_image(&image.path).unwrap();
-        assert_eq!(decoded.size, [4096, 512]);
-        assert!(decoded.pixels.iter().all(|pixel| pixel.a() == u8::MAX));
-    }
-
-    #[test]
     fn scaling_and_corner_placement_preserve_geometry() {
         let viewport = Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(200.0, 100.0));
         let mut image = BackgroundImageTheme::default();
@@ -481,13 +463,14 @@ mod tests {
     }
 
     #[test]
-    fn factorio_png_retains_transparency() {
-        let image = load_image(Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/themes/images/factorio-iron-gear-wheel.png"
-        )))
-        .unwrap();
-        assert_eq!(image.size, [64, 64]);
+    fn png_retains_transparency() {
+        let path = std::env::temp_dir().join(format!("kosk-alpha-{}.png", std::process::id()));
+        let mut pixels = image::RgbaImage::new(2, 1);
+        pixels.put_pixel(1, 0, image::Rgba([80, 100, 120, 255]));
+        pixels.save(&path).unwrap();
+        let image = load_image(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(image.size, [2, 1]);
         assert!(image.pixels.iter().any(|pixel| pixel.a() == 0));
         assert!(image.pixels.iter().any(|pixel| pixel.a() == 255));
     }

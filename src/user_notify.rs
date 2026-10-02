@@ -72,6 +72,8 @@ pub enum NoticeKey {
     GuideFailed,
     ThemeFiles(String),
     ThemeBackgroundImage(String),
+    ShowHideShortcut,
+    TrayIcon,
 }
 
 #[derive(Debug, Clone)]

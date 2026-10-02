@@ -211,6 +211,11 @@ pub struct Config {
     )]
     pub transparent: bool,
 
+    /// Global show/hide shortcut: F1-F24, optionally prefixed by Ctrl, Alt, Shift, or Win.
+    /// An empty string disables the shortcut.
+    #[config(default = "F3".to_owned())]
+    pub show_hide_shortcut: String,
+
     #[setting(section, page = Debug)]
     pub debug: Debug,
 
@@ -857,6 +862,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "debug",
     "stick_pad_cursors",
     "transparent",
+    "show_hide_shortcut",
     "keyboard_opacity",
     "ui_opacity",
     "window_pos",
@@ -2535,8 +2541,10 @@ enabled = false\n\
     #[test]
     fn background_image_paint_respects_opacity_move_mode_and_layout() {
         let dir = temp_dir("background-image-paint");
-        let image_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("themes/images/factorio-iron-gear-wheel.png");
+        let image_path = dir.join("image.png");
+        image::RgbaImage::from_pixel(64, 64, image::Rgba([80, 100, 120, 255]))
+            .save(&image_path)
+            .unwrap();
         let encoded_path = toml::Value::String(image_path.to_string_lossy().into_owned());
         fs::write(dir.join("theme.toml"), format!("name = 'Custom'\nbackground_color = [30, 30, 28, 128]\nkeyboard_opacity = 0.5\n[background_image]\npath = {encoded_path}\nopacity = 0.5\nscaling = 'original'\nposition = 'bottom_right'\n")).unwrap();
         let (catalog, skipped) =
@@ -2616,11 +2624,9 @@ enabled = false\n\
         assert!(is_watched_path(&image_path, &files));
         let (tx, rx) = mpsc::channel();
         let _watcher = watch_config_directories(&dir, &files, tx).unwrap();
-        fs::write(
-            &image_path,
-            include_bytes!("../themes/images/factorio-iron-gear-wheel.png"),
-        )
-        .unwrap();
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([80, 100, 120, 255]))
+            .save(&image_path)
+            .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             let event = rx

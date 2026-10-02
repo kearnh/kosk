@@ -463,6 +463,21 @@ impl Session {
         }
     }
 
+    pub(crate) fn clear_context(&mut self) {
+        self.current_gen = self.r#gen.fetch_add(1, Ordering::Relaxed) + 1;
+        self.slot.0.lock().unwrap().pending = None;
+        self.typed = TypedLog::new(self.typed.armed());
+        self.pending_ctx = None;
+        self.pending_at = None;
+        self.last_ctx = None;
+        self.candidates.clear();
+        self.highlight = None;
+        self.pending_eat_space = false;
+        self.suggestion_just_accepted = false;
+        self.original_suggestion = None;
+        self.shown_out.clear();
+    }
+
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
         self.clear_original_suggestion();
         self.suggestion_just_accepted = false;
@@ -1023,6 +1038,44 @@ mod tests {
         dict.set_overlay(std::collections::HashMap::new(), Some(Arc::clone(&user)));
         let notify = Arc::new(|| {}) as Arc<dyn Fn() + Send + Sync>;
         Session::spawn_for_test_full(Arc::new(dict), cfg, notify, user, fg)
+    }
+
+    #[test]
+    fn clear_context_discards_pending_and_late_results() {
+        let mut session = session_with(CompletionConfig::default());
+        session.note_log(LogEvent::Text, "hel");
+        session.request_from_buffer("hel", 3);
+        let old_generation = session.current_gen;
+        session.apply_candidates(vec![cand("hello")]);
+        session.highlight = Some(0);
+        session.arm_eat_accept_space();
+        session.arm_suggestion_just_accepted();
+        session.restore_last_accept(("hello ".into(), "hel".into()));
+        session.clear_context();
+
+        assert!(session.typed_text().is_empty());
+        assert!(session.candidates().is_empty());
+        assert!(session.highlight().is_none());
+        assert!(session.snapshot_last_accept().is_none());
+        assert!(session.pending_ctx.is_none());
+        assert!(session.pending_at.is_none());
+        assert!(session.last_ctx.is_none());
+        assert!(!session.pending_eat_space);
+        assert!(!session.suggestion_just_accepted());
+        assert!(session.original_suggestion.is_none());
+        assert!(session.take_shown().is_empty());
+        assert_ne!(session.current_gen, old_generation);
+        assert!(session.slot.0.lock().unwrap().pending.is_none());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        session.rx = rx;
+        tx.send(Batch {
+            r#gen: old_generation,
+            candidates: vec![cand("hello")],
+        })
+        .unwrap();
+        session.poll();
+        assert!(session.candidates().is_empty());
     }
 
     #[test]
