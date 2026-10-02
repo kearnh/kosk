@@ -28,9 +28,7 @@ toolchain, model-input hashes, and build commands in a release manifest.
 
 Exclude development binaries, recordings, captures, personal completion
 caches, private files, raw corpora, and repository metadata. Never ZIP the
-working directory. Include the palette-only Factorio theme; exclude
-`themes/images/factorio-refined-concrete.png` and
-`themes/images/factorio-iron-gear-wheel.png`.
+working directory. The Factorio theme uses colours only.
 
 A checksum detects changed files; it does not establish publisher identity.
 Verify DLL/runtime requirements on a Windows installation without Rust or
@@ -76,9 +74,7 @@ shipping next-word tables. Download availability alone is insufficient evidence.
 Controller glyphs were copied from the Steam installation; their source is
 recorded in [the glyph notice](../../assets/controller-glyphs/README.md).
 Verify redistribution terms and audit dependency licenses/notices, including
-embedded fonts and icons. The two Factorio images have ownership
-notes in [themes/images/README.md](../../themes/images/README.md), but no
-recorded redistribution grant. Exclude them from the alpha package.
+embedded fonts and icons.
 
 ## Signing and hosting
 

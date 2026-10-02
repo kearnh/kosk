@@ -67,4 +67,4 @@ Start with [docs/developer/README.md](docs/developer/README.md). That page lists
 ## License
 
 KOSK code is [MIT licensed](LICENSE). Bundled [English completion data](data/completion/en/README.md)
-and [theme artwork](themes/images/README.md) have separate terms.
+and [controller glyphs](assets/controller-glyphs/README.md) have separate terms.
