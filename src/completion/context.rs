@@ -216,6 +216,16 @@ mod tests {
     }
 
     #[test]
+    fn permitted_word_separators_stay_inside_completion_tokens() {
+        for text in ["mother-in-law", "l’esprit", "two‐words", "two‑words"] {
+            let context =
+                CompletionContext::from_buffer(text, text.len(), &CompletionConfig::default())
+                    .unwrap();
+            assert_eq!(context.token, text);
+        }
+    }
+
+    #[test]
     fn apostrophe_is_word_char() {
         let cfg = CompletionConfig::default();
         let ctx = CompletionContext::from_buffer("don't", 5, &cfg).unwrap();

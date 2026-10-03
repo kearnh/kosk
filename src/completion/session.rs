@@ -15,6 +15,10 @@ use super::context::CompletionContext;
 use super::settings::{CompletionConfig, CurrentWordChip, Preselect};
 use super::typed_log::{LogEvent, TypedLog};
 use super::user_cache::{resolve_cache_path, UserCache};
+use super::word_policy::WordPolicy;
+use crate::platform::password_field::{
+    FieldDetector, FieldKind, FieldObservation, OsFieldDetector,
+};
 use crate::platform::{ForegroundExe, OsForeground};
 
 #[cfg(test)]
@@ -102,6 +106,8 @@ pub struct Session {
     suggestion_just_accepted: bool,
     original_suggestion: Option<OriginalSuggestion>,
     shown_out: Vec<ShownSuggestions>,
+    field: Arc<dyn FieldDetector>,
+    field_observation: FieldObservation,
 }
 
 impl Session {
@@ -111,9 +117,10 @@ impl Session {
         notify: Arc<dyn Fn() + Send + Sync>,
         fg: Arc<dyn ForegroundExe>,
     ) -> Result<Self> {
-        let user = Arc::new(Mutex::new(UserCache::load(
+        let user = Arc::new(Mutex::new(UserCache::load_with_word_limit(
             &cfg.user_cache,
             resolve_cache_path(config_dir, &cfg.user_cache.path),
+            cfg.max_word_characters,
         )));
         let load = backend_from_config(&cfg, config_dir, Arc::clone(&user))?;
         if load.next_word == NextWordTables::Missing {
@@ -140,9 +147,12 @@ impl Session {
         notify: Arc<dyn Fn() + Send + Sync>,
         fg: Arc<dyn ForegroundExe>,
     ) -> Result<Self> {
-        let user = Arc::new(Mutex::new(UserCache::load(
-            &cfg.user_cache,
+        let mut cache_config = cfg.user_cache.clone();
+        cache_config.enabled &= backend.writes_user_cache();
+        let user = Arc::new(Mutex::new(UserCache::load_with_word_limit(
+            &cache_config,
             resolve_cache_path(config_dir, &cfg.user_cache.path),
+            cfg.max_word_characters,
         )));
         Self::open_worker(backend, cfg, user, notify, fg)
     }
@@ -174,6 +184,7 @@ impl Session {
                 move || worker_loop(backend, slot, r#gen, tx, notify)
             })?;
 
+        let field = Arc::new(OsFieldDetector::start(Arc::clone(&notify)));
         Ok(Self {
             slot,
             r#gen,
@@ -198,6 +209,8 @@ impl Session {
             suggestion_just_accepted: false,
             original_suggestion: None,
             shown_out: Vec::new(),
+            field,
+            field_observation: FieldObservation::unknown(),
         })
     }
 
@@ -217,7 +230,7 @@ impl Session {
         notify: Arc<dyn Fn() + Send + Sync>,
         fg: Arc<dyn ForegroundExe>,
     ) -> Self {
-        let user = Arc::new(Mutex::new(UserCache::load(
+        let user = Arc::new(Mutex::new(UserCache::load_with_word_limit(
             &cfg.user_cache,
             std::path::PathBuf::from(format!(
                 "target/kosk-session-test-fg-{}-{}.bin",
@@ -227,6 +240,7 @@ impl Session {
                     .unwrap()
                     .as_nanos()
             )),
+            cfg.max_word_characters,
         )));
         Self::spawn_for_test_full(backend, cfg, notify, user, fg)
     }
@@ -299,6 +313,10 @@ impl Session {
             suggestion_just_accepted: false,
             original_suggestion: None,
             shown_out: Vec::new(),
+            field: Arc::new(crate::platform::password_field::FixedFieldDetector(
+                Mutex::new(FieldObservation::unknown()),
+            )),
+            field_observation: FieldObservation::unknown(),
         }
     }
 
@@ -464,9 +482,13 @@ impl Session {
     }
 
     pub(crate) fn clear_context(&mut self) {
+        self.typed = TypedLog::new(self.typed.armed());
+        self.clear_predictions();
+    }
+
+    fn clear_predictions(&mut self) {
         self.current_gen = self.r#gen.fetch_add(1, Ordering::Relaxed) + 1;
         self.slot.0.lock().unwrap().pending = None;
-        self.typed = TypedLog::new(self.typed.armed());
         self.pending_ctx = None;
         self.pending_at = None;
         self.last_ctx = None;
@@ -478,7 +500,26 @@ impl Session {
         self.shown_out.clear();
     }
 
+    fn sync_field(&mut self) -> bool {
+        let observation = self.field.observation();
+        if observation.target != self.field_observation.target
+            || observation.generation != self.field_observation.generation
+            || observation.kind != self.field_observation.kind
+        {
+            self.clear_context();
+        }
+        self.field_observation = observation;
+        observation.kind == FieldKind::Password
+    }
+
+    fn word_policy(&self) -> WordPolicy {
+        WordPolicy::new(self.cfg.max_word_characters)
+    }
+
     pub fn note_log(&mut self, event: LogEvent, payload: &str) {
+        if self.sync_field() {
+            return;
+        }
         self.clear_original_suggestion();
         self.suggestion_just_accepted = false;
         self.typed.drop_last_accept();
@@ -530,6 +571,13 @@ impl Session {
     }
 
     pub fn request_from_buffer(&mut self, text: &str, cursor: usize) {
+        if self.sync_field() {
+            return;
+        }
+        if !self.word_policy().current_span(text, cursor) {
+            self.clear_predictions();
+            return;
+        }
         if self
             .original_suggestion
             .as_ref()
@@ -556,6 +604,9 @@ impl Session {
     }
 
     pub fn poll(&mut self) {
+        if self.sync_field() {
+            return;
+        }
         if self.pending_ctx.is_some() {
             let due = self
                 .pending_at
@@ -582,6 +633,10 @@ impl Session {
     }
 
     fn apply_candidates(&mut self, candidates: Vec<Candidate>) {
+        let generation = self.current_gen;
+        if self.sync_field() || generation != self.current_gen {
+            return;
+        }
         let prev = self
             .highlight
             .and_then(|i| self.candidates.get(i).map(|c| c.text.clone()));
@@ -601,6 +656,10 @@ impl Session {
                 },
             );
         }
+
+        let policy = self.word_policy();
+        self.candidates
+            .retain(|candidate| policy.suggestion(&candidate.text));
 
         if let Some(text) = prev
             && let Some(i) = self.candidates.iter().position(|c| c.text == text)
@@ -629,6 +688,9 @@ impl Session {
         let Some(ctx) = self.last_ctx.as_ref() else {
             return;
         };
+        if !self.word_policy().recordable(&ctx.prefix) {
+            return;
+        }
         let chips = self
             .candidates
             .iter()
@@ -644,6 +706,9 @@ impl Session {
     }
 
     pub fn take_shown(&mut self) -> Vec<ShownSuggestions> {
+        if self.sync_field() {
+            return Vec::new();
+        }
         std::mem::take(&mut self.shown_out)
     }
 
@@ -723,6 +788,9 @@ impl Session {
     }
 
     pub fn learn(&mut self, words: &[String]) {
+        if self.sync_field() {
+            return;
+        }
         if !self.backend.writes_user_cache() {
             return;
         }
@@ -730,15 +798,44 @@ impl Session {
         if !self.cfg.learn_on_accept && !self.cfg.learn_on_submit {
             return;
         }
-        let lower: Vec<String> = words
-            .iter()
-            .map(|w| super::context::normalize_word(w, self.cfg.normalize_nfc))
-            .filter(|w| !w.is_empty())
-            .collect();
+        let expected = self.field_observation;
+        let field = Arc::clone(&self.field);
         self.user
             .lock()
             .unwrap()
-            .learn_words(&self.current_app_type(), &lower);
+            .learn_words_if(&self.current_app_type(), words, || {
+                let observed = field.observation();
+                observed.kind != FieldKind::Password
+                    && observed.target == expected.target
+                    && observed.generation == expected.generation
+            });
+    }
+
+    pub(crate) fn learn_text(&mut self, text: &str) {
+        let words = text
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        self.learn(&words);
+    }
+
+    pub(crate) fn learn_accepted_word(&mut self, text: &str, cursor: usize, candidate: &str) {
+        if !self.word_policy().current_span(text, cursor) || !self.word_policy().learn(candidate) {
+            return;
+        }
+        let Some(context) = CompletionContext::from_buffer(text, cursor, &self.cfg) else {
+            return;
+        };
+        let before = &text[..context.token_range.start];
+        let mut words = before
+            .split_whitespace()
+            .rev()
+            .take(self.cfg.ngram.order.saturating_sub(1) as usize)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        words.reverse();
+        words.push(candidate.to_owned());
+        self.learn(&words);
     }
 
     pub fn tick(&mut self) {
@@ -747,6 +844,13 @@ impl Session {
     }
 
     pub fn take_accept(&mut self, index: Option<usize>) -> Option<AcceptOutcome> {
+        if self.sync_field()
+            || !self
+                .word_policy()
+                .current_span(self.typed_text(), self.typed_text().len())
+        {
+            return None;
+        }
         if !self.typed.armed() {
             return None;
         }
@@ -754,6 +858,9 @@ impl Session {
             Some(i) => self.accept_index(i).cloned(),
             None => self.highlighted().cloned(),
         }?;
+        if !self.word_policy().suggestion(&cand.text) {
+            return None;
+        }
         let mut ctx =
             CompletionContext::from_buffer(self.typed_text(), self.typed_text().len(), &self.cfg)?;
         ctx.app_type = self.current_app_type();
@@ -776,10 +883,8 @@ impl Session {
             if self.cfg.insert_space_on_accept {
                 inject.push(' ');
             }
-            let mut words = ctx.prev_words.clone();
-            words.push(ctx.token.clone());
             if self.cfg.learn_on_accept {
-                self.learn(&words);
+                self.learn_accepted_word(&ctx.prefix, ctx.prefix.len(), &ctx.token);
             }
             self.typed.set_last_accept(Some(inject.clone()), None);
             self.clear_highlight();
@@ -806,10 +911,8 @@ impl Session {
         if self.cfg.insert_space_on_accept && !inject.ends_with(' ') {
             inject.push(' ');
         }
-        let mut words = ctx.prev_words.clone();
-        words.push(cand.text.clone());
         if self.cfg.learn_on_accept {
-            self.learn(&words);
+            self.learn_accepted_word(&ctx.prefix, ctx.prefix.len(), &cand.text);
         }
         let restore_token = match via {
             AcceptVia::BackspaceReplace => Some(ctx.token.clone()),
@@ -975,6 +1078,9 @@ pub fn with_mut<R>(f: impl FnOnce(Option<&mut Session>) -> R) -> R {
         return f(None);
     };
     let mut guard = lock.lock().unwrap();
+    if let Some(session) = guard.as_mut() {
+        session.sync_field();
+    }
     f(guard.as_mut())
 }
 
@@ -1022,7 +1128,7 @@ mod tests {
     }
 
     fn session_with_fg(cfg: CompletionConfig, fg: Arc<dyn ForegroundExe>) -> Session {
-        let user = Arc::new(Mutex::new(UserCache::load(
+        let user = Arc::new(Mutex::new(UserCache::load_with_word_limit(
             &cfg.user_cache,
             std::path::PathBuf::from(format!(
                 "target/kosk-session-test-{}-{}.bin",
@@ -1032,6 +1138,7 @@ mod tests {
                     .unwrap()
                     .as_nanos()
             )),
+            cfg.max_word_characters,
         )));
         let mut dict = DictionaryEngine::embedded_demo(&cfg);
         dict.set_overlay(std::collections::HashMap::new(), Some(Arc::clone(&user)));
@@ -1075,6 +1182,179 @@ mod tests {
         .unwrap();
         session.poll();
         assert!(session.candidates().is_empty());
+    }
+
+    #[test]
+    fn all_candidate_sources_reject_nonwords() {
+        let mut session = session_with(CompletionConfig::default());
+        session.request_from_buffer("hel", 3);
+        for source in [
+            Source::Dictionary,
+            Source::UserCache,
+            Source::Ngram,
+            Source::CurrentWord,
+            Source::OriginalText,
+        ] {
+            session.apply_candidates(
+                ["hello!", "two words", "hunter2", "abcdefghijklmnopq"]
+                    .into_iter()
+                    .map(|text| Candidate {
+                        source,
+                        ..cand(text)
+                    })
+                    .collect(),
+            );
+            assert!(session.candidates().iter().all(|c| c.text == "hel"));
+        }
+    }
+
+    #[test]
+    fn raw_secret_span_suppresses_completion() {
+        let mut session = session_with(CompletionConfig::default());
+        session.request_from_buffer("hello!", 6);
+        assert!(session.pending_ctx.is_none());
+        session.request_from_buffer("foo_bar", 7);
+        assert!(session.pending_ctx.is_none());
+    }
+
+    #[test]
+    fn detected_password_clears_completion_and_blocks_capture_acceptance_and_learning() {
+        use crate::platform::password_field::{FieldTarget, FixedFieldDetector};
+        let field = Arc::new(FixedFieldDetector(Mutex::new(FieldObservation::unknown())));
+        let mut session = session_with(CompletionConfig::default());
+        session.field = field.clone();
+        session.note_log(LogEvent::Text, "hel");
+        session.request_from_buffer("hel", 3);
+        session.apply_candidates(vec![cand("hello")]);
+        session.highlight = Some(0);
+        session.restore_last_accept(("hello ".into(), "hel".into()));
+        session.arm_suggestion_just_accepted();
+        session.arm_eat_accept_space();
+        let generation = session.current_gen;
+        *field.0.lock().unwrap() = FieldObservation {
+            kind: FieldKind::Password,
+            target: FieldTarget {
+                window: Some(1),
+                element: 1,
+            },
+            generation: 1,
+            observed_at: Instant::now(),
+        };
+        session.note_log(LogEvent::Text, "secret");
+        session.request_from_buffer("secret", 6);
+        session.learn_text("secret");
+        assert!(session.take_accept(Some(0)).is_none());
+        assert!(session.typed_text().is_empty());
+        assert!(session.candidates().is_empty());
+        assert!(session.take_shown().is_empty());
+        assert!(session.snapshot_last_accept().is_none());
+        assert!(!session.pending_eat_space);
+        assert!(!session.suggestion_just_accepted());
+        assert!(session.armed());
+        assert!(!session.user.lock().unwrap().has_unigram("*", "secret"));
+        let (tx, rx) = mpsc::channel();
+        session.rx = rx;
+        tx.send(Batch {
+            r#gen: generation,
+            candidates: vec![cand("hello")],
+        })
+        .unwrap();
+        session.poll();
+        field.0.lock().unwrap().kind = FieldKind::Ordinary;
+        session.poll();
+        assert!(session.candidates().is_empty());
+        session.note_log(LogEvent::Text, "safe");
+        session.learn_text("safe");
+        assert_eq!(session.typed_text(), "safe");
+        assert!(session.user.lock().unwrap().has_unigram("*", "safe"));
+    }
+
+    #[test]
+    fn unknown_fields_learn_filtered_words_without_secret_fragments_or_bridged_pairs() {
+        let mut session = session_with(CompletionConfig::default());
+        session.learn_text("before Sunshine!42 after foo_bar final");
+        session.learn_accepted_word("before hunter2 hel", 18, "hello");
+        let cache = session.user.lock().unwrap();
+        for word in ["before", "after", "final", "hello"] {
+            assert!(cache.has_unigram("*", word), "{word}");
+        }
+        for word in ["sunshine", "42", "foo", "bar", "hunter2"] {
+            assert!(!cache.has_unigram("*", word), "{word}");
+        }
+        assert_eq!(cache.bigram("*", "before", "after"), 0.0);
+        assert_eq!(cache.bigram("*", "after", "final"), 0.0);
+        assert_eq!(cache.bigram("*", "before", "hello"), 0.0);
+    }
+
+    #[test]
+    fn rejected_previous_span_is_never_recorded_with_later_suggestions() {
+        let mut session = session_with(CompletionConfig::default());
+        let text = "hunter2 hel";
+        session
+            .request_now(CompletionContext::from_buffer(text, text.len(), &session.cfg).unwrap());
+        session.apply_candidates(vec![cand("hello")]);
+        assert!(session.take_shown().is_empty());
+    }
+
+    #[test]
+    fn same_window_focus_change_discards_history_and_predictions() {
+        use crate::platform::password_field::FixedFieldDetector;
+        let field = Arc::new(FixedFieldDetector(Mutex::new(FieldObservation::unknown())));
+        let mut session = session_with(CompletionConfig::default());
+        session.field = field.clone();
+        session.note_log(LogEvent::Text, "previous");
+        field.0.lock().unwrap().target.element += 1;
+        field.0.lock().unwrap().generation += 1;
+        session.note_log(LogEvent::Text, "next");
+        assert_eq!(session.typed_text(), "next");
+        assert!(session.pending_ctx.is_none());
+    }
+
+    #[test]
+    fn focus_change_during_result_application_discards_candidates() {
+        use crate::platform::password_field::FixedFieldDetector;
+        let field = Arc::new(FixedFieldDetector(Mutex::new(FieldObservation::unknown())));
+        let mut session = session_with(CompletionConfig::default());
+        session.field = field.clone();
+        session.request_now(CompletionContext::from_buffer("hel", 3, &session.cfg).unwrap());
+        field.0.lock().unwrap().target.element += 1;
+        session.apply_candidates(vec![cand("hello")]);
+        assert!(session.candidates().is_empty());
+    }
+
+    #[test]
+    fn replay_does_not_prune_the_personal_cache() {
+        struct Playback;
+        impl CompletionBackend for Playback {
+            fn suggest(&self, _: &CompletionContext, _: &Abort<'_>) -> Option<Vec<Candidate>> {
+                Some(Vec::new())
+            }
+            fn knows_word(&self, _: &CompletionContext) -> bool {
+                false
+            }
+            fn writes_user_cache(&self) -> bool {
+                false
+            }
+        }
+        let cfg = CompletionConfig::default();
+        let path =
+            std::env::temp_dir().join(format!("kosk-replay-cache-{}.bin", std::process::id()));
+        let mut cache = UserCache::load_with_word_limit(&cfg.user_cache, path.clone(), 64);
+        cache.learn_words("*", &["abcdefghijklmnopq".into()]);
+        let before = std::fs::read(&path).unwrap();
+        let mut cfg = cfg;
+        cfg.user_cache.path = path.clone();
+        let session = Session::spawn_with_backend(
+            Arc::new(Playback),
+            cfg,
+            None,
+            Arc::new(|| {}),
+            Arc::new(FixedForeground(None)),
+        )
+        .unwrap();
+        drop(session);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -1448,7 +1728,7 @@ mod tests {
     }
 
     #[test]
-    fn accepted_next_word_backspace_can_restore_empty_token() {
+    fn accepted_next_word_backspace_does_not_offer_empty_word() {
         let mut s = session_with(CompletionConfig::default());
         type_token(&mut s, "say ");
         s.candidates = vec![cand("hello")];
@@ -1458,29 +1738,24 @@ mod tests {
 
         s.note_accepted_suggestion_backspace();
         assert_eq!(s.typed_text(), "say hello");
-        let out = s.take_accept(Some(0)).unwrap();
-        apply_keyboard_accept(&mut s, &out);
-        assert_eq!(s.typed_text(), "say ");
+        assert!(s
+            .candidates()
+            .iter()
+            .all(|candidate| !candidate.text.is_empty()));
+        assert_eq!(s.typed_text(), "say hello");
     }
 
     #[test]
-    fn accepted_punctuation_suggestion_backspace_restores_whole_token() {
+    fn punctuation_candidates_cannot_be_accepted() {
         let mut s = session_with(CompletionConfig::default());
         type_token(&mut s, "eg");
         s.candidates = vec![cand("e.g.")];
-        let out = s.take_accept(Some(0)).unwrap();
-        apply_keyboard_accept(&mut s, &out);
-        s.arm_suggestion_just_accepted();
-
-        s.note_accepted_suggestion_backspace();
-        assert_eq!(s.typed_text(), "e.g.");
-        let out = s.take_accept(Some(0)).unwrap();
-        apply_keyboard_accept(&mut s, &out);
+        assert!(s.take_accept(Some(0)).is_none());
         assert_eq!(s.typed_text(), "eg");
     }
 
     #[test]
-    fn original_suggestion_replaces_punctuation_inside_text_input() {
+    fn punctuation_inside_text_input_suppresses_original_suggestion() {
         let mut s = session_with(CompletionConfig::default());
         let before = "say eg later";
         let original = CompletionContext::from_buffer(before, "say eg".len(), s.cfg()).unwrap();
@@ -1488,14 +1763,6 @@ mod tests {
         let cursor = "say e.g.".len();
         s.offer_original_suggestion(original, text, cursor);
 
-        let ctx = CompletionContext::from_buffer(text, cursor, s.cfg()).unwrap();
-        let candidate = s.accept_index(0).unwrap();
-        let range = s.suggestion_replacement_range(candidate, &ctx);
-        let (restored, cursor) = crate::completion::splice(text, range, &candidate.text, false);
-        assert_eq!(restored, before);
-        assert_eq!(cursor, "say eg".len());
-
-        s.request_from_buffer(text, cursor);
         assert!(s.candidates().is_empty());
     }
 

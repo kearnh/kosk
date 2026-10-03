@@ -458,8 +458,8 @@ impl KeyboardState {
             match key {
                 RawKey::Key('\n') | RawKey::Enigo(enigo::Key::Return) => {
                     if sess.cfg().learn_on_submit && sess.armed() {
-                        let words = crate::completion::tokens_in(sess.typed_text(), sess.cfg());
-                        sess.learn(&words);
+                        let text = sess.typed_text().to_owned();
+                        sess.learn_text(&text);
                     }
                     sess.note_log(crate::completion::LogEvent::Enter, "");
                 }

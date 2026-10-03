@@ -53,6 +53,12 @@ Suggestions can finish a word, correct a typo, or offer the next word. English s
 
 Press **L5** just after accepting a suggestion to delete one character and offer your original text as the first suggestion. Select it to restore that text.
 
+Suggestions contain one word, with internal apostrophes or hyphens allowed. Digits, other punctuation, and three repeated letters in a row are excluded. **Maximum word length** defaults to 16 characters and can be set from 1 to 64 in advanced suggestion settings, or with `max_word_characters` under `[completion]`. Lowering it removes longer remembered words and their pairs; raising it allows future learning without restoring removed entries.
+
+On Windows, detected password fields pause completion capture, suggestions, learning, and completion-prefix recording. Typing still works. Terminals and fields whose password status is unavailable retain filtered learning. Before splitting or lowercasing, KOSK rejects whole tokens containing digits or disallowed punctuation, unusual mixed case in tokens of eight or more characters, and hexadecimal tokens of 16 or more characters.
+
+These filters cannot identify ordinary-word passwords, passphrases, or secrets previously split or lowercased. Existing remembered words are pruned when identifiable; explicit key logs and raw controller recordings are unaffected.
+
 Hold the left button beside Steam and press X to turn suggestions on or off; on DualShock 4, hold Share and press Square. Change their appearance and behavior in **Settings → Options → Suggestions**. You can also choose whether KOSK remembers picked words and submitted lines. That memory stays on your computer under `%LOCALAPPDATA%\kosk`.
 
 Suggestions follow what you type through KOSK; they don't read text from your application. Moving the cursor or pasting can pause them because KOSK loses track of the text.

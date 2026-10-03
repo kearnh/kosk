@@ -185,6 +185,7 @@ impl TextInputState {
         if !cfg.enabled || !cfg.show_in_text_input {
             return false;
         }
+        self.refresh_completion();
         let Some(cand) = crate::completion::with_mut(|s| {
             let s = s?;
             if !s.armed() {
@@ -202,6 +203,8 @@ impl TextInputState {
         else {
             return false;
         };
+        let learning_text = self.text.clone();
+        let learning_cursor = self.cursor_pos;
         self.undo_accept = Some((self.text.clone(), self.cursor_pos));
         let original_text = cand.source == crate::completion::Source::OriginalText;
         let token_range = crate::completion::with_mut(|s| {
@@ -231,9 +234,7 @@ impl TextInputState {
                 }
 
                 if s.cfg().learn_on_accept && !original_text {
-                    let mut words = ctx.prev_words.clone();
-                    words.push(cand.text.clone());
-                    s.learn(&words);
+                    s.learn_accepted_word(&learning_text, learning_cursor, &cand.text);
                 }
                 s.clear_highlight();
 
@@ -312,8 +313,7 @@ impl TextInputState {
             if let Some(s) = s {
                 s.clear_suggestion_just_accepted();
                 if s.cfg().learn_on_submit {
-                    let words = crate::completion::tokens_in(&self.text, s.cfg());
-                    s.learn(&words);
+                    s.learn_text(&self.text);
                 }
             }
         });

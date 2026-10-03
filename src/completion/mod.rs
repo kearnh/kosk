@@ -13,6 +13,7 @@ mod session;
 pub mod settings;
 mod typed_log;
 mod user_cache;
+mod word_policy;
 
 pub use app_type::{validate_app_types, AppTypeMap, CATCH_ALL_TYPE};
 pub use apply::{is_case_insensitive_prefix, remainder, splice};

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+pub(crate) const DEFAULT_MAX_WORD_CHARACTERS: usize = 16;
+const MAX_CONFIGURABLE_WORD_CHARACTERS: usize = 64;
+
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Choice)]
 #[serde(rename_all = "lowercase")]
 pub enum CompletionBackendKind {
@@ -81,6 +84,17 @@ pub enum CurrentWordChip {
 #[config_section]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct CompletionConfig {
+    #[config(default = DEFAULT_MAX_WORD_CHARACTERS)]
+    #[serde(deserialize_with = "deserialize_word_limit")]
+    #[setting(
+        label = "Maximum word length",
+        explain = "Maximum characters in suggested and remembered words.",
+        range = 1..=64,
+        step = 1,
+        advanced
+    )]
+    pub max_word_characters: usize,
+
     /// `false` hides the suggestions. `true` keeps reserved slots so key
     /// centres do not jump when suggestions are empty or off.
     #[config(default = true)]
@@ -302,8 +316,8 @@ pub struct CompletionConfig {
     #[config(default = ",.!?;:".to_owned())]
     pub space_after: String,
 
-    /// Extra characters that count as inside a word (apostrophe, underscore).
-    #[config(default = "_'".to_owned())]
+    /// Apostrophes and hyphens that count as inside a completion word.
+    #[config(default = "'’‐‑-".to_owned())]
     pub extra_word_chars: String,
 
     /// App types: free names, exclusive exe basenames, optional wordlist TSV.
@@ -807,9 +821,43 @@ pub struct CompletionUserCacheConfig {
     pub max_bigrams: usize,
 }
 
+fn deserialize_word_limit<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<usize, D::Error> {
+    let limit = usize::deserialize(deserializer)?;
+    if !(1..=MAX_CONFIGURABLE_WORD_CHARACTERS).contains(&limit) {
+        return Err(serde::de::Error::custom(
+            "completion.max_word_characters must be between 1 and 64",
+        ));
+    }
+    Ok(limit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn word_limit_defaults_validates_and_round_trips() {
+        assert_eq!(
+            CompletionConfig::default().max_word_characters,
+            DEFAULT_MAX_WORD_CHARACTERS
+        );
+        for limit in [1, 16, 64] {
+            let parsed: CompletionConfig =
+                toml::from_str(&format!("max_word_characters = {limit}")).unwrap();
+            assert_eq!(parsed.max_word_characters, limit);
+            let saved = toml::to_string(&parsed).unwrap();
+            let restored: CompletionConfig = toml::from_str(&saved).unwrap();
+            assert_eq!(restored.max_word_characters, limit);
+        }
+        for limit in [0, 65] {
+            assert!(
+                toml::from_str::<CompletionConfig>(&format!("max_word_characters = {limit}"))
+                    .is_err()
+            );
+        }
+    }
 
     #[test]
     fn empty_table_deserializes_defaults() {

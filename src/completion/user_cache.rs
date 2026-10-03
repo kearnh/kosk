@@ -7,31 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use super::insert::is_inserted_punct_prefix;
 use super::settings::CompletionUserCacheConfig;
+use super::settings::DEFAULT_MAX_WORD_CHARACTERS;
+use super::word_policy::WordPolicy;
 
 const PERSIST_VERSION: u32 = 2;
-const MAX_LEARNED_WORD_CHARACTERS: usize = 24;
-const REJECTED_LETTER_RUN_LENGTH: usize = 3;
-
-fn is_learnable_word(word: &str) -> bool {
-    if word.is_empty() || word.chars().count() > MAX_LEARNED_WORD_CHARACTERS {
-        return false;
-    }
-
-    let mut previous = None;
-    let mut run_length = 0;
-    for letter in word.chars().flat_map(char::to_lowercase) {
-        run_length = if previous == Some(letter) {
-            run_length + 1
-        } else {
-            1
-        };
-        previous = Some(letter);
-        if letter.is_alphabetic() && run_length >= REJECTED_LETTER_RUN_LENGTH {
-            return false;
-        }
-    }
-    true
-}
 
 /// Phantom corpus mass. One user accept is `corpus_total / USER_PRIOR_MASS`
 /// dictionary counts (floored at 1).
@@ -73,14 +52,24 @@ pub struct UserCache {
     by_type: HashMap<String, TypeMaps>,
     cfg: CompletionUserCacheConfig,
     path: PathBuf,
+    policy: WordPolicy,
 }
 
 impl UserCache {
     pub fn load(cfg: &CompletionUserCacheConfig, path: PathBuf) -> Self {
+        Self::load_with_word_limit(cfg, path, DEFAULT_MAX_WORD_CHARACTERS)
+    }
+
+    pub fn load_with_word_limit(
+        cfg: &CompletionUserCacheConfig,
+        path: PathBuf,
+        max_characters: usize,
+    ) -> Self {
         let mut cache = Self {
             by_type: HashMap::new(),
             cfg: cfg.clone(),
             path,
+            policy: WordPolicy::new(max_characters),
         };
         if cfg.enabled {
             let _ = cache.read_disk();
@@ -99,8 +88,20 @@ impl UserCache {
         if persist.version != PERSIST_VERSION {
             anyhow::bail!("unsupported user cache version {}", persist.version);
         }
+        let mut pruned = false;
         for (ty, bucket) in persist.by_type {
+            pruned |= bucket
+                .unigrams
+                .iter()
+                .any(|(w, _, _)| !self.policy.learn(w))
+                || bucket
+                    .bigrams
+                    .iter()
+                    .any(|(a, b, _, _)| !self.policy.learn(a) || !self.policy.learn(b));
             self.insert_bucket(&ty, bucket, now);
+        }
+        if pruned {
+            self.persist()?;
         }
         Ok(())
     }
@@ -108,7 +109,7 @@ impl UserCache {
     fn insert_bucket(&mut self, ty: &str, bucket: PersistBucket, now: Instant) {
         let maps = self.by_type.entry(ty.to_string()).or_default();
         for (w, c, unix) in bucket.unigrams {
-            if !is_learnable_word(&w) {
+            if !self.policy.learn(&w) {
                 continue;
             }
             maps.unigrams.insert(
@@ -120,7 +121,7 @@ impl UserCache {
             );
         }
         for (a, b, c, unix) in bucket.bigrams {
-            if !is_learnable_word(&a) || !is_learnable_word(&b) {
+            if !self.policy.learn(&a) || !self.policy.learn(&b) {
                 continue;
             }
             maps.bigrams.insert(
@@ -142,23 +143,48 @@ impl UserCache {
     }
 
     pub fn learn_words(&mut self, ty: &str, words: &[String]) {
-        if !self.cfg.enabled || words.is_empty() {
+        self.learn_words_if(ty, words, || true);
+    }
+
+    pub(crate) fn learn_words_if(
+        &mut self,
+        ty: &str,
+        words: &[String],
+        mut permitted: impl FnMut() -> bool,
+    ) {
+        if !self.cfg.enabled || words.is_empty() || !permitted() {
             return;
         }
-        for w in words {
-            if !is_learnable_word(w) {
+        let original = self.by_type.get(ty).cloned();
+        let mut previous: Option<String> = None;
+        for word in words {
+            if !self.policy.learn(word) {
+                previous = None;
                 continue;
             }
-            self.bump_uni(ty, w);
-        }
-        for pair in words.windows(2) {
-            if !is_learnable_word(&pair[0]) || !is_learnable_word(&pair[1]) {
+            let word = super::context::normalize_word(word, true);
+            if !self.policy.learn(&word) {
+                previous = None;
                 continue;
             }
-            self.bump_bi(ty, &pair[0], &pair[1]);
+            self.bump_uni(ty, &word);
+            if let Some(previous) = previous {
+                self.bump_bi(ty, &previous, &word);
+            }
+            previous = Some(word);
         }
         self.trim(ty);
-        let _ = self.persist();
+        if matches!(self.persist_if(&mut permitted), Ok(true)) {
+            return;
+        }
+        match original {
+            Some(maps) => {
+                self.by_type.insert(ty.to_owned(), maps);
+            }
+            None => {
+                self.by_type.remove(ty);
+            }
+        }
     }
 
     fn bump_uni(&mut self, ty: &str, w: &str) {
@@ -251,8 +277,12 @@ impl UserCache {
     }
 
     pub fn persist(&mut self) -> Result<()> {
+        self.persist_if(&mut || true).map(|_| ())
+    }
+
+    fn persist_if(&mut self, permitted: &mut impl FnMut() -> bool) -> Result<bool> {
         if !self.cfg.enabled {
-            return Ok(());
+            return Ok(true);
         }
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).ok();
@@ -291,10 +321,17 @@ impl UserCache {
             by_type: types,
         };
         let bytes = postcard::to_stdvec(&persist).context("serialize user cache")?;
+        if !permitted() {
+            return Ok(false);
+        }
         let tmp = self.path.with_extension("bin.tmp");
         std::fs::write(&tmp, &bytes)?;
+        if !permitted() {
+            let _ = std::fs::remove_file(&tmp);
+            return Ok(false);
+        }
         std::fs::rename(&tmp, &self.path)?;
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -362,6 +399,79 @@ mod tests {
     }
 
     #[test]
+    fn raw_secret_spans_are_not_learned_or_bridged() {
+        let mut c = empty_cache("kosk-test-cache-secrets.bin");
+        for rejected in [
+            "Sunshine!42",
+            "hunter2",
+            "hello!",
+            "foo_bar",
+            "aBcDefGh",
+            "deadbeefdeadbeef",
+            "123456",
+            "two words",
+        ] {
+            c.learn_words(
+                CATCH_ALL_TYPE,
+                &["before".into(), rejected.into(), "after".into()],
+            );
+            assert!(!c.has_unigram(CATCH_ALL_TYPE, rejected), "{rejected}");
+            assert_eq!(c.bigram(CATCH_ALL_TYPE, "before", "after"), 0.0);
+        }
+    }
+
+    #[test]
+    fn default_word_limit_counts_normalized_unicode_characters() {
+        let mut c = empty_cache("kosk-test-cache-word-length.bin");
+        let boundary = "abcdefghijklmnop";
+        let oversized = "abcdefghijklmnopq";
+        c.learn_words(CATCH_ALL_TYPE, &[boundary.into(), oversized.into()]);
+        assert!(c.has_unigram(CATCH_ALL_TYPE, boundary));
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, oversized));
+    }
+
+    #[test]
+    fn revoked_learning_is_rolled_back_before_persistence() {
+        let path =
+            std::env::temp_dir().join(format!("kosk-cache-revoke-{}.bin", std::process::id()));
+        let cfg = CompletionUserCacheConfig::default();
+        let mut c = UserCache::load(&cfg, path.clone());
+        c.by_type.clear();
+        c.learn_words(CATCH_ALL_TYPE, &["safe".into()]);
+        let original = std::fs::read(&path).unwrap();
+        let mut calls = 0;
+        c.learn_words_if(CATCH_ALL_TYPE, &["secret".into()], || {
+            calls += 1;
+            calls < 3
+        });
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "secret"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        c.persist().unwrap();
+        let restored = UserCache::load(&cfg, path.clone());
+        assert!(!restored.has_unigram(CATCH_ALL_TYPE, "secret"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn lowering_and_raising_limit_prunes_persisted_words_and_pairs() {
+        let path =
+            std::env::temp_dir().join(format!("kosk-cache-limit-{}.bin", std::process::id()));
+        let cfg = CompletionUserCacheConfig::default();
+        let mut c = UserCache::load_with_word_limit(&cfg, path.clone(), 64);
+        c.by_type.clear();
+        c.learn_words(CATCH_ALL_TYPE, &["safe".into(), "abcdefghijklmnopq".into()]);
+        drop(c);
+        let c = UserCache::load_with_word_limit(&cfg, path.clone(), 16);
+        assert!(c.has_unigram(CATCH_ALL_TYPE, "safe"));
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "abcdefghijklmnopq"));
+        assert!(c.continuations(CATCH_ALL_TYPE, "safe").is_empty());
+        drop(c);
+        let c = UserCache::load_with_word_limit(&cfg, path.clone(), 64);
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "abcdefghijklmnopq"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn malformed_words_are_not_learned_or_bridged() {
         let mut c = empty_cache("kosk-test-cache-malformed.bin");
         for rejected in [
@@ -388,16 +498,18 @@ mod tests {
     #[test]
     fn word_filter_preserves_length_boundary_unicode_and_double_letters() {
         for word in [
-            "abcdefghijklmnopqrstuvwx",
+            "abcdefghijklmnop",
             "bookkeeper",
             "don't",
-            "111",
-            "你好".repeat(12).as_str(),
+            "你好".repeat(8).as_str(),
         ] {
-            assert!(is_learnable_word(word), "{word}");
+            assert!(
+                WordPolicy::new(DEFAULT_MAX_WORD_CHARACTERS).learn(word),
+                "{word}"
+            );
         }
-        assert!(!is_learnable_word(""));
-        assert!(!is_learnable_word(&"你好".repeat(13)));
+        assert!(!WordPolicy::new(DEFAULT_MAX_WORD_CHARACTERS).learn(""));
+        assert!(!WordPolicy::new(DEFAULT_MAX_WORD_CHARACTERS).learn(&"你好".repeat(9)));
     }
 
     #[test]

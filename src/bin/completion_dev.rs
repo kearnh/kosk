@@ -36,10 +36,13 @@ fn main() -> Result<()> {
     cfg.max_suggestions = args.max;
     cfg.suggest_next_word = true;
 
-    let dummy = Arc::new(std::sync::Mutex::new(kosk::completion::UserCache::load(
-        &cfg.user_cache,
-        std::path::PathBuf::from("target/completion-dev-cache.bin"),
-    )));
+    let dummy = Arc::new(std::sync::Mutex::new(
+        kosk::completion::UserCache::load_with_word_limit(
+            &cfg.user_cache,
+            std::path::PathBuf::from("target/completion-dev-cache.bin"),
+            cfg.max_word_characters,
+        ),
+    ));
     let extras = load_type_wordlists(&cfg, Some(std::path::Path::new(".")));
 
     let engine: Box<dyn CompletionBackend> = match args.backend.as_str() {
