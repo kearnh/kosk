@@ -12,3 +12,4 @@ data/completion/**/manifest.toml
 data/completion/**/count_2w.txt
 completion-cache.bin
 steam-library-kearnh.csv
+/.*/

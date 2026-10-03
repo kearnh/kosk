@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "kosk": {
-      "command": "cargo",
-      "args": ["run", "-q", "-p", "kosk-mcp"]
-    }
-  }
-}
