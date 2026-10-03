@@ -177,6 +177,9 @@ To update, quit KOSK, extract the new release into a new folder, and run its `ko
 
 To remove it, quit and delete the application folder. Delete `%LOCALAPPDATA%\kosk` too if you want to remove your settings, custom files, and learned words.
 
+The [completion cache tool](docs/completion-cache.md) exports learned words as JSON
+for inspection and editing with an editor or `jq`.
+
 ## AI development disclaimer
 
 I used AI to write KOSK. I've made every effort to understand the code rather than leave it as a black box, and I maintain [developer documentation](docs/developer/README.md) explaining its architecture. There will still be bugs.
