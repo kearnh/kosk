@@ -6,12 +6,16 @@ resolver = "3"
 name = "kosk"
 version = "0.1.0-alpha.1"
 license = "MIT"
+description = "Controller-operated on-screen keyboard"
 edition = "2024"
 default-run = "kosk"
 
 [[bin]]
 name = "sc2_test"
 path = "src/bin/sc2_test.rs"
+
+[build-dependencies]
+winresource = "0.1.31"
 
 [dependencies]
 anyhow = "1.0.104"

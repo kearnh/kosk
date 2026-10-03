@@ -1,6 +1,8 @@
 use std::process::Command;
 
 fn main() {
+    embed_windows_resources();
+
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/index");
 
@@ -18,6 +20,24 @@ fn main() {
 
     println!("cargo:rustc-env=GIT_COMMIT={commit}");
     println!("cargo:rustc-env=GIT_DIRTY={}", dirty);
+}
+
+fn embed_windows_resources() {
+    println!("cargo:rerun-if-changed=assets/kosk.ico");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+
+    winresource::WindowsResource::new()
+        .set_icon("assets/kosk.ico")
+        .set("FileDescription", env!("CARGO_PKG_DESCRIPTION"))
+        .set("ProductName", "KOSK")
+        .set("InternalName", "kosk")
+        .set("OriginalFilename", "kosk.exe")
+        .set("LegalCopyright", "Copyright (c) 2026 KOSK contributors")
+        .compile()
+        .expect("Could not compile Windows executable resources");
 }
 
 fn jj_stdout(args: &[&str]) -> Option<String> {
