@@ -61,9 +61,9 @@ These names are true or false while you hold the button. You can combine them wi
 | `completionActive` | word suggestions are on |
 | `suggestionJustAccepted` | a suggestion was just accepted and nothing has been typed since |
 | `modifier` | Shift, Ctrl, or Alt is sticky-on |
-| `modifier.shift` | Shift is sticky-on (`shift` is the same flag) |
-| `modifier.ctrl` | Ctrl is sticky-on (`ctrl` is the same flag) |
-| `modifier.alt` | Alt is sticky-on (`alt` is the same flag) |
+| `modifier.shift` | Shift is sticky-on |
+| `modifier.ctrl` | Ctrl is sticky-on |
+| `modifier.alt` | Alt is sticky-on |
 | `recording` | a tape is being recorded |
 | `replay` | a tape is playing |
 

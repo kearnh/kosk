@@ -29,13 +29,8 @@ impl RecordedSuggestions {
     }
 }
 
-/// `Some` for tape version >= 2, including a tape with no suggestion events.
-/// Older tapes stay on the live engine.
-pub fn playback_backend(tape: &Tape) -> Option<Arc<dyn CompletionBackend>> {
-    if tape.header.version < 2 {
-        return None;
-    }
-
+/// Serve recorded chips, including tapes with no suggestion events.
+pub fn playback_backend(tape: &Tape) -> Arc<dyn CompletionBackend> {
     let mut queues: HashMap<String, VecDeque<Vec<Candidate>>> = HashMap::new();
     for ev in &tape.events {
         let RecordEvent::Suggestions { prefix, chips, .. } = ev else {
@@ -47,9 +42,9 @@ pub fn playback_backend(tape: &Tape) -> Option<Arc<dyn CompletionBackend>> {
             .push_back(RecordedSuggestions::from_chips(chips));
     }
 
-    Some(Arc::new(RecordedSuggestions {
+    Arc::new(RecordedSuggestions {
         queues: Mutex::new(queues),
-    }))
+    })
 }
 
 impl CompletionBackend for RecordedSuggestions {
@@ -111,14 +106,23 @@ mod tests {
         }
     }
 
-    fn tape(version: u32, events: Vec<RecordEvent>) -> Tape {
+    fn tape(events: Vec<RecordEvent>) -> Tape {
         Tape {
             header: TapeHeader {
-                version,
+                version: crate::controller::record::CURRENT_TAPE_VERSION,
                 current_layout: "main".into(),
-                controller: None,
-                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
-                config_toml: (version >= 1).then(|| "event_debounce_ms = 1\n".into()),
+                controller: crate::controller::ControllerKind::Sc2,
+                scales: MappingScales {
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    sc2_pad_scale_x: 1.0,
+                    sc2_pad_scale_y: 1.0,
+                    sc2_stick_scale_x: 1.0,
+                    sc2_stick_scale_y: 1.0,
+                    ps4_stick_scale_x: 1.0,
+                    ps4_stick_scale_y: 1.0,
+                },
+                config_toml: "event_debounce_ms = 1\n".into(),
                 layouts: Vec::new(),
             },
             events,
@@ -126,28 +130,13 @@ mod tests {
     }
 
     #[test]
-    fn v1_tape_keeps_live_engine() {
-        let tape = tape(
-            1,
-            vec![suggestions(
-                "hel",
-                vec![chip("hello", false), chip("hel", true)],
-            )],
-        );
-        assert!(playback_backend(&tape).is_none());
-    }
-
-    #[test]
-    fn v2_serves_lists_in_order_per_prefix() {
-        let tape = tape(
-            2,
-            vec![
-                suggestions("hel", vec![chip("hello", false), chip("hel", true)]),
-                suggestions("hel", vec![chip("help", false)]),
-                suggestions("hello you", vec![chip("your", false)]),
-            ],
-        );
-        let backend = playback_backend(&tape).expect("v2 uses recorded suggestions");
+    fn serves_lists_in_order_per_prefix() {
+        let tape = tape(vec![
+            suggestions("hel", vec![chip("hello", false), chip("hel", true)]),
+            suggestions("hel", vec![chip("help", false)]),
+            suggestions("hello you", vec![chip("your", false)]),
+        ]);
+        let backend = playback_backend(&tape);
         assert!(!backend.writes_user_cache());
         assert!(backend.knows_word(&ctx("hel")));
 
@@ -181,8 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_with_no_suggestion_events_is_still_recorded() {
-        let backend = playback_backend(&tape(2, Vec::new())).expect("empty v2");
+    fn tape_without_suggestions_uses_recorded_backend() {
+        let backend = playback_backend(&tape(Vec::new()));
         let current = AtomicU64::new(1);
         let abort = Abort {
             mine: 1,

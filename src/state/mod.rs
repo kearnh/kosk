@@ -682,7 +682,7 @@ impl AppState {
         &mut self,
         header: &crate::controller::record::TapeHeader,
     ) -> Result<()> {
-        config::set_replay_aim_family(header.controller);
+        config::set_replay_aim_family(Some(header.controller));
         config::apply_recorded_tape_config(header)?;
         keyboard::with_mut(|kb| kb.install_recorded_layouts(header))
     }

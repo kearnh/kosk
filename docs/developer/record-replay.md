@@ -18,7 +18,7 @@ The session is a process-wide object. The controller thread calls `tap_input` on
 
 ## Tape header
 
-A file begins with the magic line `KOSKREC 1`. Version 3 (current) then includes:
+A file begins with the magic line `KOSKREC 1`. The supported tape format is version 3:
 
 - `version 3`
 - `current_layout` and the name of the layout that was active when recording started
@@ -27,7 +27,7 @@ A file begins with the magic line `KOSKREC 1`. Version 3 (current) then includes
 - a length-prefixed `config` blob: live config with a blacklist of keys stripped (see [config.md](config.md))
 - length-prefixed `layout` blobs, one per named layout, containing the TOML source
 
-Version 2 tapes have the same header as version 1 plus suggestion lines, and a four-float `scale` (`scale_x`, `scale_y`, and one stick range). That one range is applied to every aim profile, and playback uses Steam Controller 2. Version 1 tapes have that header and no suggestion lines. Version 0 tapes (no `version` line, no config blob) still parse. On replay, version 0 and 1 keep the process’s on-disk config, install layouts from the header, and keep the live completion engine. A version 2 or 3 tape does not store the dictionary or the user cache. `[completion]` stays off the config blob.
+Other tape versions are rejected. Tapes do not store the dictionary or user cache; `[completion]` stays off the config blob.
 
 The header exists so replay can reconstruct the keyboard the user saw: key sizes, stick scales, debounce milliseconds, and which layout was current. Window position, transparency, preferred controller, and the keys sink are intentionally not taken from the tape; those are operator settings.
 
@@ -49,7 +49,7 @@ Snapshots are the replay controller. Debounce and suggestion lines are not contr
 
 `ReplayDevice::open` reads `config::replay_tape_path()` (`--replay` wins over `[replay].file`). It parses the tape, sets a process-wide `playback_origin` instant, and yields snapshots in real time by sleeping until each event’s `t_us`.
 
-A process is either a normal keyboard or a playback for its whole lifetime. When playback starts and the tape is version 2 or newer, the completion session is created with `RecordedSuggestions` (`src/completion/recorded.rs`) instead of the ngram or dictionary engine. `suggest` returns the next recorded list for that prefix, or an empty list. It reports every token as a known word so the session does not add a second current-word chip. It does not write the user cache. The strip is drawn even when `[completion].enabled` is off. Chip columns, font, and the initial highlight still come from the live completion settings; bumpers on the tape move the highlight after that. Version 0 and 1 tapes keep the live engine.
+A process is either a normal keyboard or a playback for its whole lifetime. When playback starts, the completion session is created with `RecordedSuggestions` (`src/completion/recorded.rs`) instead of the ngram or dictionary engine. `suggest` returns the next recorded list for that prefix, or an empty list. It reports every token as a known word so the session does not add a second current-word chip. It does not write the user cache. The strip is drawn even when `[completion].enabled` is off. Chip columns, font, and the initial highlight still come from the live completion settings; bumpers on the tape move the highlight after that.
 
 `ReplayInput` implements `ControllerInput` from an `InputSnapshot`. `left_stick` and `right_stick` return the stored coordinates **without** applying `warp` or pad-origin stretch. Applying those again would double the mapping.
 
@@ -63,12 +63,10 @@ The keys log, if enabled, uses `playback_origin` for timestamps so a line’s mi
 
 **Replay does not inject the recorded keys log.** It re-runs the app. If you changed debounce code, replay of an old tape is a regression test, not a guaranteed duplicate of the original injects.
 
-**Version 0 and 1 tapes have no suggestion lines.** Replay of those files asks the live completion engine, so the chips can differ from the original session.
-
 **Highlight and strip geometry are not on the tape.** The selected chip starts from the live `preselect` setting, then follows recorded bumper presses. A different column count can clip chips the recording showed.
 
 **`toggleRecord` during replay is ignored.** You cannot nest recordings.
 
 ## Summary
 
-A `.krec` file is a header (layouts plus a stripped config) followed by a timestamped stream of stick/button snapshots, idle marks, layout changes, debounce traces, and the completion chips that were shown. Recording is a side session tapped from the HID thread, the event queue, and the completion session. Replay is a `ControllerInput` that sleeps to the original timeline and feeds those snapshots back into `AppState`, using stored stick values as already-mapped coordinates. A version 2 or newer playback serves the recorded chips from a completion backend and does not load the dictionary or the user cache.
+A `.krec` file is a header (layouts plus a stripped config) followed by a timestamped stream of stick/button snapshots, idle marks, layout changes, debounce traces, and the completion chips that were shown. Recording is a side session tapped from the HID thread, the event queue, and the completion session. Replay is a `ControllerInput` that sleeps to the original timeline and feeds those snapshots back into `AppState`, using stored stick values as already-mapped coordinates. Playback serves the recorded chips from a completion backend and does not load the dictionary or the user cache.

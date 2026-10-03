@@ -210,10 +210,7 @@ pub struct Config {
     )]
     renderer: Renderer,
 
-    /// Schema version of the user file. Missing counts as 0.
-    ///
-    /// The serde default stays 0 (unknown version); `Default` uses the current
-    /// version for the built-in base layer.
+    /// Schema version, filled from the current version when omitted.
     #[config(default = crate::config_overlay::CONFIG_VERSION)]
     #[serde(default)]
     pub config_version: i64,
@@ -831,7 +828,7 @@ static CLI_KEYS_LOG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static CLI_IGNORE_RECORDED_CONFIG: OnceLock<bool> = OnceLock::new();
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConfigSource {
-    /// `%LOCALAPPDATA%\kosk\config.toml`. Saves and migrations are written here.
+    /// `%LOCALAPPDATA%\kosk\config.toml`. Saves are written here.
     User,
     /// Path given on the command line. Never written, even if it is the user file.
     Explicit,
@@ -916,8 +913,6 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "transparent",
     "show_hide_shortcut",
     "start_hidden",
-    "keyboard_opacity",
-    "ui_opacity",
     "window_pos",
     "text_input",
     "completion",
@@ -939,7 +934,7 @@ pub fn tape_config_toml(cfg: &Config) -> Result<String> {
 
 /// Merge recorded config onto `live`. Blacklisted keys in the blob are ignored.
 pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
-    let recorded = crate::config_overlay::migrate_toml(recorded)?;
+    let recorded = crate::config_overlay::normalize_toml(recorded)?;
     let mut overlay: toml::Value =
         toml::from_str(&recorded).context("parse recorded config TOML")?;
     if let Some(table) = overlay.as_table_mut() {
@@ -968,25 +963,12 @@ pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
     Ok(config)
 }
 
-/// Install recorded config into the process (no-op for v0 / `--ignore-recorded-config`).
+/// Install recorded config unless `--ignore-recorded-config` is set.
 pub fn apply_recorded_tape_config(header: &crate::controller::record::TapeHeader) -> Result<()> {
-    if header.version == 0 {
-        let path = CONFIG_PATH
-            .get()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "config.toml".into());
-        eprintln!(
-            "warn: recording has no version (treated as 0); using config from {path} (tape has no recorded config)"
-        );
-        return Ok(());
-    }
     if ignore_recorded_config() {
         return Ok(());
     }
-    let toml = header
-        .config_toml
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("version {} recording is missing config", header.version))?;
+    let toml = &header.config_toml;
     let disk = DISK_CONFIG
         .get()
         .ok_or_else(|| anyhow::anyhow!("config is not initialized"))?
@@ -1196,8 +1178,8 @@ fn load_config() -> Result<Vec<PathBuf>> {
     Ok(publish_loaded_config(new_config, map_rel, config_path))
 }
 
-/// Read `config_path`, migrate it, and merge it onto the built-in defaults.
-/// A migration is written back only for [`ConfigSource::User`].
+/// Read `config_path` and merge it onto the built-in defaults.
+/// An omitted schema version is written back only for [`ConfigSource::User`].
 /// Returns the config and the `controller_map` file name, if any.
 fn read_merged_config(
     config_path: &Path,
@@ -1208,23 +1190,22 @@ fn read_merged_config(
     let mut user_doc = user_text
         .parse::<toml_edit::DocumentMut>()
         .context("Could not parse config TOML")?;
-    match crate::config_overlay::migrate_document(&mut user_doc)? {
-        crate::config_overlay::MigrateOutcome::Newer => {
+    match crate::config_overlay::normalize_document(&mut user_doc)? {
+        crate::config_overlay::ConfigVersionOutcome::Newer => {
             crate::user_notify::notify(crate::user_notify::Notice::newer_settings(
                 crate::config_overlay::file_version(&user_doc),
             ));
         }
-        crate::config_overlay::MigrateOutcome::Migrated if source == ConfigSource::User => {
+        crate::config_overlay::ConfigVersionOutcome::Stamped if source == ConfigSource::User => {
             fs::write(config_path, user_doc.to_string())
                 .with_context(|| format!("Could not write {}", config_path.display()))?;
         }
-        crate::config_overlay::MigrateOutcome::Migrated
-        | crate::config_overlay::MigrateOutcome::Unchanged => {}
+        crate::config_overlay::ConfigVersionOutcome::Stamped
+        | crate::config_overlay::ConfigVersionOutcome::Unchanged => {}
     }
 
-    let mut user_value: toml::Value =
+    let user_value: toml::Value =
         toml::from_str(&user_doc.to_string()).context("Could not parse config TOML")?;
-    normalize_legacy_theme_config(&mut user_value, config_path)?;
     let mut merged: toml::Value =
         toml::Value::try_from(Config::default()).context("built-in config")?;
     if source == ConfigSource::User {
@@ -1264,67 +1245,6 @@ fn read_merged_config(
     }
     config.theme_catalog = Arc::new(catalog);
     Ok((config, map_rel))
-}
-
-fn normalize_legacy_theme_config(user: &mut toml::Value, config_path: &Path) -> Result<()> {
-    let Some(themes) = user.get("themes").and_then(toml::Value::as_table) else {
-        return Ok(());
-    };
-    let mut files = Vec::with_capacity(themes.len());
-    for (name, path) in themes {
-        let path = path
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("theme path for {name:?} must be a string"))?;
-        files.push((name.clone(), path.to_owned()));
-    }
-    files.sort_by(|left, right| left.0.cmp(&right.0));
-
-    if let Some(active) = user.get("active_theme").and_then(toml::Value::as_str)
-        && let Some((_, file)) = files.iter().find(|(name, _)| name == active)
-    {
-        let path = Path::new(file);
-        let path = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            config_path.parent().unwrap_or(Path::new("")).join(path)
-        };
-        let fallback_name = || {
-            let stem = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("Theme")
-                .replace(['-', '_'], " ");
-            stem.split_whitespace()
-                .map(|word| {
-                    let mut chars = word.chars();
-                    chars
-                        .next()
-                        .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        let name = fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
-            .and_then(|mut theme| {
-                theme
-                    .as_table_mut()
-                    .and_then(|table| table.remove("name"))
-                    .and_then(|value| value.as_str().map(str::to_owned))
-            })
-            .unwrap_or_else(fallback_name);
-        user["active_theme"] = toml::Value::String(name);
-    }
-
-    user["themes"] = toml::Value::Array(
-        files
-            .into_iter()
-            .map(|(_, path)| toml::Value::String(path))
-            .collect(),
-    );
-    Ok(())
 }
 
 fn controller_map_rel(user: &toml::Value) -> Option<String> {
@@ -2363,7 +2283,7 @@ mod tests {
     fn overlay_save_keeps_only_differences() {
         let dir = temp_dir("overlay-save");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(&config_path, "config_version = 3\n").unwrap();
 
         let mut cfg = builtin_merged_config().unwrap();
         cfg.sc2.pad.warp = 0.7;
@@ -2391,7 +2311,7 @@ mod tests {
     fn overlay_save_unbinds_default_mapping() {
         let dir = temp_dir("overlay-unbind");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(&config_path, "config_version = 3\n").unwrap();
 
         let mut cfg = builtin_merged_config().unwrap();
         cfg.controller_map
@@ -2410,7 +2330,7 @@ mod tests {
     }
 
     #[test]
-    fn recorded_config_migrates_before_overlay() {
+    fn recorded_config_gets_current_version_before_overlay() {
         let live = sample_cfg();
         let merged = overlay_tape_config(&live, "event_debounce_ms = 12\n").unwrap();
         assert_eq!(merged.event_debounce_ms, 12);
@@ -2425,7 +2345,7 @@ mod tests {
             &config_path,
             "\
 # keep-me\n\
-config_version = 1\n\
+config_version = 3\n\
 controller_map = \"custom.toml\"\n\
 future_key = true\n\
 ",
@@ -2484,7 +2404,7 @@ enabled = false\n\
     fn explicit_save_does_not_touch_the_file() {
         let dir = temp_dir("explicit-save");
         let config_path = dir.join("config.toml");
-        let original = "config_version = 0\nkeyboard_opacity = 0.2\n";
+        let original = "config_version = 3\nkeyboard_opacity = 0.2\n";
         fs::write(&config_path, original).unwrap();
         let cfg = builtin_merged_config().unwrap();
         write_for_source(
@@ -2515,7 +2435,7 @@ enabled = false\n\
         )
         .unwrap();
         let external_path = toml::Value::String(external.to_string_lossy().into_owned());
-        fs::write(&config_path, format!("config_version = 2\nactive_theme = 'Amber'\nthemes = ['amber.toml', {external_path}]\n")).unwrap();
+        fs::write(&config_path, format!("config_version = 3\nactive_theme = 'Amber'\nthemes = ['amber.toml', {external_path}]\n")).unwrap();
         let (mut cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(cfg.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(
@@ -2547,7 +2467,7 @@ enabled = false\n\
     fn window_opacity_comes_from_the_selected_theme_for_each_mode() {
         let dir = temp_dir("theme-opacity");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 2\nactive_theme = 'Custom'\nkeyboard_opacity = 0.1\nui_opacity = 0.1\nthemes = ['theme.toml']\n").unwrap();
+        fs::write(&config_path, "config_version = 3\nactive_theme = 'Custom'\nkeyboard_opacity = 0.1\nui_opacity = 0.1\nthemes = ['theme.toml']\n").unwrap();
         fs::write(
             dir.join("theme.toml"),
             "name = 'Custom'\nbackground_color = [20, 40, 60, 128]\nkeyboard_opacity = 0.5\nui_opacity = 0.25",
@@ -2637,7 +2557,7 @@ enabled = false\n\
         let theme_path = dir.join("theme.toml");
         fs::write(
             &config_path,
-            "config_version = 2\nactive_theme = 'Custom'\nthemes = ['theme.toml']\n",
+            "config_version = 3\nactive_theme = 'Custom'\nthemes = ['theme.toml']\n",
         )
         .unwrap();
         fs::write(
@@ -2690,7 +2610,7 @@ enabled = false\n\
         ] {
             fs::write(
                 &config_path,
-                format!("config_version = 2\nscale_x = 37.0\n{body}\n"),
+                format!("config_version = 3\nscale_x = 37.0\n{body}\n"),
             )
             .unwrap();
             let (loaded, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
@@ -2817,7 +2737,7 @@ enabled = false\n\
         let encoded_path = toml::Value::String(theme_path.to_string_lossy().into_owned());
         fs::write(
             &config_path,
-            format!("config_version = 2\nactive_theme = 'Custom'\nthemes = [{encoded_path}]\n"),
+            format!("config_version = 3\nactive_theme = 'Custom'\nthemes = [{encoded_path}]\n"),
         )
         .unwrap();
         fs::write(
@@ -2940,10 +2860,10 @@ enabled = false\n\
     }
 
     #[test]
-    fn explicit_load_does_not_write_migration() {
-        let dir = temp_dir("explicit-migrate");
+    fn explicit_load_does_not_write_version() {
+        let dir = temp_dir("explicit-version");
         let config_path = dir.join("config.toml");
-        let original = "keyboard_opacity = 0.2\n";
+        let original = "scale_x = 37.0\n";
         fs::write(&config_path, original).unwrap();
         let (cfg, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
         assert_eq!(cfg.config_version, crate::config_overlay::CONFIG_VERSION);
@@ -2951,24 +2871,32 @@ enabled = false\n\
     }
 
     #[test]
-    fn user_load_writes_migration() {
-        let dir = temp_dir("user-migrate");
+    fn user_load_writes_version() {
+        let dir = temp_dir("user-version");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "keyboard_opacity = 0.2\n").unwrap();
+        fs::write(&config_path, "scale_x = 37.0\n").unwrap();
         read_merged_config(&config_path, ConfigSource::User).unwrap();
         let text = fs::read_to_string(&config_path).unwrap();
         assert_eq!(
             crate::config_overlay::file_version(&text.parse().unwrap()),
             crate::config_overlay::CONFIG_VERSION
         );
-        assert!(text.contains("keyboard_opacity = 0.2"), "{text}");
+        assert!(text.contains("scale_x = 37.0"), "{text}");
+    }
+
+    #[test]
+    fn obsolete_theme_table_is_rejected() {
+        let dir = temp_dir("obsolete-theme-table");
+        let config_path = dir.join("config.toml");
+        fs::write(&config_path, "[themes]\nCustom = 'theme.toml'\n").unwrap();
+        assert!(read_merged_config(&config_path, ConfigSource::Explicit).is_err());
     }
 
     #[test]
     fn explicit_config_uses_only_mappings_beside_it() {
         let dir = temp_dir("explicit-mappings");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(&config_path, "config_version = 3\n").unwrap();
         fs::write(
             dir.join("mappings.toml"),
             "[Keyboard]\n\"faceTop\" = \"toggleCtrl\"\n",
@@ -2984,7 +2912,7 @@ enabled = false\n\
 
         let other = temp_dir("explicit-no-mappings");
         let other_path = other.join("config.toml");
-        fs::write(&other_path, "config_version = 1\n").unwrap();
+        fs::write(&other_path, "config_version = 3\n").unwrap();
         let (cfg, _) = read_merged_config(&other_path, ConfigSource::Explicit).unwrap();
         assert_eq!(
             cfg.controller_map[&StateId::Keyboard][&face_top],
@@ -3024,7 +2952,7 @@ enabled = false\n\
     fn tips_flag_round_trips() {
         let dir = temp_dir("tips-flag");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(&config_path, "config_version = 3\n").unwrap();
         let (cfg, _) = read_merged_config(&config_path, ConfigSource::User).unwrap();
         assert!(!cfg.tips.completion_next_word_setup_shown);
 
@@ -3089,9 +3017,10 @@ enabled = false\n\
     #[test]
     fn user_can_turn_default_stick_cursors_off() {
         let mut merged: toml::Value = toml::Value::try_from(Config::default()).unwrap();
-        let migrated =
-            crate::config_overlay::migrate_toml("[debug]\nshow_stick_cursors = false\n").unwrap();
-        let over: toml::Value = toml::from_str(&migrated).unwrap();
+        let normalized =
+            crate::config_overlay::normalize_toml("[stick_pad_cursors]\nenabled = false\n")
+                .unwrap();
+        let over: toml::Value = toml::from_str(&normalized).unwrap();
         crate::config_overlay::merge_toml(&mut merged, &over);
         let mappings: toml::Value =
             toml::from_str(crate::config_overlay::builtin_mappings_toml()).unwrap();
@@ -3107,7 +3036,7 @@ enabled = false\n\
     fn stepped_float_keeps_two_decimals_through_save() {
         let dir = temp_dir("float-precision");
         let config_path = dir.join("config.toml");
-        fs::write(&config_path, "config_version = 1\n").unwrap();
+        fs::write(&config_path, "config_version = 3\n").unwrap();
 
         let mut cfg = builtin_merged_config().unwrap();
         cfg.completion.ngram.lambda_trigram = 0.35;

@@ -787,7 +787,7 @@ impl KeyboardState {
         Ok(TapeHeader {
             version: crate::controller::record::CURRENT_TAPE_VERSION,
             current_layout: self.current_layout.clone(),
-            controller: Some(family),
+            controller: family,
             scales: MappingScales {
                 scale_x: cfg.scale_x,
                 scale_y: cfg.scale_y,
@@ -798,7 +798,7 @@ impl KeyboardState {
                 ps4_stick_scale_x: cfg.ps4.stick.scale_x,
                 ps4_stick_scale_y: cfg.ps4.stick.scale_y,
             },
-            config_toml: Some(config::tape_config_toml(&cfg)?),
+            config_toml: config::tape_config_toml(&cfg)?,
             layouts,
         })
     }

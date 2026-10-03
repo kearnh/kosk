@@ -86,8 +86,7 @@ impl Default for LabelCache {
     }
 }
 
-/// One-shot expand (tests / callers that do not keep a cache).
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn expand(template: &str, font_size: f32, color: Color32) -> WidgetText {
     LabelCache::new().get(template, font_size, color)
 }

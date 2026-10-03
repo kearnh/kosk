@@ -10,7 +10,7 @@ That singleton is also why saving has to be careful. `Config` holds the expanded
 
 ## Command line
 
-`config::init` uses clap. The first positional argument is an optional path to a user TOML file. When it is omitted, kosk uses `%LOCALAPPDATA%\kosk\config.toml`, creating that file with `config_version = 1` if it does not exist. A path on the command line is also applied on top of the built-in defaults, and a migration is not written back to that path.
+`config::init` uses clap. The first positional argument is an optional path to a user TOML file. When it is omitted, kosk uses `%LOCALAPPDATA%\kosk\config.toml`, creating that file with `config_version = 3` if it does not exist. A path on the command line is also applied on top of the built-in defaults, and that file is not written back.
 
 Optional flags:
 
@@ -29,7 +29,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 
 - **`layouts`** maps layout names to file paths. A layout named `main` is required. `start_layout` must name an entry in that map.
 - **`preferred_controller`** is an ordered list of families (`sc2`, `ps4`, `replay`). Omitted families are appended in built-in order. An empty list means Steam Controller 2, then DualShock 4.
-- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). Theme `keyboard_opacity` sets clear/panel alpha on Keyboard and TextInput; theme `ui_opacity` applies to Settings/Mappings/SelectKey/SelectLayout. Both multiply the theme background alpha when `transparent = true`; their defaults are `0.7` and `1.0`, respectively. `Config::window_visuals` resolves the current mode's appearance for the binary. Move Window is a see-through ghost. Former opacity keys in config are ignored. See [themes](../themes.md).
+- **`transparent`**, **`window_pos`**, **`scale_x` / `scale_y`** control the overlay. Position values are documented in [window-position.md](window-position.md). Theme `keyboard_opacity` sets clear/panel alpha on Keyboard and TextInput; theme `ui_opacity` applies to Settings/Mappings/SelectKey/SelectLayout. Both multiply the theme background alpha when `transparent = true`; their defaults are `0.7` and `1.0`, respectively. `Config::window_visuals` resolves the current mode's appearance for the binary. Move Window is a see-through ghost. See [themes](../themes.md).
 - **`event_debounce_ms`** and **`event_debounce_repeat_ms`** are consumed by the event queue ([event-debounce.md](event-debounce.md)).
 - **`controller_map`** is either an inline table or a string path to another TOML file. When no path is given, the default file name is `mappings.toml`.
 - **`[sc2]`** and **`[ps4]`** describe device feel, not bindings: trigger thresholds, pad-origin mapping, and haptics. Button-to-action mapping is `controller_map`; these tables only change how the hardware feels under your thumbs.
@@ -49,7 +49,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 - **`record_file`** is a path template containing exactly one `%`, which becomes a three-digit index when recording starts.
 - **`[replay]`** supplies a default tape path when `preferred_controller` starts with `replay` and `--replay` was not passed.
 - **`[key_sink]`** chooses Enigo injection or a log file.
-- **`[stick_pad_cursors]`** controls typing cursors on the Overlay settings page: `enabled`, `radius` (screen points), `appearance` (`solid`, `fade`, or `ring`), `opacity` (0–1 for outline and fill together), `ring_thickness` (screen points), and `ring_fill_opacity` (0–1 additional fill multiplier). `left_color`, `right_color`, `left_fill_color`, and `right_fill_color` accept RGBA arrays in TOML. Omitted fill colors use their corresponding outline colors. Defaults are enabled, radius 8, solid, opacity 1, thickness 2, fill opacity 0.2, green left and blue right. Fade decreases opacity from the center to a transparent edge; ring uses a translucent fill. Config version 3 migrates `debug.show_stick_cursors` to `stick_pad_cursors.enabled`, preserving an explicit new value.
+- **`[stick_pad_cursors]`** controls typing cursors on the Overlay settings page: `enabled`, `radius` (screen points), `appearance` (`solid`, `fade`, or `ring`), `opacity` (0–1 for outline and fill together), `ring_thickness` (screen points), and `ring_fill_opacity` (0–1 additional fill multiplier). `left_color`, `right_color`, `left_fill_color`, and `right_fill_color` accept RGBA arrays in TOML. Omitted fill colors use their corresponding outline colors. Defaults are enabled, radius 8, solid, opacity 1, thickness 2, fill opacity 0.2, green left and blue right. Fade decreases opacity from the center to a transparent edge; ring uses a translucent fill.
 - **`[debug]`** holds diagnostic flags for hitboxes, stick bounds, and reach overlays.
 - **`[text_input]`** styles the single-line field in text-input mode.
 - **`[completion]`** prediction backends, chip UI, typed-log latch, ngram weights, typo knobs, user cache. Type lives in `src/completion/settings.rs`. Relative model paths resolve against the config directory. See [completion.md](completion.md), including [developer setup for next-word tables](completion.md#building-english-next-word-tables).
@@ -57,7 +57,7 @@ The deserialized struct is the source of truth after a successful load. Fields t
 Themes can override each cursor appearance field in `[stick_pad_cursors]`;
 fields omitted by the theme use config values. `enabled` stays in config.
 
-The built-in defaults come from `Config::default()`, and `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. A missing value counts as 0. On load, ordered migrations bring it up to the version this binary understands, and the result is written back only for the implicit user path. A newer `config_version` refuses to start. Recorded config in a tape runs the same migrations before it is merged.
+The built-in defaults come from `Config::default()`, and `mappings.toml`, `old_sc.toml`, and `old_sc_symbols.toml` are built into the binary. The user file stores only values that differ from those defaults. Tables merge key by key. A scalar or array in the user file replaces the default. `config_version` is the schema this user file was written for. An omitted version uses the current schema, version 3, and is written back only for the implicit user path. Explicit older versions are rejected. Newer versions load unchanged with a notice; unknown settings are ignored. Recorded config follows the same version checks.
 
 Saving writes a changed value into the user file and deletes a key whose value again matches the default. Bindings work the same way in the user `mappings.toml`: a changed binding is written, a removed default binding is `"none"`, and a binding that matches the default is removed. `"none"` is not an action.
 
@@ -89,7 +89,7 @@ When a recording’s config overlay is active, `save` copies `window_pos` onto t
 
 ## Recorded config
 
-Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `stick_pad_cursors`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` migrates the blob, then merges it onto the on-disk config, ignoring those keys and legacy opacity keys if they appear in the blob. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
+Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `stick_pad_cursors`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` checks the schema version, then merges the blob onto the on-disk config, ignoring those operator settings. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
 
 `DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
 

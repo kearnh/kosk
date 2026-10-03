@@ -222,9 +222,8 @@ respectively; both accept finite values from `0.0` to `1.0`. They multiply
 uses an opaque background. Move mode keeps its transparent window and themed
 ghost outline.
 
-Opacity belongs in the theme file. The former `config.toml` opacity keys are
-ignored, and the opacity rows have been removed from Settings. Old Steam
-Controller uses full opacity so its dark gaps retain the screenshot's contrast.
+Opacity belongs in the theme file. Old Steam Controller uses full opacity
+so its dark gaps retain the screenshot's contrast.
 
 ## Stick/pad cursors
 

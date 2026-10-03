@@ -5,7 +5,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::app_type::CATCH_ALL_TYPE;
 use super::insert::is_inserted_punct_prefix;
 use super::settings::CompletionUserCacheConfig;
 
@@ -24,19 +23,13 @@ pub(crate) fn mixed_count(dict_count: f32, user_count: f32, corpus_total: f32) -
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistV1 {
-    unigrams: Vec<(String, f32, u64)>,
-    bigrams: Vec<(String, String, f32, u64)>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistBucket {
     unigrams: Vec<(String, f32, u64)>,
     bigrams: Vec<(String, String, f32, u64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct PersistV2 {
+struct Persist {
     version: u32,
     by_type: Vec<(String, PersistBucket)>,
 }
@@ -79,23 +72,13 @@ impl UserCache {
         let bytes =
             std::fs::read(&self.path).with_context(|| format!("read {}", self.path.display()))?;
         let now = Instant::now();
-        if let Ok(v2) = postcard::from_bytes::<PersistV2>(&bytes)
-            && v2.version == PERSIST_VERSION
-        {
-            for (ty, bucket) in v2.by_type {
-                self.insert_bucket(&ty, bucket, now);
-            }
-            return Ok(());
+        let persist: Persist = postcard::from_bytes(&bytes).context("parse user cache")?;
+        if persist.version != PERSIST_VERSION {
+            anyhow::bail!("unsupported user cache version {}", persist.version);
         }
-        let v1: PersistV1 = postcard::from_bytes(&bytes).context("parse user cache")?;
-        self.insert_bucket(
-            CATCH_ALL_TYPE,
-            PersistBucket {
-                unigrams: v1.unigrams,
-                bigrams: v1.bigrams,
-            },
-            now,
-        );
+        for (ty, bucket) in persist.by_type {
+            self.insert_bucket(&ty, bucket, now);
+        }
         Ok(())
     }
 
@@ -268,7 +251,7 @@ impl UserCache {
                 )
             })
             .collect();
-        let persist = PersistV2 {
+        let persist = Persist {
             version: PERSIST_VERSION,
             by_type: types,
         };
@@ -325,6 +308,7 @@ pub fn resolve_cache_path(config_dir: Option<&Path>, rel: &Path) -> std::path::P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::completion::app_type::CATCH_ALL_TYPE;
     use crate::completion::settings::CompletionUserCacheConfig;
 
     fn empty_cache(name: &str) -> UserCache {
@@ -413,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn persist_round_trip_and_v1_migrate() {
+    fn persist_round_trip() {
         let path = std::env::temp_dir().join(format!(
             "kosk-cache-rt-{}-{}.bin",
             std::process::id(),
@@ -431,23 +415,35 @@ mod tests {
         let c = UserCache::load(&CompletionUserCacheConfig::default(), path.clone());
         assert_eq!(c.unigram("browser", "hello"), 1.0);
         let _ = std::fs::remove_file(&path);
+    }
 
-        let v1 = PersistV1 {
+    #[test]
+    fn obsolete_cache_formats_are_rejected() {
+        let obsolete = PersistBucket {
             unigrams: vec![("old".into(), 4.0, 0)],
             bigrams: vec![],
         };
-        let bytes = postcard::to_stdvec(&v1).unwrap();
-        let v1_path = std::env::temp_dir().join(format!(
-            "kosk-cache-v1-{}-{}.bin",
+        let bytes = postcard::to_stdvec(&obsolete).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "kosk-cache-obsolete-{}-{}.bin",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
-        std::fs::write(&v1_path, bytes).unwrap();
-        let c = UserCache::load(&CompletionUserCacheConfig::default(), v1_path.clone());
-        assert!(c.has_unigram(CATCH_ALL_TYPE, "old"));
-        let _ = std::fs::remove_file(&v1_path);
+        std::fs::write(&path, bytes).unwrap();
+        let mut c = UserCache::load(&CompletionUserCacheConfig::default(), path.clone());
+        assert!(c.read_disk().is_err());
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "old"));
+
+        let unsupported = Persist {
+            version: PERSIST_VERSION + 1,
+            by_type: vec![(CATCH_ALL_TYPE.into(), obsolete)],
+        };
+        std::fs::write(&path, postcard::to_stdvec(&unsupported).unwrap()).unwrap();
+        assert!(c.read_disk().is_err());
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "old"));
+        let _ = std::fs::remove_file(&path);
     }
 }

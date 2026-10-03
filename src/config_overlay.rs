@@ -61,130 +61,37 @@ pub(crate) fn file_version(doc: &toml_edit::DocumentMut) -> i64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MigrateOutcome {
+pub(crate) enum ConfigVersionOutcome {
     Unchanged,
-    Migrated,
+    Stamped,
     /// File was written by a newer kosk. Loaded as-is.
     Newer,
 }
 
-fn migrate_0_to_1(doc: &mut toml_edit::DocumentMut) {
-    doc[CONFIG_VERSION_KEY] = toml_edit::value(1_i64);
-}
-
-const AIM_KEY_MOVES: &[(&str, &str)] = &[
-    ("stick_scale_x", "scale_x"),
-    ("stick_scale_y", "scale_y"),
-    ("stick_warp", "warp"),
-    ("stick_select_sticky", "select_sticky"),
-    ("stick_select_lock_ms", "select_lock_ms"),
-];
-
-const AIM_PROFILES: &[(&str, &str)] = &[("sc2", "pad"), ("sc2", "stick"), ("ps4", "stick")];
-
-fn migrate_1_to_2(doc: &mut toml_edit::DocumentMut) {
-    for (old, new) in AIM_KEY_MOVES {
-        let Some(value) = doc.get(old).cloned() else {
-            continue;
-        };
-        for (family, profile) in AIM_PROFILES {
-            insert_aim_key(doc, family, profile, new, value.clone());
-        }
-        doc.remove(old);
+/// Stamp an unversioned document; reject unsupported older schemas.
+pub(crate) fn normalize_document(doc: &mut toml_edit::DocumentMut) -> Result<ConfigVersionOutcome> {
+    if doc.get(CONFIG_VERSION_KEY).is_none() {
+        doc[CONFIG_VERSION_KEY] = toml_edit::value(CONFIG_VERSION);
+        return Ok(ConfigVersionOutcome::Stamped);
     }
-}
 
-fn insert_aim_key(
-    doc: &mut toml_edit::DocumentMut,
-    family: &str,
-    profile: &str,
-    key: &str,
-    value: toml_edit::Item,
-) {
-    let root = doc.as_table_mut();
-    if !root.get(family).is_some_and(|item| item.is_table()) {
-        root.insert(family, toml_edit::Item::Table(toml_edit::Table::new()));
-    }
-    let family_table = root
-        .get_mut(family)
-        .and_then(|item| item.as_table_mut())
-        .expect("controller table");
-    if !family_table
-        .get(profile)
-        .is_some_and(|item| item.is_table())
-    {
-        family_table.insert(profile, toml_edit::Item::Table(toml_edit::Table::new()));
-    }
-    let profile_table = family_table
-        .get_mut(profile)
-        .and_then(|item| item.as_table_mut())
-        .expect("aim profile table");
-    if !profile_table.contains_key(key) {
-        profile_table.insert(key, value);
-    }
-}
-
-fn migrate_2_to_3(doc: &mut toml_edit::DocumentMut) {
-    let Some(value) = doc
-        .get_mut("debug")
-        .and_then(toml_edit::Item::as_table_like_mut)
-        .and_then(|table| table.remove("show_stick_cursors"))
-    else {
-        return;
-    };
-
-    if doc.get("stick_pad_cursors").is_none() {
-        doc["stick_pad_cursors"] = toml_edit::Item::Table(toml_edit::Table::new());
-    }
-    if let Some(table) = doc["stick_pad_cursors"].as_table_like_mut()
-        && !table.contains_key("enabled")
-    {
-        table.insert("enabled", value);
-    }
-}
-
-const MIGRATIONS: &[fn(&mut toml_edit::DocumentMut)] =
-    &[migrate_0_to_1, migrate_1_to_2, migrate_2_to_3];
-
-/// Raise `doc` to [`CONFIG_VERSION`]. A newer file is left unchanged.
-pub(crate) fn migrate_document(doc: &mut toml_edit::DocumentMut) -> Result<MigrateOutcome> {
-    const _: () = assert!(MIGRATIONS.len() as i64 == CONFIG_VERSION);
-    apply_migrations(doc, MIGRATIONS, CONFIG_VERSION)
-}
-
-fn apply_migrations(
-    doc: &mut toml_edit::DocumentMut,
-    steps: &[fn(&mut toml_edit::DocumentMut)],
-    target: i64,
-) -> Result<MigrateOutcome> {
     let version = file_version(doc);
-    if version > target {
-        return Ok(MigrateOutcome::Newer);
+    if version > CONFIG_VERSION {
+        return Ok(ConfigVersionOutcome::Newer);
     }
-    if version == target {
-        return Ok(MigrateOutcome::Unchanged);
+    if version != CONFIG_VERSION {
+        bail!("unsupported config_version {version} (expected {CONFIG_VERSION})");
     }
-    if version < 0 {
-        bail!("config_version {version} is invalid");
-    }
-    let from = version as usize;
-    if from > steps.len() {
-        bail!("no migration from config_version {version}");
-    }
-    for step in &steps[from..] {
-        step(doc);
-    }
-    doc[CONFIG_VERSION_KEY] = toml_edit::value(target);
-    Ok(MigrateOutcome::Migrated)
+    Ok(ConfigVersionOutcome::Unchanged)
 }
 
-/// Run migrations on a config blob (a user file or a recording). Does not write.
+/// Normalize a config blob without writing a file.
 /// A newer blob is returned unchanged and posts a one-time notice.
-pub(crate) fn migrate_toml(text: &str) -> Result<String> {
+pub(crate) fn normalize_toml(text: &str) -> Result<String> {
     let mut doc = text
         .parse::<toml_edit::DocumentMut>()
-        .context("parse config for migration")?;
-    if migrate_document(&mut doc)? == MigrateOutcome::Newer {
+        .context("parse config")?;
+    if normalize_document(&mut doc)? == ConfigVersionOutcome::Newer {
         crate::user_notify::notify(crate::user_notify::Notice::newer_settings(file_version(
             &doc,
         )));
@@ -412,16 +319,16 @@ mod tests {
     }
 
     #[test]
-    fn version_zero_becomes_one() {
-        let mut doc = "keyboard_opacity = 0.7\n"
+    fn unversioned_document_gets_current_version() {
+        let mut doc = "scale_x = 37.0\n"
             .parse::<toml_edit::DocumentMut>()
             .unwrap();
         assert_eq!(
-            migrate_document(&mut doc).unwrap(),
-            MigrateOutcome::Migrated
+            normalize_document(&mut doc).unwrap(),
+            ConfigVersionOutcome::Stamped
         );
         assert_eq!(file_version(&doc), CONFIG_VERSION);
-        assert!(doc.to_string().contains("keyboard_opacity"));
+        assert!(doc.to_string().contains("scale_x"));
     }
 
     #[test]
@@ -429,77 +336,22 @@ mod tests {
         let mut doc = "config_version = 99\nunknown = true\n"
             .parse::<toml_edit::DocumentMut>()
             .unwrap();
-        assert_eq!(migrate_document(&mut doc).unwrap(), MigrateOutcome::Newer);
+        assert_eq!(
+            normalize_document(&mut doc).unwrap(),
+            ConfigVersionOutcome::Newer
+        );
         assert_eq!(file_version(&doc), 99);
         assert!(doc.to_string().contains("unknown"));
     }
 
     #[test]
-    fn cursor_toggle_moves_out_of_debug_without_overriding_new_setting() {
-        for (new_setting, expected) in
-            [("", false), ("[stick_pad_cursors]\nenabled = true\n", true)]
-        {
-            let mut doc = format!("config_version = 2\n{new_setting}[debug]\nshow_stick_cursors = false\nshow_hitboxes = true\n")
-                .parse::<toml_edit::DocumentMut>().unwrap();
-            migrate_document(&mut doc).unwrap();
-            assert_eq!(
-                doc["stick_pad_cursors"]["enabled"].as_bool(),
-                Some(expected)
-            );
-            assert_eq!(doc["debug"]["show_hitboxes"].as_bool(), Some(true));
-            assert!(doc["debug"].get("show_stick_cursors").is_none());
-            assert_eq!(
-                migrate_document(&mut doc).unwrap(),
-                MigrateOutcome::Unchanged
-            );
+    fn obsolete_config_versions_are_rejected() {
+        for version in 0..CONFIG_VERSION {
+            let mut doc = format!("config_version = {version}\n")
+                .parse::<toml_edit::DocumentMut>()
+                .unwrap();
+            assert!(normalize_document(&mut doc).is_err(), "{version}");
         }
-    }
-
-    #[test]
-    fn two_steps_run_in_order() {
-        fn step0(doc: &mut toml_edit::DocumentMut) {
-            doc["first"] = toml_edit::value(1_i64);
-        }
-        fn step1(doc: &mut toml_edit::DocumentMut) {
-            doc["second"] = toml_edit::value(2_i64);
-        }
-        let mut doc = "keyboard_opacity = 0.7\n"
-            .parse::<toml_edit::DocumentMut>()
-            .unwrap();
-        assert_eq!(
-            apply_migrations(&mut doc, &[step0, step1], 2).unwrap(),
-            MigrateOutcome::Migrated
-        );
-        assert_eq!(doc["first"].as_integer(), Some(1));
-        assert_eq!(doc["second"].as_integer(), Some(2));
-        assert_eq!(file_version(&doc), 2);
-        assert!(doc.to_string().contains("keyboard_opacity"));
-    }
-
-    #[test]
-    fn aim_keys_copy_into_each_profile() {
-        let mut doc = "\
-config_version = 1
-stick_scale_x = 4.2
-stick_warp = 0.5
-[sc2.stick]
-scale_x = 9.0
-"
-        .parse::<toml_edit::DocumentMut>()
-        .unwrap();
-        assert_eq!(
-            migrate_document(&mut doc).unwrap(),
-            MigrateOutcome::Migrated
-        );
-        assert_eq!(file_version(&doc), CONFIG_VERSION);
-        assert!(doc.get("stick_scale_x").is_none());
-        assert!(doc.get("stick_warp").is_none());
-        assert_eq!(doc["sc2"]["pad"]["scale_x"].as_float(), Some(4.2));
-        assert_eq!(doc["sc2"]["pad"]["warp"].as_float(), Some(0.5));
-        assert_eq!(doc["sc2"]["stick"]["scale_x"].as_float(), Some(9.0));
-        assert_eq!(doc["sc2"]["stick"]["warp"].as_float(), Some(0.5));
-        assert_eq!(doc["ps4"]["stick"]["scale_x"].as_float(), Some(4.2));
-        assert_eq!(doc["ps4"]["stick"]["warp"].as_float(), Some(0.5));
     }
 
     #[test]

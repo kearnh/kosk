@@ -82,9 +82,9 @@ struct DisplayRule {
     text: String,
     #[serde(default)]
     when: Option<WhenExpr>,
-    #[serde(default, alias = "button_colour")]
+    #[serde(default)]
     button_color: Option<RgbaColor>,
-    #[serde(default, alias = "text_colour")]
+    #[serde(default)]
     text_color: Option<RgbaColor>,
 }
 
@@ -283,7 +283,6 @@ pub struct KeyboardRow {
     pub indent: UnscaledPixelUnitX,
     #[serde(default = "default_row_height_unit")]
     pub height: UnscaledPixelUnitY,
-    #[serde(alias = "keys")]
     pub items: Vec<RowItem>,
 }
 
@@ -1735,12 +1734,12 @@ items = [{ key = "a" }]
     }
 
     #[test]
-    fn display_colour_aliases_and_first_match() {
+    fn display_colors_and_first_match() {
         let key: KeyButton = toml::from_str(
             r#"
             key = "a"
             display = [
-                { text = "A", when = "shift && recording", button_colour = [1, 2, 3], text_colour = [4, 5, 6, 7] },
+                { text = "A", when = "modifier.shift && recording", button_color = [1, 2, 3], text_color = [4, 5, 6, 7] },
                 { text = "rec", when = "recording" },
                 { text = "a" },
             ]
@@ -1792,7 +1791,7 @@ items = [{ key = "a" }]
     }
 
     #[test]
-    fn items_default_to_key_and_keys_alias() {
+    fn items_default_to_key() {
         let items: KeyboardLayoutFile = toml::from_str(
             r#"
 [[rows]]
@@ -1807,17 +1806,22 @@ width = 0.5
         .unwrap();
         assert!(matches!(items.rows[0].items[0], RowItem::Key(_)));
         assert!(matches!(items.rows[0].items[1], RowItem::Battery(_)));
+    }
 
-        let alias: KeyboardLayoutFile = toml::from_str(
-            r#"
-[[rows]]
-indent = 0.0
-[[rows.keys]]
-key = "b"
-"#,
+    #[test]
+    fn obsolete_layout_fields_are_not_used() {
+        let key: KeyButton = toml::from_str(
+            "key = 'a'\ndisplay = [{ text = 'A', button_colour = [1, 2, 3], text_colour = [4, 5, 6] }]",
         )
         .unwrap();
-        assert!(matches!(alias.rows[0].items[0], RowItem::Key(_)));
+        let appearance = key.appearance(&DisplayContext::default());
+        assert!(appearance.button_color.is_none());
+        assert!(appearance.text_color.is_none());
+
+        assert!(toml::from_str::<KeyboardLayoutFile>(
+            "[[rows]]\nindent = 0.0\n[[rows.keys]]\nkey = 'a'\n"
+        )
+        .is_err());
     }
 
     #[test]

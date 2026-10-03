@@ -113,51 +113,15 @@ fn parse_typed<A: Action + Clone + 'static>(state: StateId, name: &str) -> Optio
     action.as_ref().as_any().downcast_ref::<A>().cloned()
 }
 
-fn expand_or_accept(state: StateId, name: &str) -> Option<(&'static str, &'static str)> {
-    match name {
-        "sendKeyUnderLeftStickOrAcceptSuggestion" => {
-            Some(("acceptSuggestion", "sendKeyUnderLeftStick"))
-        }
-        "sendKeyUnderRightStickOrAcceptSuggestion" => {
-            Some(("acceptSuggestion", "sendKeyUnderRightStick"))
-        }
-        "enterOrAcceptSuggestion" => {
-            let otherwise = match state {
-                StateId::Keyboard => "sendKey.enter",
-                StateId::TextInput => "submit",
-                _ => return None,
-            };
-            Some(("acceptSuggestion", otherwise))
-        }
-        _ => None,
-    }
-}
-
 fn compile_mapping_value<A: Action + Clone + 'static>(
     state: StateId,
     value: &MappingValue,
     parse: fn(StateId, &str) -> Option<A>,
 ) -> Result<Option<BindingTarget<A>>, String> {
-    if let MappingValue::Action(name) = value {
-        if name == crate::config::UNBIND_ACTION {
-            return Ok(None);
-        }
-        if let Some((when_action, otherwise)) = expand_or_accept(state, name) {
-            return compile_rules::<A>(
-                state,
-                &[
-                    MappingRule {
-                        action: when_action.to_owned(),
-                        when: Some("suggestionSelected".to_owned()),
-                    },
-                    MappingRule {
-                        action: otherwise.to_owned(),
-                        when: None,
-                    },
-                ],
-                parse,
-            );
-        }
+    if let MappingValue::Action(name) = value
+        && name == crate::config::UNBIND_ACTION
+    {
+        return Ok(None);
     }
 
     let rules = value.rules()?;
@@ -238,5 +202,35 @@ where
             "{kind} action '{variant}' does not take a '.' payload"
         )),
         (v, None) => serde_plain::from_str(v).map_err(|e: serde_plain::Error| anyhow::anyhow!(e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn obsolete_compound_actions_are_not_compiled() {
+        for (state, name) in [
+            (StateId::Keyboard, "sendKeyUnderLeftStickOrAcceptSuggestion"),
+            (
+                StateId::Keyboard,
+                "sendKeyUnderRightStickOrAcceptSuggestion",
+            ),
+            (StateId::Keyboard, "enterOrAcceptSuggestion"),
+            (StateId::TextInput, "enterOrAcceptSuggestion"),
+        ] {
+            let value = MappingValue::from_action(name);
+            let target = if state == StateId::Keyboard {
+                compile_mapping_value(state, &value, parse_typed::<KeyboardAction>)
+                    .unwrap()
+                    .is_some()
+            } else {
+                compile_mapping_value(state, &value, parse_typed::<TextInputAction>)
+                    .unwrap()
+                    .is_some()
+            };
+            assert!(!target, "{state:?}: {name}");
+        }
     }
 }

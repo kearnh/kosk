@@ -929,17 +929,16 @@ fn rebuild_locked(g: &mut Option<Session>) -> Result<()> {
                 .with_context(|| format!("open replay {}", path.display()))?,
         )
         .with_context(|| format!("parse {}", path.display()))?;
-        if let Some(backend) = super::recorded::playback_backend(&tape) {
-            let session = Session::spawn_with_backend(
-                backend,
-                cfg.completion.clone(),
-                dir.as_deref(),
-                current_notify(),
-                Arc::new(OsForeground),
-            )?;
-            *g = Some(session);
-            return Ok(());
-        }
+        let backend = super::recorded::playback_backend(&tape);
+        let session = Session::spawn_with_backend(
+            backend,
+            cfg.completion.clone(),
+            dir.as_deref(),
+            current_notify(),
+            Arc::new(OsForeground),
+        )?;
+        *g = Some(session);
+        return Ok(());
     }
     if !cfg.completion.enabled {
         *g = None;

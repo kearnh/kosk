@@ -216,7 +216,7 @@ mod tests {
         let groups = groups(&theme);
         let plain = key("key = 'q'");
         let layout = key(
-            "key = 'q'\ndisplay = [{text = 'Q', when = 'shift', button_color = [7, 8, 9, 255], text_color = [10, 11, 12, 255]}]",
+            "key = 'q'\ndisplay = [{text = 'Q', when = 'modifier.shift', button_color = [7, 8, 9, 255], text_color = [10, 11, 12, 255]}]",
         );
         let ctx = DisplayContext {
             shift: true,

@@ -148,11 +148,20 @@ mod tests {
     fn sample_tape() -> Tape {
         Tape {
             header: TapeHeader {
-                version: 0,
+                version: crate::controller::record::CURRENT_TAPE_VERSION,
                 current_layout: "main".into(),
-                controller: None,
-                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
-                config_toml: None,
+                controller: crate::controller::ControllerKind::Sc2,
+                scales: MappingScales {
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    sc2_pad_scale_x: 1.0,
+                    sc2_pad_scale_y: 1.0,
+                    sc2_stick_scale_x: 1.0,
+                    sc2_stick_scale_y: 1.0,
+                    ps4_stick_scale_x: 1.0,
+                    ps4_stick_scale_y: 1.0,
+                },
+                config_toml: "event_debounce_ms = 1\n".into(),
                 layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
             },
             events: vec![

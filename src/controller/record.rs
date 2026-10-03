@@ -34,32 +34,14 @@ pub struct MappingScales {
     pub ps4_stick_scale_y: f32,
 }
 
-impl MappingScales {
-    /// One range for every profile. Tapes older than version 3 store only this.
-    pub fn legacy(scale_x: f32, scale_y: f32, stick_x: f32, stick_y: f32) -> Self {
-        Self {
-            scale_x,
-            scale_y,
-            sc2_pad_scale_x: stick_x,
-            sc2_pad_scale_y: stick_y,
-            sc2_stick_scale_x: stick_x,
-            sc2_stick_scale_y: stick_y,
-            ps4_stick_scale_x: stick_x,
-            ps4_stick_scale_y: stick_y,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct TapeHeader {
-    /// Missing `version` line in the file is 0.
     pub version: u32,
     pub current_layout: String,
-    /// `None` on tapes older than version 3. Playback treats that as SC2.
-    pub controller: Option<ControllerKind>,
+    pub controller: ControllerKind,
     pub scales: MappingScales,
-    /// Recorded config TOML (version >= 1). Blacklisted keys already stripped.
-    pub config_toml: Option<String>,
+    /// Recorded config TOML with operator settings stripped.
+    pub config_toml: String,
     /// `(name, toml source)` sorted by name when encoded.
     pub layouts: Vec<(String, String)>,
 }
@@ -367,56 +349,35 @@ fn write_len_prefixed_blob(
 }
 
 pub fn encode_header(header: &TapeHeader) -> Result<Vec<u8>> {
-    if header.version > CURRENT_TAPE_VERSION {
+    if header.version != CURRENT_TAPE_VERSION {
         bail!(
-            "cannot write recording version {} (max {CURRENT_TAPE_VERSION})",
+            "cannot write recording version {} (expected {CURRENT_TAPE_VERSION})",
             header.version
         );
-    }
-    if header.version == 0 && header.config_toml.is_some() {
-        bail!("version 0 recordings must not include a config blob");
-    }
-    if header.version >= 1 && header.config_toml.is_none() {
-        bail!("version {} recording is missing config", header.version);
     }
 
     let mut out = Vec::new();
     writeln!(out, "{TAPE_MAGIC}")?;
-    if header.version != 0 {
-        writeln!(out, "version {}", header.version)?;
-    }
+    writeln!(out, "version {}", header.version)?;
     writeln!(out, "current_layout {}", header.current_layout)?;
-    if header.version >= 3 {
-        let family = match header.controller {
-            Some(ControllerKind::Ps4) => "ps4",
-            Some(ControllerKind::Sc2) | Some(ControllerKind::Replay) | None => "sc2",
-        };
-        writeln!(out, "controller {family}")?;
-        writeln!(
-            out,
-            "scale {} {} {} {} {} {} {} {}",
-            header.scales.scale_x,
-            header.scales.scale_y,
-            header.scales.sc2_pad_scale_x,
-            header.scales.sc2_pad_scale_y,
-            header.scales.sc2_stick_scale_x,
-            header.scales.sc2_stick_scale_y,
-            header.scales.ps4_stick_scale_x,
-            header.scales.ps4_stick_scale_y
-        )?;
-    } else {
-        writeln!(
-            out,
-            "scale {} {} {} {}",
-            header.scales.scale_x,
-            header.scales.scale_y,
-            header.scales.sc2_stick_scale_x,
-            header.scales.sc2_stick_scale_y
-        )?;
-    }
-    if let Some(toml) = &header.config_toml {
-        write_len_prefixed_blob(&mut out, "config", None, toml)?;
-    }
+    let family = match header.controller {
+        ControllerKind::Ps4 => "ps4",
+        ControllerKind::Sc2 | ControllerKind::Replay => "sc2",
+    };
+    writeln!(out, "controller {family}")?;
+    writeln!(
+        out,
+        "scale {} {} {} {} {} {} {} {}",
+        header.scales.scale_x,
+        header.scales.scale_y,
+        header.scales.sc2_pad_scale_x,
+        header.scales.sc2_pad_scale_y,
+        header.scales.sc2_stick_scale_x,
+        header.scales.sc2_stick_scale_y,
+        header.scales.ps4_stick_scale_x,
+        header.scales.ps4_stick_scale_y
+    )?;
+    write_len_prefixed_blob(&mut out, "config", None, &header.config_toml)?;
     let mut layouts = header.layouts.clone();
     layouts.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, toml) in &layouts {
@@ -639,44 +600,35 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
 
     line.clear();
     reader.read_line(&mut line)?;
-    let trimmed = line.trim();
-    let (version, current_layout) = if let Some(vs) = trimmed.strip_prefix("version ") {
-        let version: u32 = vs
-            .parse()
-            .with_context(|| format!("recording version '{vs}'"))?;
-        if version > CURRENT_TAPE_VERSION {
-            bail!("unsupported recording version {version} (max {CURRENT_TAPE_VERSION})");
-        }
-        line.clear();
-        reader.read_line(&mut line)?;
-        let current_layout = line
-            .trim()
-            .strip_prefix("current_layout ")
-            .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
-            .to_string();
-        (version, current_layout)
-    } else {
-        let current_layout = trimmed
-            .strip_prefix("current_layout ")
-            .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
-            .to_string();
-        (0, current_layout)
-    };
+    let vs = line
+        .trim()
+        .strip_prefix("version ")
+        .ok_or_else(|| anyhow::anyhow!("missing recording version"))?;
+    let version: u32 = vs
+        .parse()
+        .with_context(|| format!("recording version '{vs}'"))?;
+    if version != CURRENT_TAPE_VERSION {
+        bail!("unsupported recording version {version} (expected {CURRENT_TAPE_VERSION})");
+    }
 
-    let controller = if version >= 3 {
-        line.clear();
-        reader.read_line(&mut line)?;
-        let name = line
-            .trim()
-            .strip_prefix("controller ")
-            .ok_or_else(|| anyhow::anyhow!("missing controller"))?;
-        Some(match name {
-            "sc2" => ControllerKind::Sc2,
-            "ps4" => ControllerKind::Ps4,
-            other => bail!("unknown recording controller '{other}'"),
-        })
-    } else {
-        None
+    line.clear();
+    reader.read_line(&mut line)?;
+    let current_layout = line
+        .trim()
+        .strip_prefix("current_layout ")
+        .ok_or_else(|| anyhow::anyhow!("missing current_layout"))?
+        .to_string();
+
+    line.clear();
+    reader.read_line(&mut line)?;
+    let name = line
+        .trim()
+        .strip_prefix("controller ")
+        .ok_or_else(|| anyhow::anyhow!("missing controller"))?;
+    let controller = match name {
+        "sc2" => ControllerKind::Sc2,
+        "ps4" => ControllerKind::Ps4,
+        other => bail!("unknown recording controller '{other}'"),
     };
 
     line.clear();
@@ -694,45 +646,33 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("scale_y"))?
         .parse()?;
-    let scales = if version >= 3 {
-        MappingScales {
-            scale_x,
-            scale_y,
-            sc2_pad_scale_x: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_x"))?
-                .parse()?,
-            sc2_pad_scale_y: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_y"))?
-                .parse()?,
-            sc2_stick_scale_x: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_x"))?
-                .parse()?,
-            sc2_stick_scale_y: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_y"))?
-                .parse()?,
-            ps4_stick_scale_x: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_x"))?
-                .parse()?,
-            ps4_stick_scale_y: sp
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_y"))?
-                .parse()?,
-        }
-    } else {
-        let stick_x = sp
+    let scales = MappingScales {
+        scale_x,
+        scale_y,
+        sc2_pad_scale_x: sp
             .next()
-            .ok_or_else(|| anyhow::anyhow!("stick_scale_x"))?
-            .parse()?;
-        let stick_y = sp
+            .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_x"))?
+            .parse()?,
+        sc2_pad_scale_y: sp
             .next()
-            .ok_or_else(|| anyhow::anyhow!("stick_scale_y"))?
-            .parse()?;
-        MappingScales::legacy(scale_x, scale_y, stick_x, stick_y)
+            .ok_or_else(|| anyhow::anyhow!("sc2_pad_scale_y"))?
+            .parse()?,
+        sc2_stick_scale_x: sp
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_x"))?
+            .parse()?,
+        sc2_stick_scale_y: sp
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("sc2_stick_scale_y"))?
+            .parse()?,
+        ps4_stick_scale_x: sp
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_x"))?
+            .parse()?,
+        ps4_stick_scale_y: sp
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("ps4_stick_scale_y"))?
+            .parse()?,
     };
 
     let mut layouts = Vec::new();
@@ -748,9 +688,6 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
             continue;
         }
         if let Some(len_s) = trimmed.strip_prefix("config ") {
-            if version == 0 {
-                bail!("version 0 recordings must not include a config blob");
-            }
             if config_toml.is_some() {
                 bail!("duplicate config blob");
             }
@@ -767,9 +704,8 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
             layouts.push((name.to_string(), toml));
             continue;
         }
-        if version >= 1 && config_toml.is_none() {
-            bail!("version {version} recording is missing config");
-        }
+        let config_toml =
+            config_toml.ok_or_else(|| anyhow::anyhow!("recording is missing config"))?;
         let mut events = vec![parse_event_line(trimmed)?];
         for l in reader.lines() {
             let l = l?;
@@ -791,9 +727,7 @@ pub fn parse_tape(reader: impl Read) -> Result<Tape> {
         });
     }
 
-    if version >= 1 && config_toml.is_none() {
-        bail!("version {version} recording is missing config");
-    }
+    let config_toml = config_toml.ok_or_else(|| anyhow::anyhow!("recording is missing config"))?;
     Ok(Tape {
         header: TapeHeader {
             version,
@@ -985,11 +919,20 @@ mod tests {
 
     fn sample_header() -> TapeHeader {
         TapeHeader {
-            version: 0,
+            version: CURRENT_TAPE_VERSION,
             current_layout: "main".into(),
-            controller: None,
-            scales: MappingScales::legacy(30.0, 32.0, 3.0, 2.5),
-            config_toml: None,
+            controller: ControllerKind::Sc2,
+            scales: MappingScales {
+                scale_x: 30.0,
+                scale_y: 32.0,
+                sc2_pad_scale_x: 3.0,
+                sc2_pad_scale_y: 2.5,
+                sc2_stick_scale_x: 3.0,
+                sc2_stick_scale_y: 2.5,
+                ps4_stick_scale_x: 3.0,
+                ps4_stick_scale_y: 2.5,
+            },
+            config_toml: "event_debounce_ms = 123\n".into(),
             layouts: vec![
                 ("other".into(), "pad_x = 1\n[[rows]]\nitems = []\n".into()),
                 ("main".into(), "pad_x = 0.1\n[[rows]]\nitems = []\n".into()),
@@ -1032,8 +975,8 @@ mod tests {
         };
         let parsed = roundtrip(&tape);
         assert_eq!(parsed.header.current_layout, "main");
-        assert_eq!(parsed.header.version, 0);
-        assert!(parsed.header.config_toml.is_none());
+        assert_eq!(parsed.header.version, CURRENT_TAPE_VERSION);
+        assert_eq!(parsed.header.config_toml, tape.header.config_toml);
         assert_eq!(parsed.header.scales, tape.header.scales);
         let names: HashSet<_> = parsed
             .header
@@ -1202,44 +1145,43 @@ mod tests {
     }
 
     #[test]
-    fn missing_version_line_is_v0() {
-        let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
-        let mut bytes = format!(
-            "{TAPE_MAGIC}\ncurrent_layout main\nscale 30 32 3 2.5\nlayout main {}\n",
-            layout.len()
-        )
-        .into_bytes();
-        bytes.extend_from_slice(layout.as_bytes());
-        bytes.push(b'\n');
-        let tape = parse_tape(bytes.as_slice()).unwrap();
-        assert_eq!(tape.header.version, 0);
-        assert!(tape.header.config_toml.is_none());
-        assert_eq!(tape.header.current_layout, "main");
+    fn missing_version_line_is_rejected() {
+        let bytes = format!("{TAPE_MAGIC}\ncurrent_layout main\n");
+        let err = parse_tape(bytes.as_bytes()).unwrap_err().to_string();
+        assert!(err.contains("missing recording version"), "{err}");
     }
 
-    fn sample_v1_header() -> TapeHeader {
-        TapeHeader {
-            version: 1,
-            current_layout: "main".into(),
-            controller: None,
-            scales: MappingScales::legacy(30.0, 32.0, 3.0, 2.5),
-            config_toml: Some("event_debounce_ms = 123\n".into()),
-            layouts: vec![("main".into(), "pad_x = 0.1\n[[rows]]\nitems = []\n".into())],
+    #[test]
+    fn obsolete_tape_versions_are_rejected() {
+        for version in 0..CURRENT_TAPE_VERSION {
+            let mut header = sample_header();
+            header.version = version;
+            assert!(encode_header(&header).is_err(), "{version}");
+            let bytes = format!(
+                "{TAPE_MAGIC}\nversion {version}\ncurrent_layout main\nscale 30 32 3 2.5\n"
+            );
+            assert!(parse_tape(bytes.as_bytes()).is_err(), "{version}");
         }
     }
 
     #[test]
-    fn v1_header_round_trip_includes_config() {
-        let parsed = roundtrip(&Tape {
-            header: sample_v1_header(),
-            events: vec![RecordEvent::Idle { t_us: 1 }],
-        });
-        assert_eq!(parsed.header.version, 1);
-        assert_eq!(
-            parsed.header.config_toml.as_deref(),
-            Some("event_debounce_ms = 123\n")
-        );
-        assert_eq!(parsed.events.len(), 1);
+    fn controller_and_aim_profiles_round_trip() {
+        for controller in [ControllerKind::Sc2, ControllerKind::Ps4] {
+            let mut header = sample_header();
+            header.controller = controller;
+            header.scales.sc2_pad_scale_x = 4.0;
+            header.scales.sc2_pad_scale_y = 5.0;
+            header.scales.sc2_stick_scale_x = 6.0;
+            header.scales.sc2_stick_scale_y = 7.0;
+            header.scales.ps4_stick_scale_x = 8.0;
+            header.scales.ps4_stick_scale_y = 9.0;
+            let tape = roundtrip(&Tape {
+                header: header.clone(),
+                events: Vec::new(),
+            });
+            assert_eq!(tape.header.controller, header.controller);
+            assert_eq!(tape.header.scales, header.scales);
+        }
     }
 
     #[test]
@@ -1271,9 +1213,18 @@ mod tests {
             header: TapeHeader {
                 version: CURRENT_TAPE_VERSION,
                 current_layout: "main".into(),
-                controller: Some(ControllerKind::Sc2),
-                scales: MappingScales::legacy(1.0, 1.0, 1.0, 1.0),
-                config_toml: Some("event_debounce_ms = 1\n".into()),
+                controller: ControllerKind::Sc2,
+                scales: MappingScales {
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    sc2_pad_scale_x: 1.0,
+                    sc2_pad_scale_y: 1.0,
+                    sc2_stick_scale_x: 1.0,
+                    sc2_stick_scale_y: 1.0,
+                    ps4_stick_scale_x: 1.0,
+                    ps4_stick_scale_y: 1.0,
+                },
+                config_toml: "event_debounce_ms = 1\n".into(),
                 layouts: vec![("main".into(), "pad_x = 0\n[[rows]]\nitems = []\n".into())],
             },
             events: vec![ev, empty],
@@ -1283,10 +1234,10 @@ mod tests {
     }
 
     #[test]
-    fn v1_missing_config_errors() {
+    fn missing_config_errors() {
         let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
         let mut bytes = format!(
-            "{TAPE_MAGIC}\nversion 1\ncurrent_layout main\nscale 1 1 1 1\nlayout main {}\n",
+            "{TAPE_MAGIC}\nversion {CURRENT_TAPE_VERSION}\ncurrent_layout main\ncontroller sc2\nscale 1 1 1 1 1 1 1 1\nlayout main {}\n",
             layout.len()
         )
         .into_bytes();
@@ -1302,23 +1253,5 @@ mod tests {
             format!("{TAPE_MAGIC}\nversion 99\ncurrent_layout main\nscale 1 1 1 1\n").into_bytes();
         let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();
         assert!(err.contains("unsupported recording version 99"), "{err}");
-    }
-
-    #[test]
-    fn v0_must_not_contain_config_blob() {
-        let cfg = "event_debounce_ms = 1\n";
-        let layout = "pad_x = 0\n[[rows]]\nitems = []\n";
-        let mut bytes = format!(
-            "{TAPE_MAGIC}\ncurrent_layout main\nscale 1 1 1 1\nconfig {}\n",
-            cfg.len()
-        )
-        .into_bytes();
-        bytes.extend_from_slice(cfg.as_bytes());
-        bytes.push(b'\n');
-        bytes.extend(format!("layout main {}\n", layout.len()).into_bytes());
-        bytes.extend_from_slice(layout.as_bytes());
-        bytes.push(b'\n');
-        let err = parse_tape(bytes.as_slice()).unwrap_err().to_string();
-        assert!(err.contains("version 0"), "{err}");
     }
 }

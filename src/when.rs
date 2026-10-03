@@ -39,9 +39,9 @@ impl Flag {
     fn from_ident(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "modifier" => Some(Self::Modifier),
-            "modifier.shift" | "shift" => Some(Self::ModifierShift),
-            "modifier.ctrl" | "ctrl" => Some(Self::ModifierCtrl),
-            "modifier.alt" | "alt" => Some(Self::ModifierAlt),
+            "modifier.shift" => Some(Self::ModifierShift),
+            "modifier.ctrl" => Some(Self::ModifierCtrl),
+            "modifier.alt" => Some(Self::ModifierAlt),
             "suggestionselected" => Some(Self::SuggestionSelected),
             "completionactive" => Some(Self::CompletionActive),
             "suggestionjustaccepted" => Some(Self::SuggestionJustAccepted),
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn parses_flags_case_insensitive() {
         assert_eq!(parse("recording"), WhenExpr::Flag(Flag::Recording));
-        assert_eq!(parse("SHIFT"), WhenExpr::Flag(Flag::ModifierShift));
+        assert_eq!(parse("MODIFIER.SHIFT"), WhenExpr::Flag(Flag::ModifierShift));
         assert_eq!(parse("Replay"), WhenExpr::Flag(Flag::Replay));
         assert_eq!(parse("modifier.shift"), WhenExpr::Flag(Flag::ModifierShift));
         assert_eq!(
@@ -334,11 +334,11 @@ mod tests {
 
     #[test]
     fn not_and_or_parens() {
-        let e = parse("!shift");
+        let e = parse("!modifier.shift");
         assert!(!e.eval(&ctx(true, false, false, false, false)));
         assert!(e.eval(&ctx(false, false, false, false, false)));
 
-        let e = parse("recording && shift");
+        let e = parse("recording && modifier.shift");
         assert!(e.eval(&ctx(true, true, false, false, false)));
         assert!(!e.eval(&ctx(false, true, false, false, false)));
         assert!(!e.eval(&ctx(true, false, false, false, false)));
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn and_binds_tighter_than_or() {
-        let e = parse("recording || shift && ctrl");
+        let e = parse("recording || modifier.shift && modifier.ctrl");
         assert!(e.eval(&ctx(false, true, false, false, false)));
         assert!(!e.eval(&ctx(true, false, false, false, false)));
         assert!(e.eval(&ctx(true, false, false, true, false)));
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn parens_override_precedence() {
-        let e = parse("(recording || shift) && ctrl");
+        let e = parse("(recording || modifier.shift) && modifier.ctrl");
         assert!(!e.eval(&ctx(false, true, false, false, false)));
         assert!(e.eval(&ctx(false, true, false, true, false)));
     }
@@ -380,6 +380,13 @@ mod tests {
     }
 
     #[test]
+    fn obsolete_modifier_names_are_rejected() {
+        for name in ["shift", "ctrl", "alt"] {
+            assert!(WhenExpr::parse(name).is_err(), "{name}");
+        }
+    }
+
+    #[test]
     fn dotted_ident_errors() {
         assert!(WhenExpr::parse("modifier.").is_err());
         assert!(WhenExpr::parse(".shift").is_err());
@@ -390,8 +397,8 @@ mod tests {
     fn empty_and_trailing_errors() {
         assert!(WhenExpr::parse("").is_err());
         assert!(WhenExpr::parse("   ").is_err());
-        assert!(WhenExpr::parse("shift shift").is_err());
-        assert!(WhenExpr::parse("shift &&").is_err());
+        assert!(WhenExpr::parse("modifier.shift modifier.shift").is_err());
+        assert!(WhenExpr::parse("modifier.shift &&").is_err());
     }
 
     #[test]

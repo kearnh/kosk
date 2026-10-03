@@ -31,9 +31,9 @@ The user-facing list of button names, action names, and flags is [MAPPINGS.md](.
 | `modifier.shift` `modifier.ctrl` `modifier.alt` | that sticky modifier |
 | `recording` `replay` | tape record / playback |
 
-`shift` / `ctrl` / `alt` still parse as aliases of `modifier.*`. Unknown names fail at load. `suggestion` and `armed` are not flags.
+Unknown condition names fail at load.
 
-`load_bindings` compiles a value into `BindingTarget::Always(A)` or `BindingTarget::Conditional { arms, otherwise }`. Old names `sendKeyUnderLeftStickOrAcceptSuggestion`, `sendKeyUnderRightStickOrAcceptSuggestion`, and `enterOrAcceptSuggestion` still expand to the equivalent array (accept when `suggestionSelected`, else type / Enter / `submit`).
+`load_bindings` compiles a value into `BindingTarget::Always(A)` or `BindingTarget::Conditional { arms, otherwise }`.
 
 ## Actions and trigger modes
 
