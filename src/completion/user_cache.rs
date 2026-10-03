@@ -9,6 +9,29 @@ use super::insert::is_inserted_punct_prefix;
 use super::settings::CompletionUserCacheConfig;
 
 const PERSIST_VERSION: u32 = 2;
+const MAX_LEARNED_WORD_CHARACTERS: usize = 24;
+const REJECTED_LETTER_RUN_LENGTH: usize = 3;
+
+fn is_learnable_word(word: &str) -> bool {
+    if word.is_empty() || word.chars().count() > MAX_LEARNED_WORD_CHARACTERS {
+        return false;
+    }
+
+    let mut previous = None;
+    let mut run_length = 0;
+    for letter in word.chars().flat_map(char::to_lowercase) {
+        run_length = if previous == Some(letter) {
+            run_length + 1
+        } else {
+            1
+        };
+        previous = Some(letter);
+        if letter.is_alphabetic() && run_length >= REJECTED_LETTER_RUN_LENGTH {
+            return false;
+        }
+    }
+    true
+}
 
 /// Phantom corpus mass. One user accept is `corpus_total / USER_PRIOR_MASS`
 /// dictionary counts (floored at 1).
@@ -85,6 +108,9 @@ impl UserCache {
     fn insert_bucket(&mut self, ty: &str, bucket: PersistBucket, now: Instant) {
         let maps = self.by_type.entry(ty.to_string()).or_default();
         for (w, c, unix) in bucket.unigrams {
+            if !is_learnable_word(&w) {
+                continue;
+            }
             maps.unigrams.insert(
                 w,
                 Timed {
@@ -94,6 +120,9 @@ impl UserCache {
             );
         }
         for (a, b, c, unix) in bucket.bigrams {
+            if !is_learnable_word(&a) || !is_learnable_word(&b) {
+                continue;
+            }
             maps.bigrams.insert(
                 (a, b),
                 Timed {
@@ -117,9 +146,15 @@ impl UserCache {
             return;
         }
         for w in words {
+            if !is_learnable_word(w) {
+                continue;
+            }
             self.bump_uni(ty, w);
         }
         for pair in words.windows(2) {
+            if !is_learnable_word(&pair[0]) || !is_learnable_word(&pair[1]) {
+                continue;
+            }
             self.bump_bi(ty, &pair[0], &pair[1]);
         }
         self.trim(ty);
@@ -324,6 +359,61 @@ mod tests {
         c.learn_words(CATCH_ALL_TYPE, &["foo".into(), "bar".into()]);
         assert!(c.unigram(CATCH_ALL_TYPE, "foo") > 0.0);
         assert!(c.bigram(CATCH_ALL_TYPE, "foo", "bar") > 0.0);
+    }
+
+    #[test]
+    fn malformed_words_are_not_learned_or_bridged() {
+        let mut c = empty_cache("kosk-test-cache-malformed.bin");
+        for rejected in [
+            "abcdefghijklmnopqrstuvwxy",
+            "hellooo",
+            "nnnvef",
+            "heLlL",
+            "ééé",
+        ] {
+            let rejected = rejected.to_owned();
+            c.learn_words(
+                CATCH_ALL_TYPE,
+                &["before".into(), rejected.clone(), "after".into()],
+            );
+            assert!(!c.has_unigram(CATCH_ALL_TYPE, &rejected));
+            assert_eq!(c.bigram(CATCH_ALL_TYPE, "before", &rejected), 0.0);
+            assert_eq!(c.bigram(CATCH_ALL_TYPE, &rejected, "after"), 0.0);
+            assert_eq!(c.bigram(CATCH_ALL_TYPE, "before", "after"), 0.0);
+        }
+        assert!(c.has_unigram(CATCH_ALL_TYPE, "before"));
+        assert!(c.has_unigram(CATCH_ALL_TYPE, "after"));
+    }
+
+    #[test]
+    fn word_filter_preserves_length_boundary_unicode_and_double_letters() {
+        for word in [
+            "abcdefghijklmnopqrstuvwx",
+            "bookkeeper",
+            "don't",
+            "111",
+            "你好".repeat(12).as_str(),
+        ] {
+            assert!(is_learnable_word(word), "{word}");
+        }
+        assert!(!is_learnable_word(""));
+        assert!(!is_learnable_word(&"你好".repeat(13)));
+    }
+
+    #[test]
+    fn malformed_persisted_words_are_excluded() {
+        let mut c = empty_cache("kosk-test-cache-malformed-load.bin");
+        c.insert_bucket(
+            CATCH_ALL_TYPE,
+            PersistBucket {
+                unigrams: vec![("hellooo".into(), 1.0, 0), ("hello".into(), 1.0, 0)],
+                bigrams: vec![("hello".into(), "hellooo".into(), 1.0, 0)],
+            },
+            Instant::now(),
+        );
+        assert!(!c.has_unigram(CATCH_ALL_TYPE, "hellooo"));
+        assert!(c.has_unigram(CATCH_ALL_TYPE, "hello"));
+        assert!(c.continuations(CATCH_ALL_TYPE, "hello").is_empty());
     }
 
     #[test]
