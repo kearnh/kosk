@@ -448,6 +448,14 @@ impl TextInputState {
         self.process_events(events);
     }
 
+    pub(super) fn reset_session(&mut self) {
+        self.text.clear();
+        self.cursor_pos = 0;
+        self.undo_accept = None;
+        self.kb_events = EventQueue::new();
+        self.reset_controller_input(None);
+    }
+
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.bindings.reset(holdover);
         keyboard::with_mut(|kb| kb.reset_controller_input(holdover));

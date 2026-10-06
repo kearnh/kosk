@@ -1,6 +1,6 @@
 # Show and hide KOSK
 
-KOSK starts hidden. Press **Ctrl+Alt+F10** to show or hide it. It stays running while hidden and accepts only visibility bindings. Both transitions clear word suggestions and their typing context. Hiding clears modifiers and releases held keys. Release held controller buttons before typing again.
+KOSK starts hidden. Press **Ctrl+Alt+F10** to show or hide it. It stays running while hidden and accepts only visibility bindings. Showing starts a fresh keyboard session with your startup layout and completion setting. Hiding clears modifiers, suggestions, text-entry and mapping drafts, and releases held keys. It also resets settings navigation, cancels unfinished window movement, and stops recording. Release held controller buttons before typing again.
 
 The blue **K** in the Windows notification area toggles visibility when clicked. Right-click it for **Show KOSK** / **Hide KOSK** and **Quit KOSK**. Windows may place the icon in the notification area's overflow menu. The overlay has no taskbar button.
 

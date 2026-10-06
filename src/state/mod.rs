@@ -83,6 +83,7 @@ pub struct AppState {
     window_region: crate::platform::window_region::WindowRegion,
     window_corners: Option<crate::surface_shape::SurfaceCorners>,
     overlay_visible: bool,
+    hidden_mapping_state: StateId,
     resume_controller_after_release: bool,
     held_keys: Vec<enigo::Key>,
     overlay_bindings: overlay::OverlayBindings,
@@ -128,6 +129,7 @@ impl AppState {
             window_region: crate::platform::window_region::WindowRegion::default(),
             window_corners: None,
             overlay_visible: !config::start_hidden(),
+            hidden_mapping_state: StateId::Keyboard,
             resume_controller_after_release: false,
             held_keys: Vec::new(),
             overlay_bindings: overlay::OverlayBindings::default(),
@@ -164,12 +166,15 @@ impl AppState {
 
         self.overlay_visible = visible;
         self.resume_controller_after_release = true;
-        self.events.drain_pending();
-        self.events.end_controller_tick();
+        self.events = EventQueue::new();
         self.reset_current_mode_controller(None);
+        if !visible {
+            self.hidden_mapping_state = self.state;
+            self.reset_session();
+        }
         crate::completion::with_mut(|session| {
             if let Some(session) = session {
-                session.clear_context();
+                session.reset_session();
             }
         });
 
@@ -187,14 +192,6 @@ impl AppState {
             return;
         }
 
-        keyboard::with_mut(|kb| kb.clear_modifiers());
-        if self.state == StateId::SelectKey {
-            self.return_state(
-                ReturnStateResult::Cancelled,
-                None,
-                &mut EventQueue::passthrough(),
-            );
-        }
         for key in self.held_keys.drain(..) {
             if let Err(e) = self.key_sink.key(key, enigo::Direction::Release) {
                 eprintln!("release held key: {e:#}");
@@ -204,6 +201,32 @@ impl AppState {
         if let Some(callback) = &self.visibility_changed {
             callback(false, None);
         }
+    }
+
+    fn reset_session(&mut self) {
+        input_record::session().stop();
+        menu::with_mut(|m| m.reset_session());
+        menu::flush_pending_notify();
+        let cfg = config::get();
+        keyboard::with_mut(|kb| kb.reset_session(&cfg.start_layout));
+        text_input::with_mut(|ti| ti.reset_session());
+        mappings::with_mut(|m| *m = mappings::MappingsState::new());
+        select_key::with_mut(|s| *s = select_key::SelectKeyState::new());
+        select_layout::with_mut(|s| s.reset_controller_input(None));
+        move_window::with_mut(|mw| mw.reset_controller_input(None));
+        crate::user_notify::note_no_input();
+
+        self.state = StateId::Keyboard;
+        self.call_stack.clear();
+        self.move_origin = None;
+        self.moved_during_place = false;
+        self.pos = if config::cli_at_mouse() {
+            WindowPos::MousePointer
+        } else {
+            cfg.window_pos
+        };
+        self.pointer_snapshot = None;
+        self.shown_position = false;
     }
 
     fn window_size_from(content_rect: Rect) -> (f32, f32) {
@@ -578,9 +601,14 @@ impl AppState {
             StateId::Keyboard | StateId::TextInput => keyboard::with_mut(|kb| kb.when_context()),
             _ => crate::when::WhenContext::default(),
         };
+        let mapping_state = if self.overlay_visible {
+            self.state
+        } else {
+            self.hidden_mapping_state
+        };
         if self
             .overlay_bindings
-            .toggle_requested(self.state, &cfg, input, &when)?
+            .toggle_requested(mapping_state, &cfg, input, &when)?
         {
             self.toggle_overlay_visibility();
             return Ok(());

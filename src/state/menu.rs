@@ -207,6 +207,12 @@ impl MenuState {
         Ok(())
     }
 
+    pub(super) fn reset_session(&mut self) {
+        self.write_settings();
+        self.form = SettingsForm::new();
+        self.reset_controller_input(None);
+    }
+
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.bindings.reset(holdover);
     }

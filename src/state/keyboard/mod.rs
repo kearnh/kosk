@@ -941,6 +941,17 @@ impl KeyboardState {
         self.alt_mod = false;
     }
 
+    pub(super) fn reset_session(&mut self, start_layout: &str) {
+        self.current_layout = start_layout.to_owned();
+        self.clear_modifiers();
+        self.feed_completion_log = true;
+        self.last_left_stick_action = None;
+        self.last_right_stick_action = None;
+        self.key_presses.clear();
+        self.reset_controller_input(None);
+        self.on_layouts_changed();
+    }
+
     pub fn reset_controller_input(&mut self, holdover: Option<&dyn ControllerInput>) {
         self.cursor_input = holdover.map(ControllerInput::box_clone);
         if holdover.is_none() {
@@ -1785,6 +1796,20 @@ items = [{ key = "a" }]
         kb.layouts.insert("symbols".into(), stub_layout());
         kb.current_layout = "main".into();
         kb
+    }
+
+    #[test]
+    fn session_reset_clears_selection_locks_and_key_feedback() {
+        let mut kb = stub_kb();
+        kb.last_left_stick_action = Some(Instant::now());
+        kb.last_right_stick_action = Some(Instant::now());
+        kb.key_presses.insert(("main".into(), 0, 0), Instant::now());
+
+        kb.reset_session("main");
+
+        assert!(kb.last_left_stick_action.is_none());
+        assert!(kb.last_right_stick_action.is_none());
+        assert!(kb.key_presses.is_empty());
     }
 
     #[test]

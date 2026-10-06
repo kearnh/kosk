@@ -486,6 +486,11 @@ impl Session {
         self.clear_predictions();
     }
 
+    pub(crate) fn reset_session(&mut self) {
+        self.typed = TypedLog::new(self.cfg.keyboard.start_armed);
+        self.clear_predictions();
+    }
+
     fn clear_predictions(&mut self) {
         self.current_gen = self.r#gen.fetch_add(1, Ordering::Relaxed) + 1;
         self.slot.0.lock().unwrap().pending = None;
@@ -1144,6 +1149,26 @@ mod tests {
         dict.set_overlay(std::collections::HashMap::new(), Some(Arc::clone(&user)));
         let notify = Arc::new(|| {}) as Arc<dyn Fn() + Send + Sync>;
         Session::spawn_for_test_full(Arc::new(dict), cfg, notify, user, fg)
+    }
+
+    #[test]
+    fn session_reset_restores_configured_completion_state() {
+        for start_armed in [false, true] {
+            let mut cfg = CompletionConfig::default();
+            cfg.keyboard.start_armed = start_armed;
+            let mut session = session_with(cfg);
+            session.toggle_armed();
+            assert_eq!(session.armed(), !start_armed);
+
+            session.clear_context();
+            assert_eq!(session.armed(), !start_armed);
+
+            session.reset_session();
+            assert_eq!(session.armed(), start_armed);
+            assert!(session.typed_text().is_empty());
+            session.note_log(LogEvent::Text, "a");
+            assert_eq!(session.typed_text(), if start_armed { "a" } else { "" });
+        }
     }
 
     #[test]
