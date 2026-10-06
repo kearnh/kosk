@@ -1,6 +1,25 @@
 # Theme shapes, fonts and Borderlands menus
 
-Status: proposed. This plan changes no runtime behaviour.
+Status: implemented.
+
+Added shared square, rounded and beveled geometry, native Windows clipping,
+independent font roles and the blue/yellow Borderlands treatment. Borderlands
+uses the supplied WillowBody font in all four roles; packaging includes its
+provenance record. Existing themes retain their geometry and fonts when these
+options are absent. Font files are cached without watching.
+
+Validation: 590 library tests pass; four remain ignored. Strict workspace Clippy
+passes. Live captures cover the keyboard, Settings, pickers, mappings and move
+mode. Native hit tests confirm cut corners pass through in transparent and
+opaque windows with Glow and WGPU. Default and move mode restore rectangular
+boundaries. Live controller checks also confirm hiding and showing preserves
+the region. Native adapter tests cover 1.0, 1.25 and 2.0 scale factors; live
+testing used the current monitor scale, not multiple physical monitor DPIs.
+Contrast and packaging-path/hash checks pass.
+
+The extra `show_hide` integration test fails before exercising this change:
+its unchanged fixture uses unsupported `config_version = 1`. The live
+visibility check uses version 3.
 
 ## Visual target
 
@@ -149,10 +168,11 @@ Invalidate font-dependent label/layout caches when roles change. In particular,
 size and colour, without font identity. Re-measure menu rows, suggestions,
 keyboard labels and window bounds; verify long labels and mixed text/icon keys.
 
-Trial the locally supplied `willowbody_0-webfont.ttf` for body, menu and keyboard
-text once font roles are implemented. Compare each role with the menu reference;
-do not assume it suits headings. Keep this file local and out of release assets
-until its source and redistribution permission are established.
+The selected local `willowbody_0-webfont.ttf` is copied to
+`themes/fonts/WillowBody-Regular.ttf` and used for all four roles. Its source,
+hash and unresolved licence status are retained in `WillowBody-SOURCE.md`;
+the original root download remains local. The user selected this font after
+reviewing the provenance limits.
 
 The inspected file identifies itself as `WillowBody Regular`, names Ray Larabie
 as designer and lists `http://www.larabiefonts.com` as vendor URL. Its copyright
@@ -170,8 +190,8 @@ fonts with release assets. Compare typography at KOSK's actual window size.
 
 ## Delivery and acceptance
 
-Deliver focused commits in this order: blue/yellow palette; shared menu geometry;
-native window cuts; theme font service; Borderlands font assets and visual tuning.
+Deliver the reusable geometry/font support separately from Borderlands assets
+and visual tuning.
 
 - Existing themes render identically when new options are absent.
 - Corner-style tests cover parameter validation, per-corner overrides and legacy

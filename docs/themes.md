@@ -40,13 +40,70 @@ The Factorio theme uses charcoal and steel panels with amber and copper accents.
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
 
-The Borderlands theme uses charcoal, worn steel and thick ink outlines.
+The Borderlands theme uses navy panels, cyan outlines, beveled corners and
+yellow menu selections with dark text.
 Weapon-rarity highlights use green for hover, blue for the left selection,
-purple for the right selection, and orange for dual selections and menu focus.
+purple for the right selection, and orange for dual selections.
 Its original panel artwork is covered by the repository's MIT license.
 
 The Stardew Valley theme uses parchment, walnut, leaf green and harvest gold,
 with wooden borders and solid green/gold cursors.
+
+## Corner styles
+
+Window outlines and selected menu rows support independent corner settings:
+
+```toml
+[window]
+corner_style = "beveled"
+
+[window.beveled_corners]
+corner_size = 12.0
+
+[menus.selection]
+corner_style = "beveled"
+
+[menus.selection.beveled_corners]
+corner_size = 0.0
+top_right = 10.0
+```
+
+Sizes use UI points. `corner_size` applies to all corners; `top_left`,
+`top_right`, `bottom_right` and `bottom_left` override individual corners.
+Zero leaves a corner square. Oversized values shrink to fit the rectangle.
+
+Use `corner_style = "rounded"` with a `rounded_corners` block containing
+`corner_radius` and the same overrides, or `corner_style = "square"` without
+parameters. Negative sizes and mismatched parameter blocks are invalid.
+Omitting these sections preserves the existing radius settings.
+
+On Windows, window corners clip both drawing and input using a native window
+region. Cuts also work in opaque mode. Move mode temporarily restores the
+rectangular window; switching to a theme without corner settings removes the
+region. Other platforms retain their existing window boundary.
+
+## Fonts
+
+Themes can set body, menu, heading and keyboard fonts independently:
+
+```toml
+[fonts]
+body_font = "fonts/body.ttf"
+menu_font = "fonts/menu.ttf"
+heading_font = "fonts/heading.ttf"
+keyboard_font = "fonts/keyboard.ttf"
+```
+
+Paths start beside the theme file. Omitted roles retain the default font;
+missing glyphs use the existing fallback fonts. Icons and monospace editors
+retain their fonts. Layout and key settings still control keyboard font sizes.
+Changing themes or font paths applies live. Fonts load off the drawing thread
+and cache for the session; replacing a file at the same path requires restart.
+Missing, invalid or oversized fonts fall back to the default with a notice.
+Each file is limited to 8 MiB; the session caches up to 32 files and 64 MiB.
+
+Borderlands uses a user-supplied WillowBody Regular font. Its source and licence
+status are recorded in [the font provenance](../themes/fonts/WillowBody-SOURCE.md).
 
 ## Example
 
@@ -174,6 +231,9 @@ keep only the overrides your theme needs.
   `selection_border_width`, `window_border_color`, `window_border_width`,
   `window_corner_radius`.
 - `[background_image]`: `path`, `opacity`, `scaling`, `position`, `source_region`, `frame_border`.
+- `[window]`, `[menus.selection]`: `corner_style` (`square`, `rounded`, `beveled`),
+  with the corresponding `rounded_corners` or `beveled_corners` parameters above.
+- `[fonts]`: `body_font`, `menu_font`, `heading_font`, `keyboard_font`.
 - `[noninteractive]`, `[inactive]`, `[hovered]`, `[active]`, `[open]`: `background_color`,
   `weak_background_color`, `text_color`, `border_color`, `border_width`,
   `corner_radius`. These style standard controls, including both pickers.
