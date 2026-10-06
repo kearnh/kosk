@@ -29,7 +29,7 @@ current local theme.
 The repository includes [Old Steam Controller](../themes/old-steam-controller.toml),
 [Portal 2](../themes/portal.toml), [Factorio](../themes/factorio.toml),
 [Cyberpunk 2077](../themes/cyberpunk-2077.toml),
-[Hollow Knight](../themes/hollow-knight.toml), and
+[Borderlands](../themes/borderlands.toml), and
 [Stardew Valley](../themes/stardew-valley.toml) themes.
 Add `themes/*.toml` to the `themes` list to discover them.
 
@@ -40,9 +40,8 @@ The Factorio theme uses charcoal and steel panels with amber and copper accents.
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
 
-The Hollow Knight theme uses midnight blue, bone white and dream violet,
-with a pale ornamental frame, rounded keys and soft soul-glow cursors.
-The frame is original artwork covered by the repository's MIT license.
+The Borderlands theme uses weathered ochre, thick ink outlines and blue/orange
+highlights. Its original panel artwork is covered by the repository's MIT license.
 
 The Stardew Valley theme uses parchment, walnut, leaf green and harvest gold,
 with wooden borders and solid green/gold cursors.

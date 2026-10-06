@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $repository = Split-Path $PSScriptRoot
 $platform = 'x86_64-pc-windows-msvc'
 $themeFiles = @('old-steam-controller.toml', 'portal.toml', 'factorio.toml',
-    'cyberpunk-2077.toml', 'hollow-knight.toml', 'stardew-valley.toml')
+    'cyberpunk-2077.toml', 'stardew-valley.toml')
 
 function Invoke-Checked {
     param([string]$Program, [string[]]$Arguments)
@@ -69,7 +69,6 @@ try {
     foreach ($theme in $themeFiles) {
         Copy-PackageFile (Join-Path $repository "themes/$theme") "resources/themes/$theme"
     }
-    Copy-PackageFile (Join-Path $repository 'themes/images/hollow-knight-frame.svg') 'resources/themes/images/hollow-knight-frame.svg'
 
     $predictions = Invoke-Checked (Join-Path $binaries 'completion_dev.exe') @('--backend', 'ngram',
         '--model-dir', $model, '--text', 'going ', '--cursor', '6')
