@@ -29,14 +29,15 @@ This stage uses existing theme fields. Update `themes/borderlands.toml`, its
 artwork and `docs/themes.md`; preserve the packaged asset paths or update the
 packaging script with them.
 
-## 2. Add parameterised window styles
+## 2. Add parameterised corner styles
 
 Introduce one reusable surface-shape resolver for filling, outlining and
 containment. Shapes belong to theme data, never to a theme-name condition.
-Select a style, then configure that style's parameters. Start with `square`
+Select a corner style, then configure its parameters. Start with `square`
 (no parameters), `rounded` (corner radii) and `beveled` (straight diagonal cuts).
-Defer the screenshot's extra stepped header/footer silhouette; a future style
-can introduce its own parameters without adding unrelated fields to every style.
+Defer the screenshot's extra stepped header/footer silhouette: it changes the
+whole outline and belongs outside corner styling. Future corner styles can
+introduce their own parameters.
 
 Borrow CSS's separation of corner shape and size. Its
 [corner-shape specification](https://www.w3.org/TR/css-borders-4/#corner-shaping)
@@ -48,15 +49,15 @@ Proposed theme additions, in logical UI points:
 
 ```toml
 [window]
-style = "beveled"
+corner_style = "beveled"
 
-[window.beveled]
+[window.beveled_corners]
 corner_size = 12.0
 
 [menus.selection]
-style = "beveled"
+corner_style = "beveled"
 
-[menus.selection.beveled]
+[menus.selection.beveled_corners]
 corner_size = 0.0
 top_right = 8.0
 ```
@@ -66,16 +67,17 @@ window corners by 12 points and only the menu row's top-right corner by 8 points
 Optional `top_left`, `top_right`, `bottom_right` and `bottom_left` values override
 individual corners. Zero leaves that corner square.
 
-For `rounded`, use a `[window.rounded]` block with `corner_radius` and the same
-per-corner overrides. Reuse this style schema for menu selections and later
-surfaces. Window geometry and menu geometry remain independently configurable;
+For `rounded`, use a `[window.rounded_corners]` block with `corner_radius` and the
+same per-corner overrides. Reuse this corner-style schema for menu selections
+and later surfaces. Window geometry and menu geometry remain independently configurable;
 fill colours, typography and opacity remain separate theme settings.
 
-Omitting a surface's style block preserves its existing radius behaviour.
-An explicit style replaces that legacy geometry; do not combine rounding and
-cuts. Style sizes default to zero, with omitted corner overrides inheriting the
-style's size. Reject unknown styles, mismatched parameter blocks and
-negative/nonfinite values. Clamp valid sizes against the available rectangle
+Omitting a surface's `corner_style` and parameter blocks preserves its existing
+radius behaviour. An explicit corner style replaces that legacy geometry; do
+not combine rounding and cuts. Corner sizes default to zero, with omitted
+corner overrides inheriting that size. Reject unknown corner styles,
+mismatched parameter blocks and negative/nonfinite values. Clamp valid sizes
+against the available rectangle
 so small windows cannot produce inverted polygons. Derive border insets from
 geometry so stroke widths remain consistent at diagonal corners.
 
@@ -158,7 +160,7 @@ Deliver focused commits in this order: blue/yellow palette; shared menu geometry
 native window cuts; theme font service; Borderlands font assets and visual tuning.
 
 - Existing themes render identically when new options are absent.
-- Style tests cover parameter validation, per-corner overrides and legacy
+- Corner-style tests cover parameter validation, per-corner overrides and legacy
   radius compatibility. Geometry tests cover asymmetric/zero cuts, small
   rectangles, border insets, containment and default-boundary restoration.
 - Font tests cover fallback, missing/corrupt files, role isolation, switching,
