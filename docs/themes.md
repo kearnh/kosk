@@ -40,8 +40,8 @@ The Factorio theme uses charcoal and steel panels with amber and copper accents.
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
 
-The Borderlands theme uses navy panels, cyan outlines, beveled corners and
-yellow menu selections with dark text.
+The Borderlands theme uses navy panels with subtle scan lines, cyan outlines,
+beveled corners and yellow menu selections with dark text.
 Weapon-rarity highlights use green for hover, blue for the left selection,
 purple for the right selection, and orange for dual selections.
 Its original panel artwork is covered by the repository's MIT license.
