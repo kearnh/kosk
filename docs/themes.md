@@ -40,8 +40,10 @@ The Factorio theme uses charcoal and steel panels with amber and copper accents.
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
 
-The Borderlands theme uses weathered ochre, thick ink outlines and blue/orange
-highlights. Its original panel artwork is covered by the repository's MIT license.
+The Borderlands theme uses charcoal, worn steel and thick ink outlines.
+Weapon-rarity highlights use green for hover, blue for the left selection,
+purple for the right selection, and orange for dual selections and menu focus.
+Its original panel artwork is covered by the repository's MIT license.
 
 The Stardew Valley theme uses parchment, walnut, leaf green and harvest gold,
 with wooden borders and solid green/gold cursors.
