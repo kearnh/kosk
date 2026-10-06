@@ -29,35 +29,55 @@ This stage uses existing theme fields. Update `themes/borderlands.toml`, its
 artwork and `docs/themes.md`; preserve the packaged asset paths or update the
 packaging script with them.
 
-## 2. Add generic cut-corner geometry
+## 2. Add parameterised window styles
 
 Introduce one reusable surface-shape resolver for filling, outlining and
 containment. Shapes belong to theme data, never to a theme-name condition.
-Start with rectangles, existing rounded rectangles and straight corner cuts.
-Defer the screenshot's extra stepped header/footer silhouette.
+Select a style, then configure that style's parameters. Start with `square`
+(no parameters), `rounded` (corner radii) and `beveled` (straight diagonal cuts).
+Defer the screenshot's extra stepped header/footer silhouette; a future style
+can introduce its own parameters without adding unrelated fields to every style.
+
+Borrow CSS's separation of corner shape and size. Its
+[corner-shape specification](https://www.w3.org/TR/css-borders-4/#corner-shaping)
+defines `bevel` as a straight diagonal and `round` as a curved corner. Use
+descriptive TOML settings rather than implementing CSS syntax, a cascade or a
+general-purpose shape language. Defer scoops, notches and superellipses.
 
 Proposed theme additions, in logical UI points:
 
 ```toml
-window_corner_radius = 0.0
+[window]
+style = "beveled"
 
-[inactive]
-corner_radius = 0.0
+[window.beveled]
+corner_size = 12.0
 
-[window_corner_cuts]
-top_left = 12.0
-top_right = 12.0
-bottom_right = 12.0
-bottom_left = 12.0
+[menus.selection]
+style = "beveled"
 
-[menus.selection_corner_cuts]
+[menus.selection.beveled]
+corner_size = 0.0
 top_right = 8.0
 ```
 
-Omitted cuts default to zero. Reject negative/nonfinite values and simultaneous
-rounding and cuts on the same surface. Clamp valid cuts against the available
-rectangle so small windows cannot produce inverted polygons. Derive border
-insets from geometry so stroke widths remain consistent at diagonal corners.
+`corner_size` sets the distance along each adjoining edge; the example cuts all
+window corners by 12 points and only the menu row's top-right corner by 8 points.
+Optional `top_left`, `top_right`, `bottom_right` and `bottom_left` values override
+individual corners. Zero leaves that corner square.
+
+For `rounded`, use a `[window.rounded]` block with `corner_radius` and the same
+per-corner overrides. Reuse this style schema for menu selections and later
+surfaces. Window geometry and menu geometry remain independently configurable;
+fill colours, typography and opacity remain separate theme settings.
+
+Omitting a surface's style block preserves its existing radius behaviour.
+An explicit style replaces that legacy geometry; do not combine rounding and
+cuts. Style sizes default to zero, with omitted corner overrides inheriting the
+style's size. Reject unknown styles, mismatched parameter blocks and
+negative/nonfinite values. Clamp valid sizes against the available rectangle
+so small windows cannot produce inverted polygons. Derive border insets from
+geometry so stroke widths remain consistent at diagonal corners.
 
 Use the same primitive for the window outline and selected menu rows, including
 theme/layout pickers through `src/ui/menu_list.rs`. Other surfaces can adopt it
@@ -138,8 +158,9 @@ Deliver focused commits in this order: blue/yellow palette; shared menu geometry
 native window cuts; theme font service; Borderlands font assets and visual tuning.
 
 - Existing themes render identically when new options are absent.
-- Geometry tests cover asymmetric/zero cuts, small rectangles, border insets,
-  invalid values, containment and restoration of the default boundary.
+- Style tests cover parameter validation, per-corner overrides and legacy
+  radius compatibility. Geometry tests cover asymmetric/zero cuts, small
+  rectangles, border insets, containment and default-boundary restoration.
 - Font tests cover fallback, missing/corrupt files, role isolation, switching,
   replacement reloads, stale loads, glyph fallback and cache invalidation.
 - Use generated/inline fixtures; automated tests must not depend on mutable
