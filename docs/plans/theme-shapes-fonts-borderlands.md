@@ -149,8 +149,19 @@ Invalidate font-dependent label/layout caches when roles change. In particular,
 size and colour, without font identity. Re-measure menu rows, suggestions,
 keyboard labels and window bounds; verify long labels and mixed text/icon keys.
 
-Trial Rajdhani SemiBold for menus and Oxanium Bold for headings as stylistic
-approximations. Both are available under the SIL Open Font License:
+Trial the locally supplied `willowbody_0-webfont.ttf` for body, menu and keyboard
+text once font roles are implemented. Compare each role with the menu reference;
+do not assume it suits headings. Keep this file local and out of release assets
+until its source and redistribution permission are established.
+
+The inspected file identifies itself as `WillowBody Regular`, names Ray Larabie
+as designer and lists `http://www.larabiefonts.com` as vendor URL. Its copyright
+and version fields say only `New`; it contains no licence or licence URL.
+These metadata claims do not establish authorship or ownership.
+SHA-256: `827fe2e8ac6f8529352e548e0f475e63f998862078de84032df182ec7542de66`.
+
+Retain Rajdhani SemiBold as a menu alternative and Oxanium Bold as a heading
+candidate. Both are available under the SIL Open Font License:
 [Rajdhani licence](https://raw.githubusercontent.com/google/fonts/main/ofl/rajdhani/OFL.txt),
 [Oxanium licence](https://raw.githubusercontent.com/google/fonts/main/ofl/oxanium/OFL.txt).
 Confirm a static heading face supported by the decoder before packaging it.
