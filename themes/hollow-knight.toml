@@ -9,13 +9,18 @@ selection_background_color = "deep_soul_blue"
 selection_border_color = "soul_blue"
 selection_border_width = 2.0
 window_border_color = "stone_blue"
-window_border_width = 1.0
+window_border_width = 0.0
 window_corner_radius = 8.0
+
+[background_image]
+path = "images/hollow-knight-frame.svg"
+opacity = 0.9
+frame_border = 32
 
 [colours]
 void_navy = [13, 18, 31]
 cavern_panel = [23, 31, 49]
-slate_blue = [32, 44, 65]
+slate_blue = [22, 30, 46, 225]
 mist_blue = [44, 62, 87]
 stone_blue = [84, 105, 132]
 bone_white = [237, 238, 225]

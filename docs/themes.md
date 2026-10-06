@@ -41,7 +41,8 @@ The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
 
 The Hollow Knight theme uses midnight blue, bone white and dream violet,
-with rounded keys and soft soul-glow cursors.
+with a pale ornamental frame, rounded keys and soft soul-glow cursors.
+The frame is original artwork covered by the repository's MIT license.
 
 The Stardew Valley theme uses parchment, walnut, leaf green and harvest gold,
 with wooden borders and solid green/gold cursors.

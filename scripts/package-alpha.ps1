@@ -69,6 +69,7 @@ try {
     foreach ($theme in $themeFiles) {
         Copy-PackageFile (Join-Path $repository "themes/$theme") "resources/themes/$theme"
     }
+    Copy-PackageFile (Join-Path $repository 'themes/images/hollow-knight-frame.svg') 'resources/themes/images/hollow-knight-frame.svg'
 
     $predictions = Invoke-Checked (Join-Path $binaries 'completion_dev.exe') @('--backend', 'ngram',
         '--model-dir', $model, '--text', 'going ', '--cursor', '6')
