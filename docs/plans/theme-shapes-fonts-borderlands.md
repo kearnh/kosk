@@ -135,8 +135,11 @@ role resolution and egui registration. Widgets request a role and size, never
 read font files. Preserve Phosphor icon families, Windows symbol/emoji fallbacks
 and the editor's monospace font. Missing glyphs fall back to current fonts.
 
-Watch font files with other theme assets. Load off the drawing thread; apply
-new definitions only when the effective font set changes, using egui's
+Load fonts on first use and cache them for the session; do not watch font files.
+Switching themes or changing configured font paths resolves the required fonts.
+Replacing a font file at the same path requires restarting KOSK.
+Load off the drawing thread; apply new definitions only when the effective font
+set changes, using egui's
 [font update API](https://docs.rs/egui/0.36.2/egui/struct.Context.html#method.set_fonts).
 Discard stale loads, report missing/corrupt files once, and use the default font
 for the affected role. Switching back to Default restores its typography.
@@ -164,7 +167,8 @@ native window cuts; theme font service; Borderlands font assets and visual tunin
   radius compatibility. Geometry tests cover asymmetric/zero cuts, small
   rectangles, border insets, containment and default-boundary restoration.
 - Font tests cover fallback, missing/corrupt files, role isolation, switching,
-  replacement reloads, stale loads, glyph fallback and cache invalidation.
+  configured path changes, session caching, stale loads, glyph fallback and
+  cache invalidation.
 - Use generated/inline fixtures; automated tests must not depend on mutable
   shipped themes. For concrete bug fixes, observe the regression failing first.
 - After Rust edits run `cargo fmt`, targeted library tests and
