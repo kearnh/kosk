@@ -1,7 +1,8 @@
 use crate::controller::ControllerButton;
 use crate::theme::MenusTheme;
 use crate::ui::controller_glyph::{self, GlyphFamily};
-use egui::{Align2, FontId, Frame, Margin, RichText, Sense, Ui, Vec2};
+use crate::ui::fonts::{font_id, FontRole};
+use egui::{Align2, Frame, Margin, RichText, Sense, Ui, Vec2};
 
 const LIST_WIDTH: f32 = 320.0;
 const ROW_HEIGHT: f32 = 28.0;
@@ -41,11 +42,20 @@ pub(crate) fn row(
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(LIST_WIDTH, ROW_HEIGHT), Sense::click());
     if selected {
-        ui.painter().rect_filled(
-            rect,
-            ui.visuals().widgets.inactive.corner_radius,
-            ui.visuals().selection.bg_fill,
-        );
+        if let Some(corners) = &appearance.selection {
+            corners.paint(
+                ui.painter(),
+                rect,
+                Some(ui.visuals().selection.bg_fill),
+                ui.visuals().selection.stroke,
+            );
+        } else {
+            ui.painter().rect_filled(
+                rect,
+                ui.visuals().widgets.inactive.corner_radius,
+                ui.visuals().selection.bg_fill,
+            );
+        }
     }
     let color = if selected {
         appearance
@@ -59,7 +69,7 @@ pub(crate) fn row(
         rect.left_center() + Vec2::new(ROW_PAD, 0.0),
         Align2::LEFT_CENTER,
         label,
-        FontId::proportional(ROW_FONT),
+        font_id(ui, FontRole::Menu, ROW_FONT),
         color,
     );
     if let Some(value) = value {
@@ -67,7 +77,7 @@ pub(crate) fn row(
             rect.right_center() - Vec2::new(ROW_PAD, 0.0),
             Align2::RIGHT_CENTER,
             value,
-            FontId::proportional(ROW_FONT),
+            font_id(ui, FontRole::Menu, ROW_FONT),
             color,
         );
     }

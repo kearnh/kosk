@@ -1274,8 +1274,15 @@ impl KeyboardState {
                                 };
                                 let key_style =
                                     key_colors.style(key, &appearance, keyboard_theme, selection);
-                                let label =
-                                    label_cache.get(&appearance.text, font_size, key_style.text);
+                                let label = label_cache.get_with_font(
+                                    &appearance.text,
+                                    crate::ui::fonts::font_id(
+                                        ui,
+                                        crate::ui::fonts::FontRole::Keyboard,
+                                        font_size,
+                                    ),
+                                    key_style.text,
+                                );
                                 let mut button = egui::Button::new(label);
                                 if key_style.selected {
                                     button = button.selected(true);

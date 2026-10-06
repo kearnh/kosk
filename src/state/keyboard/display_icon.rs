@@ -36,7 +36,7 @@ struct ParsedDisplay {
 
 pub struct LabelCache {
     parsed: HashMap<String, Arc<ParsedDisplay>>,
-    widgets: HashMap<(u64, u32, u32), WidgetText>,
+    widgets: HashMap<(u64, u32, u32, FontFamily), WidgetText>,
 }
 
 impl LabelCache {
@@ -54,10 +54,20 @@ impl LabelCache {
 
     /// Return cached WidgetText, parsing/building only on miss.
     pub fn get(&mut self, template: &str, font_size: f32, color: Color32) -> WidgetText {
+        self.get_with_font(template, FontId::proportional(font_size), color)
+    }
+
+    pub(crate) fn get_with_font(
+        &mut self,
+        template: &str,
+        font: FontId,
+        color: Color32,
+    ) -> WidgetText {
         let key = (
             hash_template(template),
-            font_size.to_bits(),
+            font.size.to_bits(),
             color_u32(color),
+            font.family.clone(),
         );
         if let Some(cached) = self.widgets.get(&key) {
             return cached.clone();
@@ -69,7 +79,7 @@ impl LabelCache {
             .or_insert_with(|| Arc::new(parse_template(template)))
             .clone();
 
-        let widget = build_widget(&parsed, font_size, color);
+        let widget = build_widget(&parsed, font, color);
         self.widgets.insert(key, widget.clone());
         widget
     }
@@ -230,13 +240,13 @@ fn is_valid_icon_name(name: &str) -> bool {
     !prev_hyphen
 }
 
-fn build_widget(parsed: &ParsedDisplay, font_size: f32, color: Color32) -> WidgetText {
+fn build_widget(parsed: &ParsedDisplay, font: FontId, color: Color32) -> WidgetText {
     if parsed.plain {
         let text = match parsed.spans.first() {
             Some(Span::Text(t)) => t.as_str(),
             _ => "",
         };
-        return RichText::new(text).size(font_size).color(color).into();
+        return RichText::new(text).font(font).color(color).into();
     }
 
     let mut job = LayoutJob::default();
@@ -250,7 +260,7 @@ fn build_widget(parsed: &ParsedDisplay, font_size: f32, color: Color32) -> Widge
                     t,
                     0.0,
                     TextFormat {
-                        font_id: FontId::new(font_size, FontFamily::Proportional),
+                        font_id: font.clone(),
                         color,
                         ..Default::default()
                     },
@@ -261,7 +271,7 @@ fn build_widget(parsed: &ParsedDisplay, font_size: f32, color: Color32) -> Widge
                     "?",
                     0.0,
                     TextFormat {
-                        font_id: FontId::new(font_size, FontFamily::Proportional),
+                        font_id: font.clone(),
                         color,
                         ..Default::default()
                     },
@@ -272,7 +282,7 @@ fn build_widget(parsed: &ParsedDisplay, font_size: f32, color: Color32) -> Widge
                     glyph,
                     0.0,
                     TextFormat {
-                        font_id: FontId::new(font_size, phosphor_family(*style)),
+                        font_id: FontId::new(font.size, phosphor_family(*style)),
                         color,
                         ..Default::default()
                     },
@@ -338,6 +348,25 @@ mod tests {
         cache.clear();
         let _d = cache.get(t, SIZE, COLOR);
         assert_eq!(cache.parsed_len(), 1);
+    }
+
+    #[test]
+    fn cached_mixed_labels_keep_text_family_separate_from_icons() {
+        let mut cache = LabelCache::new();
+        let template = "Go {icon:arrow-fat-left:fill}";
+        cache.get(template, SIZE, COLOR);
+        let font = FontId::monospace(SIZE);
+        let themed = cache.get_with_font(template, font.clone(), COLOR);
+        let WidgetText::LayoutJob(job) = themed else {
+            panic!("mixed label");
+        };
+        assert_eq!(job.sections[0].format.font_id, font);
+        assert_eq!(
+            job.sections[1].format.font_id.family,
+            phosphor_family(IconStyle::Fill)
+        );
+        assert_eq!(cache.widgets.len(), 2);
+        assert_eq!(cache.parsed.len(), 1);
     }
 
     #[test]

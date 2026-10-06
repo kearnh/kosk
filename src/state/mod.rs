@@ -79,6 +79,9 @@ pub struct AppState {
     key_sink: Box<dyn KeySink>,
     unsupported_checked_for: Option<ControllerKind>,
     background: crate::ui::background::Background,
+    fonts: crate::ui::fonts::ThemeFontService,
+    window_region: crate::platform::window_region::WindowRegion,
+    window_corners: Option<crate::surface_shape::SurfaceCorners>,
     overlay_visible: bool,
     resume_controller_after_release: bool,
     held_keys: Vec<enigo::Key>,
@@ -121,6 +124,9 @@ impl AppState {
             key_sink: open_key_sink()?,
             unsupported_checked_for: None,
             background: crate::ui::background::Background::default(),
+            fonts: crate::ui::fonts::ThemeFontService::default(),
+            window_region: crate::platform::window_region::WindowRegion::default(),
+            window_corners: None,
             overlay_visible: !config::start_hidden(),
             resume_controller_after_release: false,
             held_keys: Vec::new(),
@@ -392,6 +398,27 @@ impl AppState {
         }
     }
 
+    pub fn prepare_window(&mut self, ctx: &Context, frame: &eframe::Frame) -> egui::Margin {
+        let cfg = config::get();
+        let corners = cfg
+            .theme()
+            .window
+            .as_ref()
+            .filter(|_| self.state != StateId::MoveWindow);
+        let applied = match self.window_region.sync(frame, ctx, corners) {
+            Ok(applied) => applied,
+            Err(error) => {
+                eprintln!("window corners: {error:#}");
+                false
+            }
+        };
+        self.window_corners = corners.filter(|_| applied).cloned();
+        self.window_corners
+            .as_ref()
+            .map(|corners| corners.content_margin())
+            .unwrap_or(egui::Margin::same(5))
+    }
+
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui) {
         if !self.overlay_visible {
             return;
@@ -427,7 +454,19 @@ impl AppState {
         let cfg = config::get();
         self.events
             .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
+        self.fonts.update(ui, &cfg.theme().fonts);
         self.background.draw(ui, &cfg, self.state);
+        if let Some(corners) = &self.window_corners {
+            corners.paint(
+                &ui.painter().with_clip_rect(ctx.content_rect()),
+                ctx.content_rect(),
+                None,
+                egui::Stroke::new(
+                    cfg.theme().window_border_width,
+                    crate::theme::color(cfg.theme().window_border_color),
+                ),
+            );
+        }
         match self.state {
             StateId::Keyboard => {
                 keyboard::with_mut(|kb| kb.draw_ui(ctx, ui, &mut self.events));

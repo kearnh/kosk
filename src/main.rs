@@ -273,15 +273,16 @@ impl eframe::App for App {
         // Measure first; OuterPosition is applied after size so content-driven
         // resizes can keep the previous top edge instead of re-resolving corners.
         let mut size = Vec2::ZERO;
+        let margin = self.state.lock().unwrap().prepare_window(&ctx, frame);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.inner_margin(egui::Margin::same(5)))
+            .frame(egui::Frame::NONE.inner_margin(margin))
             .show(ui, |ui| {
                 let inner = egui::Frame::NONE.show(ui, |ui| {
                     let mut s = self.state.lock().unwrap();
                     s.draw_ui(&ctx, ui);
                 });
-                size = inner.response.rect.size() + [10.0, 10.0].into();
+                size = inner.response.rect.size() + margin.sum();
             });
 
         // FIXME min_size will change if layout changes?

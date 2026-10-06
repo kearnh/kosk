@@ -78,6 +78,8 @@ impl WidgetTheme {
 section!(Theme {
     background_color: [u8; 4] = [20, 20, 20, 255],
     background_image: Option<BackgroundImageTheme> = None,
+    fonts: ThemeFonts = ThemeFonts::default(),
+    window: Option<crate::surface_shape::SurfaceCorners> = None,
     keyboard_opacity: f32 = 0.7,
     ui_opacity: f32 = 1.0,
     text_color: [u8; 4] = Visuals::default().text_color().to_srgba_unmultiplied(),
@@ -112,6 +114,26 @@ section!(Theme {
     battery: BatteryTheme = BatteryTheme::default(),
     stick_pad_cursors: StickPadCursorTheme = StickPadCursorTheme::default(),
 });
+
+section!(ThemeFonts {
+    body_font: Option<std::path::PathBuf> = None,
+    menu_font: Option<std::path::PathBuf> = None,
+    heading_font: Option<std::path::PathBuf> = None,
+    keyboard_font: Option<std::path::PathBuf> = None,
+});
+
+impl ThemeFonts {
+    fn paths_mut(&mut self) -> impl Iterator<Item = &mut std::path::PathBuf> {
+        [
+            &mut self.body_font,
+            &mut self.menu_font,
+            &mut self.heading_font,
+            &mut self.keyboard_font,
+        ]
+        .into_iter()
+        .filter_map(Option::as_mut)
+    }
+}
 
 section!(BackgroundImageTheme {
     path: std::path::PathBuf = std::path::PathBuf::new(),
@@ -223,6 +245,7 @@ section!(TextInputTheme {
 });
 
 section!(MenusTheme {
+    selection: Option<crate::surface_shape::SurfaceCorners> = None,
     heading_color: [u8; 4] = [255, 255, 255, 255],
     muted_text_color: [u8; 4] = [128, 128, 128, 255],
     selected_text_color: Option<[u8; 4]> = None,
@@ -348,6 +371,24 @@ impl Theme {
             {
                 bail!("background_image.source_region must leave space inside frame_border");
             }
+        }
+
+        for path in [
+            &self.fonts.body_font,
+            &self.fonts.menu_font,
+            &self.fonts.heading_font,
+            &self.fonts.keyboard_font,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if path.as_os_str().is_empty() || path.to_string_lossy().contains("://") {
+                bail!("fonts must name local font files");
+            }
+        }
+
+        for corners in [&self.window, &self.menus.selection].into_iter().flatten() {
+            corners.validate()?;
         }
 
         for (name, value) in [
@@ -617,6 +658,9 @@ impl ThemeCatalog {
                 {
                     image.path = path.parent().unwrap_or(Path::new("")).join(&image.path);
                 }
+                for font in theme.fonts.paths_mut().filter(|font| font.is_relative()) {
+                    *font = path.parent().unwrap_or(Path::new("")).join(&*font);
+                }
                 Ok::<_, anyhow::Error>((name, theme))
             })();
 
@@ -707,6 +751,59 @@ pub(crate) fn expand_theme_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corner_settings_are_optional_and_preserve_legacy_radii() {
+        let theme = Theme::parse("window_corner_radius=9\n[inactive]\ncorner_radius=7").unwrap();
+        assert!(theme.window.is_none());
+        assert!(theme.menus.selection.is_none());
+        let visuals = theme.visuals();
+        assert_eq!(visuals.window_corner_radius.nw, 9);
+        assert_eq!(visuals.widgets.inactive.corner_radius.nw, 7);
+        let shaped = Theme::parse(
+            "[window]\ncorner_style='beveled'\n[window.beveled_corners]\ncorner_size=12\n[menus.selection]\ncorner_style='rounded'\n[menus.selection.rounded_corners]\ncorner_radius=4",
+        ).unwrap();
+        assert!(shaped.window.is_some());
+        assert!(shaped.menus.selection.is_some());
+        assert!(Theme::parse(
+            "[window]\ncorner_style='square'\n[window.rounded_corners]\ncorner_radius=4"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn font_paths_are_optional_local_and_theme_relative() {
+        assert_eq!(Theme::default().fonts, ThemeFonts::default());
+        for invalid in [
+            "body_font = ''",
+            "menu_font = 'https://example.com/font.ttf'",
+            "unknown_font = 'a.ttf'",
+        ] {
+            assert!(Theme::parse(&format!("[fonts]\n{invalid}")).is_err());
+        }
+        let root =
+            std::env::temp_dir().join(format!("kosk-theme-font-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("theme.toml");
+        std::fs::write(
+            &file,
+            "name = 'Font test'\n[fonts]\nbody_font = 'fonts/body.ttf'\nmenu_font = 'menu.ttf'\n",
+        )
+        .unwrap();
+        let (catalog, skipped) =
+            ThemeCatalog::load(&root.join("config.toml"), &["theme.toml".into()]).unwrap();
+        assert!(skipped.is_empty());
+        assert_eq!(
+            catalog.get("Font test").fonts.body_font.as_deref(),
+            Some(root.join("fonts/body.ttf").as_path())
+        );
+        assert_eq!(
+            catalog.get("Font test").fonts.menu_font.as_deref(),
+            Some(root.join("menu.ttf").as_path())
+        );
+        std::fs::remove_file(file).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn background_image_settings_validate_without_changing_defaults() {

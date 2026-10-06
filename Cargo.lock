@@ -2019,6 +2019,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_plain",
+ "skrifa",
  "strum",
  "toml",
  "toml_edit",

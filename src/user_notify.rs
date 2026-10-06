@@ -72,6 +72,7 @@ pub enum NoticeKey {
     GuideFailed,
     ThemeFiles(String),
     ThemeBackgroundImage(String),
+    ThemeFont(String),
     ShowHideShortcut,
     TrayIcon,
 }
@@ -292,6 +293,21 @@ impl Notice {
         }
     }
 
+    pub(crate) fn theme_font_failed(path: &std::path::Path) -> Self {
+        Self {
+            key: NoticeKey::ThemeFont(path.to_string_lossy().into_owned()),
+            severity: Severity::Warning,
+            title: "Theme font not loaded",
+            body: format!(
+                "Could not load {}. Using the default font. Restart KOSK after replacing the file.",
+                path.display()
+            ),
+            action: None,
+            wide: false,
+            immediate: false,
+        }
+    }
+
     pub fn theme_files_skipped(paths: &[PathBuf], missing_active: Option<&str>) -> Self {
         let mut identity = paths
             .iter()
@@ -349,6 +365,7 @@ impl Notice {
                 | NoticeKey::NextWordSetup
                 | NoticeKey::ThemeFiles(_)
                 | NoticeKey::ThemeBackgroundImage(_)
+                | NoticeKey::ThemeFont(_)
         )
     }
 

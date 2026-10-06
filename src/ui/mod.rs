@@ -2,4 +2,5 @@
 
 pub(crate) mod background;
 pub mod controller_glyph;
+pub(crate) mod fonts;
 pub(crate) mod menu_list;

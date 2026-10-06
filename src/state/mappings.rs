@@ -1111,10 +1111,10 @@ impl MappingsState {
                     ui.horizontal(|ui| {
                         ui.add_sized(
                             Vec2::new(ACTION_COL_WIDTH, ui.spacing().interact_size.y),
-                            Label::new(RichText::new("Action").strong()),
+                            Label::new(RichText::new("Action").strong().color(text_color)),
                         );
                         ui.add_space(BINDING_COL_GAP);
-                        ui.strong("Binding");
+                        ui.label(RichText::new("Binding").strong().color(text_color));
                     });
 
                     ScrollArea::vertical()
@@ -1146,7 +1146,11 @@ impl MappingsState {
                                                     ACTION_COL_WIDTH,
                                                     ui.spacing().interact_size.y,
                                                 ),
-                                                Label::new(action.as_str()).sense(Sense::click()),
+                                                Label::new(
+                                                    RichText::new(action.as_str())
+                                                        .color(text_color),
+                                                )
+                                                .sense(Sense::click()),
                                             );
                                             if action_resp.clicked() {
                                                 clicked_focus = Some((row_idx, 0));

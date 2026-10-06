@@ -6,6 +6,7 @@ mod config_overlay;
 pub mod controller;
 pub mod platform;
 pub mod state;
+mod surface_shape;
 mod theme;
 pub(crate) mod ui;
 pub use ui::controller_glyph;
