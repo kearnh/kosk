@@ -1,27 +1,19 @@
-# Symbols layout (Steam Controller geometry)
-# US ANSI punctuation missing from `main`, plus Escape/Delete/nav.
-# Digits stay for muscle memory; letter rows are punctuation and nav.
-# `abc` (bottom-right) returns to `main`.
+# Symbols layout: numbers, brackets, operators, punctuation, navigation.
 pad_x = 0.125
-pad_y = 0.1
-font_size = 24.0
-# Rest on the same home-row slots as `main` (`d` / `k`) so analog cursors do not jump.
+pad_y = 0.05
+font_size = 22.0
+# Rest positions match the alphabet layout.
 stick_rest_left = [2, 3]
 stick_rest_right = [2, 9]
 
 [stick_bounds]
-left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.0 } }]
-right = [{ min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.0 } }]
+left = [{ min = { x = 0.0, y = 0.0 }, max = { x = 6.95, y = 5.3 } }]
+right = [{ min = { x = 7.0, y = 0.0 }, max = { x = 14.0, y = 5.3 } }]
 
-# Number row: Esc (US top-left), digits, =+ (US right of 0). Dropped 6/- (still on main).
+# Numbers retain their alphabet-layout positions and shifted symbols.
 [[rows]]
 indent = 0.0
 height = 1.0
-
-[[rows.items]]
-key = "Escape"
-display = "Esc"
-width = 1.2
 
 [[rows.items]]
 key = { normal = "1", shift = "!" }
@@ -37,6 +29,10 @@ key = { normal = "4", shift = "$" }
 
 [[rows.items]]
 key = { normal = "5", shift = "%" }
+
+[[rows.items]]
+key = { normal = "6", shift = "^" }
+width = 1.2
 
 [[rows.items]]
 key = "Skip"
@@ -56,35 +52,34 @@ key = { normal = "9", shift = "(" }
 key = { normal = "0", shift = ")" }
 
 [[rows.items]]
-key = { normal = "=", shift = "+" }
+key = { normal = "-", shift = "_" }
 
 [[rows.items]]
 key = "Backspace"
 display = "{icon:backspace}"
 
-# Symbol row (US letter-adjacent punctuation): `~  [ {  ] }  \ |  |  ; :  ' "  / ?
+# Bracket pairs, then slashes. Shift the backslash for a vertical bar.
 [[rows]]
 indent = 0.0
 height = 1.3
 
 [[rows.items]]
-key = { normal = "`", shift = "~" }
+key = "("
 width = 1.4
 
 [[rows.items]]
-key = { normal = "[", shift = "{" }
+key = ")"
 
 [[rows.items]]
-key = { normal = "]", shift = "}" }
+key = "["
+
+[[rows.items]]
+key = "]"
+width = 1.3
 
 [[rows.items]]
 key = { normal = "\\\\", shift = "|" }
 display = { normal = "\\", shift = "|" }
-width = 1.3
-
-[[rows.items]]
-key = "Delete"
-display = "Del"
 width = 1.6
 
 [[rows.items]]
@@ -92,24 +87,24 @@ key = "Skip"
 width = 0.25
 
 [[rows.items]]
-key = { normal = ";", shift = ":" }
+key = "{"
 width = 1.6
 
 [[rows.items]]
-key = { normal = "'", shift = "\"" }
+key = "}"
 width = 1.4
 
 [[rows.items]]
-key = { normal = "/", shift = "?" }
+key = "<"
 
 [[rows.items]]
-key = "_"
+key = ">"
 
 [[rows.items]]
-key = "|"
+key = "/"
 width = 1.4
 
-# Home row: nav cluster (left) and unshifted brackets (right)
+# Number-row symbols and operators.
 [[rows]]
 indent = 0.0
 height = 1.1
@@ -121,65 +116,6 @@ width = 0.8
 font_size = 18.0
 
 [[rows.items]]
-key = "Home"
-display = "Home"
-font_size = 14.0
-
-[[rows.items]]
-key = "End"
-display = "End"
-font_size = 14.0
-
-[[rows.items]]
-key = "PageUp"
-display = "PgUp"
-font_size = 14.0
-
-[[rows.items]]
-key = "PageDown"
-display = "PgDn"
-font_size = 14.0
-
-[[rows.items]]
-key = "Insert"
-display = "Ins"
-width = 1.4
-font_size = 14.0
-
-[[rows.items]]
-key = "Skip"
-width = 0.25
-
-[[rows.items]]
-key = "{"
-width = 1.5
-
-[[rows.items]]
-key = "}"
-
-[[rows.items]]
-key = "("
-
-[[rows.items]]
-key = ")"
-
-[[rows.items]]
-key = "Return"
-display = "{icon:key-return}"
-width = 1.8
-
-[[rows]]
-indent = 0.0
-height = 1.3
-
-[[rows.items]]
-key = "toggleShift"
-display = "{icon:arrow-fat-up}"
-
-[[rows.items]]
-key = { normal = ",", shift = "<" }
-
-[[rows.items]]
 key = "!"
 
 [[rows.items]]
@@ -189,7 +125,57 @@ key = "@"
 key = "#"
 
 [[rows.items]]
-key = "+"
+key = "$"
+
+[[rows.items]]
+key = "%"
+width = 1.4
+
+[[rows.items]]
+key = "Skip"
+width = 0.25
+
+[[rows.items]]
+key = "^"
+width = 1.5
+
+[[rows.items]]
+key = "&"
+
+[[rows.items]]
+key = "*"
+
+[[rows.items]]
+key = "="
+
+[[rows.items]]
+key = "Return"
+display = "{icon:key-return}"
+width = 1.8
+
+# Punctuation and quotes.
+[[rows]]
+indent = 0.0
+height = 0.85
+
+[[rows.items]]
+key = "toggleShift"
+display = "{icon:arrow-fat-up}"
+
+[[rows.items]]
+key = ","
+
+[[rows.items]]
+key = "."
+
+[[rows.items]]
+key = ";"
+
+[[rows.items]]
+key = ":"
+
+[[rows.items]]
+key = "'"
 width = 1.2
 
 [[rows.items]]
@@ -197,29 +183,84 @@ key = "Skip"
 width = 0.25
 
 [[rows.items]]
-key = "*"
+key = "\""
 width = 1.2
 
 [[rows.items]]
-key = "&"
+key = "`"
 
 [[rows.items]]
 key = "~"
 
 [[rows.items]]
-key = { normal = ".", shift = ">" }
+key = "+"
+
+[[rows.items]]
+key = "?"
 
 [[rows.items]]
 key = "toggleShift"
 display = "{icon:arrow-fat-up}"
 
+# Editing keys on the left; paired navigation keys on the right.
 [[rows]]
 indent = 0.0
-height = 1.0
+height = 0.8
+
+[[rows.items]]
+key = "Escape"
+display = "Esc"
+width = 2.2
+font_size = 16.0
+
+[[rows.items]]
+key = "Insert"
+display = "Ins"
+width = 2.2
+font_size = 16.0
+
+[[rows.items]]
+key = "Delete"
+display = "Del"
+width = 2.2
+font_size = 16.0
+
+[[rows.items]]
+key = "Skip"
+width = 0.25
+
+[[rows.items]]
+key = "Home"
+display = "Home"
+width = 1.5
+font_size = 14.0
+
+[[rows.items]]
+key = "End"
+display = "End"
+width = 1.5
+font_size = 14.0
+
+[[rows.items]]
+key = "PageUp"
+display = "PgUp"
+width = 1.5
+font_size = 14.0
+
+[[rows.items]]
+key = "PageDown"
+display = "PgDn"
+width = 1.5
+font_size = 14.0
+
+[[rows]]
+indent = 0.0
+height = 0.8
 
 [[rows.items]]
 key = "Tab"
 display = "{icon:arrow-line-right}"
+font_size = 22.0
 
 [[rows.items]]
 key = " "
@@ -230,6 +271,7 @@ display_modifiers = true
 key = "switchLayout.main"
 display = "abc"
 width = 1.0
+font_size = 16.0
 
 [[rows]]
 indent = 0.0

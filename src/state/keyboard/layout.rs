@@ -1352,6 +1352,96 @@ mod tests {
     }
 
     #[test]
+    fn symbols_layout_contains_every_digit_and_ascii_symbol() {
+        let file: KeyboardLayoutFile =
+            toml::from_str(include_str!("../../../old_sc_symbols.toml")).unwrap();
+        let keys: Vec<_> = file
+            .rows
+            .iter()
+            .flat_map(|row| &row.items)
+            .filter_map(RowItem::as_key)
+            .collect();
+
+        for character in '0'..='9' {
+            assert!(
+                keys.iter()
+                    .any(|key| key.is_key(false, &RawKey::Key(character))),
+                "missing digit {character}"
+            );
+        }
+
+        for character in ('!'..='~').filter(char::is_ascii_punctuation) {
+            assert!(
+                keys.iter()
+                    .any(|key| [false, true].into_iter().any(|shifted| {
+                        match key.key.get(shifted) {
+                            RawKey::Key(c) => c == character,
+                            RawKey::Text(text) => text == character.to_string(),
+                            _ => false,
+                        }
+                    })),
+                "missing symbol {character}"
+            );
+        }
+    }
+
+    #[test]
+    fn symbols_layout_labels_fit_keys() {
+        let cfg = config::Config::default();
+        let layout = KeyboardLayout::load_with_scales(
+            include_str!("../../../old_sc_symbols.toml"),
+            cfg.scale_x,
+            cfg.scale_y,
+            1.0,
+            1.0,
+        )
+        .unwrap();
+        let ctx = Context::default();
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor_icons::add_fonts(&mut fonts);
+        ctx.set_fonts(fonts);
+
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.spacing_mut().button_padding = Vec2::ZERO;
+            for row in &layout.rows {
+                for key in row.items.iter().filter_map(RowItem::as_key) {
+                    if key.is_skip() {
+                        continue;
+                    }
+
+                    for shift in [false, true] {
+                        let appearance = key.appearance(&DisplayContext {
+                            shift,
+                            ..Default::default()
+                        });
+                        let font_size = key.font_size.unwrap_or(layout.font_size);
+                        let label = super::super::display_icon::expand(
+                            &appearance.text,
+                            font_size,
+                            Color32::WHITE,
+                        );
+                        let galley = label.into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::FontId::proportional(font_size),
+                        );
+                        let required = galley.size() + ui.spacing().button_padding * 2.0;
+                        let available =
+                            Vec2::new(layout.scale_x(key.width), layout.scale_y(row.height));
+                        assert!(
+                            required.x <= available.x && required.y <= available.y,
+                            "label {:?} needs {required:?}, key provides {available:?}",
+                            appearance.text
+                        );
+                    }
+                }
+            }
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
     fn old_sc_and_symbols_share_home_row_rest_slots() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let main: KeyboardLayoutFile =
