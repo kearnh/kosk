@@ -171,7 +171,7 @@ keyboard labels and window bounds; verify long labels and mixed text/icon keys.
 The selected local `willowbody_0-webfont.ttf` is copied to
 `themes/fonts/WillowBody-Regular.ttf` and used for all four roles. Its source,
 hash and unresolved licence status are retained in `WillowBody-SOURCE.md`;
-the original root download remains local. The user selected this font after
+the original download is also retained at the repository root. The user selected this font after
 reviewing the provenance limits.
 
 The inspected file identifies itself as `WillowBody Regular`, names Ray Larabie
