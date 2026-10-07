@@ -225,10 +225,13 @@ impl MenuState {
         kind: ControllerKind,
     ) -> Result<()> {
         self.kind = kind;
-        for (binding, action) in self
-            .bindings
-            .evaluate(input, &crate::when::WhenContext::default())
-        {
+        for (binding, action) in self.bindings.evaluate(
+            input,
+            &crate::when::WhenContext {
+                state: Some(StateId::Settings),
+                ..Default::default()
+            },
+        ) {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }

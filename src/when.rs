@@ -1,5 +1,6 @@
 //! `when` clauses for layout display and controller mappings: parse once, eval per tick.
 
+use crate::state::StateId;
 use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::fmt;
@@ -14,6 +15,7 @@ pub struct WhenContext {
     pub suggestion_selected: bool,
     pub completion_active: bool,
     pub suggestion_just_accepted: bool,
+    pub state: Option<StateId>,
 }
 
 impl WhenContext {
@@ -33,6 +35,7 @@ pub enum Flag {
     SuggestionJustAccepted,
     Recording,
     Replay,
+    State(StateId),
 }
 
 impl Flag {
@@ -47,7 +50,15 @@ impl Flag {
             "suggestionjustaccepted" => Some(Self::SuggestionJustAccepted),
             "recording" => Some(Self::Recording),
             "replay" => Some(Self::Replay),
-            _ => None,
+            ident => {
+                use strum::VariantNames;
+
+                let name = ident.strip_prefix("state.")?;
+                let variant = StateId::VARIANTS
+                    .iter()
+                    .find(|variant| name.eq_ignore_ascii_case(variant))?;
+                serde_plain::from_str(variant).ok().map(Self::State)
+            }
         }
     }
 
@@ -62,11 +73,12 @@ impl Flag {
             Self::SuggestionJustAccepted => ctx.suggestion_just_accepted,
             Self::Recording => ctx.recording,
             Self::Replay => ctx.replay,
+            Self::State(state) => ctx.state == Some(state),
         }
     }
 }
 
-const FLAG_NAMES: &str = "suggestionSelected, completionActive, suggestionJustAccepted, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay";
+const FLAG_NAMES: &str = "suggestionSelected, completionActive, suggestionJustAccepted, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay, state.<screen>";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhenExpr {
@@ -284,6 +296,29 @@ fn tokenize(src: &str) -> Result<Vec<(Token<'_>, usize)>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn state_conditions_parse_for_every_screen() {
+        use crate::state::StateId;
+        use strum::VariantNames;
+
+        for name in StateId::VARIANTS {
+            let condition = format!("state.{name}");
+            let state: StateId = serde_plain::from_str(name).unwrap();
+            let expr = WhenExpr::parse(&condition).unwrap();
+            assert_eq!(WhenExpr::parse(&condition.to_uppercase()).unwrap(), expr);
+            for active_name in StateId::VARIANTS {
+                let active_state = serde_plain::from_str(active_name).unwrap();
+                let ctx = WhenContext {
+                    state: Some(active_state),
+                    ..Default::default()
+                };
+                assert_eq!(expr.eval(&ctx), state == active_state, "{condition}");
+            }
+            assert!(!expr.eval(&WhenContext::default()));
+        }
+        assert!(WhenExpr::parse("state.unknown").is_err());
+    }
 
     fn parse(s: &str) -> WhenExpr {
         WhenExpr::parse(s).unwrap()

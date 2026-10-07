@@ -210,6 +210,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn text_input_chord_has_keyboard_return_condition() {
+        use crate::controller::test_input::ButtonSetInput;
+        use crate::controller::ControllerButton;
+        use crate::when::WhenContext;
+
+        let mappings: HashMap<
+            StateId,
+            HashMap<crate::controller::ControllerBinding, MappingValue>,
+        > = toml::from_str(include_str!("../../mappings.toml")).unwrap();
+        let binding = "share + faceRight".parse().unwrap();
+        let rules = mappings[&StateId::Keyboard][&binding].rules().unwrap();
+        assert_eq!(rules.last().unwrap().action, "switchState.textInput");
+        assert!(rules.iter().any(|rule| {
+            rule.action == "switchState.keyboard" && rule.when.as_deref() == Some("state.textInput")
+        }));
+
+        let target = compile_mapping_value(
+            StateId::Keyboard,
+            &mappings[&StateId::Keyboard][&binding],
+            parse_typed::<KeyboardAction>,
+        )
+        .unwrap()
+        .unwrap();
+        let mut engine = BindingEngine::try_from_raw(HashMap::from([(binding, target)])).unwrap();
+        let idle = ButtonSetInput(Default::default());
+        let leader = ButtonSetInput([ControllerButton::Share].into());
+        let chord = ButtonSetInput([ControllerButton::Share, ControllerButton::FaceRight].into());
+
+        for (state, destination) in [
+            (StateId::Keyboard, StateId::TextInput),
+            (StateId::TextInput, StateId::Keyboard),
+        ] {
+            let ctx = WhenContext {
+                state: Some(state),
+                ..Default::default()
+            };
+            assert!(engine.evaluate(&idle, &ctx).is_empty());
+            assert!(engine.evaluate(&leader, &ctx).is_empty());
+            let fired = engine.evaluate(&chord, &ctx);
+            assert_eq!(fired.len(), 1);
+            assert_eq!(fired[0].1, KeyboardAction::SwitchState(destination));
+            engine.reset(Some(&chord));
+            let next_ctx = WhenContext {
+                state: Some(destination),
+                ..Default::default()
+            };
+            assert!(engine.evaluate(&chord, &next_ctx).is_empty());
+        }
+    }
+
+    #[test]
     fn obsolete_compound_actions_are_not_compiled() {
         for (state, name) in [
             (StateId::Keyboard, "sendKeyUnderLeftStickOrAcceptSuggestion"),

@@ -17,8 +17,9 @@ On draw, it paints a non-interactive `TextEdit` (egui is not allowed to type int
 - `SendKey(Unicode(ch), Click)` inserts that character at `cursor_pos`.
 - `SendText` inserts each character.
 - `Backspace` click deletes the character before the cursor.
+- Left/right arrow clicks move one character locally.
 - `Return` click submits (see below).
-- Any other event is forwarded to the **outer** queue with the same `EventSource`. Toggles, mode switches, recording, and window flips still reach `AppState`.
+- Other `SendKey` events are ignored. Non-key events are forwarded to the **outer** queue with the same `EventSource`. Toggles, mode switches, recording, and window flips still reach `AppState`.
 
 Modifier wrap from the keyboard (Control press/click/release) is ignored for Unicode clicks except that the nested queue still has to accept the whole `push_seq`. Only the Unicode click and `SendText` change the buffer. Ctrl+C in this mode will not copy inside the field; the chord is mostly swallowed except for forwarded non-text events.
 
@@ -26,11 +27,13 @@ Submit builds a `push_seq` on the **outer** queue: `SendText` of the buffer, a R
 
 ## Controller handling
 
-`TextInputAction` is caret moves (WhileHeld), `switchState.*`, `submit`, and the same completion Edge actions as Keyboard: bumpers cycle chips, `faceBottom` is `acceptSuggestion` when a chip is highlighted else `submit`, `faceRight` cancels a highlight, `share + faceLeft` toggles completion. D-pad left/right move the caret and latch completion off.
+`TextInputAction` is caret moves (WhileHeld), `switchState.*`, `submit`, and the same completion Edge actions as Keyboard: bumpers cycle chips, `faceBottom` is `acceptSuggestion` when a chip is highlighted else `submit`, `faceRight` cancels a highlight, `share + faceLeft` toggles completion. Caret moves enqueue local arrow clicks through `kb_events`, using the configured initial and repeat delays, and latch completion off when accepted.
 
 If **any** text-input binding fires on a poll, the keyboard is not given that snapshot. That keeps a d-pad left that means “caret” from also meaning “arrow key” on the keyboard layer, and keeps `submit` from being forwarded as Keyboard Enter. If nothing in the text-input map fires, the snapshot is forwarded to `KeyboardState::handle_controller_input` with `kb_events`, so triggers still type into the buffer through the same path as mouse clicks.
 
-After that, `kb_events.end_controller_tick()` runs. `process_events` runs on this path only when the text-input map did not fire, so a cursor move does not also drain a stick-send from the same poll. `AppState` still ends and drains the **outer** queue, which is where submit and forwarded events live.
+After that, `kb_events.end_controller_tick()` and `process_events` run on every poll. The local queue reads current debounce settings before evaluation. `AppState` still ends and drains the **outer** queue, which is where submit and forwarded events live.
+
+Both binding engines and keyboard display rules receive `state.textInput` as the active screen. The inherited `share + faceRight` rule uses it to return to Keyboard; switching away preserves the buffer until submission or session reset.
 
 Idle `None` resets the text-input binding engine.
 

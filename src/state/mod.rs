@@ -597,14 +597,19 @@ impl AppState {
         input: &dyn ControllerInput,
     ) -> Result<()> {
         let cfg = config::get();
-        let when = match self.state {
-            StateId::Keyboard | StateId::TextInput => keyboard::with_mut(|kb| kb.when_context()),
-            _ => crate::when::WhenContext::default(),
-        };
         let mapping_state = if self.overlay_visible {
             self.state
         } else {
             self.hidden_mapping_state
+        };
+        let when = match mapping_state {
+            StateId::Keyboard | StateId::TextInput => {
+                keyboard::with_mut(|kb| kb.when_context(mapping_state))
+            }
+            _ => crate::when::WhenContext {
+                state: Some(mapping_state),
+                ..Default::default()
+            },
         };
         if self
             .overlay_bindings
@@ -653,9 +658,9 @@ impl AppState {
         }
 
         match self.state {
-            StateId::Keyboard => {
-                keyboard::with_mut(|kb| kb.handle_controller_input(input, &mut self.events))?
-            }
+            StateId::Keyboard => keyboard::with_mut(|kb| {
+                kb.handle_controller_input(input, &mut self.events, StateId::Keyboard)
+            })?,
             StateId::Settings => {
                 menu::with_mut(|m| {
                     m.handle_controller_input(ctx, input, &mut self.events, self.controller_kind)

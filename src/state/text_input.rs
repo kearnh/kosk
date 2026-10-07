@@ -335,6 +335,12 @@ impl TextInputState {
                     self.insert_char(ch);
                 }
                 Event::SendKey(enigo::Key::Backspace, enigo::Direction::Click) => self.backspace(),
+                Event::SendKey(enigo::Key::LeftArrow, enigo::Direction::Click) => {
+                    self.move_cursor_left();
+                }
+                Event::SendKey(enigo::Key::RightArrow, enigo::Direction::Click) => {
+                    self.move_cursor_right();
+                }
                 Event::SendKey(enigo::Key::Return, enigo::Direction::Click) => {
                     self.submit_text(events, &src)
                 }
@@ -359,8 +365,16 @@ impl TextInputState {
     ) -> Result<()> {
         use TextInputAction::*;
         match action {
-            MoveCursorLeft => self.move_cursor_left(),
-            MoveCursorRight => self.move_cursor_right(),
+            MoveCursorLeft | MoveCursorRight => {
+                let key = if matches!(action, MoveCursorLeft) {
+                    enigo::Key::LeftArrow
+                } else {
+                    enigo::Key::RightArrow
+                };
+                let _ = self
+                    .kb_events
+                    .push(Event::SendKey(key, enigo::Direction::Click), source);
+            }
             SwitchState(state) => {
                 let _ = events.push(Event::ChangeState(*state), source);
             }
@@ -439,7 +453,9 @@ impl TextInputState {
 
         keyboard::with_mut(|keyboard_state| {
             keyboard_state.set_feed_completion_log(false);
-            if let Some(key) = keyboard_state.draw_keyboard_ui(ctx, ui, &mut self.kb_events) {
+            if let Some(key) =
+                keyboard_state.draw_keyboard_ui(ctx, ui, &mut self.kb_events, StateId::TextInput)
+            {
                 keyboard_state
                     .send_key(&key, &mut self.kb_events, &EventSource::MouseClick)
                     .expect("send key");
@@ -466,7 +482,10 @@ impl TextInputState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        let ctx = keyboard::with_mut(|kb| kb.when_context());
+        let cfg = config::get();
+        self.kb_events
+            .set_debounce_ms(cfg.event_debounce_ms, cfg.event_debounce_repeat_ms);
+        let ctx = keyboard::with_mut(|kb| kb.when_context(StateId::TextInput));
         let fired = self.bindings.evaluate(input, &ctx);
         for (binding, action) in &fired {
             let src = EventSource::Controller(binding.clone());
@@ -475,13 +494,15 @@ impl TextInputState {
 
         if fired.is_empty() {
             keyboard::with_mut(|keyboard_state| {
-                keyboard_state.handle_controller_input(input, &mut self.kb_events)
+                keyboard_state.handle_controller_input(
+                    input,
+                    &mut self.kb_events,
+                    StateId::TextInput,
+                )
             })?;
         }
         self.kb_events.end_controller_tick();
-        if fired.is_empty() {
-            self.process_events(events);
-        }
+        self.process_events(events);
 
         Ok(())
     }
@@ -522,6 +543,71 @@ pub(crate) fn with_mut<R>(f: impl FnOnce(&mut TextInputState) -> R) -> R {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn state_with_text(text: &str, cursor_pos: usize) -> TextInputState {
+        TextInputState {
+            text: text.to_owned(),
+            cursor_pos,
+            kb_events: EventQueue::passthrough(),
+            bindings: BindingEngine::default(),
+            undo_accept: None,
+        }
+    }
+
+    #[test]
+    fn cursor_press_moves_one_char_before_repeat_delay() {
+        use crate::controller::{ControllerBinding, ControllerButton};
+
+        for (action, button, start, expected) in [
+            (
+                TextInputAction::MoveCursorLeft,
+                ControllerButton::DpadLeft,
+                6,
+                2,
+            ),
+            (
+                TextInputAction::MoveCursorRight,
+                ControllerButton::DpadRight,
+                2,
+                6,
+            ),
+        ] {
+            let mut state = state_with_text("ab😀cd", start);
+            state.kb_events.set_debounce_ms(60_000, 0);
+            let mut events = EventQueue::passthrough();
+            let source = EventSource::Controller(ControllerBinding::Single(button));
+
+            for _ in 0..10 {
+                state.do_action(&action, &mut events, &source).unwrap();
+                state.kb_events.end_controller_tick();
+                state.process_events(&mut events);
+                assert_eq!(state.cursor_pos, expected, "{action:?}");
+            }
+
+            assert_eq!(state.text, "ab😀cd");
+            assert!(events.drain_pending().is_empty());
+        }
+    }
+
+    #[test]
+    fn arrow_events_edit_local_cursor_without_forwarding() {
+        let mut state = state_with_text("ab😀cd", 6);
+        let mut events = EventQueue::passthrough();
+        state.kb_events.push(
+            Event::SendKey(enigo::Key::LeftArrow, enigo::Direction::Click),
+            &EventSource::MouseClick,
+        );
+        state.process_events(&mut events);
+        assert_eq!(state.cursor_pos, 2);
+
+        state.kb_events.push(
+            Event::SendKey(enigo::Key::RightArrow, enigo::Direction::Click),
+            &EventSource::MouseClick,
+        );
+        state.process_events(&mut events);
+        assert_eq!(state.cursor_pos, 6);
+        assert!(events.drain_pending().is_empty());
+    }
 
     #[test]
     fn insert_emoji_advances_full_char() {

@@ -66,6 +66,19 @@ These names are true or false while you hold the button. You can combine them wi
 | `modifier.alt` | Alt is sticky-on |
 | `recording` | a tape is being recorded |
 | `replay` | a tape is playing |
+| `state.keyboard` `state.textInput` `state.settings` `state.moveWindow` `state.selectLayout` `state.mappings` `state.selectKey` | that screen is active |
+
+Inherited Keyboard bindings see the active screen. For example, this chord enters text input and returns to the keyboard on the next press:
+
+```toml
+[Keyboard]
+"share + faceRight" = [
+  { action = "switchState.keyboard", when = "state.textInput" },
+  { action = "switchState.textInput" },
+]
+```
+
+Other screens use their own mapping tables. A matching return binding must be present there; a `when` clause does not make a Keyboard binding global.
 
 ## Keyboard actions
 
@@ -105,6 +118,8 @@ Up and down move the highlight. Left and right change the highlighted value. Act
 ## Text input actions
 
 `moveCursorLeft`, `moveCursorRight`, `submit` (accept the line), plus the same suggestion actions as the keyboard (`cycleSuggestion`, `cycleSuggestionPrev`, `cancelSuggestion`, `backspaceAcceptedSuggestion`, `toggleCompletion`, `acceptSuggestion`, `acceptSuggestion.0`), and `switchState.…`
+
+Cursor moves step one character and repeat after the configured delay. Returning with `switchState.keyboard` keeps the local text for the next visit; `submit` sends it and clears the buffer.
 
 ## Move-window actions
 

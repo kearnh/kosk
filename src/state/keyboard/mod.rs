@@ -643,7 +643,7 @@ impl KeyboardState {
         self.send_key(&key, events, source)
     }
 
-    pub(crate) fn when_context(&self) -> WhenContext {
+    pub(crate) fn when_context(&self, state: StateId) -> WhenContext {
         let session = input_record::session();
         let (suggestion_selected, completion_active, suggestion_just_accepted) =
             crate::completion::with_mut(|s| {
@@ -665,6 +665,7 @@ impl KeyboardState {
             suggestion_selected,
             completion_active,
             suggestion_just_accepted,
+            state: Some(state),
         }
     }
 
@@ -914,7 +915,7 @@ impl KeyboardState {
 
     pub fn draw_ui(&mut self, ctx: &Context, ui: &mut Ui, events: &mut EventQueue) {
         self.feed_completion_log = true;
-        if let Some(key) = self.draw_keyboard_ui(ctx, ui, events) {
+        if let Some(key) = self.draw_keyboard_ui(ctx, ui, events, StateId::Keyboard) {
             self.send_key(&key, events, &EventSource::MouseClick)
                 .expect("send key");
         }
@@ -976,6 +977,7 @@ impl KeyboardState {
         &mut self,
         input: &dyn ControllerInput,
         events: &mut EventQueue,
+        state: StateId,
     ) -> Result<()> {
         self.cursor_input = Some(input.box_clone());
         self.note_battery(input.battery());
@@ -1105,7 +1107,7 @@ impl KeyboardState {
             }
         }
 
-        let evaluated = self.bindings.evaluate(input, &self.when_context());
+        let evaluated = self.bindings.evaluate(input, &self.when_context(state));
         let held: HashSet<EventSource> = evaluated
             .iter()
             .map(|(b, _)| EventSource::Controller(b.clone()))
@@ -1146,8 +1148,9 @@ impl KeyboardState {
         ctx: &Context,
         ui: &mut Ui,
         events: &mut EventQueue,
+        state: StateId,
     ) -> Option<RawKey> {
-        let display_ctx = self.when_context();
+        let display_ctx = self.when_context(state);
         let visual_cfg = config::get();
 
         let show_chips = self.feed_completion_log

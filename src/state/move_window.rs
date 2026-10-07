@@ -179,10 +179,13 @@ impl MoveWindowState {
         input: &dyn ControllerInput,
         events: &mut EventQueue,
     ) -> Result<()> {
-        for (binding, action) in self
-            .bindings
-            .evaluate(input, &crate::when::WhenContext::default())
-        {
+        for (binding, action) in self.bindings.evaluate(
+            input,
+            &crate::when::WhenContext {
+                state: Some(StateId::MoveWindow),
+                ..Default::default()
+            },
+        ) {
             let src = EventSource::Controller(binding);
             self.do_action(&action, events, &src)?;
         }

@@ -34,7 +34,10 @@
 "padLeft" = "sendKeyUnderLeftStick"
 "padRight" = "sendKeyUnderRightStick"
 "share + faceTop" = "switchState.settings"
-"share + faceRight" = "switchState.textInput"
+"share + faceRight" = [
+  { action = "switchState.keyboard", when = "state.textInput" },
+  { action = "switchState.textInput" },
+]
 "share + quickAccess" = "rotateWindow"
 "faceTop" = "toggleShift"
 "faceBottom" = [
