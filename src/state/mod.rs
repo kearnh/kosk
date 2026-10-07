@@ -306,7 +306,9 @@ impl AppState {
 
     fn process_events(&mut self, ctx: &Context, holdover: Option<&dyn ControllerInput>) {
         /// Max leaf events handled in one `process_events` call (follow-up storms).
-        const PROCESS_EVENTS_BUDGET: usize = 32;
+        // NOTE: Sequence truncation is an accepted limit of the follow-up storm guard.
+        // Budget exhaustion can drop replacement text or modifier releases.
+        const PROCESS_EVENTS_BUDGET: usize = 256;
 
         let mut processed = 0usize;
         loop {
