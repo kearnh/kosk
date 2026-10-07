@@ -309,6 +309,16 @@ impl TextInputState {
     }
 
     fn submit_text(&mut self, events: &mut EventQueue, source: &EventSource) {
+        let mut steps = Vec::new();
+        if !self.text.is_empty() {
+            steps.push(Event::SendText(self.text.to_string()));
+            steps.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
+        }
+        steps.push(Event::ChangeState(StateId::Keyboard));
+        if !events.push_seq(steps, source) {
+            return;
+        }
+
         crate::completion::with_mut(|s| {
             if let Some(s) = s {
                 s.clear_suggestion_just_accepted();
@@ -317,15 +327,8 @@ impl TextInputState {
                 }
             }
         });
-        let mut steps = Vec::new();
-        if !self.text.is_empty() {
-            steps.push(Event::SendText(self.text.to_string()));
-            steps.push(Event::SendKey(enigo::Key::Return, enigo::Direction::Click));
-            self.text.clear();
-            self.cursor_pos = 0;
-        }
-        steps.push(Event::ChangeState(StateId::Keyboard));
-        let _ = events.push_seq(steps, source);
+        self.text.clear();
+        self.cursor_pos = 0;
     }
 
     fn process_events(&mut self, events: &mut EventQueue) {
@@ -552,6 +555,46 @@ mod tests {
             bindings: BindingEngine::default(),
             undo_accept: None,
         }
+    }
+
+    #[test]
+    fn debounced_submit_preserves_draft_until_retry_is_accepted() {
+        use crate::controller::{ControllerBinding, ControllerButton};
+
+        const DEBOUNCE_MS: u64 = 60_000;
+
+        let mut state = state_with_text("ab😀cd", 6);
+        state.undo_accept = Some(("original".to_owned(), 3));
+        let mut events = EventQueue::passthrough();
+        events.set_debounce_ms(DEBOUNCE_MS, 0);
+        let source =
+            EventSource::Controller(ControllerBinding::Single(ControllerButton::FaceBottom));
+        assert!(events.push(Event::Repaint, &source));
+        events.drain_pending();
+
+        state.submit_text(&mut events, &source);
+
+        assert_eq!(state.text, "ab😀cd");
+        assert_eq!(state.cursor_pos, 6);
+        assert_eq!(state.undo_accept, Some(("original".to_owned(), 3)));
+        assert!(events.drain_pending().is_empty());
+
+        events.set_debounce_ms(0, 0);
+        state.submit_text(&mut events, &source);
+
+        assert!(state.text.is_empty());
+        assert_eq!(state.cursor_pos, 0);
+        assert_eq!(
+            events.drain_pending(),
+            vec![
+                (Event::SendText("ab😀cd".to_owned()), source.clone()),
+                (
+                    Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
+                    source.clone(),
+                ),
+                (Event::ChangeState(StateId::Keyboard), source),
+            ],
+        );
     }
 
     #[test]
