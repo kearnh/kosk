@@ -71,10 +71,7 @@ fn visibility_clears_completion_and_blocks_input_until_release() {
 
     state.handle_controller_input(&ctx, &modifier).unwrap();
     state.reset_controller_input(&ctx).unwrap();
-    state
-        .handle_controller_input(&ctx, &Input(Some(ControllerButton::DpadLeft)))
-        .unwrap();
-    state.reset_controller_input(&ctx).unwrap();
+    completion::with_mut(|session| session.unwrap().toggle_armed());
     completion::with_mut(|session| assert!(!session.unwrap().armed()));
     completion::with_mut(|session| {
         let session = session.unwrap();

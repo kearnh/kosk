@@ -298,10 +298,6 @@ impl KeyboardState {
                 }
                 if events.push_seq(steps, source) {
                     self.animate_key_press(key);
-                    self.shift_state = false;
-                    self.shift_mod = false;
-                    self.ctrl_mod = false;
-                    self.alt_mod = false;
                     if eat {
                         crate::completion::with_mut(|s| {
                             if let Some(s) = s {
@@ -310,6 +306,7 @@ impl KeyboardState {
                         });
                     }
                     self.note_outgoing(key);
+                    self.clear_modifiers();
                     if space_after {
                         Self::note_space_after();
                     }
@@ -341,11 +338,8 @@ impl KeyboardState {
                 }
                 if events.push_seq(steps, source) {
                     self.animate_key_press(key);
-                    self.shift_state = false;
-                    self.shift_mod = false;
-                    self.ctrl_mod = false;
-                    self.alt_mod = false;
                     self.note_outgoing(key);
+                    self.clear_modifiers();
                 }
             }
             RawKey::Action(action) => {
