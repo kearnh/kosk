@@ -58,7 +58,7 @@ For a character `RawKey::Key(c)` with **no** Ctrl/Alt/Shift sticky mods, the que
 
 If any sticky mod is on, the queue gets a `push_seq`: press each held modifier, `SendKey(Unicode(c), Click)`, then release in reverse. Enigo’s text path ignores modifiers, so chords such as Ctrl+C must use virtual keys.
 
-`RawKey::Enigo` (Backspace, arrows) always uses `SendKey` clicks, with the same modifier wrap if stickies are on.
+`RawKey::Enigo` (Enter, Backspace, arrows) always uses `SendKey` clicks, wrapped in active modifiers. Either Shift flag holds Shift for these keys, enabling Shift+Enter and Shift+arrows.
 
 `RawKey::Text` pushes `SendText` of the whole string (used when a layout entry is a multi-character literal).
 

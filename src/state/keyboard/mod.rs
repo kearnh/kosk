@@ -313,8 +313,9 @@ impl KeyboardState {
                 }
             }
             RawKey::Enigo(k) => {
+                let send_shift = self.shift_state || self.shift_mod;
                 let mut steps = Vec::new();
-                if self.shift_mod {
+                if send_shift {
                     steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Press));
                 }
                 if self.ctrl_mod {
@@ -333,7 +334,7 @@ impl KeyboardState {
                         enigo::Direction::Release,
                     ));
                 }
-                if self.shift_mod {
+                if send_shift {
                     steps.push(Event::SendKey(enigo::Key::Shift, enigo::Direction::Release));
                 }
                 if events.push_seq(steps, source) {
@@ -1545,6 +1546,51 @@ mod send_key_tests {
     fn letter_without_mods_uses_send_text() {
         let mut kb = KeyboardState::default();
         assert_eq!(drain_char(&mut kb, 'c'), vec![Event::SendText("c".into())]);
+    }
+
+    #[test]
+    fn shift_toggle_enter_sends_shift_chord() {
+        let mut kb = KeyboardState::default();
+        kb.toggle_shift();
+        let mut events = EventQueue::passthrough();
+        let source = EventSource::MouseClick;
+
+        kb.do_action(
+            &KeyboardAction::SendEnigoKey(enigo::Key::Return),
+            &mut events,
+            &source,
+        )
+        .unwrap();
+
+        assert_eq!(
+            events.drain_pending(),
+            vec![
+                (
+                    Event::SendKey(enigo::Key::Shift, enigo::Direction::Press),
+                    source.clone(),
+                ),
+                (
+                    Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
+                    source.clone(),
+                ),
+                (
+                    Event::SendKey(enigo::Key::Shift, enigo::Direction::Release),
+                    source.clone(),
+                ),
+            ],
+        );
+        assert!(!kb.shift_state);
+        assert!(!kb.shift_mod);
+
+        kb.send_key(&RawKey::Enigo(enigo::Key::Return), &mut events, &source)
+            .unwrap();
+        assert_eq!(
+            events.drain_pending(),
+            vec![(
+                Event::SendKey(enigo::Key::Return, enigo::Direction::Click),
+                source,
+            )],
+        );
     }
 
     #[test]
