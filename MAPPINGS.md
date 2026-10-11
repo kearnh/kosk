@@ -80,6 +80,26 @@ Inherited Keyboard bindings see the active screen. For example, this chord enter
 
 Other screens use their own mapping tables. A matching return binding must be present there; a `when` clause does not make a Keyboard binding global.
 
+`focusedApp("factorio.exe")` matches the focused executable filename, ignoring
+case. Include the extension; paths, patterns and window titles are not supported.
+It updates as focus changes on Windows. Other platforms report no focused app.
+
+To reserve L5 for a Steam shortcut in Factorio while retaining backspace elsewhere,
+put these overrides in your user `mappings.toml`:
+
+```toml
+[Keyboard]
+l5 = [
+  { action = "backspaceAcceptedSuggestion", when = '!focusedApp("factorio.exe") && suggestionJustAccepted' },
+  { action = "sendKey.backspace", when = '!focusedApp("factorio.exe")' },
+]
+
+[TextInput]
+l5 = { action = "backspaceAcceptedSuggestion", when = '!focusedApp("factorio.exe") && suggestionJustAccepted' }
+```
+
+Neither rule matches in Factorio, so L5 sends nothing from KOSK.
+
 ## Keyboard actions
 
 `toggleOverlayVisibility` shows or hides KOSK. It is available in every mapping table and remains active while hidden; other actions are ignored while hidden. The mappings editor and binding picker use the keyboard's visibility bindings. Avoid binding it to a button that also sends KOSK's global shortcut through Steam, which would toggle twice.

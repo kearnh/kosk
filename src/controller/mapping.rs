@@ -104,6 +104,21 @@ pub fn validate_rule_order(rules: &[MappingRule]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn l5_backspace_rules_can_exclude_factorio() {
+        let rules = vec![
+            MappingRule {
+                action: "backspaceAcceptedSuggestion".into(),
+                when: Some(r#"!focusedApp("factorio.exe") && suggestionJustAccepted"#.into()),
+            },
+            MappingRule {
+                action: "sendKey.backspace".into(),
+                when: Some(r#"!focusedApp("factorio.exe")"#.into()),
+            },
+        ];
+        assert!(validate_rule_order(&rules).is_ok());
+    }
     use crate::controller::{ControllerBinding, ControllerButton};
     use std::collections::HashMap;
 

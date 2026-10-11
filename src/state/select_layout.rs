@@ -146,7 +146,7 @@ impl SelectLayoutState {
             input,
             &crate::when::WhenContext {
                 state: Some(StateId::SelectLayout),
-                ..Default::default()
+                ..crate::when::WhenContext::with_focused_app()
             },
         ) {
             let src = EventSource::Controller(binding);

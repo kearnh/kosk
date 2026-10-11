@@ -200,6 +200,55 @@ impl Renderer {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(try_from = "ThemeRuleSource", into = "ThemeRuleSource")]
+struct ThemeRule {
+    source: ThemeRuleSource,
+    condition: crate::when::WhenExpr,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ThemeRuleSource {
+    theme: String,
+    when: String,
+}
+
+impl TryFrom<ThemeRuleSource> for ThemeRule {
+    type Error = String;
+
+    fn try_from(source: ThemeRuleSource) -> Result<Self, Self::Error> {
+        if source.theme.trim().is_empty() {
+            return Err("theme rule requires a nonempty theme name".into());
+        }
+        let condition = crate::when::WhenExpr::parse(&source.when)?;
+        validate_theme_condition(&condition)?;
+        Ok(Self { source, condition })
+    }
+}
+
+impl From<ThemeRule> for ThemeRuleSource {
+    fn from(rule: ThemeRule) -> Self {
+        rule.source
+    }
+}
+
+fn validate_theme_condition(condition: &crate::when::WhenExpr) -> Result<(), String> {
+    use crate::when::WhenExpr;
+
+    match condition {
+        WhenExpr::FocusedApp(_) => Ok(()),
+        WhenExpr::Not(inner) => validate_theme_condition(inner),
+        WhenExpr::And(left, right) | WhenExpr::Or(left, right) => {
+            validate_theme_condition(left)?;
+            validate_theme_condition(right)
+        }
+        WhenExpr::Flag(_) => {
+            Err("theme when conditions support focusedApp, !, &&, || and parentheses".into())
+        }
+    }
+}
+
 #[config_section]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -221,6 +270,12 @@ pub struct Config {
 
     /// Theme files or glob patterns, resolved beside the active configuration file.
     pub themes: Vec<String>,
+
+    /// First matching focused-app rule overrides the selected theme.
+    theme_rules: Vec<ThemeRule>,
+
+    #[serde(skip)]
+    focused_app: Option<String>,
 
     #[serde(skip)]
     theme_catalog: Arc<crate::theme::ThemeCatalog>,
@@ -690,7 +745,19 @@ impl Config {
     }
 
     pub(crate) fn theme(&self) -> &crate::theme::Theme {
-        self.theme_catalog.get(&self.active_theme)
+        let context = crate::when::WhenContext {
+            focused_app: self.focused_app.clone(),
+            ..Default::default()
+        };
+        let name = self
+            .theme_rules
+            .iter()
+            .find(|rule| {
+                self.theme_catalog.contains(&rule.source.theme) && rule.condition.eval(&context)
+            })
+            .map(|rule| rule.source.theme.as_str())
+            .unwrap_or(&self.active_theme);
+        self.theme_catalog.get(name)
     }
 
     pub(crate) fn theme_revision(&self) -> u64 {
@@ -902,6 +969,7 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "renderer",
     "active_theme",
     "themes",
+    "theme_rules",
     "battery",
     "layouts",
     "record_file",
@@ -1624,14 +1692,13 @@ pub fn get() -> Config {
     let instance = CONFIG_INSTANCE
         .get()
         .expect("Config must be initialized before use");
-    let config = instance.lock().unwrap();
-    config.clone()
+    let mut config = instance.lock().unwrap().clone();
+    config.focused_app = crate::platform::foreground::current_basename();
+    config
 }
 
 pub(crate) fn try_get() -> Option<Config> {
-    CONFIG_INSTANCE
-        .get()
-        .map(|instance| instance.lock().unwrap().clone())
+    CONFIG_INSTANCE.get().map(|_| get())
 }
 
 /// Replace the in-memory config. Does not write the file or notify listeners.
@@ -1964,6 +2031,85 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    #[test]
+    fn theme_rules_reject_invalid_when_conditions() {
+        let dir = temp_dir("invalid-theme-condition");
+        let path = dir.join("config.toml");
+        fs::write(
+            &path,
+            "[[theme_rules]]\ntheme = 'Factorio'\nwhen = 'unknownCondition'\n",
+        )
+        .unwrap();
+        assert!(read_merged_config(&path, ConfigSource::Explicit).is_err());
+    }
+
+    #[test]
+    fn theme_rules_follow_focus_preserve_fallback_and_round_trip() {
+        let dir = temp_dir("focused-theme-rules");
+        let path = dir.join("config.toml");
+        fs::write(
+            dir.join("normal.toml"),
+            "name = 'Normal'\nbackground_color = [1, 2, 3]\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("factorio.toml"),
+            "name = 'Factorio'\nbackground_color = [4, 5, 6]\n",
+        )
+        .unwrap();
+        let source = r#"config_version = 3
+active_theme = 'Normal'
+themes = ['normal.toml', 'factorio.toml']
+[[theme_rules]]
+theme = 'Unavailable'
+when = 'focusedApp("factorio.exe")'
+[[theme_rules]]
+theme = 'Factorio'
+when = 'focusedApp("factorio.exe")'
+[[theme_rules]]
+theme = 'default'
+when = 'focusedApp("factorio.exe")'
+"#;
+        fs::write(&path, source).unwrap();
+        let (mut config, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        for (focused, color) in [
+            (None, [1, 2, 3, 255]),
+            (Some("factorio.exe"), [4, 5, 6, 255]),
+            (Some("notepad.exe"), [1, 2, 3, 255]),
+            (Some("FACTORIO.EXE"), [4, 5, 6, 255]),
+            (None, [1, 2, 3, 255]),
+        ] {
+            config.focused_app = focused.map(str::to_owned);
+            assert_eq!(config.theme().background_color, color);
+            assert_eq!(config.active_theme, "Normal");
+        }
+        config.focused_app = Some("factorio.exe".into());
+        write_for_source(ConfigSource::User, &path, &config, Some("mappings.toml")).unwrap();
+        let (reloaded, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(reloaded.active_theme, "Normal");
+        assert_eq!(reloaded.theme_rules.len(), 3);
+        assert_eq!(
+            reloaded.theme_rules[1].source.when,
+            r#"focusedApp("factorio.exe")"#
+        );
+        assert!(reloaded.focused_app.is_none());
+        let tape = tape_config_toml(&config).unwrap();
+        assert!(!tape.contains("theme_rules"));
+        assert!(!tape.contains("focused_app"));
+        let replay = overlay_tape_config(&config, "theme_rules = []").unwrap();
+        assert_eq!(replay.theme_rules.len(), 3);
+    }
+
+    #[test]
+    fn theme_rules_reject_screen_flags_and_empty_names() {
+        for source in [
+            "theme = 'Factorio'\nwhen = 'modifier.shift'",
+            "theme = 'Factorio'\nwhen = 'focusedApp(\"factorio.exe\") && recording'",
+            "theme = ''\nwhen = 'focusedApp(\"factorio.exe\")'",
+        ] {
+            assert!(toml::from_str::<Config>(&format!("[[theme_rules]]\n{source}")).is_err());
+        }
+    }
     #[test]
     fn renderer_selection_is_fixed_until_restart() {
         for (initial, changed, expected) in [

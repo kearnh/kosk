@@ -22,6 +22,35 @@ impl ForegroundExe for FixedForeground {
     }
 }
 
+#[derive(Default)]
+struct ForegroundSnapshot {
+    window: Option<isize>,
+    basename: Option<String>,
+}
+
+impl ForegroundSnapshot {
+    fn update(&mut self, window: Option<isize>, foreground: &dyn ForegroundExe) -> Option<String> {
+        if self.window == window {
+            return self.basename.clone();
+        }
+        self.window = window;
+        self.basename = window.and_then(|_| foreground.basename());
+        self.basename.clone()
+    }
+}
+
+/// Cache the executable query until foreground focus changes.
+pub(crate) fn current_basename() -> Option<String> {
+    use std::sync::{Mutex, OnceLock};
+
+    static SNAPSHOT: OnceLock<Mutex<ForegroundSnapshot>> = OnceLock::new();
+    SNAPSHOT
+        .get_or_init(|| Mutex::new(ForegroundSnapshot::default()))
+        .lock()
+        .unwrap()
+        .update(super::foreground_window_handle(), &OsForeground)
+}
+
 fn foreground_exe_basename() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
@@ -72,5 +101,31 @@ fn windows_basename() -> Option<String> {
             .file_name()
             .and_then(|s| s.to_str())
             .map(str::to_string)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_refreshes_on_focus_change_and_clears_without_focus() {
+        let mut snapshot = ForegroundSnapshot::default();
+        let factorio = FixedForeground(Some("factorio.exe".into()));
+        let editor = FixedForeground(Some("notepad.exe".into()));
+        assert_eq!(
+            snapshot.update(Some(1), &factorio).as_deref(),
+            Some("factorio.exe")
+        );
+        assert_eq!(
+            snapshot.update(Some(1), &editor).as_deref(),
+            Some("factorio.exe")
+        );
+        assert_eq!(
+            snapshot.update(Some(2), &editor).as_deref(),
+            Some("notepad.exe")
+        );
+        assert_eq!(snapshot.update(None, &factorio), None);
+        assert_eq!(snapshot.update(Some(3), &FixedForeground(None)), None);
     }
 }

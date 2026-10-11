@@ -210,6 +210,53 @@ mod tests {
     use super::*;
 
     #[test]
+    fn l5_backspace_is_suppressed_only_in_factorio() {
+        use crate::controller::test_input::ButtonSetInput;
+        use crate::controller::ControllerButton;
+        use crate::when::WhenContext;
+
+        let value = MappingValue::Rules(vec![
+            MappingRule {
+                action: "backspaceAcceptedSuggestion".into(),
+                when: Some(r#"!focusedApp("factorio.exe") && suggestionJustAccepted"#.into()),
+            },
+            MappingRule {
+                action: "sendKey.backspace".into(),
+                when: Some(r#"!focusedApp("factorio.exe")"#.into()),
+            },
+        ]);
+        let target =
+            compile_mapping_value(StateId::Keyboard, &value, parse_typed::<KeyboardAction>)
+                .unwrap()
+                .unwrap();
+        let binding = crate::controller::ControllerBinding::Single(ControllerButton::L5);
+        let mut engine = BindingEngine::try_from_raw(HashMap::from([(binding, target)])).unwrap();
+        let held = ButtonSetInput([ControllerButton::L5].into());
+        for focused in [Some("factorio.exe"), Some("notepad.exe"), None] {
+            for accepted in [false, true] {
+                engine.reset(None);
+                let context = WhenContext {
+                    focused_app: focused.map(str::to_owned),
+                    suggestion_just_accepted: accepted,
+                    ..Default::default()
+                };
+                let actions = engine.evaluate(&held, &context);
+                if focused == Some("factorio.exe") {
+                    assert!(actions.is_empty());
+                    continue;
+                }
+                let expected = if accepted {
+                    KeyboardAction::BackspaceAcceptedSuggestion
+                } else {
+                    KeyboardAction::try_from("sendKey.backspace").unwrap()
+                };
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].1, expected);
+            }
+        }
+    }
+
+    #[test]
     fn text_input_chord_has_keyboard_return_condition() {
         use crate::controller::test_input::ButtonSetInput;
         use crate::controller::ControllerButton;

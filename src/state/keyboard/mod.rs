@@ -667,6 +667,7 @@ impl KeyboardState {
             completion_active,
             suggestion_just_accepted,
             state: Some(state),
+            ..WhenContext::with_focused_app()
         }
     }
 

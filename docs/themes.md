@@ -24,6 +24,30 @@ an unavailable active theme falls back to Default and displays a notice.
 Invalid startup configuration uses the built-in defaults. Recordings use the
 current local theme.
 
+## Focused-app themes
+
+Add rules to `config.toml` to override the selected theme while an app has focus:
+
+```toml
+active_theme = "Old Steam Controller"
+themes = ["themes/*.toml"]
+
+[[theme_rules]]
+theme = "Factorio"
+when = 'focusedApp("factorio.exe")'
+```
+
+The first matching rule with an available theme wins. When none matches, KOSK
+uses `active_theme`, including the theme selected in Settings. Focus changes
+never save a new selection. Rules reload with the config and remain local during
+recording playback.
+
+Theme conditions support `focusedApp`, `!`, `&&`, `||` and parentheses.
+Executable filenames match exactly, ignoring case; include the extension.
+Paths, patterns and window titles are not supported. Focus detection works on
+Windows; other platforms report no focused app. Keyboard-state flags apply only
+to mappings and layout display conditions.
+
 ## Included themes
 
 The repository includes [Old Steam Controller](../themes/old-steam-controller.toml),

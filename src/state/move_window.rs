@@ -183,7 +183,7 @@ impl MoveWindowState {
             input,
             &crate::when::WhenContext {
                 state: Some(StateId::MoveWindow),
-                ..Default::default()
+                ..crate::when::WhenContext::with_focused_app()
             },
         ) {
             let src = EventSource::Controller(binding);

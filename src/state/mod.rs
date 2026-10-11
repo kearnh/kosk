@@ -610,7 +610,7 @@ impl AppState {
             }
             _ => crate::when::WhenContext {
                 state: Some(mapping_state),
-                ..Default::default()
+                ..crate::when::WhenContext::with_focused_app()
             },
         };
         if self

@@ -5,7 +5,7 @@ use serde::de::{self, Deserializer, Visitor};
 use serde::Deserialize;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WhenContext {
     pub shift: bool,
     pub recording: bool,
@@ -16,11 +16,19 @@ pub struct WhenContext {
     pub completion_active: bool,
     pub suggestion_just_accepted: bool,
     pub state: Option<StateId>,
+    pub focused_app: Option<String>,
 }
 
 impl WhenContext {
-    pub fn modifier(self) -> bool {
+    pub fn modifier(&self) -> bool {
         self.shift || self.ctrl || self.alt
+    }
+
+    pub(crate) fn with_focused_app() -> Self {
+        Self {
+            focused_app: crate::platform::foreground::current_basename(),
+            ..Default::default()
+        }
     }
 }
 
@@ -78,11 +86,12 @@ impl Flag {
     }
 }
 
-const FLAG_NAMES: &str = "suggestionSelected, completionActive, suggestionJustAccepted, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay, state.<screen>";
+const FLAG_NAMES: &str = "suggestionSelected, completionActive, suggestionJustAccepted, modifier, modifier.shift, modifier.ctrl, modifier.alt, recording, replay, state.<screen>, focusedApp(\"executable\")";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhenExpr {
     Flag(Flag),
+    FocusedApp(String),
     Not(Box<WhenExpr>),
     And(Box<WhenExpr>, Box<WhenExpr>),
     Or(Box<WhenExpr>, Box<WhenExpr>),
@@ -99,6 +108,10 @@ impl WhenExpr {
     pub fn eval(&self, ctx: &WhenContext) -> bool {
         match self {
             Self::Flag(f) => f.eval(ctx),
+            Self::FocusedApp(name) => ctx
+                .focused_app
+                .as_deref()
+                .is_some_and(|focused| focused.eq_ignore_ascii_case(name)),
             Self::Not(e) => !e.eval(ctx),
             Self::And(a, b) => a.eval(ctx) && b.eval(ctx),
             Self::Or(a, b) => a.eval(ctx) || b.eval(ctx),
@@ -129,6 +142,7 @@ impl<'de> Deserialize<'de> for WhenExpr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Token<'a> {
     Ident(&'a str),
+    String(&'a str),
     Not,
     And,
     Or,
@@ -199,6 +213,9 @@ impl<'a> Parser<'a> {
 
     fn parse_primary(&mut self) -> Result<WhenExpr, String> {
         match self.bump() {
+            Some(Token::Ident(id)) if id.eq_ignore_ascii_case("focusedApp") => {
+                self.parse_focused_app()
+            }
             Some(Token::Ident(id)) => {
                 let flag = Flag::from_ident(id).ok_or_else(|| {
                     format!("unknown when-clause identifier '{id}' (expected {FLAG_NAMES})")
@@ -215,6 +232,22 @@ impl<'a> Parser<'a> {
             Some(other) => Err(format!("unexpected token {other:?} at byte {}", self.at())),
             None => Err("unexpected end of when-clause".to_string()),
         }
+    }
+
+    fn parse_focused_app(&mut self) -> Result<WhenExpr, String> {
+        if self.bump() != Some(Token::LParen) {
+            return Err("focusedApp requires a quoted executable name in parentheses".into());
+        }
+        let Some(Token::String(name)) = self.bump() else {
+            return Err("focusedApp requires a quoted executable name".into());
+        };
+        if name.trim().is_empty() || name.contains(['/', '\\', '*', '?']) {
+            return Err("focusedApp requires an exact executable filename without a path".into());
+        }
+        if self.bump() != Some(Token::RParen) {
+            return Err(format!("expected ')' at byte {}", self.at()));
+        }
+        Ok(WhenExpr::FocusedApp(name.to_owned()))
     }
 
     fn expect_eof(&self) -> Result<(), String> {
@@ -237,6 +270,19 @@ fn tokenize(src: &str) -> Result<Vec<(Token<'_>, usize)>, String> {
     while i < bytes.len() {
         match bytes[i] {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            quote @ (b'\'' | b'"') => {
+                let start = i;
+                i += 1;
+                let value_start = i;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                if i == bytes.len() {
+                    return Err(format!("unterminated string at byte {start}"));
+                }
+                tokens.push((Token::String(&src[value_start..i]), start));
+                i += 1;
+            }
             b'!' => {
                 tokens.push((Token::Not, i));
                 i += 1;
@@ -296,6 +342,58 @@ fn tokenize(src: &str) -> Result<Vec<(Token<'_>, usize)>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focused_app_conditions_parse() {
+        for source in [
+            r#"focusedApp("factorio.exe")"#,
+            r#"!focusedApp("factorio.exe") && suggestionJustAccepted"#,
+            r#"FOCUSEDAPP("Factorio.exe") || modifier.shift"#,
+        ] {
+            assert!(WhenExpr::parse(source).is_ok(), "{source}");
+        }
+    }
+
+    #[test]
+    fn focused_app_matches_exact_filename_case_insensitively() {
+        let expression = parse(r#"focusedApp("factorio.exe")"#);
+        for (focused_app, expected) in [
+            (Some("factorio.exe"), true),
+            (Some("Factorio.EXE"), true),
+            (Some("factorio.exe.backup"), false),
+            (Some("not-factorio.exe"), false),
+            (None, false),
+        ] {
+            let context = WhenContext {
+                focused_app: focused_app.map(str::to_owned),
+                ..Default::default()
+            };
+            assert_eq!(expression.eval(&context), expected);
+            assert_eq!(
+                parse(r#"!focusedApp('factorio.exe')"#).eval(&context),
+                !expected
+            );
+        }
+    }
+
+    #[test]
+    fn focused_app_rejects_missing_names_paths_and_patterns() {
+        for source in [
+            "focusedApp",
+            "focusedApp()",
+            "focusedApp(factorio.exe)",
+            r#"focusedApp("")"#,
+            r#"focusedApp(" ")"#,
+            r#"focusedApp("C:/factorio.exe")"#,
+            r#"focusedApp("C:\factorio.exe")"#,
+            r#"focusedApp("*.exe")"#,
+            r#"focusedApp("factorio.exe""#,
+            r#"focusedApp("factorio.exe)"#,
+            r#"focusedApp("factorio.exe", "other.exe")"#,
+        ] {
+            assert!(WhenExpr::parse(source).is_err(), "{source}");
+        }
+    }
 
     #[test]
     fn state_conditions_parse_for_every_screen() {
