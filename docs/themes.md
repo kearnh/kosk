@@ -26,21 +26,22 @@ current local theme.
 
 ## Focused-app themes
 
-Add rules to `config.toml` to override the selected theme while an app has focus:
+Use an ordered array in `config.toml` to select themes by focused app:
 
 ```toml
-active_theme = "Old Steam Controller"
+active_theme = [
+  { theme = "Factorio", when = 'focusedApp("factorio.exe")' },
+  { theme = "Old Steam Controller" },
+]
 themes = ["themes/*.toml"]
-
-[[theme_rules]]
-theme = "Factorio"
-when = 'focusedApp("factorio.exe")'
 ```
 
-The first matching rule with an available theme wins. When none matches, KOSK
-uses `active_theme`, including the theme selected in Settings. Focus changes
-never save a new selection. Rules reload with the config and remain local during
-recording playback.
+The first matching entry with an available theme wins. An entry without `when`
+is the fallback and must be last. Without a matching entry, KOSK uses Default.
+Empty arrays and misplaced fallbacks are rejected. A plain theme name remains
+valid. Settings changes the fallback and preserves conditional entries. Focus
+changes never save a new selection. Rules reload with the config and remain
+local during recording playback.
 
 Theme conditions support `focusedApp`, `!`, `&&`, `||` and parentheses.
 Executable filenames match exactly, ignoring case; include the extension.

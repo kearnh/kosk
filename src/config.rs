@@ -204,14 +204,15 @@ impl Renderer {
 #[serde(try_from = "ThemeRuleSource", into = "ThemeRuleSource")]
 struct ThemeRule {
     source: ThemeRuleSource,
-    condition: crate::when::WhenExpr,
+    condition: Option<crate::when::WhenExpr>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ThemeRuleSource {
     theme: String,
-    when: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    when: Option<String>,
 }
 
 impl TryFrom<ThemeRuleSource> for ThemeRule {
@@ -221,8 +222,16 @@ impl TryFrom<ThemeRuleSource> for ThemeRule {
         if source.theme.trim().is_empty() {
             return Err("theme rule requires a nonempty theme name".into());
         }
-        let condition = crate::when::WhenExpr::parse(&source.when)?;
-        validate_theme_condition(&condition)?;
+        let condition = source
+            .when
+            .as_deref()
+            .map(crate::when::WhenExpr::parse)
+            .transpose()?;
+
+        if let Some(condition) = &condition {
+            validate_theme_condition(condition)?;
+        }
+
         Ok(Self { source, condition })
     }
 }
@@ -230,6 +239,123 @@ impl TryFrom<ThemeRuleSource> for ThemeRule {
 impl From<ThemeRule> for ThemeRuleSource {
     fn from(rule: ThemeRule) -> Self {
         rule.source
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(try_from = "ThemeChoice", into = "ThemeChoice")]
+pub struct ActiveTheme(ThemeChoice);
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+enum ThemeChoice {
+    Name(String),
+    Rules(Vec<ThemeRule>),
+}
+
+impl TryFrom<ThemeChoice> for ActiveTheme {
+    type Error = String;
+
+    fn try_from(choice: ThemeChoice) -> Result<Self, Self::Error> {
+        match &choice {
+            ThemeChoice::Name(name) if name.trim().is_empty() => {
+                return Err("active_theme requires a nonempty theme name".into());
+            }
+            ThemeChoice::Rules(rules) => {
+                if rules.is_empty() {
+                    return Err("active_theme array must not be empty".into());
+                }
+
+                if rules
+                    .iter()
+                    .take(rules.len() - 1)
+                    .any(|rule| rule.condition.is_none())
+                {
+                    return Err("active_theme fallback (entry without when) must be last".into());
+                }
+            }
+            _ => {}
+        }
+
+        Ok(Self(choice))
+    }
+}
+
+impl From<ActiveTheme> for ThemeChoice {
+    fn from(selection: ActiveTheme) -> Self {
+        selection.0
+    }
+}
+
+impl From<String> for ActiveTheme {
+    fn from(name: String) -> Self {
+        Self(ThemeChoice::Name(name))
+    }
+}
+
+impl From<&str> for ActiveTheme {
+    fn from(name: &str) -> Self {
+        name.to_owned().into()
+    }
+}
+
+impl Default for ActiveTheme {
+    fn default() -> Self {
+        crate::theme::DEFAULT_THEME_NAME.into()
+    }
+}
+
+impl ActiveTheme {
+    pub(crate) fn fallback_name(&self) -> &str {
+        match &self.0 {
+            ThemeChoice::Name(name) => name,
+            ThemeChoice::Rules(rules) => rules
+                .last()
+                .filter(|rule| rule.condition.is_none())
+                .map(|rule| rule.source.theme.as_str())
+                .unwrap_or(crate::theme::DEFAULT_THEME_NAME),
+        }
+    }
+
+    pub(crate) fn set_fallback(&mut self, name: &str) {
+        let ThemeChoice::Rules(rules) = &mut self.0 else {
+            self.0 = ThemeChoice::Name(name.to_owned());
+            return;
+        };
+
+        if let Some(fallback) = rules.last_mut().filter(|rule| rule.condition.is_none()) {
+            fallback.source.theme = name.to_owned();
+            return;
+        }
+
+        rules.push(ThemeRule {
+            source: ThemeRuleSource {
+                theme: name.to_owned(),
+                when: None,
+            },
+            condition: None,
+        });
+    }
+
+    fn resolve<'a>(
+        &'a self,
+        context: &crate::when::WhenContext,
+        catalog: &crate::theme::ThemeCatalog,
+    ) -> &'a str {
+        match &self.0 {
+            ThemeChoice::Name(name) => name,
+            ThemeChoice::Rules(rules) => rules
+                .iter()
+                .find(|rule| {
+                    catalog.contains(&rule.source.theme)
+                        && rule
+                            .condition
+                            .as_ref()
+                            .is_none_or(|condition| condition.eval(context))
+                })
+                .map(|rule| rule.source.theme.as_str())
+                .unwrap_or(crate::theme::DEFAULT_THEME_NAME),
+        }
     }
 }
 
@@ -264,15 +390,11 @@ pub struct Config {
     #[serde(default)]
     pub config_version: i64,
 
-    /// Selected theme name. `default` uses the built-in appearance.
-    #[config(default = crate::theme::DEFAULT_THEME_NAME.to_owned())]
-    pub active_theme: String,
+    /// Theme name or ordered `{ theme, when }` rules with an optional final fallback.
+    pub active_theme: ActiveTheme,
 
     /// Theme files or glob patterns, resolved beside the active configuration file.
     pub themes: Vec<String>,
-
-    /// First matching focused-app rule overrides the selected theme.
-    theme_rules: Vec<ThemeRule>,
 
     #[serde(skip)]
     focused_app: Option<String>,
@@ -749,14 +871,7 @@ impl Config {
             focused_app: self.focused_app.clone(),
             ..Default::default()
         };
-        let name = self
-            .theme_rules
-            .iter()
-            .find(|rule| {
-                self.theme_catalog.contains(&rule.source.theme) && rule.condition.eval(&context)
-            })
-            .map(|rule| rule.source.theme.as_str())
-            .unwrap_or(&self.active_theme);
+        let name = self.active_theme.resolve(&context, &self.theme_catalog);
         self.theme_catalog.get(name)
     }
 
@@ -969,7 +1084,6 @@ const TAPE_CONFIG_SKIP: &[&str] = &[
     "renderer",
     "active_theme",
     "themes",
-    "theme_rules",
     "battery",
     "layouts",
     "record_file",
@@ -1299,11 +1413,13 @@ fn read_merged_config(
     let mut config: Config = merged
         .try_into()
         .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
-    let selected_theme = config.active_theme.clone();
+    let selected_theme = config.active_theme.fallback_name().to_owned();
     let (catalog, skipped_themes) = crate::theme::ThemeCatalog::load(config_path, &config.themes)?;
     let missing_active = (!catalog.contains(&selected_theme)).then_some(selected_theme);
     if missing_active.is_some() {
-        config.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+        config
+            .active_theme
+            .set_fallback(crate::theme::DEFAULT_THEME_NAME);
     }
     if !skipped_themes.is_empty() || missing_active.is_some() {
         crate::user_notify::notify(crate::user_notify::Notice::theme_files_skipped(
@@ -2032,12 +2148,22 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn active_theme_accepts_ordered_rules_with_a_final_fallback() {
+        let source = r#"active_theme = [
+  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
+  { theme = 'Old Steam Controller' },
+]
+"#;
+        assert!(toml::from_str::<Config>(source).is_ok());
+    }
+
+    #[test]
     fn theme_rules_reject_invalid_when_conditions() {
         let dir = temp_dir("invalid-theme-condition");
         let path = dir.join("config.toml");
         fs::write(
             &path,
-            "[[theme_rules]]\ntheme = 'Factorio'\nwhen = 'unknownCondition'\n",
+            "active_theme = [{ theme = 'Factorio', when = 'unknownCondition' }]\n",
         )
         .unwrap();
         assert!(read_merged_config(&path, ConfigSource::Explicit).is_err());
@@ -2058,17 +2184,13 @@ mod tests {
         )
         .unwrap();
         let source = r#"config_version = 3
-active_theme = 'Normal'
+active_theme = [
+  { theme = 'Unavailable', when = 'focusedApp("factorio.exe")' },
+  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
+  { theme = 'default', when = 'focusedApp("factorio.exe")' },
+  { theme = 'Normal' },
+]
 themes = ['normal.toml', 'factorio.toml']
-[[theme_rules]]
-theme = 'Unavailable'
-when = 'focusedApp("factorio.exe")'
-[[theme_rules]]
-theme = 'Factorio'
-when = 'focusedApp("factorio.exe")'
-[[theme_rules]]
-theme = 'default'
-when = 'focusedApp("factorio.exe")'
 "#;
         fs::write(&path, source).unwrap();
         let (mut config, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
@@ -2081,23 +2203,25 @@ when = 'focusedApp("factorio.exe")'
         ] {
             config.focused_app = focused.map(str::to_owned);
             assert_eq!(config.theme().background_color, color);
-            assert_eq!(config.active_theme, "Normal");
+            assert_eq!(config.active_theme.fallback_name(), "Normal");
         }
         config.focused_app = Some("factorio.exe".into());
         write_for_source(ConfigSource::User, &path, &config, Some("mappings.toml")).unwrap();
         let (reloaded, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
-        assert_eq!(reloaded.active_theme, "Normal");
-        assert_eq!(reloaded.theme_rules.len(), 3);
+        assert_eq!(reloaded.active_theme.fallback_name(), "Normal");
         assert_eq!(
-            reloaded.theme_rules[1].source.when,
-            r#"focusedApp("factorio.exe")"#
+            toml::Value::try_from(&reloaded.active_theme).unwrap(),
+            toml::Value::try_from(&config.active_theme).unwrap()
         );
         assert!(reloaded.focused_app.is_none());
         let tape = tape_config_toml(&config).unwrap();
-        assert!(!tape.contains("theme_rules"));
+        assert!(!tape.contains("active_theme"));
         assert!(!tape.contains("focused_app"));
-        let replay = overlay_tape_config(&config, "theme_rules = []").unwrap();
-        assert_eq!(replay.theme_rules.len(), 3);
+        let replay = overlay_tape_config(&config, "active_theme = 'default'").unwrap();
+        assert_eq!(
+            toml::Value::try_from(&replay.active_theme).unwrap(),
+            toml::Value::try_from(&config.active_theme).unwrap()
+        );
     }
 
     #[test]
@@ -2107,9 +2231,73 @@ when = 'focusedApp("factorio.exe")'
             "theme = 'Factorio'\nwhen = 'focusedApp(\"factorio.exe\") && recording'",
             "theme = ''\nwhen = 'focusedApp(\"factorio.exe\")'",
         ] {
-            assert!(toml::from_str::<Config>(&format!("[[theme_rules]]\n{source}")).is_err());
+            assert!(toml::from_str::<Config>(&format!("[[active_theme]]\n{source}")).is_err());
         }
     }
+
+    #[test]
+    fn active_theme_rejects_empty_arrays_and_misplaced_fallbacks() {
+        for selection in [
+            "[]",
+            "''",
+            "[{ theme = 'default' }, { theme = 'Factorio', when = 'focusedApp(\"factorio.exe\")' }]",
+            "[{ theme = 'default' }, { theme = 'Factorio' }]",
+        ] {
+            assert!(toml::from_str::<Config>(&format!("active_theme = {selection}")).is_err(), "{selection}");
+        }
+    }
+
+    #[test]
+    fn active_theme_without_a_fallback_uses_default_and_can_append_one() {
+        let mut config: Config = toml::from_str(
+            r#"active_theme = [{ theme = 'Factorio', when = 'focusedApp("factorio.exe")' }]"#,
+        )
+        .unwrap();
+        config.set_theme_names_for_test(&["Factorio", "Normal"]);
+        assert_eq!(config.active_theme.fallback_name(), "default");
+        assert_eq!(
+            config
+                .active_theme
+                .resolve(&crate::when::WhenContext::default(), &config.theme_catalog),
+            "default"
+        );
+        config.active_theme.set_fallback("Normal");
+        let value = toml::Value::try_from(&config.active_theme).unwrap();
+        let rules = value.as_array().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(
+            rules[0]["when"].as_str(),
+            Some(r#"focusedApp("factorio.exe")"#)
+        );
+        assert_eq!(rules[1]["theme"].as_str(), Some("Normal"));
+        assert!(rules[1].get("when").is_none());
+    }
+
+    #[test]
+    fn unavailable_theme_fallback_preserves_conditional_entries() {
+        let dir = temp_dir("missing-theme-fallback");
+        let path = dir.join("config.toml");
+        fs::write(
+            dir.join("factorio.toml"),
+            "name = 'Factorio'\nbackground_color = [4, 5, 6]\n",
+        )
+        .unwrap();
+        fs::write(
+            &path,
+            r#"active_theme = [
+  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
+  { theme = 'Unavailable' },
+]
+themes = ['factorio.toml']
+"#,
+        )
+        .unwrap();
+        let (mut config, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(config.active_theme.fallback_name(), "default");
+        config.focused_app = Some("factorio.exe".into());
+        assert_eq!(config.theme().background_color, [4, 5, 6, 255]);
+    }
+
     #[test]
     fn renderer_selection_is_fixed_until_restart() {
         for (initial, changed, expected) in [
@@ -2329,7 +2517,7 @@ when = 'focusedApp("factorio.exe")'
                 .unwrap();
         assert_eq!(replay.stick_pad_cursor_style().radius, 14.0);
         assert!(!replay.stick_pad_cursor_style().enabled);
-        cfg.active_theme = crate::theme::DEFAULT_THEME_NAME.to_owned();
+        cfg.active_theme = crate::theme::DEFAULT_THEME_NAME.into();
         assert_eq!(cfg.stick_pad_cursor_style().left_fill_color, None);
         assert_eq!(
             cfg.stick_pad_cursor_style().right_fill_color,
@@ -2598,13 +2786,13 @@ enabled = false\n\
         assert!(!serialized.contains("theme_catalog"));
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(saved.active_theme, "Zinc");
+        assert_eq!(saved.active_theme.fallback_name(), "Zinc");
         assert_eq!(saved.themes, cfg.themes);
         assert_eq!(saved.theme().keyboard.left_selection_color, [4, 5, 6, 255]);
         cfg.active_theme = "default".into();
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(saved.active_theme, "default");
+        assert_eq!(saved.active_theme.fallback_name(), "default");
         assert_eq!(saved.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(saved.theme(), &crate::theme::Theme::default());
     }
@@ -2729,7 +2917,7 @@ enabled = false\n\
         )
         .unwrap();
         let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(fallback.active_theme, "default");
+        assert_eq!(fallback.active_theme.fallback_name(), "default");
         assert_eq!(fallback.theme_names(), ["default"]);
         assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
         let tape = tape_config_toml(&after).unwrap();
@@ -2740,7 +2928,7 @@ enabled = false\n\
             "active_theme = 'default'\nthemes = ['missing.toml']\n",
         )
         .unwrap();
-        assert_eq!(replay.active_theme, "Custom");
+        assert_eq!(replay.active_theme.fallback_name(), "Custom");
         assert_eq!(replay.theme().background_color, [4, 5, 6, 255]);
     }
 
@@ -2760,12 +2948,12 @@ enabled = false\n\
             )
             .unwrap();
             let (loaded, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-            assert_eq!(loaded.active_theme, "default");
+            assert_eq!(loaded.active_theme.fallback_name(), "default");
             assert_eq!(loaded.theme_names(), ["default"]);
             assert_eq!(loaded.scale_x, 37.0);
             let (cfg, _, used_defaults) = load_initial(&config_path, ConfigSource::Explicit);
             assert!(!used_defaults);
-            assert_eq!(cfg.active_theme, "default");
+            assert_eq!(cfg.active_theme.fallback_name(), "default");
             assert_eq!(cfg.scale_x, 37.0);
         }
     }
@@ -2935,7 +3123,7 @@ enabled = false\n\
             )
             .unwrap();
             let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-            assert_eq!(fallback.active_theme, "default");
+            assert_eq!(fallback.active_theme.fallback_name(), "default");
             assert_eq!(fallback.theme_names(), ["default"]);
             assert_eq!(
                 after.theme().keyboard.key_groups[0].background_color,
