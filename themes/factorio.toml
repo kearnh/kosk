@@ -1,47 +1,51 @@
-# Factorio: charcoal machinery, steel panels, amber highlights and copper accents.
+# Factorio GUI palette; references and atlas samples: factorio-SOURCE.md.
 name = "Factorio"
 background_color = "charcoal"
 keyboard_opacity = 1.0
 ui_opacity = 1.0
-text_color = "warm_white"
+text_color = "text_white"
 muted_text_color = "muted_steel"
-selection_background_color = "amber"
-selection_border_color = "bright_amber"
+selection_background_color = "orange"
+selection_border_color = "button_pressed"
 selection_border_width = 2.0
 window_border_color = "steel_border"
 window_border_width = 2.0
 window_corner_radius = 2.0
 
 [colours]
-charcoal = [30, 30, 28]
-panel = [48, 48, 44]
-steel = [66, 66, 60]
-keyboard_panel = [40, 40, 36, 205]
-hover_steel = [83, 81, 70]
-steel_border = [106, 103, 88]
-warm_white = [235, 230, 210]
-muted_steel = [167, 164, 148]
-amber = [224, 161, 42]
-bright_amber = [255, 199, 78]
-copper = [188, 104, 55]
-copper_highlight = [232, 155, 94]
-olive = [113, 137, 72]
-signal_green = [151, 190, 102]
-signal_red = [231, 111, 88]
-signal_blue = [120, 182, 202]
-dim_steel = [121, 121, 109]
-input_charcoal = [23, 24, 22]
-selection_ink = [12, 13, 12]
-press_glow = [255, 210, 115, 170]
-row_amber = [224, 161, 42, 65]
-table_amber = [224, 161, 42, 30]
-ghost_charcoal = [30, 30, 28, 100]
+charcoal = [45, 44, 45]
+panel = [62, 61, 62]
+steel = [143, 143, 143]
+keyboard_panel = [45, 45, 45]
+button_hover = [228, 153, 34]
+button_pressed = [241, 191, 100]
+steel_border = [93, 90, 88]
+slot_border = [36, 36, 36]
+text_white = [255, 255, 255]
+caption = [255, 230, 192]
+muted_steel = [128, 128, 128]
+orange = [255, 175, 0]
+orange_pressed = [220, 123, 0]
+warning_orange = [250, 168, 56]
+confirm_green = [94, 183, 99]
+signal_green = [135, 216, 139]
+button_red = [254, 90, 90]
+signal_red = [255, 142, 142]
+signal_blue = [128, 206, 240]
+dim_steel = [128, 128, 128]
+deep_panel = [31, 30, 31]
+input_gray = [131, 131, 131]
+selection_ink = [0, 0, 0]
+press_glow = [225, 177, 106, 170]
+row_orange = [255, 175, 0, 65]
+table_orange = [255, 175, 0, 30]
+ghost_charcoal = [45, 44, 45, 100]
 shadow = [0, 0, 0, 230]
 
 [noninteractive]
 background_color = "panel"
 weak_background_color = "charcoal"
-text_color = "warm_white"
+text_color = "text_white"
 border_color = "steel_border"
 border_width = 1.0
 corner_radius = 2.0
@@ -49,32 +53,32 @@ corner_radius = 2.0
 [inactive]
 background_color = "steel"
 weak_background_color = "panel"
-text_color = "warm_white"
+text_color = "selection_ink"
 border_color = "steel_border"
 border_width = 1.0
 corner_radius = 2.0
 
 [hovered]
-background_color = "hover_steel"
-weak_background_color = "hover_steel"
-text_color = "bright_amber"
-border_color = "amber"
+background_color = "button_hover"
+weak_background_color = "button_hover"
+text_color = "selection_ink"
+border_color = "button_pressed"
 border_width = 2.0
 corner_radius = 2.0
 
 [active]
-background_color = "amber"
-weak_background_color = "amber"
-text_color = "charcoal"
-border_color = "bright_amber"
+background_color = "button_pressed"
+weak_background_color = "button_pressed"
+text_color = "selection_ink"
+border_color = "button_hover"
 border_width = 2.0
 corner_radius = 2.0
 
 [open]
-background_color = "hover_steel"
-weak_background_color = "hover_steel"
-text_color = "bright_amber"
-border_color = "amber"
+background_color = "button_hover"
+weak_background_color = "button_hover"
+text_color = "selection_ink"
+border_color = "button_pressed"
 border_width = 2.0
 corner_radius = 2.0
 
@@ -84,95 +88,95 @@ radius = 10.0
 ring_thickness = 3.0
 ring_fill_opacity = 0.2
 opacity = 1.0
-left_color = "copper"
-right_color = "bright_amber"
+left_color = "orange_pressed"
+right_color = "orange"
 
 [keyboard]
-selection_background_color = "amber"
+selection_background_color = "orange"
 selection_text_color = "selection_ink"
-left_selection_color = "amber"
-right_selection_color = "copper"
-dual_selection_color = "olive"
-modifier_text_color = "bright_amber"
+left_selection_color = "orange"
+right_selection_color = "orange_pressed"
+dual_selection_color = "confirm_green"
+modifier_text_color = "caption"
 key_press_color = "press_glow"
 
 [[keyboard.key_groups]]
 keys = ["Return"]
-background_color = "olive"
-text_color = "warm_white"
+background_color = "confirm_green"
+text_color = "selection_ink"
 
 [[keyboard.key_groups]]
 keys = ["exit"]
-background_color = "copper"
-text_color = "warm_white"
+background_color = "button_red"
+text_color = "selection_ink"
 
 [keyboard.inactive]
 background_color = "keyboard_panel"
 weak_background_color = "keyboard_panel"
-text_color = "warm_white"
-border_color = "steel_border"
+text_color = "text_white"
+border_color = "slot_border"
 border_width = 1.0
 corner_radius = 2.0
 
 [keyboard.hovered]
-background_color = "hover_steel"
-weak_background_color = "hover_steel"
-text_color = "bright_amber"
-border_color = "amber"
+background_color = "panel"
+weak_background_color = "panel"
+text_color = "text_white"
+border_color = "orange"
 border_width = 2.0
 corner_radius = 2.0
 
 [keyboard.active]
-background_color = "amber"
-weak_background_color = "amber"
-text_color = "charcoal"
-border_color = "bright_amber"
+background_color = "deep_panel"
+weak_background_color = "deep_panel"
+text_color = "text_white"
+border_color = "button_pressed"
 border_width = 2.0
 corner_radius = 2.0
 
 [suggestions]
-background_color = "steel"
-text_color = "warm_white"
-selected_background_color = "amber"
-selected_text_color = "charcoal"
-empty_slot_background = "panel"
+background_color = "keyboard_panel"
+text_color = "text_white"
+selected_background_color = "orange"
+selected_text_color = "selection_ink"
+empty_slot_background = "deep_panel"
 armed_color = "signal_green"
 disarmed_color = "dim_steel"
-new_word_mark_color = "copper_highlight"
+new_word_mark_color = "warning_orange"
 corner_radius = 2.0
 selected_outline_width = 2.0
 
 [text_input]
-background_color = "input_charcoal"
-text_color = "warm_white"
-cursor_color = "bright_amber"
+background_color = "input_gray"
+text_color = "selection_ink"
+cursor_color = "selection_ink"
 
 [menus]
-heading_color = "bright_amber"
+heading_color = "caption"
 muted_text_color = "muted_steel"
-selected_text_color = "charcoal"
+selected_text_color = "selection_ink"
 
 [mappings]
-row_focus_color = "row_amber"
-table_focus_color = "table_amber"
-focus_border_color = "amber"
+row_focus_color = "row_orange"
+table_focus_color = "table_orange"
+focus_border_color = "orange"
 focus_border_width = 2.0
-text_color = "warm_white"
-warning_color = "bright_amber"
+text_color = "text_white"
+warning_color = "warning_orange"
 error_color = "signal_red"
 success_color = "signal_green"
-unsaved_color = "copper_highlight"
-editor_background_color = "input_charcoal"
+unsaved_color = "warning_orange"
+editor_background_color = "deep_panel"
 editor_border_color = "steel_border"
 editor_border_width = 1.0
 editor_corner_radius = 2.0
 
 [move_window]
 background_color = "ghost_charcoal"
-border_color = "amber"
+border_color = "orange"
 border_width = 2.0
 corner_radius = 2.0
-text_color = "warm_white"
+text_color = "text_white"
 text_shadow_color = "shadow"
 
 [notifications]
@@ -182,14 +186,14 @@ border_width = 2.0
 corner_radius = 2.0
 muted_text_color = "muted_steel"
 info_color = "signal_blue"
-warning_color = "bright_amber"
+warning_color = "warning_orange"
 error_color = "signal_red"
 
 [battery]
 empty = "signal_red"
-low = "copper_highlight"
-medium = "amber"
-high = "olive"
+low = "warning_orange"
+medium = "orange"
+high = "confirm_green"
 full = "signal_green"
 charging = "signal_blue"
 unknown = "dim_steel"

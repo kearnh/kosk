@@ -60,7 +60,8 @@ Add `themes/*.toml` to the `themes` list to discover them.
 
 The Portal 2 theme uses clean gray-white surfaces with blue and orange accents.
 
-The Factorio theme uses charcoal and steel panels with amber and copper accents.
+The Factorio theme uses the game's grey panels, orange selections, green confirm
+buttons and red cancel buttons. [Palette references](../themes/factorio-SOURCE.md).
 
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
