@@ -46,7 +46,6 @@ pub(crate) fn heading(ui: &mut Ui, title: &str, appearance: &MenusTheme) {
             .heading()
             .color(crate::theme::color(appearance.heading_color)),
     );
-    ui.separator();
 }
 
 pub(crate) fn row(
