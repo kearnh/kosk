@@ -164,6 +164,7 @@ impl AppState {
             return;
         }
 
+        config::refresh_focused_config();
         self.overlay_visible = visible;
         self.resume_controller_after_release = true;
         self.events = EventQueue::new();
@@ -263,7 +264,7 @@ impl AppState {
         if matches!(self.pos, WindowPos::Absolute(..)) && resolved != self.pos {
             self.pos = resolved;
             if self.state != StateId::MoveWindow {
-                let mut cfg = config::get();
+                let mut cfg = config::settings_config();
                 cfg.window_pos = self.pos;
                 let _ = config::save(cfg);
             }
@@ -382,7 +383,7 @@ impl AppState {
                         self.pos = final_pos;
                         self.move_origin = None;
                         self.moved_during_place = false;
-                        let mut cfg = config::get();
+                        let mut cfg = config::settings_config();
                         cfg.window_pos = self.pos;
                         let _ = config::save(cfg);
                     }
@@ -424,6 +425,9 @@ impl AppState {
     }
 
     pub fn prepare_window(&mut self, ctx: &Context, frame: &eframe::Frame) -> egui::Margin {
+        if let Some(interval) = config::refresh_focused_config() {
+            ctx.request_repaint_after(interval);
+        }
         let cfg = config::get();
         let corners = cfg
             .theme()
@@ -598,6 +602,7 @@ impl AppState {
         ctx: &Context,
         input: &dyn ControllerInput,
     ) -> Result<()> {
+        config::refresh_focused_config();
         let cfg = config::get();
         let mapping_state = if self.overlay_visible {
             self.state

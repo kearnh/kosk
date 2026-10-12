@@ -260,26 +260,25 @@ struct ThemeControl;
 
 impl Control for ThemeControl {
     fn format(&self, cfg: &Config) -> String {
-        cfg.active_theme.fallback_name().to_owned()
+        cfg.active_theme.name().to_owned()
     }
 
     fn nudge(&self, cfg: &mut Config, dir: i32) -> bool {
         let names = cfg.theme_names();
         let index = names
             .iter()
-            .position(|name| *name == cfg.active_theme.fallback_name())
+            .position(|name| *name == cfg.active_theme.name())
             .unwrap_or(0);
         let next = names[step_index(index, names.len(), dir)].to_owned();
-        if next == cfg.active_theme.fallback_name() {
+        if next == cfg.active_theme.name() {
             return false;
         }
-        cfg.active_theme.set_fallback(&next);
+        cfg.active_theme.set_name(&next);
         true
     }
 
     fn copy(&self, dst: &mut Config, src: &Config) {
-        dst.active_theme
-            .set_fallback(src.active_theme.fallback_name());
+        dst.active_theme.set_name(src.active_theme.name());
     }
 
     fn is_toggle(&self) -> bool {
@@ -474,7 +473,7 @@ pub(crate) fn settings() -> &'static [Setting] {
             key: "active_theme",
             page: Page::Themes,
             label: "Theme",
-            explain: "Choose the fallback theme. Conditional theme entries stay in place.",
+            explain: "Choose the theme in the main configuration. Active config overlays take precedence.",
             advanced: false,
             control: Box::new(ThemeControl),
         });
@@ -593,46 +592,18 @@ mod tests {
         let setting = setting_for_key("active_theme").unwrap();
         assert_eq!(setting.page, Page::Themes);
         assert!(setting.nudge(&mut cfg, 1));
-        assert_eq!(cfg.active_theme.fallback_name(), "Amber");
+        assert_eq!(cfg.active_theme.name(), "Amber");
         assert!(setting.nudge(&mut cfg, 1));
-        assert_eq!(cfg.active_theme.fallback_name(), "Zinc");
+        assert_eq!(cfg.active_theme.name(), "Zinc");
         assert!(setting.nudge(&mut cfg, 1));
-        assert_eq!(cfg.active_theme.fallback_name(), "default");
+        assert_eq!(cfg.active_theme.name(), "default");
         assert!(setting.nudge(&mut cfg, -1));
-        assert_eq!(cfg.active_theme.fallback_name(), "Zinc");
+        assert_eq!(cfg.active_theme.name(), "Zinc");
         let mut disk = sample();
         setting.copy(&mut disk, &cfg);
-        assert_eq!(disk.active_theme.fallback_name(), "Zinc");
+        assert_eq!(disk.active_theme.name(), "Zinc");
         assert!(disk.themes.is_empty());
         assert!(!setting.nudge(&mut sample(), 1));
-    }
-
-    #[test]
-    fn theme_settings_preserve_conditions_when_changing_and_copying_fallbacks() {
-        let source = r#"active_theme = [
-  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
-  { theme = 'default' },
-]"#;
-        let mut config: Config = toml::from_str(source).unwrap();
-        config.set_theme_names_for_test(&["Amber", "Factorio"]);
-        let setting = setting_for_key("active_theme").unwrap();
-        assert!(setting.nudge(&mut config, 1));
-        assert_eq!(setting.format(&config), "Amber");
-        let mut disk: Config = toml::from_str(source).unwrap();
-        setting.copy(&mut disk, &config);
-        assert_eq!(disk.active_theme.fallback_name(), "Amber");
-        for selection in [&config.active_theme, &disk.active_theme] {
-            let value = toml::Value::try_from(selection).unwrap();
-            let rules = value.as_array().unwrap();
-            assert_eq!(rules.len(), 2);
-            assert_eq!(rules[0]["theme"].as_str(), Some("Factorio"));
-            assert_eq!(
-                rules[0]["when"].as_str(),
-                Some(r#"focusedApp("factorio.exe")"#)
-            );
-            assert_eq!(rules[1]["theme"].as_str(), Some("Amber"));
-            assert!(rules[1].get("when").is_none());
-        }
     }
 
     #[test]

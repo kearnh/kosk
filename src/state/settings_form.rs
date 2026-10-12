@@ -157,7 +157,7 @@ impl SettingsForm {
             .or_else(|| {
                 self.theme_names
                     .iter()
-                    .position(|name| name == cfg.active_theme.fallback_name())
+                    .position(|name| name == cfg.active_theme.name())
             })
             .unwrap_or(0);
     }
@@ -302,10 +302,10 @@ impl SettingsForm {
                 let Some(name) = self.theme_names.get(self.focus) else {
                     return Effect::none();
                 };
-                if name == cfg.active_theme.fallback_name() {
+                if name == cfg.active_theme.name() {
                     return Effect::none();
                 }
-                cfg.active_theme.set_fallback(name);
+                cfg.active_theme.set_name(name);
                 if !self.dirty.iter().any(|row| row.key == "active_theme") {
                     self.dirty.push(
                         crate::config::schema::setting_for_key("active_theme")
@@ -519,7 +519,7 @@ impl SettingsForm {
                         name.clone()
                     },
                     explain: None,
-                    value: (name == cfg.active_theme.fallback_name()).then(|| "Current".to_owned()),
+                    value: (name == cfg.active_theme.name()).then(|| "Current".to_owned()),
                 })
                 .collect(),
             View::Index => options_entries(kind, self.show_all_controllers)
@@ -907,20 +907,20 @@ mod tests {
         assert_eq!(form.focus(), 2);
         assert_eq!(rows[2].value.as_deref(), Some("Current"));
         form.move_focus(-1, kind);
-        assert_eq!(cfg.active_theme.fallback_name(), "Steam Controller");
+        assert_eq!(cfg.active_theme.name(), "Steam Controller");
         assert!(!form.nudge(&mut cfg, -1, kind));
         let selected = form.activate(&mut cfg, kind);
         assert!(selected.changed && selected.persist);
-        assert_eq!(cfg.active_theme.fallback_name(), "Amber");
+        assert_eq!(cfg.active_theme.name(), "Amber");
         assert_eq!(form.dirty_rows().len(), 1);
         let mut disk = sample();
         form.dirty_rows()[0].copy(&mut disk, &cfg);
-        assert_eq!(disk.active_theme.fallback_name(), "Amber");
+        assert_eq!(disk.active_theme.name(), "Amber");
         form.clear_dirty();
         form.move_focus(-1, kind);
         let selected = form.activate(&mut cfg, kind);
         assert!(selected.changed && selected.persist);
-        assert_eq!(cfg.active_theme.fallback_name(), "default");
+        assert_eq!(cfg.active_theme.name(), "default");
         form.clear_dirty();
         let back = form.back(kind);
         assert!(!back.persist);

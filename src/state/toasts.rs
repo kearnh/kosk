@@ -335,14 +335,14 @@ pub(crate) fn check_unsupported(kind: ControllerKind) {
 /// Mark the setup tip shown in memory and on disk. In-memory first, so the
 /// config reload from the write cannot re-show it.
 pub(crate) fn acknowledge_tip() {
-    let mut live = crate::config::get();
+    let mut live = crate::config::settings_config();
     if live.tips.completion_next_word_setup_shown {
         return;
     }
 
     live.tips.completion_next_word_setup_shown = true;
     crate::config::replace_live(live.clone());
-    if let Err(e) = crate::config::persist_settings(&live, |cfg| {
+    if let Err(e) = crate::config::persist_settings(|cfg| {
         cfg.tips.completion_next_word_setup_shown = true;
     }) {
         eprintln!("tips: persist shown flag: {e:#}");

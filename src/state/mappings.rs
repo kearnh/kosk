@@ -486,7 +486,7 @@ impl MappingsState {
     }
 
     fn load_draft_from_config(&mut self) {
-        let cfg = config::get();
+        let cfg = config::settings_config();
         let mut draft: HashMap<StateId, ModeDraft> = HashMap::new();
         for mode in EDITABLE_MODES {
             draft.insert(mode, HashMap::new());
@@ -858,7 +858,7 @@ impl MappingsState {
             new_map.insert(mode, inverted);
         }
 
-        let mut cfg = config::get();
+        let mut cfg = config::settings_config();
         retain_unrecognised_bindings(&mut new_map, &cfg.controller_map);
         cfg.controller_map = new_map;
         if let Err(e) = config::save(cfg) {

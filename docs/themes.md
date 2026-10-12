@@ -26,28 +26,35 @@ current local theme.
 
 ## Focused-app themes
 
-Use an ordered array in `config.toml` to select themes by focused app:
+Select app-specific themes with config overlays:
 
 ```toml
-active_theme = [
-  { theme = "Factorio", when = 'focusedApp("factorio.exe")' },
-  { theme = "Old Steam Controller" },
-]
+active_theme = "Old Steam Controller"
 themes = ["themes/*.toml"]
+config_overlays = [
+  { file = "games/factorio.toml", when = 'focusedApp("factorio.exe")' },
+]
 ```
 
-The first matching entry with an available theme wins. An entry without `when`
-is the fallback and must be last. Without a matching entry, KOSK uses Default.
-Empty arrays and misplaced fallbacks are rejected. A plain theme name remains
-valid. Settings changes the fallback and preserves conditional entries. Focus
-changes never save a new selection. Rules reload with the config and remain
-local during recording playback.
+In `games/factorio.toml`:
 
-Theme conditions support `focusedApp`, `!`, `&&`, `||` and parentheses.
+```toml
+active_theme = "Factorio"
+```
+
+All matching overlays apply in order; later values win. Leaving the app
+restores the main configuration. `active_theme` accepts only a theme name.
+Settings changes the main selection; active overlays still take precedence.
+Overlay files reload after edits and remain local during recording playback.
+
+Conditions support `focusedApp`, `!`, `&&`, `||` and parentheses.
 Executable filenames match exactly, ignoring case; include the extension.
 Paths, patterns and window titles are not supported. Focus detection works on
-Windows; other platforms report no focused app. Keyboard-state flags apply only
-to mappings and layout display conditions.
+Windows; other platforms report no focused app. Mapping and layout display
+conditions retain keyboard-state flags.
+
+See [config overlays](developer/config.md#conditional-config-overlays) for
+other supported settings.
 
 ## Included themes
 

@@ -21,6 +21,8 @@ use kosk_config_derive::{config_section, Choice};
 
 #[path = "config/bundled.rs"]
 mod bundled;
+#[path = "config/conditional.rs"]
+mod conditional;
 #[path = "config/schema.rs"]
 pub(crate) mod schema;
 pub(crate) use schema::{device_name, DevicePage, Page, Setting};
@@ -201,101 +203,29 @@ impl Renderer {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(try_from = "ThemeRuleSource", into = "ThemeRuleSource")]
-struct ThemeRule {
-    source: ThemeRuleSource,
-    condition: Option<crate::when::WhenExpr>,
-}
+#[serde(try_from = "String", into = "String")]
+pub struct ActiveTheme(String);
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct ThemeRuleSource {
-    theme: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    when: Option<String>,
-}
-
-impl TryFrom<ThemeRuleSource> for ThemeRule {
+impl TryFrom<String> for ActiveTheme {
     type Error = String;
 
-    fn try_from(source: ThemeRuleSource) -> Result<Self, Self::Error> {
-        if source.theme.trim().is_empty() {
-            return Err("theme rule requires a nonempty theme name".into());
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        if name.trim().is_empty() {
+            return Err("active_theme requires a nonempty theme name".into());
         }
-        let condition = source
-            .when
-            .as_deref()
-            .map(crate::when::WhenExpr::parse)
-            .transpose()?;
-
-        if let Some(condition) = &condition {
-            validate_theme_condition(condition)?;
-        }
-
-        Ok(Self { source, condition })
+        Ok(Self(name))
     }
 }
 
-impl From<ThemeRule> for ThemeRuleSource {
-    fn from(rule: ThemeRule) -> Self {
-        rule.source
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(try_from = "ThemeChoice", into = "ThemeChoice")]
-pub struct ActiveTheme(ThemeChoice);
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-enum ThemeChoice {
-    Name(String),
-    Rules(Vec<ThemeRule>),
-}
-
-impl TryFrom<ThemeChoice> for ActiveTheme {
-    type Error = String;
-
-    fn try_from(choice: ThemeChoice) -> Result<Self, Self::Error> {
-        match &choice {
-            ThemeChoice::Name(name) if name.trim().is_empty() => {
-                return Err("active_theme requires a nonempty theme name".into());
-            }
-            ThemeChoice::Rules(rules) => {
-                if rules.is_empty() {
-                    return Err("active_theme array must not be empty".into());
-                }
-
-                if rules
-                    .iter()
-                    .take(rules.len() - 1)
-                    .any(|rule| rule.condition.is_none())
-                {
-                    return Err("active_theme fallback (entry without when) must be last".into());
-                }
-            }
-            _ => {}
-        }
-
-        Ok(Self(choice))
-    }
-}
-
-impl From<ActiveTheme> for ThemeChoice {
+impl From<ActiveTheme> for String {
     fn from(selection: ActiveTheme) -> Self {
         selection.0
     }
 }
 
-impl From<String> for ActiveTheme {
-    fn from(name: String) -> Self {
-        Self(ThemeChoice::Name(name))
-    }
-}
-
 impl From<&str> for ActiveTheme {
     fn from(name: &str) -> Self {
-        name.to_owned().into()
+        Self(name.to_owned())
     }
 }
 
@@ -306,72 +236,12 @@ impl Default for ActiveTheme {
 }
 
 impl ActiveTheme {
-    pub(crate) fn fallback_name(&self) -> &str {
-        match &self.0 {
-            ThemeChoice::Name(name) => name,
-            ThemeChoice::Rules(rules) => rules
-                .last()
-                .filter(|rule| rule.condition.is_none())
-                .map(|rule| rule.source.theme.as_str())
-                .unwrap_or(crate::theme::DEFAULT_THEME_NAME),
-        }
+    pub(crate) fn name(&self) -> &str {
+        &self.0
     }
 
-    pub(crate) fn set_fallback(&mut self, name: &str) {
-        let ThemeChoice::Rules(rules) = &mut self.0 else {
-            self.0 = ThemeChoice::Name(name.to_owned());
-            return;
-        };
-
-        if let Some(fallback) = rules.last_mut().filter(|rule| rule.condition.is_none()) {
-            fallback.source.theme = name.to_owned();
-            return;
-        }
-
-        rules.push(ThemeRule {
-            source: ThemeRuleSource {
-                theme: name.to_owned(),
-                when: None,
-            },
-            condition: None,
-        });
-    }
-
-    fn resolve<'a>(
-        &'a self,
-        context: &crate::when::WhenContext,
-        catalog: &crate::theme::ThemeCatalog,
-    ) -> &'a str {
-        match &self.0 {
-            ThemeChoice::Name(name) => name,
-            ThemeChoice::Rules(rules) => rules
-                .iter()
-                .find(|rule| {
-                    catalog.contains(&rule.source.theme)
-                        && rule
-                            .condition
-                            .as_ref()
-                            .is_none_or(|condition| condition.eval(context))
-                })
-                .map(|rule| rule.source.theme.as_str())
-                .unwrap_or(crate::theme::DEFAULT_THEME_NAME),
-        }
-    }
-}
-
-fn validate_theme_condition(condition: &crate::when::WhenExpr) -> Result<(), String> {
-    use crate::when::WhenExpr;
-
-    match condition {
-        WhenExpr::FocusedApp(_) => Ok(()),
-        WhenExpr::Not(inner) => validate_theme_condition(inner),
-        WhenExpr::And(left, right) | WhenExpr::Or(left, right) => {
-            validate_theme_condition(left)?;
-            validate_theme_condition(right)
-        }
-        WhenExpr::Flag(_) => {
-            Err("theme when conditions support focusedApp, !, &&, || and parentheses".into())
-        }
+    pub(crate) fn set_name(&mut self, name: &str) {
+        self.0 = name.to_owned();
     }
 }
 
@@ -390,14 +260,17 @@ pub struct Config {
     #[serde(default)]
     pub config_version: i64,
 
-    /// Theme name or ordered `{ theme, when }` rules with an optional final fallback.
+    /// Theme name.
     pub active_theme: ActiveTheme,
 
     /// Theme files or glob patterns, resolved beside the active configuration file.
     pub themes: Vec<String>,
 
+    /// Ordered files applied while their focused-app conditions match.
+    config_overlays: Vec<conditional::Rule>,
+
     #[serde(skip)]
-    focused_app: Option<String>,
+    loaded_overlays: Arc<Vec<conditional::LoadedOverlay>>,
 
     #[serde(skip)]
     theme_catalog: Arc<crate::theme::ThemeCatalog>,
@@ -867,12 +740,7 @@ impl Config {
     }
 
     pub(crate) fn theme(&self) -> &crate::theme::Theme {
-        let context = crate::when::WhenContext {
-            focused_app: self.focused_app.clone(),
-            ..Default::default()
-        };
-        let name = self.active_theme.resolve(&context, &self.theme_catalog);
-        self.theme_catalog.get(name)
+        self.theme_catalog.get(self.active_theme.name())
     }
 
     pub(crate) fn theme_revision(&self) -> u64 {
@@ -974,7 +842,7 @@ impl Config {
 pub fn sc2() -> Sc2Config {
     CONFIG_INSTANCE
         .get()
-        .map(|instance| instance.lock().unwrap().sc2.clone())
+        .map(|instance| instance.lock().unwrap().effective.sc2.clone())
         .unwrap_or_default()
 }
 
@@ -982,7 +850,7 @@ pub fn sc2() -> Sc2Config {
 pub fn ps4() -> Ps4Config {
     CONFIG_INSTANCE
         .get()
-        .map(|instance| instance.lock().unwrap().ps4.clone())
+        .map(|instance| instance.lock().unwrap().effective.ps4.clone())
         .unwrap_or_default()
 }
 
@@ -990,12 +858,12 @@ pub fn ps4() -> Ps4Config {
 pub fn battery() -> BatteryConfig {
     CONFIG_INSTANCE
         .get()
-        .map(|instance| instance.lock().unwrap().battery.clone())
+        .map(|instance| instance.lock().unwrap().effective.battery.clone())
         .unwrap_or_default()
 }
 
 // Static variables for config management
-static CONFIG_INSTANCE: std::sync::OnceLock<Arc<Mutex<Config>>> = std::sync::OnceLock::new();
+static CONFIG_INSTANCE: OnceLock<Arc<Mutex<conditional::Runtime>>> = OnceLock::new();
 static CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 static DISK_CONFIG: OnceLock<Mutex<Config>> = OnceLock::new();
 static STARTUP_RENDERER: OnceLock<Renderer> = OnceLock::new();
@@ -1083,6 +951,7 @@ fn open_user_config_for_source(source: ConfigSource) -> bool {
 const TAPE_CONFIG_SKIP: &[&str] = &[
     "renderer",
     "active_theme",
+    "config_overlays",
     "themes",
     "battery",
     "layouts",
@@ -1142,6 +1011,7 @@ pub fn overlay_tape_config(live: &Config, recorded: &str) -> Result<Config> {
         .try_into()
         .map_err(|e| anyhow::anyhow!("apply recorded config: {e}"))?;
     config.theme_catalog = Arc::clone(&live.theme_catalog);
+    config.loaded_overlays = Arc::clone(&live.loaded_overlays);
     Ok(config)
 }
 
@@ -1161,7 +1031,7 @@ pub fn apply_recorded_tape_config(header: &crate::controller::record::TapeHeader
     let instance = CONFIG_INSTANCE
         .get()
         .ok_or_else(|| anyhow::anyhow!("config is not initialized"))?;
-    *instance.lock().unwrap() = merged;
+    instance.lock().unwrap().replace(merged)?;
     TAPE_OVERLAY_ACTIVE.store(true, Ordering::Relaxed);
     Ok(())
 }
@@ -1247,7 +1117,7 @@ fn toml_to_item(path: &str, value: &toml::Value) -> Result<toml_edit::Item> {
 
 /// Checks a freshly read config. Fails hard: the watcher keeps the previous
 /// config, startup falls back to the built-in defaults.
-fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()> {
+fn validate_config_values(new_config: &Config) -> Result<()> {
     for (name, value) in [
         (
             "completion.ui.corner_radius",
@@ -1275,6 +1145,14 @@ fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()>
         );
     }
 
+    crate::completion::validate_app_types(&new_config.completion.app_types)
+        .context("completion.app_types")?;
+    Ok(())
+}
+
+fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()> {
+    validate_config_values(new_config)?;
+
     let config_parent = config_path.parent();
     for (name, path) in &new_config.layouts {
         crate::config_overlay::read_layout(config_parent, path)
@@ -1284,9 +1162,6 @@ fn validate_loaded_config(new_config: &Config, config_path: &Path) -> Result<()>
     if let Some(template) = &new_config.record_file {
         crate::controller::record::validate_record_template(template).context("record_file")?;
     }
-
-    crate::completion::validate_app_types(&new_config.completion.app_types)
-        .context("completion.app_types")?;
 
     if new_config.preferred_controller.first() == Some(&crate::controller::ControllerKind::Replay)
         && cli_replay_file().is_none()
@@ -1320,20 +1195,26 @@ fn publish_loaded_config(
 ) -> Vec<PathBuf> {
     new_config.renderer.at_startup(&STARTUP_RENDERER);
     store_controller_map_file(map_rel.clone());
+    let mut runtime = conditional::Runtime::new(new_config.clone());
+    if let Err(error) = runtime.refresh(crate::platform::foreground::current_basename()) {
+        eprintln!("config overlays: {error:#}");
+        crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
+    }
     if let Some(instance) = CONFIG_INSTANCE.get() {
-        *instance.lock().unwrap() = new_config.clone();
+        *instance.lock().unwrap() = runtime;
     } else {
         CONFIG_INSTANCE
-            .set(Arc::new(Mutex::new(new_config.clone())))
+            .set(Arc::new(Mutex::new(runtime)))
             .expect("Config was already initialized");
     }
     store_disk_config(new_config.clone());
 
-    let layouts: Vec<(String, String)> = new_config.layouts.into_iter().collect();
+    let layouts: Vec<(String, String)> = new_config.layouts.clone().into_iter().collect();
     let mut files =
         crate::config_overlay::config_file_paths(config_path, map_rel.as_deref(), &layouts);
     crate::config_overlay::append_theme_paths(&mut files, config_path, &new_config.themes);
     append_background_image_paths(&mut files, &new_config.theme_catalog);
+    conditional::append_paths(&mut files, &new_config, config_path);
     files
 }
 
@@ -1413,13 +1294,13 @@ fn read_merged_config(
     let mut config: Config = merged
         .try_into()
         .map_err(|e| anyhow::anyhow!("Could not parse config TOML: {e}"))?;
-    let selected_theme = config.active_theme.fallback_name().to_owned();
+    let selected_theme = config.active_theme.name().to_owned();
     let (catalog, skipped_themes) = crate::theme::ThemeCatalog::load(config_path, &config.themes)?;
     let missing_active = (!catalog.contains(&selected_theme)).then_some(selected_theme);
     if missing_active.is_some() {
         config
             .active_theme
-            .set_fallback(crate::theme::DEFAULT_THEME_NAME);
+            .set_name(crate::theme::DEFAULT_THEME_NAME);
     }
     if !skipped_themes.is_empty() || missing_active.is_some() {
         crate::user_notify::notify(crate::user_notify::Notice::theme_files_skipped(
@@ -1428,6 +1309,9 @@ fn read_merged_config(
         ));
     }
     config.theme_catalog = Arc::new(catalog);
+    conditional::load(&mut config, config_path)?;
+    conditional::Runtime::new(config.clone())
+        .refresh(crate::platform::foreground::current_basename())?;
     Ok((config, map_rel))
 }
 
@@ -1805,22 +1689,59 @@ pub fn renderer() -> eframe::Renderer {
 }
 
 pub fn get() -> Config {
-    let instance = CONFIG_INSTANCE
+    CONFIG_INSTANCE
         .get()
-        .expect("Config must be initialized before use");
-    let mut config = instance.lock().unwrap().clone();
-    config.focused_app = crate::platform::foreground::current_basename();
-    config
+        .expect("Config must be initialized before use")
+        .lock()
+        .unwrap()
+        .effective
+        .clone()
+}
+
+pub(crate) fn settings_config() -> Config {
+    CONFIG_INSTANCE
+        .get()
+        .expect("Config must be initialized before use")
+        .lock()
+        .unwrap()
+        .base
+        .clone()
 }
 
 pub(crate) fn try_get() -> Option<Config> {
     CONFIG_INSTANCE.get().map(|_| get())
 }
 
-/// Replace the in-memory config. Does not write the file or notify listeners.
+const FOCUSED_CONFIG_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+pub(crate) fn refresh_focused_config() -> Option<std::time::Duration> {
+    let instance = CONFIG_INSTANCE.get()?;
+    let reload = {
+        let mut runtime = instance.lock().unwrap();
+        if runtime.base.config_overlays.is_empty() {
+            return None;
+        }
+        match runtime.refresh(crate::platform::foreground::current_basename()) {
+            Ok(reload) => reload,
+            Err(error) => {
+                eprintln!("config overlays: {error:#}");
+                crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
+                return Some(FOCUSED_CONFIG_POLL_INTERVAL);
+            }
+        }
+    };
+    if reload {
+        notify_config_changed();
+    }
+    Some(FOCUSED_CONFIG_POLL_INTERVAL)
+}
+
+/// Replace the base in-memory config. Does not write the file or notify listeners.
 pub(crate) fn replace_live(cfg: Config) {
-    if let Some(instance) = CONFIG_INSTANCE.get() {
-        *instance.lock().unwrap() = cfg;
+    if let Some(instance) = CONFIG_INSTANCE.get()
+        && let Err(error) = instance.lock().unwrap().replace(cfg)
+    {
+        eprintln!("config overlays: {error:#}");
     }
 }
 
@@ -2010,25 +1931,19 @@ fn sync_mappings(
     Ok(())
 }
 
-/// Write settings edits. While a tape config is overlaid, `copy_edits` copies only
-/// the changed fields onto the disk snapshot so tape-merged values stay off disk.
-/// Otherwise the whole live config is saved, same as [`save`].
-pub(crate) fn persist_settings(live: &Config, copy_edits: impl FnOnce(&mut Config)) -> Result<()> {
-    if !TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
-        return save(live.clone());
-    }
-
-    let path = CONFIG_PATH
-        .get()
-        .ok_or(anyhow::anyhow!("Config path not set"))?;
+/// Write settings edits to the main config, excluding conditional and tape values.
+pub(crate) fn persist_settings(copy_edits: impl FnOnce(&mut Config)) -> Result<()> {
+    let path = CONFIG_PATH.get().context("Config path not set")?;
     let disk = DISK_CONFIG
         .get()
-        .ok_or_else(|| anyhow::anyhow!("disk config is not initialized"))?;
-    let disk_before = disk.lock().unwrap().clone();
-    let mut persist = disk_before.clone();
+        .context("disk config is not initialized")?;
+    let mut persist = disk.lock().unwrap().clone();
     copy_edits(&mut persist);
     write_if_user_config(path, &persist)?;
-    *disk.lock().unwrap() = persist;
+    *disk.lock().unwrap() = persist.clone();
+    if !TAPE_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
+        replace_live(persist);
+    }
     Ok(())
 }
 
@@ -2091,7 +2006,9 @@ pub fn save(new_config: Config) -> Result<()> {
         write_if_user_config(path, &persist)?;
         *disk.lock().unwrap() = persist;
         if let Some(instance) = CONFIG_INSTANCE.get() {
-            instance.lock().unwrap().window_pos = new_config.window_pos;
+            let mut runtime = instance.lock().unwrap();
+            runtime.base.window_pos = new_config.window_pos;
+            runtime.effective.window_pos = new_config.window_pos;
         }
         return Ok(());
     }
@@ -2102,10 +2019,7 @@ pub fn save(new_config: Config) -> Result<()> {
     write_if_user_config(path, &new_config)?;
 
     store_disk_config(new_config.clone());
-    if let Some(instance) = CONFIG_INSTANCE.get() {
-        let mut config = instance.lock().unwrap();
-        *config = new_config;
-    }
+    replace_live(new_config);
     Ok(())
 }
 
@@ -2148,30 +2062,38 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn active_theme_accepts_ordered_rules_with_a_final_fallback() {
-        let source = r#"active_theme = [
-  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
-  { theme = 'Old Steam Controller' },
-]
-"#;
-        assert!(toml::from_str::<Config>(source).is_ok());
+    fn conditional_overlay_rejects_theme_rules() {
+        assert!(toml::from_str::<Config>(
+            r#"active_theme = [{ theme = 'default', when = 'focusedApp("factorio.exe")' }]"#,
+        )
+        .is_err());
     }
 
     #[test]
-    fn theme_rules_reject_invalid_when_conditions() {
-        let dir = temp_dir("invalid-theme-condition");
+    fn conditional_overlay_validates_inactive_files_and_conditions() {
+        let dir = temp_dir("conditional-overlay-validation");
         let path = dir.join("config.toml");
-        fs::write(
-            &path,
-            "active_theme = [{ theme = 'Factorio', when = 'unknownCondition' }]\n",
-        )
-        .unwrap();
+        fs::write(dir.join("overlay.toml"), "renderer = 'wgpu'\n").unwrap();
+        for condition in [
+            r#"focusedApp("factorio.exe")"#,
+            "modifier.shift",
+            "unknownFlag",
+        ] {
+            fs::write(
+                &path,
+                format!("config_overlays = [{{ file = 'overlay.toml', when = '{condition}' }}]\n"),
+            )
+            .unwrap();
+            assert!(read_merged_config(&path, ConfigSource::Explicit).is_err());
+        }
+        fs::write(dir.join("overlay.toml"), "scale_x = 'invalid'\n").unwrap();
+        fs::write(&path, "config_overlays = [{ file = 'overlay.toml' }]\n").unwrap();
         assert!(read_merged_config(&path, ConfigSource::Explicit).is_err());
     }
 
     #[test]
-    fn theme_rules_follow_focus_preserve_fallback_and_round_trip() {
-        let dir = temp_dir("focused-theme-rules");
+    fn conditional_overlay_merges_in_order_and_restores_base_on_focus_changes() {
+        let dir = temp_dir("conditional-overlay-focus");
         let path = dir.join("config.toml");
         fs::write(
             dir.join("normal.toml"),
@@ -2183,119 +2105,189 @@ mod tests {
             "name = 'Factorio'\nbackground_color = [4, 5, 6]\n",
         )
         .unwrap();
-        let source = r#"config_version = 3
-active_theme = [
-  { theme = 'Unavailable', when = 'focusedApp("factorio.exe")' },
-  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
-  { theme = 'default', when = 'focusedApp("factorio.exe")' },
-  { theme = 'Normal' },
-]
+        fs::write(dir.join("first.toml"), "active_theme = 'Factorio'\nscale_x = 40.0\n[sc2.stick]\nscale_x = 2.0\n[stick_pad_cursors]\nleft_color = [1, 2, 3, 4]\n").unwrap();
+        fs::write(dir.join("last.toml"), "scale_x = 44.0\n[sc2.stick]\nscale_y = 2.5\n[stick_pad_cursors]\nleft_color = [5, 6, 7, 8]\n").unwrap();
+        fs::write(&path, r#"active_theme = 'Normal'
 themes = ['normal.toml', 'factorio.toml']
-"#;
-        fs::write(&path, source).unwrap();
-        let (mut config, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
-        for (focused, color) in [
-            (None, [1, 2, 3, 255]),
-            (Some("factorio.exe"), [4, 5, 6, 255]),
-            (Some("notepad.exe"), [1, 2, 3, 255]),
-            (Some("FACTORIO.EXE"), [4, 5, 6, 255]),
-            (None, [1, 2, 3, 255]),
-        ] {
-            config.focused_app = focused.map(str::to_owned);
-            assert_eq!(config.theme().background_color, color);
-            assert_eq!(config.active_theme.fallback_name(), "Normal");
-        }
-        config.focused_app = Some("factorio.exe".into());
-        write_for_source(ConfigSource::User, &path, &config, Some("mappings.toml")).unwrap();
-        let (reloaded, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
-        assert_eq!(reloaded.active_theme.fallback_name(), "Normal");
-        assert_eq!(
-            toml::Value::try_from(&reloaded.active_theme).unwrap(),
-            toml::Value::try_from(&config.active_theme).unwrap()
-        );
-        assert!(reloaded.focused_app.is_none());
-        let tape = tape_config_toml(&config).unwrap();
-        assert!(!tape.contains("active_theme"));
-        assert!(!tape.contains("focused_app"));
-        let replay = overlay_tape_config(&config, "active_theme = 'default'").unwrap();
-        assert_eq!(
-            toml::Value::try_from(&replay.active_theme).unwrap(),
-            toml::Value::try_from(&config.active_theme).unwrap()
-        );
-    }
-
-    #[test]
-    fn theme_rules_reject_screen_flags_and_empty_names() {
-        for source in [
-            "theme = 'Factorio'\nwhen = 'modifier.shift'",
-            "theme = 'Factorio'\nwhen = 'focusedApp(\"factorio.exe\") && recording'",
-            "theme = ''\nwhen = 'focusedApp(\"factorio.exe\")'",
-        ] {
-            assert!(toml::from_str::<Config>(&format!("[[active_theme]]\n{source}")).is_err());
-        }
-    }
-
-    #[test]
-    fn active_theme_rejects_empty_arrays_and_misplaced_fallbacks() {
-        for selection in [
-            "[]",
-            "''",
-            "[{ theme = 'default' }, { theme = 'Factorio', when = 'focusedApp(\"factorio.exe\")' }]",
-            "[{ theme = 'default' }, { theme = 'Factorio' }]",
-        ] {
-            assert!(toml::from_str::<Config>(&format!("active_theme = {selection}")).is_err(), "{selection}");
-        }
-    }
-
-    #[test]
-    fn active_theme_without_a_fallback_uses_default_and_can_append_one() {
-        let mut config: Config = toml::from_str(
-            r#"active_theme = [{ theme = 'Factorio', when = 'focusedApp("factorio.exe")' }]"#,
-        )
-        .unwrap();
-        config.set_theme_names_for_test(&["Factorio", "Normal"]);
-        assert_eq!(config.active_theme.fallback_name(), "default");
-        assert_eq!(
-            config
-                .active_theme
-                .resolve(&crate::when::WhenContext::default(), &config.theme_catalog),
-            "default"
-        );
-        config.active_theme.set_fallback("Normal");
-        let value = toml::Value::try_from(&config.active_theme).unwrap();
-        let rules = value.as_array().unwrap();
-        assert_eq!(rules.len(), 2);
-        assert_eq!(
-            rules[0]["when"].as_str(),
-            Some(r#"focusedApp("factorio.exe")"#)
-        );
-        assert_eq!(rules[1]["theme"].as_str(), Some("Normal"));
-        assert!(rules[1].get("when").is_none());
-    }
-
-    #[test]
-    fn unavailable_theme_fallback_preserves_conditional_entries() {
-        let dir = temp_dir("missing-theme-fallback");
-        let path = dir.join("config.toml");
-        fs::write(
-            dir.join("factorio.toml"),
-            "name = 'Factorio'\nbackground_color = [4, 5, 6]\n",
-        )
-        .unwrap();
-        fs::write(
-            &path,
-            r#"active_theme = [
-  { theme = 'Factorio', when = 'focusedApp("factorio.exe")' },
-  { theme = 'Unavailable' },
+scale_x = 36.0
+config_overlays = [
+  { file = 'first.toml', when = 'focusedApp("factorio.exe")' },
+  { file = 'last.toml', when = '(focusedApp("factorio.exe") || focusedApp("other.exe")) && !focusedApp("notepad.exe")' },
 ]
-themes = ['factorio.toml']
+"#).unwrap();
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        let mut runtime = conditional::Runtime::new(base.clone());
+        for (focus, width, theme) in [
+            (None, 36.0, "Normal"),
+            (Some("FACTORIO.EXE"), 44.0, "Factorio"),
+            (Some("other.exe"), 44.0, "Normal"),
+            (Some("notepad.exe"), 36.0, "Normal"),
+            (None, 36.0, "Normal"),
+        ] {
+            runtime.refresh(focus.map(str::to_owned)).unwrap();
+            assert_eq!(runtime.effective.scale_x, width);
+            assert_eq!(runtime.effective.active_theme.name(), theme);
+            assert_eq!(runtime.base.scale_x, 36.0);
+            assert_eq!(runtime.base.active_theme.name(), "Normal");
+        }
+        assert!(runtime.refresh(Some("factorio.exe".into())).unwrap());
+        assert_eq!(runtime.effective.sc2.stick.scale_x, 2.0);
+        assert_eq!(runtime.effective.sc2.stick.scale_y, 2.5);
+        assert_eq!(runtime.effective.sc2.stick.warp, base.sc2.stick.warp);
+        assert_eq!(runtime.effective.stick_pad_cursors.left_color, [5, 6, 7, 8]);
+        assert_eq!(runtime.effective.theme().background_color, [4, 5, 6, 255]);
+        assert!(!runtime.refresh(Some("factorio.exe".into())).unwrap());
+        let tape = tape_config_toml(&runtime.effective).unwrap();
+        assert!(!tape.contains("config_overlays"));
+        let replay =
+            overlay_tape_config(&base, "config_overlays = [{ file = 'missing.toml' }]").unwrap();
+        assert_eq!(replay.config_overlays.len(), 2);
+    }
+
+    #[test]
+    fn conditional_overlay_saves_main_settings_without_overlay_values() {
+        let dir = temp_dir("conditional-overlay-save");
+        let path = dir.join("config.toml");
+        fs::write(&path, "# Keep this comment\nfuture_setting = true\nscale_x = 36.0\nconfig_overlays = [{ file = 'overlay.toml' }]\n").unwrap();
+        let overlay_text = "scale_x = 44.0\nevent_debounce_ms = 120\n";
+        fs::write(dir.join("overlay.toml"), overlay_text).unwrap();
+        let (base, map_rel) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        let mut runtime = conditional::Runtime::new(base);
+        runtime.refresh(None).unwrap();
+        assert_eq!(runtime.effective.scale_x, 44.0);
+        let mut settings = runtime.base.clone();
+        schema::setting_for_key("scale_x")
+            .unwrap()
+            .nudge(&mut settings, 1);
+        write_user_overlay(&path, &settings, map_rel.as_deref()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("overlay.toml")).unwrap(),
+            overlay_text
+        );
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("# Keep this comment"));
+        let value: toml::Value = toml::from_str(&saved).unwrap();
+        assert_eq!(value["scale_x"].as_float(), Some(37.0));
+        assert_eq!(value["future_setting"].as_bool(), Some(true));
+        assert!(value.get("event_debounce_ms").is_none());
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(base.scale_x, 37.0);
+        let mut runtime = conditional::Runtime::new(base);
+        runtime.refresh(None).unwrap();
+        assert_eq!(runtime.effective.scale_x, 44.0);
+    }
+
+    #[test]
+    fn conditional_overlay_resolves_and_watches_resources_and_preserves_mapping_conditions() {
+        let dir = temp_dir("conditional-overlay-resources");
+        let path = dir.join("config.toml");
+        let games = dir.join("games");
+        fs::create_dir(&games).unwrap();
+        fs::write(&path, "config_overlays = [{ file = 'games/overlay.toml', when = 'focusedApp(\"factorio.exe\")' }]\n").unwrap();
+        fs::write(games.join("layout.toml"), include_str!("../old_sc.toml")).unwrap();
+        fs::write(
+            games.join("mappings.toml"),
+            r#"[Keyboard]
+faceTop = [
+  { action = 'toggleCtrl', when = 'modifier.shift' },
+  { action = 'toggleShift' },
+]
+faceBottom = 'none'
 "#,
         )
         .unwrap();
-        let (mut config, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
-        assert_eq!(config.active_theme.fallback_name(), "default");
-        config.focused_app = Some("factorio.exe".into());
-        assert_eq!(config.theme().background_color, [4, 5, 6, 255]);
+        fs::write(games.join("overlay.toml"), "controller_map = 'mappings.toml'\n[layouts]\nmain = 'layout.toml'\n[completion.dictionary]\nwordlist = 'words.tsv'\n[completion.ngram]\nmodel_dir = 'model'\n[completion.user_cache]\npath = 'cache.bin'\n").unwrap();
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        let mut files = Vec::new();
+        conditional::append_paths(&mut files, &base, &path);
+        for file in ["overlay.toml", "mappings.toml", "layout.toml"] {
+            assert!(is_watched_path(&games.join(file), &files));
+        }
+        let mut runtime = conditional::Runtime::new(base.clone());
+        runtime.refresh(Some("factorio.exe".into())).unwrap();
+        assert_eq!(
+            Path::new(&runtime.effective.layouts["main"]),
+            fs::canonicalize(&games).unwrap().join("layout.toml")
+        );
+        assert_eq!(
+            runtime.effective.completion.dictionary.wordlist,
+            fs::canonicalize(&games).unwrap().join("words.tsv")
+        );
+        let maps = toml::Value::try_from(&runtime.effective).unwrap();
+        assert_eq!(
+            maps["controller_map"]["Keyboard"]["faceTop"][0]["when"].as_str(),
+            Some("modifier.shift")
+        );
+        assert!(maps["controller_map"]["Keyboard"]
+            .get("faceBottom")
+            .is_none());
+        runtime.refresh(None).unwrap();
+        assert_eq!(
+            toml::Value::try_from(&runtime.effective.controller_map).unwrap(),
+            toml::Value::try_from(&base.controller_map).unwrap()
+        );
+    }
+
+    #[test]
+    fn conditional_overlay_theme_changes_do_not_reload_typing_state() {
+        let dir = temp_dir("conditional-overlay-theme-only");
+        let path = dir.join("config.toml");
+        fs::write(dir.join("theme.toml"), "name = 'Custom'\n").unwrap();
+        fs::write(&path, "themes = ['theme.toml']\nconfig_overlays = [{ file = 'overlay.toml', when = 'focusedApp(\"factorio.exe\")' }]\n").unwrap();
+        fs::write(dir.join("overlay.toml"), "active_theme = 'Custom'\n").unwrap();
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        let mut runtime = conditional::Runtime::new(base);
+        assert!(!runtime.refresh(Some("factorio.exe".into())).unwrap());
+        assert_eq!(runtime.effective.active_theme.name(), "Custom");
+        assert!(!runtime.refresh(None).unwrap());
+        assert_eq!(runtime.effective.active_theme.name(), "default");
+    }
+
+    #[test]
+    fn conditional_overlay_invalid_combinations_keep_last_good_values_without_repeated_errors() {
+        let dir = temp_dir("conditional-overlay-invalid-combination");
+        let path = dir.join("config.toml");
+        fs::write(
+            &path,
+            r#"config_overlays = [
+  { file = 'first.toml', when = 'focusedApp("factorio.exe") || focusedApp("notepad.exe")' },
+  { file = 'second.toml', when = 'focusedApp("factorio.exe")' },
+]
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("first.toml"),
+            "[completion.app_types.first]\nexes = ['shared.exe']\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("second.toml"),
+            "[completion.app_types.second]\nexes = ['shared.exe']\n",
+        )
+        .unwrap();
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        let mut runtime = conditional::Runtime::new(base.clone());
+        assert!(runtime.refresh(Some("factorio.exe".into())).is_err());
+        assert_eq!(
+            runtime.effective.completion.app_types.len(),
+            base.completion.app_types.len()
+        );
+        assert!(!runtime.refresh(Some("factorio.exe".into())).unwrap());
+        assert!(runtime.refresh(Some("notepad.exe".into())).unwrap());
+        assert!(runtime.effective.completion.app_types.contains_key("first"));
+        assert!(!runtime
+            .effective
+            .completion
+            .app_types
+            .contains_key("second"));
+    }
+
+    #[test]
+    fn active_theme_rejects_empty_names_and_non_string_values() {
+        for value in ["''", "[]", "{}"] {
+            assert!(toml::from_str::<Config>(&format!("active_theme = {value}")).is_err());
+        }
     }
 
     #[test]
@@ -2786,13 +2778,13 @@ enabled = false\n\
         assert!(!serialized.contains("theme_catalog"));
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(saved.active_theme.fallback_name(), "Zinc");
+        assert_eq!(saved.active_theme.name(), "Zinc");
         assert_eq!(saved.themes, cfg.themes);
         assert_eq!(saved.theme().keyboard.left_selection_color, [4, 5, 6, 255]);
         cfg.active_theme = "default".into();
         write_user_overlay(&config_path, &cfg, None).unwrap();
         let (saved, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(saved.active_theme.fallback_name(), "default");
+        assert_eq!(saved.active_theme.name(), "default");
         assert_eq!(saved.theme_names(), ["default", "Amber", "Zinc"]);
         assert_eq!(saved.theme(), &crate::theme::Theme::default());
     }
@@ -2917,7 +2909,7 @@ enabled = false\n\
         )
         .unwrap();
         let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-        assert_eq!(fallback.active_theme.fallback_name(), "default");
+        assert_eq!(fallback.active_theme.name(), "default");
         assert_eq!(fallback.theme_names(), ["default"]);
         assert_eq!(after.theme().background_color, [4, 5, 6, 255]);
         let tape = tape_config_toml(&after).unwrap();
@@ -2928,7 +2920,7 @@ enabled = false\n\
             "active_theme = 'default'\nthemes = ['missing.toml']\n",
         )
         .unwrap();
-        assert_eq!(replay.active_theme.fallback_name(), "Custom");
+        assert_eq!(replay.active_theme.name(), "Custom");
         assert_eq!(replay.theme().background_color, [4, 5, 6, 255]);
     }
 
@@ -2948,12 +2940,12 @@ enabled = false\n\
             )
             .unwrap();
             let (loaded, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-            assert_eq!(loaded.active_theme.fallback_name(), "default");
+            assert_eq!(loaded.active_theme.name(), "default");
             assert_eq!(loaded.theme_names(), ["default"]);
             assert_eq!(loaded.scale_x, 37.0);
             let (cfg, _, used_defaults) = load_initial(&config_path, ConfigSource::Explicit);
             assert!(!used_defaults);
-            assert_eq!(cfg.active_theme.fallback_name(), "default");
+            assert_eq!(cfg.active_theme.name(), "default");
             assert_eq!(cfg.scale_x, 37.0);
         }
     }
@@ -3123,7 +3115,7 @@ enabled = false\n\
             )
             .unwrap();
             let (fallback, _) = read_merged_config(&config_path, ConfigSource::Explicit).unwrap();
-            assert_eq!(fallback.active_theme.fallback_name(), "default");
+            assert_eq!(fallback.active_theme.name(), "default");
             assert_eq!(fallback.theme_names(), ["default"]);
             assert_eq!(
                 after.theme().keyboard.key_groups[0].background_color,

@@ -65,6 +65,54 @@ Layouts, the word list, and `model_dir` are resolved beside the active config fi
 
 Relative paths (layouts, mappings file, record template, replay file, keys log) are resolved against the directory that contains the main config file, with the lookup above for layouts and completion data.
 
+## Conditional config overlays
+
+`config_overlays` lists sparse TOML files and optional focused-app conditions:
+
+```toml
+config_overlays = [
+  { file = "games/factorio.toml", when = 'focusedApp("factorio.exe")' },
+]
+```
+
+All matching files apply in list order; later values win. Tables merge by key;
+arrays and scalars replace earlier values. An omitted `when` always applies.
+Conditions accept `focusedApp`, `!`, `&&`, `||` and parentheses. Transient
+keyboard-state flags remain available in mappings and layout display conditions.
+
+Overlay files can set `active_theme`, `layouts`, `start_layout`, `transparent`,
+`debug`, `stick_pad_cursors`, `scale_x`, `scale_y`, `event_debounce_ms`,
+`event_debounce_repeat_ms`, `text_input`, `completion`, `controller_map`, `sc2`,
+`ps4` and `battery`. Other root keys, including nested `config_overlays`, are
+rejected. Theme catalogs, renderer, controller selection, shortcuts, recording
+destinations and startup options belong in the main config. `active_theme`
+accepts a theme name only.
+
+File paths start beside the declaring file. Overlay layout paths, mappings
+paths and completion resource paths resolve beside the overlay. Built-in layout
+names remain available when no local copy exists. Mapping overlays use the
+existing per-binding merge and `"none"` removal rules; mapping `when` clauses
+remain supported.
+
+Files are loaded and validated even when their conditions do not match. Missing
+files, invalid conditions, invalid values or disallowed settings fail the load;
+startup uses defaults and a failed reload retains the previous config. Overlay
+files and their mappings/layout resources are watched, including inactive files.
+
+`config/conditional.rs` keeps the base and effective configurations separate.
+Focus changes rebuild the effective value from the base and cached overlay contents;
+they do not reread overlay files or save settings. Changes to layouts, geometry, controller
+profiles, mappings or completion settings notify their consumers. Appearance-only
+changes do not reset typing state. The visible overlay polls focus every 100 ms;
+controller input also refreshes focus before actions are processed.
+Invalid combinations retain the previous effective values and report once;
+changed files or a different matching set allow another attempt.
+
+Settings and mappings editors read and save the main configuration. Changes are
+saved to the main file or its mappings sidecar; conditional files are never
+edited. Active overlays continue to override the main values. Condition selection
+in the settings UI is not implemented.
+
 ## `controller_map` as a file
 
 Serde sees `controller_map` as either a nested table or a string. A string is opened relative to the config directory, parsed, and stored on `Config` as the expanded map. The path string is remembered beside the struct, from the raw file, so a later save can keep `controller_map = "mappings.toml"` and write binding changes into that sidecar. An inline table leaves the remembered path empty, and save patches the tables inside `config.toml`.
@@ -91,7 +139,7 @@ When a recording’s config overlay is active, `save` copies `window_pos` onto t
 
 Tapes can embed a stripped copy of config (see [record-replay.md](record-replay.md)). `tape_config_toml` serializes the live `Config` and removes keys that should stay under the operator’s control: `active_theme`, `themes`, `layouts`, `record_file`, `replay`, `preferred_controller`, `key_sink`, `debug`, `stick_pad_cursors`, `transparent`, `window_pos`, `text_input`, and `completion`. On replay, `overlay_tape_config` checks the schema version, then merges the blob onto the on-disk config, ignoring those operator settings. The local theme catalog is retained. `--ignore-recorded-config` skips the merge.
 
-`DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view.
+`DISK_CONFIG` remembers the last file-backed snapshot so a save during overlay can write the disk view rather than the merged view. Conditional overlay declarations are excluded from recordings, and playback retains the local declarations and cached overlay files.
 
 ## What this does not cover
 

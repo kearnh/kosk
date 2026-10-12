@@ -46,10 +46,11 @@ impl MenuState {
         kind: ControllerKind,
     ) {
         self.kind = kind;
-        let cfg = config::get();
+        let cfg = config::settings_config();
         self.form.sync_themes(&cfg);
         self.form.ensure_focus(kind);
-        let appearance = &cfg.theme().menus;
+        let effective = config::get();
+        let appearance = &effective.theme().menus;
         let rows = self.form.drawn(&cfg, kind);
         let focus = self.form.focus();
         let focused = rows.get(focus);
@@ -129,7 +130,7 @@ impl MenuState {
         run: impl FnOnce(&mut SettingsForm, &mut config::Config, ControllerKind) -> Effect,
     ) {
         let kind = self.kind;
-        let mut cfg = config::get();
+        let mut cfg = config::settings_config();
         self.form.sync_themes(&cfg);
         let effect = run(&mut self.form, &mut cfg, kind);
         if effect.changed {
@@ -148,8 +149,8 @@ impl MenuState {
         if rows.is_empty() {
             return;
         }
-        let live = config::get();
-        if let Err(e) = config::persist_settings(&live, |disk| {
+        let live = config::settings_config();
+        if let Err(e) = config::persist_settings(|disk| {
             for setting in &rows {
                 setting.copy(disk, &live);
             }
@@ -241,7 +242,7 @@ impl MenuState {
 
     fn reload_from_config(&mut self) -> Result<()> {
         self.bindings = load_bindings(StateId::Settings)?.with_left_stick_dpad();
-        self.form.sync_themes(&config::get());
+        self.form.sync_themes(&config::settings_config());
         Ok(())
     }
 }
