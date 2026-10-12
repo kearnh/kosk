@@ -2045,7 +2045,6 @@ dependencies = [
 name = "kosk-mcp"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "egui_mcp",
  "rmcp",
  "schemars",
