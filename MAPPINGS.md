@@ -133,7 +133,7 @@ Neither rule matches in Factorio, so L5 sends nothing from KOSK.
 
 `selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `editConfigCondition`, `toggleShowMore`, `switchState.…`
 
-`editConfigCondition` opens the condition popup over the current settings page.
+`editConfigCondition` opens the full-window condition editor from the current settings page.
 The default binding is `faceLeft`. Inside it, up/down select fields, left/right
 change values, activate selects, and back closes the app picker or cancels.
 

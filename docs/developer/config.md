@@ -77,7 +77,7 @@ config_overlays = [
 
 All matching files apply in list order; later values win. Tables merge by key;
 arrays and scalars replace earlier values. An omitted `when` always applies.
-Conditions accept `focusedApp`, `!`, `&&`, `||` and parentheses. Transient
+Conditions accept `focusedApp`, `state.<screen>`, `!`, `&&`, `||` and parentheses. Transient
 keyboard-state flags remain available in mappings and layout display conditions.
 
 Overlay files can set `active_theme`, `layouts`, `start_layout`, `transparent`,
@@ -100,7 +100,7 @@ startup uses defaults and a failed reload retains the previous config. Overlay
 files and their mappings/layout resources are watched, including inactive files.
 
 `config/conditional.rs` keeps the base and effective configurations separate.
-Focus changes rebuild the effective value from the base and cached overlay contents;
+Focus and application-state changes rebuild the effective value from the base and cached overlay contents;
 they do not reread overlay files or save settings. Changes to layouts, geometry, controller
 profiles, mappings or completion settings notify their consumers. Appearance-only
 changes do not reset typing state. The visible overlay polls focus every 100 ms;
@@ -108,11 +108,17 @@ controller input also refreshes focus before actions are processed.
 Invalid combinations retain the previous effective values and report once;
 changed files or a different matching set allow another attempt.
 
-Settings initially edit Main config. **Edit condition** opens a popup to select,
+Settings initially edit Main config. The **edit condition** button hint opens a full-window editor to select,
 name or create a conditional overlay. The `[+]` button below the last term appends
 an AND term. Toggling AND/OR redraws the brackets: consecutive AND terms form a
-group, and OR separates groups. App focus supports `is` and `is not`, a searchable
-running-app list and manual executable entry. Cancel precedes Use condition.
+group, and OR separates groups. App focus and application state support `is` and `is not`.
+App focus has a searchable running-app list and manual executable entry.
+Values marked `< … >` cycle with left/right; clicking the left arrow steps backward.
+Cancel precedes Use condition. Main config has no editing-scope label in the menu.
+
+Settings and condition editing keep the heading visible and reserve a fixed footer at the window bottom.
+Overflow scrolls within the body; moving controller focus reveals its control once.
+The app picker replaces the editor body, so only the active view has hints.
 
 The selected editing scope stays fixed until explicitly changed or the session
 is reset. Its values are the main configuration plus that overlay, even when its

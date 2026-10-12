@@ -12,6 +12,23 @@ const EDGE_INSET: i8 = 16;
 const TOP_INSET: i8 = 12;
 const HINT_GLYPH: f32 = 24.0;
 const HINT_GAP: f32 = 10.0;
+const FOOTER_HEIGHT: f32 = 64.0;
+
+pub(crate) fn width_with_side_panel(panel_width: f32, gap: f32) -> f32 {
+    LIST_WIDTH + panel_width + gap + 2.0 * f32::from(EDGE_INSET)
+}
+
+pub(crate) fn page(ui: &mut Ui, action_height: f32) -> (Ui, Ui) {
+    let rect = ui.available_rect_before_wrap();
+    let split = (rect.bottom() - FOOTER_HEIGHT - action_height).max(rect.top());
+    let body = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), split));
+    let footer = egui::Rect::from_min_max(egui::pos2(rect.left(), split), rect.max);
+    let layout = egui::Layout::top_down(egui::Align::Min);
+    let body = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(layout));
+    let footer = ui.new_child(egui::UiBuilder::new().max_rect(footer).layout(layout));
+    ui.allocate_rect(rect, Sense::hover());
+    (body, footer)
+}
 
 pub(crate) fn frame() -> Frame {
     Frame::NONE.inner_margin(Margin {

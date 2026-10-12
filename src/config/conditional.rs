@@ -86,14 +86,14 @@ impl From<Rule> for RuleSource {
 
 fn validate_condition(condition: &WhenExpr) -> Result<(), String> {
     match condition {
-        WhenExpr::FocusedApp(_) => Ok(()),
+        WhenExpr::FocusedApp(_) | WhenExpr::Flag(crate::when::Flag::State(_)) => Ok(()),
         WhenExpr::Not(inner) => validate_condition(inner),
         WhenExpr::And(left, right) | WhenExpr::Or(left, right) => {
             validate_condition(left)?;
             validate_condition(right)
         }
         WhenExpr::Flag(_) => {
-            Err("config_overlays conditions support focusedApp, !, &&, || and parentheses".into())
+            Err("config_overlays conditions support focusedApp, state.<screen>, !, &&, || and parentheses".into())
         }
     }
 }
@@ -235,6 +235,7 @@ pub(super) struct Runtime {
     pub(super) effective: Config,
     matching: Vec<usize>,
     failed_matching: Option<Vec<usize>>,
+    state: Option<crate::state::StateId>,
 }
 
 impl Runtime {
@@ -244,12 +245,14 @@ impl Runtime {
             base,
             matching: Vec::new(),
             failed_matching: None,
+            state: None,
         }
     }
 
     pub(super) fn refresh(&mut self, focused_app: Option<String>) -> Result<bool> {
         let context = WhenContext {
             focused_app,
+            state: self.state,
             ..Default::default()
         };
         let matching: Vec<_> = self
@@ -307,8 +310,14 @@ impl Runtime {
 
     pub(super) fn replace(&mut self, base: Config) -> Result<()> {
         let mut next = Self::new(base);
+        next.state = self.state;
         next.refresh(crate::platform::foreground::current_basename())?;
         *self = next;
         Ok(())
+    }
+
+    pub(super) fn refresh_state(&mut self, state: crate::state::StateId) -> Result<bool> {
+        self.state = Some(state);
+        self.refresh(crate::platform::foreground::current_basename())
     }
 }

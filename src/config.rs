@@ -1204,17 +1204,21 @@ fn publish_loaded_config(
 ) -> Vec<PathBuf> {
     new_config.renderer.at_startup(&STARTUP_RENDERER);
     store_controller_map_file(map_rel.clone());
-    let mut runtime = conditional::Runtime::new(new_config.clone());
-    if let Err(error) = runtime.refresh(crate::platform::foreground::current_basename()) {
-        eprintln!("config overlays: {error:#}");
-        crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
-    }
-    if let Some(instance) = CONFIG_INSTANCE.get() {
-        *instance.lock().unwrap() = runtime;
+    let result = if let Some(instance) = CONFIG_INSTANCE.get() {
+        instance.lock().unwrap().replace(new_config.clone())
     } else {
+        let mut runtime = conditional::Runtime::new(new_config.clone());
+        let result = runtime
+            .refresh(crate::platform::foreground::current_basename())
+            .map(|_| ());
         CONFIG_INSTANCE
             .set(Arc::new(Mutex::new(runtime)))
             .expect("Config was already initialized");
+        result
+    };
+    if let Err(error) = result {
+        eprintln!("config overlays: {error:#}");
+        crate::user_notify::notify(crate::user_notify::Notice::reload_failed());
     }
     store_disk_config(new_config.clone());
 
@@ -1723,14 +1727,16 @@ pub(crate) fn try_get() -> Option<Config> {
 
 const FOCUSED_CONFIG_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-pub(crate) fn refresh_focused_config() -> Option<std::time::Duration> {
+pub(crate) fn refresh_conditional_config(
+    state: crate::state::StateId,
+) -> Option<std::time::Duration> {
     let instance = CONFIG_INSTANCE.get()?;
     let reload = {
         let mut runtime = instance.lock().unwrap();
         if runtime.base.config_overlays.is_empty() {
             return None;
         }
-        match runtime.refresh(crate::platform::foreground::current_basename()) {
+        match runtime.refresh_state(state) {
             Ok(reload) => reload,
             Err(error) => {
                 eprintln!("config overlays: {error:#}");
@@ -2151,6 +2157,27 @@ config_overlays = [
         let replay =
             overlay_tape_config(&base, "config_overlays = [{ file = 'missing.toml' }]").unwrap();
         assert_eq!(replay.config_overlays.len(), 2);
+    }
+
+    #[test]
+    fn conditional_overlay_accepts_application_state() {
+        let dir = temp_dir("conditional-overlay-state");
+        let path = dir.join("config.toml");
+        fs::write(dir.join("typing.toml"), "[debug]\nshow_hitboxes = true\n").unwrap();
+        fs::write(&path, "config_overlays = [{file = 'typing.toml', when = 'state.keyboard && !state.settings'}]\n").unwrap();
+        let (base, _) = read_merged_config(&path, ConfigSource::Explicit).unwrap();
+        assert_eq!(base.config_overlays.len(), 1);
+        let mut runtime = conditional::Runtime::new(base.clone());
+        runtime
+            .refresh_state(crate::state::StateId::Keyboard)
+            .unwrap();
+        assert!(runtime.effective.debug.show_hitboxes);
+        runtime.replace(base).unwrap();
+        assert!(runtime.effective.debug.show_hitboxes);
+        runtime
+            .refresh_state(crate::state::StateId::Settings)
+            .unwrap();
+        assert!(!runtime.effective.debug.show_hitboxes);
     }
 
     #[test]

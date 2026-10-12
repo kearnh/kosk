@@ -165,7 +165,7 @@ impl AppState {
             return;
         }
 
-        config::refresh_focused_config();
+        config::refresh_conditional_config(self.state);
         self.overlay_visible = visible;
         self.resume_controller_after_release = true;
         self.events = EventQueue::new();
@@ -426,7 +426,7 @@ impl AppState {
     }
 
     pub fn prepare_window(&mut self, ctx: &Context, frame: &eframe::Frame) -> egui::Margin {
-        if let Some(interval) = config::refresh_focused_config() {
+        if let Some(interval) = config::refresh_conditional_config(self.state) {
             ctx.request_repaint_after(interval);
         }
         let cfg = config::get();
@@ -603,7 +603,7 @@ impl AppState {
         ctx: &Context,
         input: &dyn ControllerInput,
     ) -> Result<()> {
-        config::refresh_focused_config();
+        config::refresh_conditional_config(self.state);
         let cfg = config::get();
         let mapping_state = if self.overlay_visible {
             self.state

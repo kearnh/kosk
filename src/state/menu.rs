@@ -31,6 +31,7 @@ pub struct MenuState {
     scope: config::EditingScope,
     editor: Option<ConditionEditor>,
     edited: Option<config::Config>,
+    reveal_focus: bool,
 }
 
 impl MenuState {
@@ -43,100 +44,18 @@ impl MenuState {
             scope: config::EditingScope::Main,
             editor: None,
             edited: None,
+            reveal_focus: true,
         })
     }
 
     pub fn draw_ui(
         &mut self,
-        ctx: &Context,
+        _ctx: &Context,
         ui: &mut Ui,
         events: &mut EventQueue,
         kind: ControllerKind,
     ) {
         self.kind = kind;
-        let cfg = self.current_settings();
-        self.form.sync_themes(&cfg);
-        self.form.ensure_focus(kind);
-        let effective = config::get();
-        let appearance = &effective.theme().menus;
-        let rows = self.form.drawn(&cfg, kind);
-        let focus = self.form.focus();
-        let focused = rows.get(focus);
-        let (view_start, view_end) = self.form.visible_range(kind);
-        let (above, below) = self.form.scroll_counts(kind);
-
-        let mut hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
-        hints.push(FooterHint {
-            buttons: FooterButtons::EditConfigCondition,
-            label: "edit condition",
-        });
-        menu_list::frame().show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    menu_list::heading(ui, &self.form.title(), appearance);
-                    ui.label(format!("Editing: {}", config::editing_label(&self.scope)));
-                    if ui.button("Edit condition").clicked() {
-                        self.open_condition_editor();
-                    }
-                    if above > 0 {
-                        ui.label(
-                            RichText::new(format!("▲ {above} more above"))
-                                .small()
-                                .color(crate::theme::color(appearance.muted_text_color)),
-                        );
-                    }
-                    for (index, row) in rows
-                        .iter()
-                        .enumerate()
-                        .skip(view_start)
-                        .take(view_end - view_start)
-                    {
-                        if menu_list::row(
-                            ui,
-                            &row.label,
-                            row.value.as_deref(),
-                            index == focus,
-                            appearance,
-                        )
-                        .clicked()
-                        {
-                            let already = index == focus;
-                            self.form.set_focus(index, kind);
-                            if !self.form.on_page() || already {
-                                self.commit(events, &EventSource::MouseClick, |form, cfg, kind| {
-                                    form.activate(cfg, kind)
-                                });
-                            }
-                        }
-                    }
-                    if below > 0 {
-                        ui.label(
-                            RichText::new(format!("▼ {below} more below"))
-                                .small()
-                                .color(crate::theme::color(appearance.muted_text_color)),
-                        );
-                    }
-                    ui.separator();
-                    draw_footer(ui, &self.bindings, &hints, GlyphFamily::from_kind(kind));
-                });
-
-                if let Some(row) = focused
-                    && let Some(explain) = row.explain
-                {
-                    ui.vertical(|ui| {
-                        ui.set_min_width(PANEL_WIDTH);
-                        ui.set_max_width(PANEL_WIDTH);
-                        ui.label(
-                            RichText::new(&row.label)
-                                .strong()
-                                .color(crate::theme::color(appearance.heading_color)),
-                        );
-                        ui.add_space(6.0);
-                        ui.label(explain);
-                    });
-                }
-            });
-        });
         if let Some(editor) = &mut self.editor {
             let popup_hints = [
                 FooterHint {
@@ -145,26 +64,25 @@ impl MenuState {
                 },
                 FooterHint {
                     buttons: FooterButtons::Back,
-                    label: "cancel / close picker",
+                    label: editor.back_hint(),
                 },
                 FooterHint {
                     buttons: FooterButtons::Adjust,
                     label: "change",
                 },
             ];
-            let (cancelled, scope) = editor.draw(
-                ctx,
-                ui.style(),
-                crate::theme::color(effective.theme().background_color),
-                |ui| {
-                    draw_footer(
-                        ui,
-                        &self.bindings,
-                        &popup_hints,
-                        GlyphFamily::from_kind(kind),
-                    )
-                },
-            );
+            let (cancelled, scope) = menu_list::frame()
+                .show(ui, |ui| {
+                    editor.draw(ui, |ui| {
+                        draw_footer(
+                            ui,
+                            &self.bindings,
+                            &popup_hints,
+                            GlyphFamily::from_kind(kind),
+                        )
+                    })
+                })
+                .inner;
             if let Some(scope) = scope {
                 self.scope = scope;
                 self.edited = None;
@@ -175,7 +93,114 @@ impl MenuState {
             } else if cancelled {
                 self.editor = None;
             }
+            return;
         }
+
+        let cfg = self.current_settings();
+        self.form.sync_themes(&cfg);
+        self.form.ensure_focus(kind);
+        let effective = config::get();
+        let appearance = &effective.theme().menus;
+        let rows = self.form.drawn(&cfg, kind);
+        let focus = self.form.focus();
+        let drawn_focus = (self.form.title(), focus);
+        let focused = rows.get(focus);
+        let (view_start, view_end) = self.form.visible_range(kind);
+        let (above, below) = self.form.scroll_counts(kind);
+
+        let mut hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
+        hints.push(FooterHint {
+            buttons: FooterButtons::EditConfigCondition,
+            label: "edit condition",
+        });
+        let width = if focused.is_some_and(|row| row.explain.is_some()) {
+            menu_list::width_with_side_panel(PANEL_WIDTH, ui.spacing().item_spacing.x)
+        } else {
+            ui.available_width()
+        };
+        ui.set_width(ui.available_width().max(width));
+        menu_list::frame().show(ui, |ui| {
+            ui.horizontal(|ui| menu_list::heading(ui, &self.form.title(), appearance));
+            if self.scope != config::EditingScope::Main {
+                ui.label(format!("Editing: {}", config::editing_label(&self.scope)));
+            }
+            let (mut body, mut bottom) = menu_list::page(ui, 0.0);
+            egui::ScrollArea::vertical()
+                .id_salt("settings_body")
+                .auto_shrink([false, false])
+                .show(&mut body, |ui| {
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            if above > 0 {
+                                ui.label(
+                                    RichText::new(format!("▲ {above} more above"))
+                                        .small()
+                                        .color(crate::theme::color(appearance.muted_text_color)),
+                                );
+                            }
+                            for (index, row) in rows
+                                .iter()
+                                .enumerate()
+                                .skip(view_start)
+                                .take(view_end - view_start)
+                            {
+                                let response = menu_list::row(
+                                    ui,
+                                    &row.label,
+                                    row.value.as_deref(),
+                                    index == focus,
+                                    appearance,
+                                );
+                                if index == focus && self.reveal_focus {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+                                if response.clicked() {
+                                    let already = index == focus;
+                                    self.form.set_focus(index, kind);
+                                    if !self.form.on_page() || already {
+                                        self.commit(
+                                            events,
+                                            &EventSource::MouseClick,
+                                            |form, cfg, kind| form.activate(cfg, kind),
+                                        );
+                                    }
+                                }
+                            }
+                            if below > 0 {
+                                ui.label(
+                                    RichText::new(format!("▼ {below} more below"))
+                                        .small()
+                                        .color(crate::theme::color(appearance.muted_text_color)),
+                                );
+                            }
+                        });
+
+                        if let Some(row) = focused
+                            && let Some(explain) = row.explain
+                        {
+                            ui.vertical(|ui| {
+                                ui.set_min_width(PANEL_WIDTH);
+                                ui.set_max_width(PANEL_WIDTH);
+                                ui.label(
+                                    RichText::new(&row.label)
+                                        .strong()
+                                        .color(crate::theme::color(appearance.heading_color)),
+                                );
+                                ui.add_space(6.0);
+                                ui.label(explain);
+                            });
+                        }
+                    });
+                });
+            bottom.separator();
+            draw_footer(
+                &mut bottom,
+                &self.bindings,
+                &hints,
+                GlyphFamily::from_kind(kind),
+            );
+        });
+        self.reveal_focus = drawn_focus != (self.form.title(), self.form.focus());
     }
 
     fn current_settings(&mut self) -> config::Config {
@@ -257,6 +282,7 @@ impl MenuState {
         events: &mut EventQueue,
         source: &EventSource,
     ) -> Result<()> {
+        self.reveal_focus = true;
         use MenuAction::*;
         if let Some(editor) = &mut self.editor {
             editor.handle(action);
@@ -302,6 +328,7 @@ impl MenuState {
         self.scope = config::EditingScope::Main;
         self.editor = None;
         self.edited = None;
+        self.reveal_focus = true;
         self.reset_controller_input(None);
     }
 
@@ -347,7 +374,9 @@ fn draw_footer(
     let (primary, secondary): (Vec<_>, Vec<_>) = hints.iter().partition(|hint| {
         !matches!(
             hint.buttons,
-            FooterButtons::ShowAllControllers | FooterButtons::ShowAllSettings
+            FooterButtons::ShowAllControllers
+                | FooterButtons::ShowAllSettings
+                | FooterButtons::EditConfigCondition
         )
     });
 

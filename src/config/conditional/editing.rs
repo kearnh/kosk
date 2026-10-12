@@ -23,6 +23,7 @@ pub(crate) enum TermJoin {
 pub(crate) struct ConditionTerm {
     pub join: TermJoin,
     pub executable: String,
+    pub state: Option<crate::state::StateId>,
     pub negated: bool,
 }
 
@@ -74,10 +75,6 @@ impl ConditionDraft {
         }
         let mut expression = String::new();
         for (index, term) in self.terms.iter().enumerate() {
-            let executable = term.executable.trim();
-            if executable.is_empty() || executable.contains(['/', '\\']) {
-                bail!("Select an app or enter its executable name");
-            }
             if index > 0 {
                 expression.push_str(match term.join {
                     TermJoin::And => " && ",
@@ -86,6 +83,14 @@ impl ConditionDraft {
             }
             if term.negated {
                 expression.push('!');
+            }
+            if let Some(state) = term.state {
+                expression.push_str(&format!("state.{}", state.wire_id()));
+                continue;
+            }
+            let executable = term.executable.trim();
+            if executable.is_empty() || executable.contains(['/', '\\']) {
+                bail!("Select an app or enter its executable name");
             }
             expression.push_str(&format!(
                 "focusedApp({})",
@@ -102,6 +107,11 @@ fn expand(expression: &WhenExpr, negated: bool) -> Option<Vec<Vec<ConditionTerm>
     match expression {
         WhenExpr::FocusedApp(executable) => Some(vec![vec![ConditionTerm {
             executable: executable.clone(),
+            negated,
+            ..Default::default()
+        }]]),
+        WhenExpr::Flag(crate::when::Flag::State(state)) => Some(vec![vec![ConditionTerm {
+            state: Some(*state),
             negated,
             ..Default::default()
         }]]),
@@ -455,6 +465,40 @@ mod tests {
             executable: executable.into(),
             join,
             negated,
+            state: None,
+        }
+    }
+
+    #[test]
+    fn mixed_app_and_state_condition_round_trips_and_evaluates() {
+        let rule = Rule::try_from(RuleSource {
+            file: "typing.toml".into(),
+            name: Some("Typing".into()),
+            when: Some(
+                r#"focusedApp("factorio.exe") && !state.settings || state.textInput"#.into(),
+            ),
+        })
+        .unwrap();
+        let mut draft = draft_for(&rule);
+        assert_eq!(draft.groups(), [0..2, 2..3]);
+        draft.original = None;
+        let normalized = WhenExpr::parse(&draft.expression().unwrap().unwrap()).unwrap();
+        for state in [
+            crate::state::StateId::Keyboard,
+            crate::state::StateId::Settings,
+            crate::state::StateId::TextInput,
+        ] {
+            for app in [None, Some("factorio.exe")] {
+                let context = WhenContext {
+                    state: Some(state),
+                    focused_app: app.map(str::to_owned),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    normalized.eval(&context),
+                    rule.condition.as_ref().unwrap().eval(&context)
+                );
+            }
         }
     }
 
