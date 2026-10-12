@@ -113,7 +113,9 @@ name or create a conditional overlay. The `[+]` button below the last term appen
 an AND term. Toggling AND/OR redraws the brackets: consecutive AND terms form a
 group, and OR separates groups. App focus and application state support `is` and `is not`.
 App focus has a searchable running-app list and manual executable entry.
-Values marked `< … >` cycle with left/right; clicking the left arrow steps backward.
+Left/right move between controls on a row; up/down move between rows and retain the column.
+Activate opens a dropdown or app picker. Within a dropdown, up/down highlight choices,
+activate confirms, and back closes it without changing the value.
 Cancel precedes Use condition. Main config has no editing-scope label in the menu.
 
 Settings and condition editing keep the heading visible and reserve a fixed footer at the window bottom.

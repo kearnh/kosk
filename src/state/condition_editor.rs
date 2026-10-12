@@ -11,6 +11,8 @@ const TYPE_WIDTH: f32 = 112.0;
 const NEGATION_WIDTH: f32 = 70.0;
 const REMOVE_WIDTH: f32 = 24.0;
 const MINIMUM_VALUE_WIDTH: f32 = 160.0;
+const CHOICE_HEIGHT_LIMIT: f32 = 224.0;
+const CHOICE_EDGE_INSET: f32 = 16.0;
 const STATES: &[(StateId, &str)] = &[
     (StateId::Keyboard, "Keyboard"),
     (StateId::Settings, "Settings"),
@@ -35,6 +37,34 @@ enum Focus {
     Use,
 }
 
+#[derive(Clone, Copy, Default)]
+enum Column {
+    Connector,
+    #[default]
+    ConditionType,
+    Comparison,
+    Value,
+    Remove,
+}
+
+impl Focus {
+    fn column(self) -> Option<Column> {
+        Some(match self {
+            Self::Join(_) | Self::Cancel => Column::Connector,
+            Self::Kind(_) | Self::Use => Column::ConditionType,
+            Self::Negation(_) => Column::Comparison,
+            Self::App(_) => Column::Value,
+            Self::Remove(_) => Column::Remove,
+            Self::Target | Self::Name | Self::Add => return None,
+        })
+    }
+}
+
+struct ChoiceMenu {
+    focus: Focus,
+    selection: usize,
+}
+
 pub(super) struct ConditionEditor {
     choices: Vec<ConditionDraft>,
     selection: usize,
@@ -50,6 +80,8 @@ pub(super) struct ConditionEditor {
     finished: Option<EditingScope>,
     cancelled: bool,
     reveal_focus: bool,
+    column: Column,
+    choice: Option<ChoiceMenu>,
 }
 
 impl ConditionEditor {
@@ -78,6 +110,8 @@ impl ConditionEditor {
             finished: None,
             cancelled: false,
             reveal_focus: true,
+            column: Column::default(),
+            choice: None,
         }
     }
 
@@ -86,7 +120,7 @@ impl ConditionEditor {
     }
 
     pub(super) fn back_hint(&self) -> &'static str {
-        if self.picker.is_some() {
+        if self.picker.is_some() || self.choice.is_some() {
             "back"
         } else {
             "cancel"
@@ -112,13 +146,15 @@ impl ConditionEditor {
             .unwrap_or_else(ConditionDraft::new);
         self.error.clear();
         self.picker = None;
+        self.choice = None;
     }
 
-    fn fields(&self) -> Vec<Focus> {
-        let mut fields = vec![Focus::Target];
+    fn rows(&self) -> Vec<Vec<Focus>> {
+        let mut rows = vec![vec![Focus::Target]];
         if !self.is_main() {
-            fields.push(Focus::Name);
+            rows.push(vec![Focus::Name]);
             for index in 0..self.draft.terms.len() {
+                let mut fields = Vec::new();
                 if index > 0 {
                     fields.push(Focus::Join(index));
                 }
@@ -128,13 +164,56 @@ impl ConditionEditor {
                     Focus::App(index),
                     Focus::Remove(index),
                 ]);
+                rows.push(fields);
             }
             if self.draft.row_editable() {
-                fields.push(Focus::Add);
+                rows.push(vec![Focus::Add]);
             }
         }
-        fields.extend([Focus::Cancel, Focus::Use]);
-        fields
+        rows.push(vec![Focus::Cancel, Focus::Use]);
+        rows
+    }
+
+    fn set_focus(&mut self, focus: Focus) {
+        self.focus = focus;
+        if let Some(column) = focus.column() {
+            self.column = column;
+        }
+    }
+
+    fn navigate(&mut self, action: &MenuAction) {
+        let rows = self.rows();
+        let Some(row) = rows.iter().position(|row| row.contains(&self.focus)) else {
+            return;
+        };
+        let direction = if matches!(action, MenuAction::SelectUp | MenuAction::SelectLeft) {
+            -1
+        } else {
+            1
+        };
+        let focus = if matches!(action, MenuAction::SelectLeft | MenuAction::SelectRight) {
+            let position = rows[row]
+                .iter()
+                .position(|field| *field == self.focus)
+                .unwrap();
+            let position =
+                (position as i32 + direction).clamp(0, rows[row].len() as i32 - 1) as usize;
+            rows[row][position]
+        } else {
+            let next_row = (row as i32 + direction).clamp(0, rows.len() as i32 - 1) as usize;
+            if next_row == row {
+                return;
+            }
+            *rows[next_row]
+                .iter()
+                .min_by_key(|field| {
+                    field
+                        .column()
+                        .map_or(0, |column| (column as usize).abs_diff(self.column as usize))
+                })
+                .unwrap()
+        };
+        self.set_focus(focus);
     }
 
     fn add(&mut self) {
@@ -142,7 +221,7 @@ impl ConditionEditor {
             return;
         }
         self.draft.terms.push(ConditionTerm::default());
-        self.focus = Focus::App(self.draft.terms.len() - 1);
+        self.set_focus(Focus::Kind(self.draft.terms.len() - 1));
     }
 
     fn remove(&mut self, index: usize) {
@@ -150,16 +229,7 @@ impl ConditionEditor {
         if let Some(first) = self.draft.terms.first_mut() {
             first.join = TermJoin::And;
         }
-        self.focus = Focus::Add;
-    }
-
-    fn toggle_join(&mut self, index: usize) {
-        let join = &mut self.draft.terms[index].join;
-        *join = if *join == TermJoin::And {
-            TermJoin::Or
-        } else {
-            TermJoin::And
-        };
+        self.set_focus(Focus::Add);
     }
 
     fn use_condition(&mut self) {
@@ -188,56 +258,23 @@ impl ConditionEditor {
             self.handle_picker(action);
             return;
         }
+        if self.choice.is_some() {
+            self.handle_choice(action);
+            return;
+        }
         match action {
             MenuAction::Back | MenuAction::EditConfigCondition => self.cancelled = true,
-            MenuAction::SelectUp | MenuAction::SelectDown => {
-                let fields = self.fields();
-                let index = fields
-                    .iter()
-                    .position(|field| *field == self.focus)
-                    .unwrap_or(0) as i32;
-                let direction = if *action == MenuAction::SelectUp {
-                    -1
-                } else {
-                    1
-                };
-                self.focus = fields[(index + direction).rem_euclid(fields.len() as i32) as usize];
-            }
-            MenuAction::SelectLeft | MenuAction::SelectRight => {
-                let direction = if *action == MenuAction::SelectLeft {
-                    -1
-                } else {
-                    1
-                };
-                match self.focus {
-                    Focus::Target => self.select(
-                        (self.selection as i32 + direction)
-                            .rem_euclid((self.choices.len() + 2) as i32)
-                            as usize,
-                    ),
-                    Focus::Join(index) => self.toggle_join(index),
-                    Focus::Kind(index) => self.toggle_kind(index),
-                    Focus::App(index) if self.draft.terms[index].state.is_some() => {
-                        self.change_state(index, direction)
-                    }
-                    Focus::Negation(index) => {
-                        self.draft.terms[index].negated = !self.draft.terms[index].negated
-                    }
-                    Focus::Cancel => self.focus = Focus::Use,
-                    Focus::Use => self.focus = Focus::Cancel,
-                    _ => {}
-                }
-            }
+            MenuAction::SelectUp
+            | MenuAction::SelectDown
+            | MenuAction::SelectLeft
+            | MenuAction::SelectRight => self.navigate(action),
             MenuAction::Activate => match self.focus {
-                Focus::Target => self.select((self.selection + 1) % (self.choices.len() + 2)),
-                Focus::Name => self.request_name_focus = true,
-                Focus::Join(index) => self.toggle_join(index),
-                Focus::Kind(index) => self.toggle_kind(index),
-                Focus::Negation(index) => {
-                    self.draft.terms[index].negated = !self.draft.terms[index].negated
+                Focus::Target | Focus::Join(_) | Focus::Kind(_) | Focus::Negation(_) => {
+                    self.open_choice(self.focus)
                 }
+                Focus::Name => self.request_name_focus = true,
                 Focus::App(index) if self.draft.terms[index].state.is_some() => {
-                    self.change_state(index, 1)
+                    self.open_choice(self.focus)
                 }
                 Focus::App(index) => self.open_picker(index),
                 Focus::Remove(index) => self.remove(index),
@@ -245,6 +282,82 @@ impl ConditionEditor {
                 Focus::Cancel => self.cancelled = true,
                 Focus::Use => self.use_condition(),
             },
+            _ => {}
+        }
+    }
+
+    fn choice_labels(&self, focus: Focus) -> Vec<String> {
+        match focus {
+            Focus::Target => std::iter::once("Main config".into())
+                .chain(self.choices.iter().map(|draft| draft.name.clone()))
+                .chain(std::iter::once("New condition".into()))
+                .collect(),
+            Focus::Join(_) => vec!["AND".into(), "OR".into()],
+            Focus::Kind(_) => vec!["App focused".into(), "State".into()],
+            Focus::Negation(_) => vec!["is".into(), "is not".into()],
+            Focus::App(_) => STATES.iter().map(|(_, label)| (*label).into()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn open_choice(&mut self, focus: Focus) {
+        self.reveal_focus = true;
+        let selection = match focus {
+            Focus::Target => self.selection,
+            Focus::Join(index) => usize::from(self.draft.terms[index].join == TermJoin::Or),
+            Focus::Kind(index) => usize::from(self.draft.terms[index].state.is_some()),
+            Focus::Negation(index) => usize::from(self.draft.terms[index].negated),
+            Focus::App(index) => STATES
+                .iter()
+                .position(|(state, _)| Some(*state) == self.draft.terms[index].state)
+                .unwrap_or(0),
+            _ => return,
+        };
+        self.choice = Some(ChoiceMenu { focus, selection });
+    }
+
+    fn apply_choice(&mut self, focus: Focus, selection: usize) {
+        match focus {
+            Focus::Target => self.select(selection),
+            Focus::Join(index) => {
+                self.draft.terms[index].join = if selection == 0 {
+                    TermJoin::And
+                } else {
+                    TermJoin::Or
+                }
+            }
+            Focus::Kind(index) => {
+                let state = &mut self.draft.terms[index].state;
+                *state = if selection == 0 {
+                    None
+                } else {
+                    Some(state.unwrap_or(StateId::Keyboard))
+                };
+            }
+            Focus::Negation(index) => self.draft.terms[index].negated = selection != 0,
+            Focus::App(index) => self.draft.terms[index].state = Some(STATES[selection].0),
+            _ => {}
+        }
+        self.choice = None;
+    }
+
+    fn handle_choice(&mut self, action: &MenuAction) {
+        let focus = self.choice.as_ref().unwrap().focus;
+        let count = self.choice_labels(focus).len();
+        match action {
+            MenuAction::Back | MenuAction::EditConfigCondition => self.choice = None,
+            MenuAction::SelectUp => {
+                let selection = &mut self.choice.as_mut().unwrap().selection;
+                *selection = selection.saturating_sub(1);
+            }
+            MenuAction::SelectDown => {
+                let selection = &mut self.choice.as_mut().unwrap().selection;
+                *selection = (*selection + 1).min(count - 1);
+            }
+            MenuAction::Activate => {
+                let selection = self.choice.as_ref().unwrap().selection;
+                self.apply_choice(focus, selection);
+            }
             _ => {}
         }
     }
@@ -271,55 +384,108 @@ impl ConditionEditor {
         }
     }
 
-    fn toggle_kind(&mut self, index: usize) {
-        let state = &mut self.draft.terms[index].state;
-        *state = if state.is_some() {
-            None
-        } else {
-            Some(StateId::Keyboard)
-        };
-    }
-
-    fn change_state(&mut self, index: usize, direction: i32) {
-        let state = &mut self.draft.terms[index].state;
-        let position = STATES
-            .iter()
-            .position(|(value, _)| Some(*value) == *state)
-            .unwrap_or(0);
-        *state =
-            Some(STATES[(position as i32 + direction).rem_euclid(STATES.len() as i32) as usize].0);
-    }
-
-    fn control(&mut self, ui: &mut Ui, focus: Focus, label: &str, width: f32) -> egui::Response {
+    fn control(
+        &mut self,
+        ui: &mut Ui,
+        focus: Focus,
+        button: Button<'_>,
+        width: f32,
+    ) -> egui::Response {
         let response = ui.add_sized(
             [width, ROW_HEIGHT],
-            Button::new(label).selected(self.focus == focus).truncate(),
+            button.selected(self.focus == focus).truncate(),
         );
         if self.reveal_focus && self.focus == focus {
             response.scroll_to_me(Some(egui::Align::Center));
         }
         if response.clicked() {
-            self.focus = focus;
+            self.set_focus(focus);
         }
         response
     }
 
     fn button(&mut self, ui: &mut Ui, focus: Focus, label: &str, width: f32) -> bool {
-        self.control(ui, focus, label, width).clicked()
+        self.control(ui, focus, Button::new(label), width).clicked()
     }
 
-    fn switch(&mut self, ui: &mut Ui, focus: Focus, label: &str, width: f32) -> Option<i32> {
-        let response = self.control(ui, focus, &format!("< {label} >"), width);
-        response.clicked().then(|| {
-            if response
-                .interact_pointer_pos()
-                .is_some_and(|position| position.x < response.rect.center().x)
+    fn dropdown(&mut self, ui: &mut Ui, focus: Focus, label: &str, width: f32) {
+        let button = Button::new(label).right_text(egui::Atom::custom(
+            Id::new("condition_dropdown_arrow"),
+            egui::Vec2::splat(ui.spacing().icon_width),
+        ));
+        let response = self.control(ui, focus, button, width);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, label));
+        let center = egui::pos2(
+            response.rect.right() - ui.spacing().button_padding.x - ui.spacing().icon_width / 2.0,
+            response.rect.center().y,
+        );
+        let half = ui.spacing().icon_width / 4.0;
+        let color = if self.focus == focus {
+            ui.visuals().selection.stroke.color
+        } else {
+            ui.style().interact(&response).fg_stroke.color
+        };
+        ui.painter().add(egui::Shape::convex_polygon(
+            vec![
+                center + egui::vec2(-half, -half / 2.0),
+                center + egui::vec2(half, -half / 2.0),
+                center + egui::vec2(0.0, half / 2.0),
+            ],
+            color,
+            egui::Stroke::NONE,
+        ));
+        if response.clicked() {
+            if self
+                .choice
+                .as_ref()
+                .is_some_and(|choice| choice.focus == focus)
             {
-                -1
+                self.choice = None;
             } else {
-                1
+                self.open_choice(focus);
             }
-        })
+        }
+        let mut open = self
+            .choice
+            .as_ref()
+            .is_some_and(|choice| choice.focus == focus);
+        if !open {
+            return;
+        }
+        let labels = self.choice_labels(focus);
+        let selected = self.choice.as_ref().unwrap().selection;
+        let height = (ui.ctx().content_rect().height() / 2.0 - CHOICE_EDGE_INSET)
+            .clamp(ROW_HEIGHT, CHOICE_HEIGHT_LIMIT);
+        let mut chosen = None;
+        egui::Popup::from_response(&response)
+            .kind(egui::PopupKind::Menu)
+            .open_bool(&mut open)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .width(width.max(MINIMUM_VALUE_WIDTH))
+            .show(|ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("condition_choice_list")
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        for (index, label) in labels.iter().enumerate() {
+                            let response = ui.add_sized(
+                                [ui.available_width(), ROW_HEIGHT],
+                                Button::new(label).selected(index == selected),
+                            );
+                            if self.reveal_focus && index == selected {
+                                response.scroll_to_me(None);
+                            }
+                            if response.clicked() {
+                                chosen = Some(index);
+                            }
+                        }
+                    });
+            });
+        if let Some(selection) = chosen {
+            self.apply_choice(focus, selection);
+        } else if !open {
+            self.choice = None;
+        }
     }
 
     fn draw_term(&mut self, ui: &mut Ui, index: usize) -> Option<usize> {
@@ -332,34 +498,21 @@ impl ConditionEditor {
             };
             if index == 0 {
                 ui.allocate_space(egui::vec2(CONNECTOR_WIDTH, ROW_HEIGHT));
-            } else if self
-                .switch(ui, Focus::Join(index), connector, CONNECTOR_WIDTH)
-                .is_some()
-            {
-                self.toggle_join(index);
+            } else {
+                self.dropdown(ui, Focus::Join(index), connector, CONNECTOR_WIDTH);
             }
             let kind = if self.draft.terms[index].state.is_some() {
                 "State"
             } else {
                 "App focused"
             };
-            if self
-                .switch(ui, Focus::Kind(index), kind, TYPE_WIDTH)
-                .is_some()
-            {
-                self.toggle_kind(index);
-            }
+            self.dropdown(ui, Focus::Kind(index), kind, TYPE_WIDTH);
             let label = if self.draft.terms[index].negated {
                 "is not"
             } else {
                 "is"
             };
-            if self
-                .switch(ui, Focus::Negation(index), label, NEGATION_WIDTH)
-                .is_some()
-            {
-                self.draft.terms[index].negated = !self.draft.terms[index].negated;
-            }
+            self.dropdown(ui, Focus::Negation(index), label, NEGATION_WIDTH);
             let term = &self.draft.terms[index];
             let label = if let Some(state) = term.state {
                 STATES
@@ -376,9 +529,7 @@ impl ConditionEditor {
             let width =
                 (ui.available_width() - REMOVE_WIDTH - ui.spacing().item_spacing.x).max(40.0);
             if self.draft.terms[index].state.is_some() {
-                if let Some(direction) = self.switch(ui, Focus::App(index), &label, width) {
-                    self.change_state(index, direction);
-                }
+                self.dropdown(ui, Focus::App(index), &label, width);
             } else if self.button(ui, Focus::App(index), &label, width) {
                 self.open_picker(index);
             }
@@ -435,17 +586,12 @@ impl ConditionEditor {
     }
 
     fn draw_destination(&mut self, ui: &mut Ui) {
-        if let Some(direction) = self.switch(
+        self.dropdown(
             ui,
             Focus::Target,
             &self.selection_label(),
             ui.available_width(),
-        ) {
-            self.select(
-                (self.selection as i32 + direction).rem_euclid((self.choices.len() + 2) as i32)
-                    as usize,
-            );
-        }
+        );
         if !self.is_main() {
             ui.horizontal(|ui| {
                 ui.label("Name");
@@ -470,7 +616,7 @@ impl ConditionEditor {
                     self.request_name_focus = false;
                 }
                 if response.clicked() {
-                    self.focus = Focus::Name;
+                    self.set_focus(Focus::Name);
                 }
             });
             ui.label("Apply settings when");
@@ -611,34 +757,77 @@ mod tests {
             finished: None,
             cancelled: false,
             reveal_focus: true,
+            column: Column::default(),
+            choice: None,
         }
     }
 
     #[test]
-    fn controller_add_select_app_toggle_connector_and_cancel_stays_in_popup() {
+    fn arrows_move_between_controls_and_rows_without_changing_conditions() {
         let mut editor = editor();
-        assert!(editor.is_main());
+        editor.select(1);
+        editor.add();
+        editor.add();
+        let terms = editor.draft.terms.clone();
+        editor.focus = Focus::Kind(0);
         editor.handle(&MenuAction::SelectRight);
-        assert!(!editor.is_main());
-        editor.focus = Focus::Add;
+        assert_eq!(editor.focus, Focus::Negation(0));
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.focus, Focus::Negation(1));
+        editor.handle(&MenuAction::SelectLeft);
+        assert_eq!(editor.focus, Focus::Kind(1));
+        editor.handle(&MenuAction::SelectUp);
+        assert_eq!(editor.focus, Focus::Kind(0));
+        assert_eq!(editor.draft.terms, terms);
+    }
+
+    #[test]
+    fn down_from_cancel_stays_in_the_footer_row() {
+        let mut editor = editor();
+        editor.focus = Focus::Cancel;
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.focus, Focus::Cancel);
+        editor.handle(&MenuAction::SelectRight);
+        assert_eq!(editor.focus, Focus::Use);
+    }
+
+    #[test]
+    fn controller_selects_scope_apps_and_connectors_through_choice_lists() {
+        let mut editor = editor();
+        editor.handle(&MenuAction::SelectRight);
+        assert!(editor.is_main());
         editor.handle(&MenuAction::Activate);
-        assert_eq!(editor.focus, Focus::App(0));
+        editor.handle(&MenuAction::SelectDown);
+        assert!(editor.is_main());
+        editor.handle(&MenuAction::Activate);
+        assert!(!editor.is_main());
+        editor.set_focus(Focus::Add);
+        editor.handle(&MenuAction::Activate);
+        assert_eq!(editor.focus, Focus::Kind(0));
+        editor.handle(&MenuAction::SelectRight);
+        editor.handle(&MenuAction::SelectRight);
         editor.handle(&MenuAction::Activate);
         assert_eq!(editor.picker, Some(0));
         editor.handle(&MenuAction::Activate);
         assert_eq!(editor.draft.terms[0].executable, "factorio.exe");
-        editor.focus = Focus::Add;
+        editor.set_focus(Focus::Add);
         editor.handle(&MenuAction::Activate);
         assert_eq!(editor.draft.terms[1].join, TermJoin::And);
-        editor.focus = Focus::Join(1);
-        editor.handle(&MenuAction::SelectRight);
-        assert_eq!(editor.draft.groups(), [0..1, 1..2]);
         editor.handle(&MenuAction::SelectLeft);
+        assert_eq!(editor.focus, Focus::Join(1));
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.draft.terms[1].join, TermJoin::And);
+        editor.handle(&MenuAction::Activate);
+        assert_eq!(editor.draft.groups(), [0..1, 1..2]);
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectUp);
+        editor.handle(&MenuAction::Activate);
         assert_eq!(
             editor.draft.groups(),
             std::iter::once(0..2).collect::<Vec<_>>()
         );
-        editor.focus = Focus::App(1);
+        editor.set_focus(Focus::App(1));
         editor.handle(&MenuAction::Activate);
         editor.handle(&MenuAction::Back);
         assert!(!editor.cancelled);
@@ -700,26 +889,61 @@ mod tests {
     }
 
     #[test]
-    fn controller_changes_condition_type_and_state_in_both_directions() {
+    fn choices_only_change_values_on_confirmation_and_back_cancels_the_list() {
         let mut editor = editor();
         editor.select(1);
         editor.add();
-        editor.focus = Focus::Kind(0);
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectDown);
+        assert!(editor.draft.terms[0].state.is_none());
+        editor.handle(&MenuAction::Back);
+        assert!(editor.choice.is_none());
+        assert!(!editor.cancelled);
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectDown);
+        editor.handle(&MenuAction::Activate);
+        assert_eq!(editor.draft.terms[0].state, Some(StateId::Keyboard));
+        editor.handle(&MenuAction::SelectRight);
+        editor.handle(&MenuAction::SelectRight);
+        assert_eq!(editor.focus, Focus::App(0));
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectDown);
         editor.handle(&MenuAction::SelectRight);
         assert_eq!(editor.draft.terms[0].state, Some(StateId::Keyboard));
-        editor.focus = Focus::App(0);
-        editor.handle(&MenuAction::SelectRight);
+        editor.handle(&MenuAction::Activate);
         assert_eq!(editor.draft.terms[0].state, Some(StateId::Settings));
-        editor.handle(&MenuAction::SelectLeft);
-        assert_eq!(editor.draft.terms[0].state, Some(StateId::Keyboard));
-        assert!(editor.picker.is_none());
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectUp);
+        editor.handle(&MenuAction::Back);
+        assert_eq!(editor.draft.terms[0].state, Some(StateId::Settings));
+        editor.handle(&MenuAction::Activate);
+        editor.handle(&MenuAction::SelectUp);
+        editor.handle(&MenuAction::Activate);
         assert_eq!(
             editor.draft.expression().unwrap().as_deref(),
             Some("state.keyboard")
         );
-        editor.focus = Focus::Kind(0);
+        assert!(editor.picker.is_none());
+    }
+
+    #[test]
+    fn vertical_navigation_preserves_column_through_the_add_row() {
+        let mut editor = editor();
+        editor.select(1);
+        editor.add();
+        editor.add();
+        editor.set_focus(Focus::App(0));
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.focus, Focus::App(1));
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.focus, Focus::Add);
+        editor.handle(&MenuAction::SelectUp);
+        assert_eq!(editor.focus, Focus::App(1));
+        editor.set_focus(Focus::Kind(0));
         editor.handle(&MenuAction::SelectLeft);
-        assert!(editor.draft.terms[0].state.is_none());
+        assert_eq!(editor.focus, Focus::Kind(0));
+        editor.handle(&MenuAction::SelectDown);
+        assert_eq!(editor.focus, Focus::Kind(1));
     }
 
     #[test]
@@ -774,7 +998,7 @@ mod tests {
     fn cancel_precedes_use_in_controller_navigation() {
         let mut editor = editor();
         editor.focus = Focus::Cancel;
-        editor.handle(&MenuAction::SelectDown);
+        editor.handle(&MenuAction::SelectRight);
         assert_eq!(editor.focus, Focus::Use);
         editor.handle(&MenuAction::SelectLeft);
         assert_eq!(editor.focus, Focus::Cancel);

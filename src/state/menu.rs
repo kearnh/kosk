@@ -68,7 +68,7 @@ impl MenuState {
                 },
                 FooterHint {
                     buttons: FooterButtons::Adjust,
-                    label: "change",
+                    label: "move",
                 },
             ];
             let (cancelled, scope) = menu_list::frame()
