@@ -10,6 +10,8 @@ use crate::state::StateId;
 /// Modes that need OS keyboard focus for `TextEdit` input.
 pub fn text_entry_focus_wanted(current: StateId) -> bool {
     current == StateId::SelectKey
+        || (current == StateId::Settings
+            && super::menu::with_mut(|menu| menu.condition_editor_open()))
 }
 
 #[cfg(target_os = "windows")]

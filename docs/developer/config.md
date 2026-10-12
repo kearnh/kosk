@@ -71,7 +71,7 @@ Relative paths (layouts, mappings file, record template, replay file, keys log) 
 
 ```toml
 config_overlays = [
-  { file = "games/factorio.toml", when = 'focusedApp("factorio.exe")' },
+  { name = "Factorio", file = "games/factorio.toml", when = 'focusedApp("factorio.exe")' },
 ]
 ```
 
@@ -108,10 +108,22 @@ controller input also refreshes focus before actions are processed.
 Invalid combinations retain the previous effective values and report once;
 changed files or a different matching set allow another attempt.
 
-Settings and mappings editors read and save the main configuration. Changes are
-saved to the main file or its mappings sidecar; conditional files are never
-edited. Active overlays continue to override the main values. Condition selection
-in the settings UI is not implemented.
+Settings initially edit Main config. **Edit condition** opens a popup to select,
+name or create a conditional overlay. The `[+]` button below the last term appends
+an AND term. Toggling AND/OR redraws the brackets: consecutive AND terms form a
+group, and OR separates groups. App focus supports `is` and `is not`, a searchable
+running-app list and manual executable entry. Cancel precedes Use condition.
+
+The selected editing scope stays fixed until explicitly changed or the session
+is reset. Its values are the main configuration plus that overlay, even when its
+condition is inactive. Saves change only edited settings in the selected file;
+other overlay values and comments are retained. Names are optional in manually
+written declarations; unnamed conditions display their file stem. New UI
+conditions use files under `conditions/` beside the main config.
+
+Mappings, layout files and window placement continue to use their existing main
+configuration editors. Settings disallowed in overlays show **Main config only**.
+Explicit command-line configs and replay cannot create or modify condition files.
 
 ## `controller_map` as a file
 

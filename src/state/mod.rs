@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 pub mod actions;
 mod completion_ui;
+mod condition_editor;
 mod event;
 pub(crate) mod key_sink;
 pub(crate) mod keyboard;

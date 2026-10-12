@@ -64,6 +64,7 @@
 quickAccess = "switchState.mappings"
 
 [Settings]
+"faceLeft" = "editConfigCondition"
 "dpadUp" = "selectUp"
 "dpadDown" = "selectDown"
 "dpadLeft" = "selectLeft"

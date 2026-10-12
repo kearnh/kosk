@@ -23,6 +23,15 @@ use kosk_config_derive::{config_section, Choice};
 mod bundled;
 #[path = "config/conditional.rs"]
 mod conditional;
+pub(crate) use conditional::{
+    condition_apps, condition_choices, editing_config, editing_label, preview_edits,
+    save_condition, save_edits,
+};
+pub(crate) use conditional::{ConditionDraft, ConditionTerm, EditingScope, TermJoin};
+
+pub(crate) fn supports_condition_setting(key: &str) -> bool {
+    conditional::supports_setting(key)
+}
 #[path = "config/schema.rs"]
 pub(crate) mod schema;
 pub(crate) use schema::{device_name, DevicePage, Page, Setting};

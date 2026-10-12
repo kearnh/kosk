@@ -131,7 +131,11 @@ Neither rule matches in Factorio, so L5 sends nothing from KOSK.
 
 ## Settings actions
 
-`selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `toggleShowMore`, `switchState.…`
+`selectUp`, `selectDown`, `selectLeft`, `selectRight`, `activate`, `pagePrev`, `pageNext`, `back`, `openConfig`, `editConfigCondition`, `toggleShowMore`, `switchState.…`
+
+`editConfigCondition` opens the condition popup over the current settings page.
+The default binding is `faceLeft`. Inside it, up/down select fields, left/right
+change values, activate selects, and back closes the app picker or cancels.
 
 Up and down move the highlight. Left and right change the highlighted value. Activate opens the row, or flips it when it is a toggle. `pagePrev` and `pageNext` move between value pages while one is open, following the visible device filter. `back` climbs one level (value page to device index to Options to hub), and from the top screen returns to the keyboard. The shipped map binds `faceRight` to `back`, `faceTop` to `toggleShowMore`, and `share` to `openConfig`. `toggleShowMore` reveals the hidden device on the Options list, or the extra settings on a value page. On a Steam Controller, `share` is the left button beside Steam. `openConfig` opens the user config in `$EDITOR`, or Notepad. A config path on the command line makes that action do nothing. `switchState.keyboard` still leaves for the keyboard immediately.
 

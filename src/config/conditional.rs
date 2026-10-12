@@ -5,6 +5,14 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[path = "conditional/editing.rs"]
+mod editing;
+pub(crate) use editing::{
+    condition_apps, condition_choices, editing_config, editing_label, preview_edits,
+    save_condition, save_edits,
+};
+pub(crate) use editing::{ConditionDraft, ConditionTerm, EditingScope, TermJoin};
+
 const LIVE_SETTINGS: &[&str] = &[
     "active_theme",
     "layouts",
@@ -34,6 +42,10 @@ const RELOAD_SETTINGS: &[&str] = &[
     "completion",
 ];
 
+pub(super) fn supports_setting(key: &str) -> bool {
+    LIVE_SETTINGS.contains(&key.split('.').next().unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "RuleSource", into = "RuleSource")]
 pub(super) struct Rule {
@@ -45,6 +57,8 @@ pub(super) struct Rule {
 #[serde(deny_unknown_fields)]
 struct RuleSource {
     file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     when: Option<String>,
 }

@@ -107,6 +107,7 @@ pub(in crate::state) enum FooterButtons {
     Adjust,
     Page,
     OpenConfig,
+    EditConfigCondition,
     ShowAllControllers,
     ShowAllSettings,
 }
@@ -123,6 +124,7 @@ pub(in crate::state) struct SettingsForm {
     show_all_controllers: bool,
     show_all_settings: bool,
     theme_names: Vec<String>,
+    conditional_scope: bool,
 }
 
 impl SettingsForm {
@@ -134,7 +136,12 @@ impl SettingsForm {
             show_all_controllers: false,
             show_all_settings: false,
             theme_names: Vec::new(),
+            conditional_scope: false,
         }
+    }
+
+    pub(in crate::state) fn set_conditional_scope(&mut self, conditional: bool) {
+        self.conditional_scope = conditional;
     }
 
     pub(in crate::state) fn sync_themes(&mut self, cfg: &Config) {
@@ -387,6 +394,9 @@ impl SettingsForm {
         let Some(setting) = self.focused_edit(kind) else {
             return false;
         };
+        if self.conditional_scope && !crate::config::supports_condition_setting(setting.key) {
+            return false;
+        }
         if !setting.nudge(cfg, dir) {
             return false;
         }
@@ -505,7 +515,14 @@ impl SettingsForm {
                 .iter()
                 .map(|entry| DrawnRow {
                     label: entry.label().to_owned(),
-                    explain: None,
+                    explain: match entry {
+                        HubEntry::Move | HubEntry::Mappings | HubEntry::Layouts
+                            if self.conditional_scope =>
+                        {
+                            Some("This editor saves to Main config.")
+                        }
+                        _ => None,
+                    },
                     value: None,
                 })
                 .collect(),
@@ -544,7 +561,7 @@ impl SettingsForm {
                 .map(|setting| DrawnRow {
                     label: setting.label.to_owned(),
                     explain: Some(setting.explain),
-                    value: Some(setting.format(cfg)),
+                    value: Some(self.setting_value(setting, cfg)),
                 })
                 .collect(),
             View::DevicePage(target, sheet) => self
@@ -553,7 +570,7 @@ impl SettingsForm {
                 .map(|setting| DrawnRow {
                     label: setting.label.to_owned(),
                     explain: Some(setting.explain),
-                    value: Some(setting.format(cfg)),
+                    value: Some(self.setting_value(setting, cfg)),
                 })
                 .collect(),
         }
@@ -568,6 +585,13 @@ impl SettingsForm {
             View::Page(page) => self.page_rows(page).len(),
             View::DevicePage(target, sheet) => self.page_rows(Page::Device(target, sheet)).len(),
         }
+    }
+
+    fn setting_value(&self, setting: &Setting, cfg: &Config) -> String {
+        if self.conditional_scope && !crate::config::supports_condition_setting(setting.key) {
+            return "Main config only".into();
+        }
+        setting.format(cfg)
     }
 
     fn focused_edit(&self, kind: ControllerKind) -> Option<&'static Setting> {

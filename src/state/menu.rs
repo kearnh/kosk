@@ -21,11 +21,16 @@ use crate::controller::bindings::BindingEngine;
 
 const PANEL_WIDTH: f32 = 240.0;
 
+use super::condition_editor::ConditionEditor;
+
 pub struct MenuState {
     form: SettingsForm,
     kind: ControllerKind,
     pending_notify: bool,
     bindings: BindingEngine<MenuAction>,
+    scope: config::EditingScope,
+    editor: Option<ConditionEditor>,
+    edited: Option<config::Config>,
 }
 
 impl MenuState {
@@ -35,18 +40,21 @@ impl MenuState {
             kind: ControllerKind::Sc2,
             pending_notify: false,
             bindings: load_bindings(StateId::Settings)?.with_left_stick_dpad(),
+            scope: config::EditingScope::Main,
+            editor: None,
+            edited: None,
         })
     }
 
     pub fn draw_ui(
         &mut self,
-        _: &Context,
+        ctx: &Context,
         ui: &mut Ui,
         events: &mut EventQueue,
         kind: ControllerKind,
     ) {
         self.kind = kind;
-        let cfg = config::settings_config();
+        let cfg = self.current_settings();
         self.form.sync_themes(&cfg);
         self.form.ensure_focus(kind);
         let effective = config::get();
@@ -57,11 +65,19 @@ impl MenuState {
         let (view_start, view_end) = self.form.visible_range(kind);
         let (above, below) = self.form.scroll_counts(kind);
 
-        let hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
+        let mut hints = filter_open_config_hint(self.form.footer(kind), config::uses_user_config());
+        hints.push(FooterHint {
+            buttons: FooterButtons::EditConfigCondition,
+            label: "edit condition",
+        });
         menu_list::frame().show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                     menu_list::heading(ui, &self.form.title(), appearance);
+                    ui.label(format!("Editing: {}", config::editing_label(&self.scope)));
+                    if ui.button("Edit condition").clicked() {
+                        self.open_condition_editor();
+                    }
                     if above > 0 {
                         ui.label(
                             RichText::new(format!("▲ {above} more above"))
@@ -121,6 +137,70 @@ impl MenuState {
                 }
             });
         });
+        if let Some(editor) = &mut self.editor {
+            let popup_hints = [
+                FooterHint {
+                    buttons: FooterButtons::Activate,
+                    label: "select",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Back,
+                    label: "cancel / close picker",
+                },
+                FooterHint {
+                    buttons: FooterButtons::Adjust,
+                    label: "change",
+                },
+            ];
+            let (cancelled, scope) = editor.draw(
+                ctx,
+                ui.style(),
+                crate::theme::color(effective.theme().background_color),
+                |ui| {
+                    draw_footer(
+                        ui,
+                        &self.bindings,
+                        &popup_hints,
+                        GlyphFamily::from_kind(kind),
+                    )
+                },
+            );
+            if let Some(scope) = scope {
+                self.scope = scope;
+                self.edited = None;
+                self.form
+                    .set_conditional_scope(self.scope != config::EditingScope::Main);
+                self.editor = None;
+                self.pending_notify = true;
+            } else if cancelled {
+                self.editor = None;
+            }
+        }
+    }
+
+    fn current_settings(&mut self) -> config::Config {
+        if let Some(config) = &self.edited {
+            return config.clone();
+        }
+        match config::editing_config(&self.scope) {
+            Ok(config) => config,
+            Err(_) => {
+                self.scope = config::EditingScope::Main;
+                self.form.set_conditional_scope(false);
+                config::settings_config()
+            }
+        }
+    }
+
+    fn open_condition_editor(&mut self) {
+        if !self.write_settings() {
+            return;
+        }
+        self.editor = Some(ConditionEditor::new(&self.scope));
+    }
+
+    pub(super) fn condition_editor_open(&self) -> bool {
+        self.editor.is_some()
     }
 
     fn commit(
@@ -130,11 +210,15 @@ impl MenuState {
         run: impl FnOnce(&mut SettingsForm, &mut config::Config, ControllerKind) -> Effect,
     ) {
         let kind = self.kind;
-        let mut cfg = config::settings_config();
+        let mut cfg = self.current_settings();
         self.form.sync_themes(&cfg);
         let effect = run(&mut self.form, &mut cfg, kind);
         if effect.changed {
-            config::replace_live(cfg);
+            if let Err(error) = config::preview_edits(&self.scope, &cfg, self.form.dirty_rows()) {
+                eprintln!("settings preview: {error:#}");
+                return;
+            }
+            self.edited = Some(cfg);
         }
         if effect.persist {
             self.write_settings();
@@ -144,23 +228,21 @@ impl MenuState {
         }
     }
 
-    fn write_settings(&mut self) {
+    fn write_settings(&mut self) -> bool {
         let rows = self.form.dirty_rows().to_vec();
         if rows.is_empty() {
-            return;
+            return true;
         }
-        let live = config::settings_config();
-        if let Err(e) = config::persist_settings(|disk| {
-            for setting in &rows {
-                setting.copy(disk, &live);
-            }
-        }) {
+        let live = self.current_settings();
+        if let Err(e) = config::save_edits(&self.scope, &live, &rows) {
             eprintln!("settings save: {e:#}");
             crate::user_notify::notify(crate::user_notify::Notice::settings_save_failed());
-            return;
+            return false;
         }
         self.form.clear_dirty();
+        self.edited = None;
         self.pending_notify = true;
+        true
     }
 
     pub fn take_pending_notify(&mut self) -> bool {
@@ -176,6 +258,11 @@ impl MenuState {
         source: &EventSource,
     ) -> Result<()> {
         use MenuAction::*;
+        if let Some(editor) = &mut self.editor {
+            editor.handle(action);
+            let _ = events.push(Event::Repaint, source);
+            return Ok(());
+        }
         self.form.ensure_focus(self.kind);
         match action {
             SelectUp => self.form.move_focus(-1, self.kind),
@@ -197,6 +284,7 @@ impl MenuState {
             OpenConfig => {
                 config::open_user_config_in_editor();
             }
+            EditConfigCondition => self.open_condition_editor(),
             ToggleShowMore => {
                 self.form.toggle_show_more(self.kind);
             }
@@ -211,6 +299,9 @@ impl MenuState {
     pub(super) fn reset_session(&mut self) {
         self.write_settings();
         self.form = SettingsForm::new();
+        self.scope = config::EditingScope::Main;
+        self.editor = None;
+        self.edited = None;
         self.reset_controller_input(None);
     }
 
@@ -315,6 +406,9 @@ fn buttons_for(
         }
         FooterButtons::OpenConfig => {
             bindings.buttons_matching(|action| matches!(action, MenuAction::OpenConfig))
+        }
+        FooterButtons::EditConfigCondition => {
+            bindings.buttons_matching(|action| matches!(action, MenuAction::EditConfigCondition))
         }
         FooterButtons::ShowAllControllers | FooterButtons::ShowAllSettings => {
             bindings.buttons_matching(|action| matches!(action, MenuAction::ToggleShowMore))

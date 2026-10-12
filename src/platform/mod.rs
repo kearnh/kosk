@@ -1,5 +1,6 @@
 //! OS-specific helpers. Completion talks to these through traits, not Win32.
 
+pub(crate) mod apps;
 pub mod foreground;
 pub mod open_file;
 pub(crate) mod password_field;
