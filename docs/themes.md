@@ -60,8 +60,7 @@ other supported settings.
 
 The repository includes [Old Steam Controller](../themes/old-steam-controller.toml),
 [Portal 2](../themes/portal.toml), [Factorio](../themes/factorio.toml),
-[Cyberpunk 2077](../themes/cyberpunk-2077.toml),
-[Borderlands](../themes/borderlands.toml), and
+[Cyberpunk 2077](../themes/cyberpunk-2077.toml), and
 [Stardew Valley](../themes/stardew-valley.toml) themes.
 Add `themes/*.toml` to the `themes` list to discover them.
 
@@ -72,12 +71,6 @@ buttons and red cancel buttons. [Palette references](../themes/factorio-SOURCE.m
 
 The Cyberpunk 2077 theme uses black chrome, electric yellow, cyan and hot pink,
 with square keys and neon ring cursors.
-
-The Borderlands theme uses navy panels with subtle scan lines, cyan outlines,
-beveled corners and yellow menu selections with dark text.
-Weapon-rarity highlights use green for hover, blue for the left selection,
-purple for the right selection, and orange for dual selections.
-Its original panel artwork is covered by the repository's MIT license.
 
 The Stardew Valley theme uses parchment, walnut, leaf green and harvest gold,
 with wooden borders and solid green/gold cursors.
@@ -134,9 +127,6 @@ Changing themes or font paths applies live. Fonts load off the drawing thread
 and cache for the session; replacing a file at the same path requires restart.
 Missing, invalid or oversized fonts fall back to the default with a notice.
 Each file is limited to 8 MiB; the session caches up to 32 files and 64 MiB.
-
-Borderlands uses a user-supplied WillowBody Regular font. Its source and licence
-status are recorded in [the font provenance](../themes/fonts/WillowBody-SOURCE.md).
 
 ## Example
 

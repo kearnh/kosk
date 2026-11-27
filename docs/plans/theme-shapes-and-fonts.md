@@ -1,12 +1,10 @@
-# Theme shapes, fonts and Borderlands menus
+# Theme shapes and fonts
 
 Status: implemented.
 
 Added shared square, rounded and beveled geometry, native Windows clipping,
-independent font roles and the blue/yellow Borderlands treatment. Borderlands
-uses the supplied WillowBody font in all four roles; packaging includes its
-provenance record. Existing themes retain their geometry and fonts when these
-options are absent. Font files are cached without watching.
+and independent font roles. Existing themes retain their geometry and fonts
+when these options are absent. Font files are cached without watching.
 
 Validation: 590 library tests pass; four remain ignored. Strict workspace Clippy
 passes. Live captures cover the keyboard, Settings, pickers, mappings and move
@@ -15,48 +13,17 @@ opaque windows with Glow and WGPU. Default and move mode restore rectangular
 boundaries. Live controller checks also confirm hiding and showing preserves
 the region. Native adapter tests cover 1.0, 1.25 and 2.0 scale factors; live
 testing used the current monitor scale, not multiple physical monitor DPIs.
-Contrast and packaging-path/hash checks pass.
 
 The extra `show_hide` integration test fails before exercising this change:
 its unchanged fixture uses unsupported `config_version = 1`. The live
 visibility check uses version 3.
 
-## Visual target
-
-The supplied [Borderlands menu screenshot](https://www.gameuidatabase.com/uploads/Borderlands06102021-092844-14510.jpg)
-shows translucent dark blue surfaces, cyan edging, pale blue-white text and a
-yellow selected row with dark text and a diagonal right edge. Its menu labels
-are squared and condensed; its heading is broader and heavier.
-
-Use that menu as the reference. The current grey salvage-panel treatment misses
-both its blue interface and its typography. Do not infer the menu font from the
-game's logo. The exact typefaces in this screenshot remain unidentified.
-
-## 1. Correct the Borderlands palette
-
-- Replace grey surfaces with muted navy, blue steel and cyan edges. Keep the
-  ordinary keys readable and visually quieter than controller highlights.
-- Give selected menu rows yellow fill and dark text. Keep keyboard selections
-  blue, purple and orange for rare, epic and legendary loot; hover remains green.
-  Menu focus and weapon-rarity highlights serve different purposes.
-- Replace the salvage-panel artwork with restrained blue interface decoration.
-  Any scan lines must stay faint beneath text. Keep the status strip clear.
-- Review the keyboard, Settings, theme/layout pickers, mappings, notifications
-  and battery/controller labels together. Check contrast after alpha blending.
-
-This stage uses existing theme fields. Update `themes/borderlands.toml`, its
-artwork and `docs/themes.md`; preserve the packaged asset paths or update the
-packaging script with them.
-
-## 2. Add parameterised corner styles
+## Parameterised corner styles
 
 Introduce one reusable surface-shape resolver for filling, outlining and
 containment. Shapes belong to theme data, never to a theme-name condition.
 Select a corner style, then configure its parameters. Start with `square`
 (no parameters), `rounded` (corner radii) and `beveled` (straight diagonal cuts).
-Defer the screenshot's extra stepped header/footer silhouette: it changes the
-whole outline and belongs outside corner styling. Future corner styles can
-introduce their own parameters.
 
 Borrow CSS's separation of corner shape and size. Its
 [corner-shape specification](https://www.w3.org/TR/css-borders-4/#corner-shaping)
@@ -128,7 +95,7 @@ Review any required visibility changes before implementation.
 - Verify cut corners expose the underlying application and do not intercept its
   clicks. Preserve show/hide, tray, move mode and text-entry focus behaviour.
 
-## 3. Make fonts configurable per theme
+## Theme font roles
 
 Current fonts are installed once in `KoskApp::new`. Menu rows explicitly use
 `FontId::proportional`; keyboard labels cache their font-dependent widget text.
@@ -168,30 +135,7 @@ Invalidate font-dependent label/layout caches when roles change. In particular,
 size and colour, without font identity. Re-measure menu rows, suggestions,
 keyboard labels and window bounds; verify long labels and mixed text/icon keys.
 
-The selected local `willowbody_0-webfont.ttf` is copied to
-`themes/fonts/WillowBody-Regular.ttf` and used for all four roles. Its source,
-hash and unresolved licence status are retained in `WillowBody-SOURCE.md`;
-the original download is also retained at the repository root. The user selected this font after
-reviewing the provenance limits.
-
-The inspected file identifies itself as `WillowBody Regular`, names Ray Larabie
-as designer and lists `http://www.larabiefonts.com` as vendor URL. Its copyright
-and version fields say only `New`; it contains no licence or licence URL.
-These metadata claims do not establish authorship or ownership.
-SHA-256: `827fe2e8ac6f8529352e548e0f475e63f998862078de84032df182ec7542de66`.
-
-Retain Rajdhani SemiBold as a menu alternative and Oxanium Bold as a heading
-candidate. Both are available under the SIL Open Font License:
-[Rajdhani licence](https://raw.githubusercontent.com/google/fonts/main/ofl/rajdhani/OFL.txt),
-[Oxanium licence](https://raw.githubusercontent.com/google/fonts/main/ofl/oxanium/OFL.txt).
-Confirm a static heading face supported by the decoder before packaging it.
-Retain upstream sources, hashes, copyright and licence files; include the chosen
-fonts with release assets. Compare typography at KOSK's actual window size.
-
 ## Delivery and acceptance
-
-Deliver the reusable geometry/font support separately from Borderlands assets
-and visual tuning.
 
 - Existing themes render identically when new options are absent.
 - Corner-style tests cover parameter validation, per-corner overrides and legacy
@@ -206,9 +150,6 @@ and visual tuning.
   `cargo clippy --workspace --all-targets -- -D warnings`.
 - Verify native corners and click behaviour on Windows at multiple DPI scales,
   in opaque and transparent modes, with both supported renderers.
-- Compare live keyboard and menu captures with the supplied reference. Check
-  yellow menu focus, distinct rarity colours, text contrast, icons, long labels
-  and the clear status strip. Verify packaged font/artwork paths.
 
 Background images may supply texture; window and selection shapes come from
 geometry. Per-key illustrated skins and full cel-shading are separate work.
