@@ -4,7 +4,7 @@ resolver = "3"
 
 [package]
 name = "kosk"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 license = "MIT"
 description = "Controller-operated on-screen keyboard"
 edition = "2024"
